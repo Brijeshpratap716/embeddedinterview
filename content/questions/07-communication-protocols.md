@@ -4,185 +4,794 @@ title: Communication Protocols
 icon: 📡
 level: Intermediate
 order: 7
-desc: UART, SPI, I2C, CAN, CAN FD, USB, RS-485, Modbus and Ethernet. Frames, timing, arbitration and debugging.
+desc: UART, RS-232/RS-485, SPI, I2C, I3C, I2S, CAN, CAN FD, LIN, USB, Modbus, Ethernet, TCP/UDP, MQTT, BLE and wireless IoT. Frames, timing, arbitration, error handling and how to choose.
 ---
-You will almost certainly be asked to compare UART, SPI and I2C, then pushed on one of them in detail. Automotive roles add CAN; Linux roles add USB and Ethernet.
+You will almost certainly be asked to compare UART, SPI and I2C, then pushed on one of them in detail. Automotive roles add CAN and LIN; Linux roles add USB and Ethernet; IoT roles add MQTT and wireless. Each answer gives the short version first, then the details and the follow-ups interviewers ask.
 
 ### Compare UART, SPI and I2C. {E}
+**Short answer:** **UART** is asynchronous, point-to-point, two signal wires (TX, RX), no clock: both sides agree on a baud rate. **SPI** is synchronous, full duplex, a controller drives the clock, four wires plus one chip-select per device, very fast and simple. **I2C** is synchronous, half duplex, two open-drain wires shared by many devices with addresses and per-byte acknowledgements, slower but uses very few pins.
+
 | | UART | SPI | I2C |
 |---|---|---|---|
-| Wires | 2 (TX, RX) + GND | 4 (SCLK, MOSI, MISO, CS) + 1 CS per extra device | 2 (SDA, SCL) |
-| Clock | Asynchronous (agreed baud rate) | Synchronous, controller drives clock | Synchronous, controller drives clock |
-| Duplex | Full | Full | Half |
-| Devices | Point to point | One controller, many peripherals via chip selects | Multi-controller, up to 127 addresses (7-bit) |
-| Speed | Typically ≤ 1–3 Mbps | Tens of MHz | 100 kHz / 400 kHz / 1 MHz / 3.4 MHz |
-| Acknowledgement | None | None | ACK/NACK per byte |
-| Typical use | Debug console, GPS, modems, Bluetooth modules | Flash, displays, ADCs, SD cards | Sensors, EEPROMs, PMICs, touch controllers |
+| Wires | TX, RX (+ GND) | SCLK, MOSI, MISO, CS (one CS per device) | SDA, SCL (+ pull-ups) |
+| Clock | none (asynchronous, agreed baud) | controller drives SCLK | controller drives SCL (targets can stretch it) |
+| Duplex | full | full | half |
+| Topology | point to point | one controller, many peripherals | multi-controller, multi-target bus |
+| Addressing | none | chip select line | 7-bit (or 10-bit) address in the message |
+| Speed | typically ≤ 1–3 Mbps (some to 10+) | tens of MHz (50–100+ MHz with QSPI) | 100 kHz, 400 kHz, 1 MHz, 3.4 MHz |
+| Acknowledgement | none | none | ACK/NACK per byte |
+| Error detection | optional parity, framing | none (protocols add CRC) | ACK only (SMBus adds PEC) |
+| Distance | board level; long with RS-232/RS-485 | board level (cm) | board level (bus capacitance ≤ 400 pF) |
+| Typical devices | debug console, GPS, modems, BLE/Wi-Fi modules | flash, displays, ADCs, SD cards, IMUs | sensors, EEPROMs, PMICs, touch controllers, RTCs |
+
+**One-line pros and cons**
+
+- UART: simplest and universal, but needs matching baud rates and connects only two devices.
+- SPI: fastest and simplest hardware, no addressing overhead, but many pins with multiple devices and no built-in acknowledgement.
+- I2C: two pins for many devices with built-in addressing and ACK, but slow, sensitive to bus capacitance, and a misbehaving device can hang the whole bus.
+
+### How do you choose between UART, SPI and I2C for a project? {M}
+**Short answer:** Start from the peripheral (many devices only offer one interface), then weigh data rate, number of devices, pins available, distance, and robustness. Use **SPI** for high data rates (displays, flash, high-rate ADCs, IMUs at kHz rates), **I2C** for many slow devices on few pins (sensors, EEPROM, PMIC configuration), and **UART** for communication with another processor or module (GPS, modem, BLE module, debug console), or over long distances with RS-485.
+
+**Decision factors**
+
+| Factor | Favours |
+|---|---|
+| > 1 Mbit/s sustained | SPI (or QSPI) |
+| Many devices, few GPIOs | I2C |
+| Talking to another MCU or a module with its own firmware | UART (or SPI with a protocol) |
+| Long cables / noisy environment | RS-485 (UART), CAN |
+| Need confirmation that a device is present | I2C (ACK) |
+| Deterministic, low-latency streaming | SPI with DMA |
+| Hot-plug or off-board connection | UART, USB, CAN |
+| Low power (fewer transitions, sleep) | I2C/SPI at low clock, UART with wake-on-RX |
+
+**Example answer:** "For a wearable with an IMU at 1 kHz, a temperature sensor, a battery fuel gauge and a display: SPI for the IMU and the display (bandwidth, DMA), I2C for the temperature sensor and fuel gauge (low rate, shared bus), UART for the debug console and the BLE module. I would check that no two I2C devices share an address and that the bus capacitance allows 400 kHz."
+
+**Follow-ups:** what if two I2C sensors have the same fixed address (address pin, I2C multiplexer like TCA9548A, or a second bus); what if you run out of SPI chip selects (GPIO expander, decoder, or daisy chain).
 
 ### What does a UART frame look like? {E}
-The idle line is high. Each frame has:
+**Short answer:** The line idles high. Each character starts with a **start bit** (low), followed by **5–9 data bits sent LSB first**, an optional **parity bit**, and **1, 1.5 or 2 stop bits** (high). "115200 8N1" means 115200 bits per second, 8 data bits, no parity, 1 stop bit, so each byte takes 10 bit times and the payload rate is 11,520 bytes per second.
 
-1. **Start bit** (low), which marks the start and lets the receiver synchronise,
-2. **5–9 data bits**, least significant bit first,
-3. optional **parity bit** (even or odd),
-4. **1, 1.5 or 2 stop bits** (high).
+```
+idle ───┐ ┌──┬──┬──┬──┬──┬──┬──┬──┐ ┌─── idle
+        │S│D0│D1│D2│D3│D4│D5│D6│D7│P│Stop
+        └─┘                         
+  (start bit = 0, data LSB first, optional parity, stop bit = 1)
+```
 
-"115200 8N1" means 115200 baud, 8 data bits, no parity, 1 stop bit, so each byte costs 10 bit times and the payload rate is 11520 bytes/s.
+**Numbers to know**
+
+| Baud | Bit time | Bytes/s (8N1) |
+|---|---|---|
+| 9600 | 104.2 µs | 960 |
+| 115200 | 8.68 µs | 11,520 |
+| 1,000,000 | 1 µs | 100,000 |
+
+**Details**
+
+- **Baud vs bit rate:** for UART they are the same (one bit per symbol).
+- **Parity:** even/odd/mark/space; detects single-bit errors only.
+- **Break condition:** the line held low for longer than a whole frame; used as a "reset/attention" signal (LIN, some bootloaders) and appears as a framing error with data 0.
+- **Idle line:** the line stays high for at least one frame time; many MCUs raise an **IDLE interrupt**, which is very useful with DMA to detect the end of a variable-length message.
+- **Inverted UART** (e.g. SBUS in RC receivers) uses the opposite polarity; some MCUs can invert in hardware.
 
 ### How does a UART receiver sample bits, and how much baud-rate error is tolerated? {M}
-The receiver detects the falling edge of the start bit and then samples each bit near its centre, typically using 16× (or 8×) oversampling and majority voting of three samples. Because it resynchronises on every start bit, clock error only accumulates over one frame. For a 10-bit frame the last sample point must stay within half a bit, giving a total tolerance of roughly ±5% between transmitter and receiver combined, or about ±2–2.5% each in practice. That is why an internal RC oscillator can be risky at high baud rates.
+**Short answer:** The receiver detects the falling edge of the start bit, waits half a bit time to reach its middle (confirming it is still low), then samples each following bit near its centre, typically using 16× (or 8×) oversampling and a majority vote of three samples. Because it resynchronises on every start bit, clock error only accumulates over one frame; for 8N1, the total mismatch between transmitter and receiver must stay below roughly ±4–5%, so each side should be within about ±2%.
+
+**Why ~5%:** the last sample (the stop bit) is about 9.5 bit-times after the start edge. If it drifts by more than half a bit, it samples the wrong bit: 0.5 / 9.5 ≈ 5.3% total. Edge-detection uncertainty and noise reduce the practical margin to around 3–4.5%, so designers aim for ≤ 2% error per side.
+
+**Where baud error comes from**
+
+- **Divider rounding:** e.g. 16 MHz / (16 × 115200) = 8.68 → divider 9 gives 111,111 baud, −3.5% error. Fractional baud generators or a "UART-friendly" crystal (14.7456 MHz, 18.432 MHz) fix this.
+- **Oscillator accuracy:** internal RC oscillators can be ±1–3% across temperature, which uses most of the budget; calibrate them or use a crystal for reliable high-baud links.
+
+**Oversampling options:** 16× gives better noise immunity and timing tolerance; 8× allows higher baud rates from the same clock but tolerates less error.
+
+**Auto-baud detection:** some UARTs measure the length of the start bit (or of a known character like 0x55 or 0x7F) to set the baud rate automatically, used by MCU ROM bootloaders.
+
+**Interview example:** "We saw random corrupted bytes at 921600 baud only on hot units; the cause was the internal RC oscillator drifting; switching to the crystal (or lowering the baud rate) fixed it."
 
 ### What are UART framing, parity and overrun errors? {M}
-- **Framing error**: the stop bit was read as 0. Usually a baud-rate mismatch, noise, or a break condition.
-- **Parity error**: the received parity bit does not match the data.
-- **Overrun error**: a new byte arrived before software read the previous one from the data register, so data was lost. Fix with faster ISR handling, a FIFO, or DMA.
-- **Noise error**: the oversampled values within a bit disagreed.
+**Short answer:** A **framing error** means the stop bit was sampled as 0 (baud mismatch, noise, or a break). A **parity error** means the parity bit does not match the data. An **overrun error** means a new byte arrived before software read the previous one, so data was lost. A **noise error** means the oversampled values within a bit disagreed.
 
-Clear the error flags as the reference manual describes, or the UART may stop receiving.
+| Error | Typical cause | Fix |
+|---|---|---|
+| Framing (FE) | wrong baud rate, wrong frame format, noise, break condition | check clocks and settings, add filtering, handle breaks deliberately |
+| Parity (PE) | noise, wrong parity setting | check settings, cabling, use a CRC at the protocol level |
+| Overrun (ORE) | ISR too slow, interrupts disabled too long, no FIFO | faster/shorter ISR, higher priority, FIFO, DMA |
+| Noise (NE) | electrical noise, slow edges | better wiring, ground, shielding, RS-485 |
+
+**Handling them in firmware**
+
+- Read and clear the flags exactly as the reference manual says (e.g. on many STM32 parts, reading `SR` then `DR` clears ORE/FE/NE). If an overrun flag is never cleared, some UARTs stop receiving entirely.
+- Count errors (statistics are very useful for field diagnosis).
+- Discard the corrupted byte and let the higher-level protocol (CRC, sequence numbers, timeouts) recover the message.
+
+**Overrun math:** at 921600 baud a byte arrives every ~10.9 µs. If an ISR is delayed by more than one byte time (plus FIFO depth), you lose data. Using DMA into a circular buffer removes the per-byte deadline.
 
 ### What is hardware flow control? {E}
-RTS/CTS lines let a receiver tell the transmitter to pause. The receiver de-asserts RTS when its buffer is nearly full; the transmitter checks CTS before sending each byte. It prevents overruns at high baud rates, for example with cellular modems and Bluetooth modules. Software flow control (XON/XOFF characters) does the same in-band but cannot be used with binary data.
+**Short answer:** Hardware flow control uses two extra signals, **RTS** (request to send) and **CTS** (clear to send), so a receiver can tell the transmitter to pause. Each side's RTS output connects to the other side's CTS input. When the receiver's buffer is nearly full it de-asserts RTS; the transmitter checks CTS before sending each character and stops until CTS is asserted again. This prevents overruns at high baud rates.
+
+```
+MCU TX  ───────────►  RX  Module
+MCU RX  ◄───────────  TX
+MCU RTS ───────────►  CTS      (MCU says "I can receive")
+MCU CTS ◄───────────  RTS      (module says "I can receive")
+```
+
+**When it is needed:** cellular modems, Wi-Fi/BLE modules and high-speed links where the receiver can be busy (flash writes, radio events). Without it, bursts can overflow buffers and data is silently lost.
+
+**Software flow control (XON/XOFF):** the receiver sends special characters (0x11 XON, 0x13 XOFF) in the data stream. It needs no extra wires but cannot be used with binary data (those byte values may appear in the payload) and reacts more slowly.
+
+**Practical notes**
+
+- The transmitter usually finishes the byte in progress (and sometimes a FIFO's worth) after CTS drops, so the receiver should de-assert RTS with a few bytes of headroom.
+- Many MCU UARTs support automatic RTS/CTS in hardware; enabling it avoids firmware timing issues.
+- Naming confusion: some datasheets name pins from the device's point of view, some from the host's; check the direction carefully.
+- On Linux: `stty -F /dev/ttyS1 crtscts` or `CRTSCTS` in `termios`.
 
 ### How does RS-232 differ from RS-485 and TTL UART? {M}
-They are physical layers for the same UART framing:
+**Short answer:** They are different **physical layers** for the same UART framing. **TTL/CMOS UART** uses logic levels (0/3.3 V or 0/5 V) for short board-level connections. **RS-232** uses single-ended, inverted ±3 to ±15 V signals, point-to-point, up to about 15 m. **RS-485** uses a differential pair (A/B), is very noise-immune, supports multi-drop buses of 32 unit loads (more with fractional-load transceivers) over up to 1200 m, usually half duplex, and needs termination and driver-enable control.
 
-- **TTL/CMOS UART**: logic levels (0/3.3 V or 0/5 V), short board-level distances.
-- **RS-232**: single-ended, inverted, ±3 V to ±15 V levels, point-to-point, up to about 15 m.
-- **RS-485**: differential pair (A/B), very noise immune, up to 1200 m, **multi-drop** with up to 32 unit loads (more with fractional-load transceivers), usually half duplex. Needs 120 Ω termination at both ends and driver-enable control; protocols such as Modbus RTU run on top.
+| | TTL UART | RS-232 | RS-485 |
+|---|---|---|---|
+| Signalling | single-ended logic level | single-ended, ±3 to ±15 V, inverted | differential (A−B > +200 mV = 1) |
+| Topology | point to point | point to point | multi-drop bus |
+| Distance | cm to < 1 m | ~15 m (depends on baud) | up to 1200 m (at lower rates) |
+| Speed | MCU-limited | ~115 kbps typical | up to 10–50 Mbps at short distance |
+| Duplex | full | full | half (2-wire) or full (4-wire RS-422 style) |
+| Noise immunity | low | moderate | high (common-mode rejection) |
+| Transceiver | none | MAX3232-style | MAX485/THVD-style |
+
+**RS-485 design points**
+
+- **Termination:** 120 Ω at both ends of the bus to stop reflections; **fail-safe biasing** resistors keep the idle bus at a defined level when no driver is active.
+- **Direction control:** in half duplex, the MCU enables the driver (DE) before sending and disables it after the **last stop bit has left the shift register** (wait for the UART "transmission complete" flag, not just "TX empty"), otherwise the last byte is cut off. Many MCUs can drive DE automatically.
+- **Topology:** a daisy-chained bus with short stubs, not a star.
+- **Ground:** RS-485 tolerates ground offsets (−7 V to +12 V common mode) but still needs a reference ground or isolation.
+- **Protocols on top:** Modbus RTU, PROFIBUS, DMX512, BACnet MS/TP, many proprietary protocols.
+
+**Interview catch:** "Can you connect an MCU's UART directly to an RS-232 port?" No: RS-232 levels are inverted and up to ±15 V; you need a level-shifting transceiver.
 
 ### What are the SPI modes (CPOL and CPHA)? {M}
-- **CPOL** sets the idle clock level: 0 = idle low, 1 = idle high.
-- **CPHA** sets the sampling edge: 0 = sample on the first (leading) edge, 1 = sample on the second (trailing) edge.
+**Short answer:** **CPOL** (clock polarity) sets the idle level of SCLK: 0 = idle low, 1 = idle high. **CPHA** (clock phase) sets which edge samples data: 0 = sample on the first (leading) edge, 1 = sample on the second (trailing) edge. The four combinations are SPI modes 0–3, and the controller must use the mode the device's datasheet specifies.
 
-| Mode | CPOL | CPHA | Sample edge |
-|---|---|---|---|
-| 0 | 0 | 0 | Rising |
-| 1 | 0 | 1 | Falling |
-| 2 | 1 | 0 | Falling |
-| 3 | 1 | 1 | Rising |
+| Mode | CPOL | CPHA | Idle clock | Data sampled on | Data changes on |
+|---|---|---|---|---|---|
+| 0 | 0 | 0 | low | rising edge | falling edge |
+| 1 | 0 | 1 | low | falling edge | rising edge |
+| 2 | 1 | 0 | high | falling edge | rising edge |
+| 3 | 1 | 1 | high | rising edge | falling edge |
 
-Mode 0 and 3 are most common. The controller and the device must use the same mode, or you will see bits shifted by one.
+**Most devices use mode 0 or 3** (many support both, since in both cases data is sampled on the rising edge).
+
+**Symptoms of the wrong mode:** data shifted by one bit (values doubled or halved), the first or last bit wrong, or garbage that changes with clock speed.
+
+**With CPHA = 0**, the first data bit must be on the line **before** the first clock edge, so the device outputs it as soon as chip select goes active; some controllers need a delay between CS assertion and the first clock.
+
+**Other SPI settings to match:** bit order (MSB first is most common), word size (8/16 bits), chip-select polarity (usually active low), maximum clock frequency, and the timing between CS and clock (setup/hold times in the datasheet).
+
+**On Linux:** `spi-cpol` and `spi-cpha` properties in the device tree, or `SPI_MODE_0..3` with spidev.
+
+### How do you choose and configure the SPI clock? {M}
+**Short answer:** Use the highest clock that the **device** supports (from its datasheet's maximum SCLK and timing parameters), that the **MCU's SPI peripheral** can generate (usually the peripheral clock divided by a power of two), and that the **board** can carry with clean edges (trace length, capacitance, level shifters, connectors). Then check timing: setup and hold times, the device's output delay on MISO at that frequency, and the CS-to-clock delays.
+
+**Steps**
+
+1. **Device limits:** max SCLK (e.g. 10 MHz for a sensor, 104 MHz for a QSPI flash in fast-read mode), often lower for some commands (e.g. reads vs writes, or SD cards at 400 kHz during initialisation).
+2. **Peripheral divider:** e.g. APB clock 84 MHz with prescalers /2, /4, /8 … → 42, 21, 10.5 MHz: pick the fastest ≤ the device limit.
+3. **MISO timing:** the device's clock-to-output delay plus board delay must be less than half a clock period before the controller samples (at 50 MHz, half a period is only 10 ns). Some MCUs offer a delayed sample point for this.
+4. **Signal integrity:** long traces or cables need slower clocks or series termination resistors (22–33 Ω) near the driver; level shifters often limit speed to a few MHz.
+5. **Verify with a scope:** check edges, ringing and that the clock actually reaches the device cleanly.
+
+**Throughput math:** at 10 MHz, one byte takes 0.8 µs, but per-byte software overhead (polling flags) can dominate; use DMA and FIFOs for sustained rates, and keep CS asserted across multi-byte transactions.
+
+**Low-power and EMI:** slower clocks and slower GPIO slew settings reduce emissions and power; use the minimum speed that meets the data-rate requirement.
 
 ### How do you connect multiple SPI devices? {E}
-- **Independent chip selects**: one CS line per device, all sharing SCLK/MOSI/MISO. Each device's MISO must be high-impedance when deselected.
-- **Daisy chain**: MISO of one device feeds MOSI of the next, with one shared CS; data shifts through all devices like one long shift register (common for LED drivers and shift registers).
+**Short answer:** Usually with **independent chip selects**: all devices share SCLK, MOSI and MISO, and each has its own CS line; only the selected device drives MISO, the others keep it high-impedance. Alternatively, **daisy-chain** devices that support it: each device's data output feeds the next device's input and they share one CS, so data shifts through the chain like one long shift register.
 
-Use an I/O expander or decoder if you run out of CS pins.
+```
+Independent chip selects               Daisy chain
+MCU SCLK ─┬─────┬─────┬                MCU MOSI → [Dev1] → [Dev2] → [Dev3] → MCU MISO
+MCU MOSI ─┼──┬──┼──┬──┼──┬             shared SCLK and one CS
+MCU MISO ─┼──┼──┼──┼──┼──┼
+CS0 ──────┘  │  │  │  │  │   Dev0
+CS1 ─────────┼──┘  │  │  │   Dev1
+CS2 ─────────┼─────┘  ...
+```
+
+**Independent CS details**
+
+- MISO must be tri-stated by every deselected device; some devices do not do this properly (check the datasheet or add a buffer).
+- Different devices may need different SPI modes and speeds: reconfigure the peripheral before each transaction, and on a shared bus with an RTOS, protect it with a mutex.
+- Put pull-ups on CS lines so devices stay deselected while the MCU is in reset.
+- Running out of CS pins: use a GPIO expander, a 3-to-8 decoder (74HC138), or a demultiplexer.
+
+**Daisy chain details**
+
+- Common with shift registers (74HC595), LED drivers and some ADCs/DACs.
+- To update N devices you clock out N frames, last device first, then raise CS to latch all of them together.
+
+**On Linux:** each device on the bus has its own `reg` (chip select number) under the SPI controller in the device tree; the SPI core handles CS and mode per device.
 
 ### What are Dual, Quad and Octal SPI? {M}
-Extensions that use 2, 4 or 8 bidirectional data lines instead of a single MOSI/MISO pair, multiplying throughput. Quad SPI (QSPI) NOR flash is common for external code storage, and many MCUs support **execute-in-place (XIP)**: the flash is memory-mapped so the CPU fetches instructions directly. Octal SPI and HyperBus reach hundreds of MB/s for external RAM and display frame buffers.
+**Short answer:** They are SPI extensions that transfer 2, 4 or 8 bits per clock using bidirectional data lines (IO0–IO7) instead of a single MOSI/MISO pair, multiplying throughput. Quad SPI (QSPI) NOR flash is the standard way to add external code and data storage to MCUs, and many controllers support **execute-in-place (XIP)**, mapping the flash into the address space so the CPU can run code directly from it. Octal SPI and HyperBus reach hundreds of MB/s for external RAM and frame buffers.
+
+| Variant | Data lines | Example throughput |
+|---|---|---|
+| Single SPI | 1 out + 1 in | 50 MHz → ~6 MB/s |
+| Dual | 2 (half duplex) | ~12 MB/s |
+| Quad (QSPI) | 4 | 133 MHz → ~66 MB/s |
+| Octal (OSPI, DDR) | 8, both edges | 200 MHz DDR → ~400 MB/s |
+
+**How a quad read works:** the command byte may be sent on one line (1-1-4 mode) or all four (4-4-4), followed by the address, dummy cycles (for the flash to fetch data), then data on four lines. The `x-y-z` notation means lines used for command-address-data.
+
+**Memory-mapped mode / XIP:** the controller automatically issues read commands when the CPU accesses the mapped address range. Combined with a cache (Cortex-M7) this gives reasonable performance for code and graphics assets.
+
+**Design considerations**
+
+- Use the controller's memory-mapped mode for reads; writes and erases still go through command mode, and you cannot execute from the flash while it is being erased/programmed (run that code from RAM).
+- Some flash chips need the **QE (quad enable)** bit set in a status register before quad modes work.
+- Signal integrity at 100+ MHz needs short, matched traces.
+- Bootloaders must configure the QSPI controller before jumping to code in external flash.
+- Encrypted XIP (on-the-fly decryption, e.g. NXP BEE/OTFAD, ST OTFDEC) protects firmware stored externally.
 
 ### What does an I2C transaction look like? {E}
-1. **START**: SDA falls while SCL is high.
-2. **Address byte**: 7-bit address plus a R/W bit (0 = write, 1 = read).
-3. **ACK**: the addressed device pulls SDA low on the 9th clock.
-4. **Data bytes**, each followed by ACK/NACK. The receiver ACKs; the controller NACKs the last byte of a read.
-5. **STOP**: SDA rises while SCL is high.
+**Short answer:** **START** (SDA falls while SCL is high), then an **address byte** (7-bit address plus a R/W bit: 0 = write, 1 = read), then an **ACK** from the addressed target (it pulls SDA low on the 9th clock), then **data bytes**, each followed by ACK or NACK, then **STOP** (SDA rises while SCL is high). To read a register, write the register address, then send a **repeated START** with the read bit and read the data, with the controller NACKing the last byte.
 
-To read a register, write the register address, then issue a **repeated START** (no STOP) with the read bit, then read data.
+```
+Write register 0x10 = 0xAB on device 0x48:
+S | 0x48<<1|W | A | 0x10 | A | 0xAB | A | P
+
+Read 2 bytes from register 0x00:
+S | 0x48<<1|W | A | 0x00 | A | Sr | 0x48<<1|R | A | data0 | A | data1 | N | P
+(S = START, Sr = repeated START, A = ACK, N = NACK, P = STOP)
+```
+
+**Rules**
+
+- SDA may only change while SCL is low; a change while SCL is high is a START or STOP.
+- Data is sent MSB first.
+- The receiver ACKs each byte: the target during writes, the controller during reads (and NACKs the last byte to tell the target to stop driving SDA).
+- A NACK after the address means no device answered (wrong address, device missing or busy, e.g. an EEPROM during its internal write cycle).
+
+**Common bugs**
+
+- Using 8-bit "address" values from a datasheet that already include the R/W bit (e.g. 0x90/0x91 for device 0x48). The 7-bit address is the 8-bit one shifted right by one.
+- Sending STOP between the register address and the read: many devices then forget the register pointer or start a new transaction differently.
+- Not handling NACK and continuing as if the write succeeded.
+
+**Tools:** `i2cdetect -y 1` (scan the bus on Linux), `i2cget`/`i2cset`/`i2ctransfer`, and a logic analyser with an I2C decoder.
 
 ### Why does I2C need pull-up resistors, and how do you size them? {M}
-Both lines are **open-drain**: devices can only pull them low, so resistors pull them high. The resistor value is a trade-off:
+**Short answer:** Both I2C lines are **open-drain**: devices can only pull them low, so resistors pull them high when nobody drives them. A smaller resistor gives faster rising edges but more current when the line is low; a larger resistor saves current but makes edges too slow for the speed mode. Size it between `Rmin = (VDD − VOL(max)) / IOL` and `Rmax ≈ t_r / (0.8473 × Cbus)`.
 
-- **Too large**: the RC rise time from bus capacitance is too slow for the speed mode (max rise time is 1000 ns at 100 kHz, 300 ns at 400 kHz).
-- **Too small**: devices cannot sink enough current to reach a valid low (3 mA at standard/fast mode).
+**Formulas (from the I2C specification)**
 
-Rp(min) = (Vdd − 0.4 V) / 3 mA, and Rp(max) ≈ t_rise / (0.8473 × C_bus). Typical values are 2.2 kΩ to 10 kΩ, with 4.7 kΩ common at 100 kHz.
+- `Rp(min) = (VDD − 0.4 V) / 3 mA` for standard/fast mode (devices must sink 3 mA at 0.4 V).
+- `Rp(max) = t_r / (0.8473 × C_b)`, where `t_r` is the maximum rise time (1000 ns at 100 kHz, 300 ns at 400 kHz, 120 ns at 1 MHz Fast-mode Plus) and `C_b` the total bus capacitance (≤ 400 pF).
+
+**Worked example (3.3 V, 400 kHz, 100 pF bus)**
+
+- Rp(min) = (3.3 − 0.4) / 0.003 ≈ 967 Ω
+- Rp(max) = 300 ns / (0.8473 × 100 pF) ≈ 3.5 kΩ
+- Choose **2.2 kΩ** (common for 400 kHz). At 100 kHz with the same bus, Rp(max) ≈ 11.8 kΩ, so 4.7 kΩ or 10 kΩ work.
+
+**Practical notes**
+
+- Each device's input adds capacitance (≈ 5–10 pF), plus traces and connectors; long cables need lower resistor values, bus buffers (PCA9515) or differential extenders.
+- Only **one set** of pull-ups per bus segment; many breakout boards each add their own, and too many in parallel make the value too small.
+- Internal MCU pull-ups (20–50 kΩ) are too weak for anything but very slow, short buses.
+- Mixed voltages (3.3 V and 5 V devices) need a level shifter (e.g. a MOSFET-based bidirectional shifter).
+- The `0.8473` factor comes from the time to rise from 30% to 70% of VDD in an RC circuit: `t = RC × ln(0.7/0.3)`.
 
 ### What is clock stretching? {M}
-A target device holds SCL low after a byte to tell the controller to wait until it is ready, for example while it performs a conversion. The controller must check that SCL actually went high before continuing. Some controllers (notably some older Raspberry Pi I2C hardware) handle stretching badly, which causes corrupted transfers with certain sensors.
+**Short answer:** Clock stretching is when a target device holds SCL low after the controller releases it, to tell the controller to wait until it is ready (for example while it finishes a measurement or prepares data). Because SCL is open-drain, the controller sees that SCL has not gone high and must wait before continuing. Every I2C controller must support it, but some implementations handle it badly.
+
+**When targets stretch**
+
+- After receiving a byte, while processing it (slow MCUs acting as I2C targets).
+- Before sending read data that is not ready yet (some sensors during conversion, e.g. certain humidity sensors in "hold master" mode).
+- On a bit level, for slow devices (rare).
+
+**Problems seen in practice**
+
+- Some controllers (notably older Raspberry Pi BCM2835 I2C hardware) do not handle stretching correctly in some phases, which corrupts transfers with stretching devices; workarounds are a software (bit-banged) I2C driver or devices configured not to stretch.
+- A target that stretches forever (crashed firmware) hangs the bus; controllers should have a **timeout** (SMBus defines 25–35 ms) and use bus recovery.
+- When designing an MCU as an I2C target, prefer hardware that stretches automatically while firmware handles each byte, but keep the stretch short.
+
+**Related:** **clock synchronisation** between multiple controllers uses the same wired-AND property: the SCL low period is determined by the device holding it low the longest.
 
 ### How does I2C arbitration work with multiple controllers? {H}
-Every controller monitors SDA while transmitting. Because the bus is wired-AND, a 0 always wins. If a controller sends a 1 but reads back a 0, it has lost arbitration and stops transmitting immediately, without corrupting the winner's message. Arbitration happens bit by bit through the address and data, so the transfer to the lowest address wins. Clock synchronisation works the same way on SCL: the low period is set by the slowest controller.
+**Short answer:** Every controller monitors SDA while it transmits. Because the bus is wired-AND (any device pulling low wins), a 0 overrides a 1. If a controller sends a 1 (releases SDA) but reads back a 0, another controller is sending a 0; it has **lost arbitration** and must stop transmitting immediately, switching to receive mode if needed. Arbitration continues bit by bit through the address and data, so the winner's message is not corrupted.
+
+**Example: two controllers start at the same time**
+
+```
+Controller A sends address 0x50: 1 0 1 0 0 0 0
+Controller B sends address 0x48: 1 0 0 ...
+                                     ↑ A sends 1 (releases), B sends 0 (pulls low)
+                                       A reads 0 ≠ 1 → A loses, stops; B continues
+```
+
+The lower address wins at the first differing bit; if both address the same device, arbitration continues into the data bytes.
+
+**Clock synchronisation:** both controllers drive SCL; because it is wired-AND, SCL is low while either holds it low, so the combined clock has the longest low period and the shortest high period of the two. Both then stay in step bit by bit.
+
+**What the losing controller does:** sets an "arbitration lost" flag (raises an interrupt) and retries after the bus becomes free (after STOP). Firmware must handle this, not treat it as a fatal error.
+
+**Practical note:** true multi-controller I2C is relatively rare and tricky (some controllers have bugs in arbitration handling). Many systems with two processors use one controller and make the other a target, or use a separate bus.
+
+**Compare with CAN:** CAN uses the same principle (dominant bit wins, lowest ID wins), but CAN is designed for multi-controller from the start.
 
 ### How do you recover a stuck I2C bus? {M}
-If a target was reset mid-read it may be holding SDA low, waiting to send the rest of a byte. Recovery:
+**Short answer:** If a target was reset or interrupted in the middle of a read, it may still be holding SDA low, waiting to send the rest of a byte; the controller then cannot generate a START. To recover: switch SCL to GPIO open-drain mode, toggle SCL up to 9 times until the target releases SDA (it finishes its byte and sees a NACK because SDA is high on the 9th clock), generate a STOP condition manually, then return the pins to I2C mode and reset the I2C peripheral.
 
-1. Reconfigure SCL as GPIO open-drain output.
-2. Toggle SCL up to 9 times until SDA is released (the target finishes its byte and sees a NACK).
-3. Generate a STOP condition manually.
-4. Return the pins to I2C mode and reset the peripheral.
+```c
+#include <stdbool.h>
 
-The Linux kernel implements this in `i2c_recover_bus()`.
+void scl_set(int level); void sda_set(int level); int sda_get(void); void delay_us(unsigned us);
+
+bool i2c_bus_recover(void)                /* pins temporarily configured as open-drain GPIO */
+{
+    sda_set(1);
+    for (int i = 0; i < 9 && !sda_get(); i++) {
+        scl_set(0); delay_us(5);
+        scl_set(1); delay_us(5);
+    }
+    if (!sda_get()) return false;         /* still stuck: power-cycle the device if possible */
+    sda_set(0); delay_us(5);              /* generate STOP: SDA low → high while SCL high */
+    scl_set(1); delay_us(5);
+    sda_set(1); delay_us(5);
+    return true;                          /* now re-init the I2C peripheral */
+}
+```
+
+**Other causes of a stuck bus**
+
+- **SCL held low** by a crashed target (clock stretching forever): clocking does not help; reset or power-cycle the device (a GPIO-controlled reset line or power switch on the board is good design practice).
+- **Controller peripheral in a bad state** after a glitch: reset the peripheral (many MCUs have errata requiring this).
+- **Missing or wrong pull-ups**, shorted lines, or a device powered off that clamps the lines through its protection diodes.
+
+**Prevention:** use timeouts on every I2C wait, call bus recovery on timeout, and design hardware so devices can be reset. The Linux kernel provides `i2c_recover_bus()` with GPIO-based recovery described in the device tree (`scl-gpios`, `sda-gpios`).
 
 ### What is the difference between 7-bit and 10-bit I2C addressing? {E}
-7-bit addressing gives 128 addresses, of which 16 are reserved, so 112 are usable. 10-bit addressing sends a first byte `11110xx` (with the 2 high address bits) followed by a second byte with the remaining 8 bits. 10-bit devices are rare. Address conflicts between identical sensors are solved with address-select pins or an I2C multiplexer.
+**Short answer:** 7-bit addressing gives 128 addresses, of which 16 are reserved, so 112 are usable; it is used by almost all devices. 10-bit addressing sends a first byte `11110xx` + R/W (where `xx` are the two high address bits) followed by a second byte with the low 8 bits, giving 1024 addresses; 10-bit devices are rare.
+
+**Reserved 7-bit addresses**
+
+| Address | Use |
+|---|---|
+| 0x00 | general call / START byte |
+| 0x01 | CBUS |
+| 0x02 | other bus formats |
+| 0x03 | future use |
+| 0x04–0x07 | Hs-mode controller code |
+| 0x78–0x7B | 10-bit addressing prefix |
+| 0x7C–0x7F | device ID / future use |
+
+**Address conflicts between identical devices**
+
+- Address-select pins (A0, A1…) let you choose among a few addresses (e.g. 4 options for many sensors).
+- An **I2C multiplexer/switch** (TCA9548A) puts devices on separate downstream channels.
+- A second I2C peripheral on the MCU.
+- Some devices allow the address to be reprogrammed.
+
+**7-bit vs 8-bit confusion:** datasheets sometimes give an "8-bit address" that includes the R/W bit, e.g. 0x90 (write) / 0x91 (read) for device 0x48. Most software APIs (Linux, Zephyr, most HALs except STM32 HAL, which expects the shifted value) take the 7-bit address.
 
 ### What is SMBus, and what is I3C? {M}
-- **SMBus** is a stricter subset of I2C for system management (batteries, power): defined voltage levels, a 25–35 ms clock timeout, a minimum 10 kHz clock, optional packet error checking (CRC-8) and standard commands.
-- **I3C** (MIPI) is the successor to I2C: backward compatible with I2C targets, push-pull at up to 12.5 MHz SDR (higher in HDR modes), dynamic address assignment and **in-band interrupts** so sensors do not need separate interrupt pins.
+**Short answer:** **SMBus** (System Management Bus) is a stricter variant of I2C used for system management (batteries, power supplies, temperature monitors on PC and server boards): it defines voltage levels, a 25–35 ms clock-low timeout, a minimum 10 kHz clock, optional Packet Error Checking (a CRC-8 byte), standard command formats and an alert line. **I3C** (MIPI Improved Inter-Integrated Circuit) is the modern successor to I2C: push-pull signalling at up to 12.5 MHz (more in HDR modes), dynamic address assignment, in-band interrupts, and backward compatibility with many I2C targets on the same bus.
+
+**SMBus details**
+
+- Timeout means a stuck device cannot hold the bus forever (unlike plain I2C).
+- Defined transactions: Quick Command, Send/Receive Byte, Read/Write Byte/Word, Block Read/Write, Process Call.
+- **PEC:** CRC-8 (polynomial x⁸ + x² + x + 1) over the whole transaction including addresses.
+- **SMBALERT#:** a shared interrupt line plus the Alert Response Address (0x0C) to find which device raised it.
+- **PMBus** builds on SMBus for power supply control.
+- Linux: `i2c_smbus_read_byte_data()` etc.
+
+**I3C advantages over I2C**
+
+| | I2C | I3C |
+|---|---|---|
+| Speed | up to 1 MHz (3.4 MHz HS) | 12.5 MHz SDR, ~25–33 Mbps with HDR modes |
+| Signalling | open-drain (slow rising edges, power in pull-ups) | push-pull for data (open-drain only during arbitration) |
+| Addressing | static, set by pins | dynamic address assignment, plus 48-bit provisioned IDs |
+| Interrupts | separate GPIO per device | in-band interrupts on the bus |
+| Power | pull-up current | lower |
+
+I3C is used for new sensors in phones and wearables, and for DDR5 memory module management (SPD hubs).
+
+### What is I2S, and how is it different from I2C? {E}
+**Short answer:** I2S (Inter-IC Sound) is a synchronous serial bus for **digital audio** between processors, codecs, DACs, ADCs and digital microphones. Despite the similar name, it has nothing to do with I2C: it has a bit clock (**BCLK/SCK**), a word-select or frame clock (**LRCLK/WS**, which selects left or right channel and runs at the sample rate), and one or more data lines (**SD**), plus often a master clock (**MCLK**) for the codec. It streams audio continuously at a fixed sample rate.
+
+**Clock relationships**
+
+```
+LRCLK (WS) = sample rate, e.g. 48 kHz
+BCLK = sample rate × channels × bits per slot, e.g. 48 kHz × 2 × 32 = 3.072 MHz
+MCLK often = 256 × sample rate = 12.288 MHz
+```
+
+**Formats:** standard I2S (data delayed by one BCLK after the LRCLK edge, MSB first), left-justified, right-justified, and **TDM** (more than two channels in one frame: multi-mic arrays, multi-channel codecs). PDM is a different 1-bit format used by many MEMS microphones.
+
+**Embedded implementation**
+
+- Use DMA with double (ping-pong) buffers: the I2S peripheral streams samples continuously, and the CPU processes one buffer while DMA fills or empties the other.
+- Underrun/overrun causes audible clicks: size buffers for worst-case processing latency.
+- Clock accuracy matters: 44.1 kHz and 48 kHz families need different PLL settings; small mismatches between devices cause drift over time (asynchronous sample-rate conversion or clock recovery for USB audio).
+
+**Linux:** ALSA SoC (ASoC) with CPU DAI, codec and machine drivers described in the device tree.
 
 ### How does a CAN frame look? {M}
-A classic CAN 2.0A data frame:
+**Short answer:** A classic CAN (2.0A) data frame is: **SOF** (one dominant bit), the **arbitration field** (11-bit identifier + RTR bit; 29-bit identifier in 2.0B extended frames), the **control field** (IDE, reserved bit, 4-bit DLC giving 0–8 data bytes), the **data field** (0–8 bytes), a **15-bit CRC** + delimiter, the **ACK slot** + delimiter, and **EOF** (7 recessive bits), followed by a 3-bit intermission.
 
-1. **SOF** (dominant bit)
-2. **Arbitration field**: 11-bit identifier + RTR bit (29-bit ID in 2.0B extended frames)
-3. **Control field**: IDE, r0, 4-bit DLC (0–8 data bytes)
-4. **Data field**: 0–8 bytes
-5. **CRC field**: 15-bit CRC + delimiter
-6. **ACK slot + delimiter**: any node that received the frame correctly drives the slot dominant
-7. **EOF**: 7 recessive bits
+```
+| SOF | ID (11) | RTR | IDE | r0 | DLC (4) | DATA (0-64 bits) | CRC (15) | CRC del | ACK | ACK del | EOF (7) |
+```
 
-**Bit stuffing**: after 5 identical bits the transmitter inserts one opposite bit, so receivers keep synchronised.
+**Key points**
+
+- **Dominant (0) vs recessive (1):** a dominant bit from any node overrides recessive bits.
+- **ACK slot:** the transmitter sends recessive; **any** node that received the frame correctly drives it dominant. An ACK means "someone received it", not "the intended receiver processed it".
+- **Bit stuffing:** after five identical consecutive bits, the transmitter inserts one bit of opposite value (from SOF through CRC), giving enough edges for receivers to stay synchronised; receivers remove stuff bits. Six identical bits in a row is an error (used deliberately by error frames).
+- **Frame types:** data frame, remote frame (RTR = 1, requests data; rarely used and removed in CAN FD), error frame, overload frame.
+- **Extended frames (2.0B):** 11-bit base ID + SRR + IDE = 1 + 18-bit extension = 29-bit ID.
+
+**Efficiency:** a frame with 8 data bytes is about 111 bits plus stuff bits (up to ~135), so at 500 kbps a full frame takes ~0.25 ms and the payload efficiency is under 50%.
+
+**On Linux:** SocketCAN (`candump can0`, `cansend can0 123#DEADBEEF`) and `struct can_frame`.
 
 ### How does CAN arbitration work? {M}
-CAN is multi-controller with **non-destructive bitwise arbitration**. Dominant (0) overrides recessive (1) on the bus. All nodes transmit their ID simultaneously and read the bus. A node that sends recessive but reads dominant has lost and stops sending, then retries later. The frame with the **lowest ID wins** without being corrupted or delayed. IDs therefore double as priorities, which is why safety-critical messages get low IDs.
+**Short answer:** CAN is a multi-controller bus with **non-destructive bitwise arbitration**. All nodes that want to send start at the same time and transmit their identifier bit by bit while reading the bus. A dominant bit (0) overwrites a recessive bit (1). A node that sends recessive but reads dominant knows a higher-priority frame is on the bus, stops transmitting immediately and becomes a receiver. The frame with the **lowest identifier wins** and continues without delay or corruption; losers retry automatically when the bus is free.
+
+**Example**
+
+```
+Node A ID 0x123 = 001 0010 0011
+Node B ID 0x0F5 = 000 1111 0101
+Bit 2 (from MSB): A sends 1 (recessive), B sends 0 (dominant) → bus = 0
+A reads 0 ≠ 1 → A loses; B's frame continues uninterrupted
+```
+
+**Consequences for system design**
+
+- **IDs are priorities:** assign low IDs to urgent messages (brake, airbag, engine torque).
+- The highest-priority message has bounded latency (one frame time for the frame in progress plus its own), which allows **schedulability analysis** of CAN networks (like RTA for tasks).
+- Two nodes must never send data frames with the same ID at the same time (arbitration would not resolve it and errors follow), so each ID has one owner.
+- Standard frames win over extended frames with the same 11-bit base ID (the IDE bit is dominant for standard frames).
+
+**Physical requirement:** arbitration needs every node to see every bit within the bit time, which limits bus length vs bit rate (about 40 m at 1 Mbps, 500 m at 125 kbps).
 
 ### How does CAN handle errors? {H}
-Five error detection mechanisms: bit monitoring, bit stuffing check, frame (form) check, CRC check, and ACK check. A node that detects an error sends an **error frame** (6 dominant bits, violating stuffing), so all nodes discard the frame and the sender retransmits automatically.
+**Short answer:** CAN has five error-detection mechanisms: **bit monitoring** (a transmitter checks that the bus level equals what it sent, outside arbitration and the ACK slot), **bit stuffing check**, **form check** (fixed-format fields such as delimiters and EOF), **CRC check**, and **ACK check**. A node that detects an error transmits an **error frame**, which makes all nodes discard the frame, and the sender retransmits automatically. Error counters confine faulty nodes so one bad node cannot block the bus forever.
 
-Each node keeps transmit and receive error counters (TEC/REC):
+**Error confinement states**
 
-- **Error active** (both < 128): normal.
-- **Error passive** (either ≥ 128): sends passive error flags and waits longer before retransmitting.
-- **Bus off** (TEC ≥ 256): the node disconnects from the bus until it sees 128 × 11 recessive bits and software requests recovery.
+| State | Condition | Behaviour |
+|---|---|---|
+| Error active | TEC < 128 and REC < 128 | sends active error flags (6 dominant bits) |
+| Error passive | TEC ≥ 128 or REC ≥ 128 | sends passive error flags (6 recessive bits), waits 8 extra bit times before retransmitting |
+| Bus off | TEC ≥ 256 | stops transmitting; recovers only after 128 × 11 recessive bits (and usually a software request) |
 
-This confinement stops one faulty node bringing down the bus.
+TEC (transmit error counter) increases by 8 on a transmit error and decreases by 1 on success; REC increases by 1 (sometimes 8) on receive errors.
+
+**What firmware should do**
+
+- Monitor error counters and state changes (interrupts on error-passive and bus-off) and report them as diagnostics (DTCs in automotive).
+- Decide a **bus-off recovery** strategy: automatic recovery with a delay, limited retries, or staying off and entering a safe mode.
+- Remember that automatic retransmission means a message can be delayed but also that a misconfigured node (wrong bit rate) can cause continuous error frames until it goes bus-off.
+
+**Common causes of CAN errors:** missing or wrong termination, wrong bit timing or sample point between nodes, oscillator inaccuracy, ground offsets, long stubs, and transceiver problems. Tools: CAN analysers (PCAN, Vector, Kvaser), and oscilloscopes with CAN decoding to look at the analogue signal.
 
 ### What is the difference between CAN and CAN FD? {M}
-CAN FD (Flexible Data-rate) keeps classic arbitration but:
+**Short answer:** CAN FD (Flexible Data-rate) keeps classic CAN's arbitration (at the nominal bit rate, so priorities and robustness stay the same) but allows up to **64 data bytes** per frame instead of 8, switches to a **faster bit rate for the data phase** (commonly 2–5 Mbps, versus ≤ 1 Mbps for arbitration), uses stronger CRCs (17 or 21 bits plus a stuff-bit counter), and drops remote frames.
 
-- allows up to **64 data bytes** per frame instead of 8,
-- switches to a **higher bit rate** for the data phase (commonly 2–5 Mbps, versus ≤ 1 Mbps for arbitration),
-- uses stronger CRCs (17 or 21 bits) and a stuff-bit counter,
-- drops remote frames.
+| | Classic CAN | CAN FD | CAN XL |
+|---|---|---|---|
+| Max payload | 8 bytes | 64 bytes | 2048 bytes |
+| Data-phase bit rate | ≤ 1 Mbps | typically 2–5 Mbps (up to 8) | up to ~20 Mbps |
+| CRC | 15-bit | 17-bit (≤ 16 bytes) / 21-bit | 13-bit header CRC + 32-bit frame CRC |
+| DLC | 0–8 | 0–8, 12, 16, 20, 24, 32, 48, 64 | 1–2048 |
+| Remote frames | yes | no | no |
 
-The FDF bit marks a frame as FD and BRS enables the bit-rate switch. Classic CAN controllers that see an FD frame raise error frames, so mixed networks need care. **CAN XL** extends payloads to 2048 bytes.
+**New control bits:** **FDF** (marks an FD frame), **BRS** (bit-rate switch on/off), **ESI** (error state indicator of the transmitter).
+
+**Practical points**
+
+- A classic CAN controller that sees an FD frame flags errors, so mixed networks need FD-tolerant controllers or gateways ("partial networking" transceivers can ignore FD traffic).
+- Data-phase timing is more demanding: transceiver delay compensation (TDC) and accurate sample points are needed at higher rates.
+- Linux SocketCAN supports FD (`struct canfd_frame`, `ip link set can0 type can bitrate 500000 dbitrate 2000000 fd on`).
+- Larger payloads mean fewer frames for the same data: essential for security (room for MACs, AUTOSAR SecOC) and for flashing ECUs faster.
 
 ### Why does a CAN bus need 120 Ω termination? {E}
-The bus is a differential transmission line with about 120 Ω characteristic impedance. A 120 Ω resistor at **each end** prevents reflections, and the pair of them (60 Ω total) also sets the load that pulls the bus back to recessive. Measuring about 60 Ω between CAN_H and CAN_L with power off is a quick check that both terminators are present.
+**Short answer:** A CAN bus is a differential transmission line (twisted pair) with a characteristic impedance of about 120 Ω. A 120 Ω resistor at **each end** matches that impedance so signals are absorbed instead of reflecting back and corrupting bits. The two resistors in parallel (60 Ω) also provide the load that pulls the bus back to the recessive state quickly when no node drives it dominant.
+
+**Quick check:** with all nodes powered off, measure the resistance between CAN_H and CAN_L: about **60 Ω** means both terminators are present; **120 Ω** means one is missing; much lower means too many terminators (or a short).
+
+**Design details**
+
+- Terminate only the two physical **ends** of the bus, not every node; nodes in the middle connect with short stubs (a few tens of cm at high bit rates).
+- **Split termination:** two 60 Ω resistors in series with a capacitor (e.g. 4.7 nF) from the midpoint to ground improves EMC by filtering common-mode noise.
+- Missing termination may still "work" at low speed on a short bench setup, then fail in the vehicle or at higher bit rates: a classic bring-up trap.
+- CAN levels: recessive ≈ 2.5 V on both lines (differential ~0 V); dominant ≈ CAN_H 3.5 V, CAN_L 1.5 V (differential ~2 V).
 
 ### What is a CAN bit time and how are its segments configured? {H}
-A bit is divided into time quanta (tq): **Sync segment** (1 tq), **Propagation segment**, **Phase segment 1** and **Phase segment 2**. The **sample point** sits between phase 1 and 2, usually at 75–87.5% of the bit. The **SJW** (synchronisation jump width) limits how far the receiver may lengthen or shorten a phase segment to resync on edges. Example: 8 MHz CAN clock, prescaler 1 gives 125 ns tq; 16 tq per bit gives 500 kbps; sync 1 + prop+phase1 13 + phase2 2 puts the sample point at 87.5%.
+**Short answer:** Each CAN bit is divided into **time quanta (tq)** derived from the CAN controller clock through a prescaler. The bit consists of the **Sync segment** (always 1 tq, where edges are expected), the **Propagation segment** (compensates for signal round-trip delays), **Phase segment 1** and **Phase segment 2**. The **sample point** is between phase 1 and phase 2, typically at 75–87.5% of the bit. The **SJW** (synchronisation jump width) limits how much the controller may lengthen phase 1 or shorten phase 2 to resynchronise on edges.
+
+```
+|Sync|  Prop  | Phase 1 | Phase 2 |
+ 1 tq          sample point ↑
+```
+
+**Worked example: 500 kbps from a 40 MHz CAN clock**
+
+- Choose prescaler 5 → tq = 125 ns (8 MHz).
+- Bit time at 500 kbps = 2 µs = 16 tq.
+- Sync 1 + Prop + Phase1 = 13 tq, Phase2 = 2 tq → sample point = (1 + 13) / 16 = **87.5%**.
+- SJW = 2 tq (≤ Phase2).
+
+(Many controllers combine Prop and Phase 1 into one "TSEG1" register field: TSEG1 = 13, TSEG2 = 2.)
+
+**Guidelines**
+
+- Use the **same sample point** on all nodes, as recommended by your network specification (CiA recommends ~87.5% for classic CAN at most rates; automotive OEMs specify exact values).
+- More tq per bit (e.g. 16–25) gives finer adjustment and better tolerance.
+- Oscillator tolerance: classic CAN typically needs ≤ ±0.5% (depends on bit timing; ±1.58% maximum theoretical with ideal settings); use crystals, not RC oscillators.
+- CAN FD needs separate nominal and data-phase timings plus transceiver delay compensation.
+
+**Tools:** bit-timing calculators (e.g. bittiming.can-wiki.info), and on Linux, `ip -details link show can0` shows the computed segments.
+
+### What is LIN, and how is it used alongside CAN? {M}
+**Short answer:** LIN (Local Interconnect Network) is a low-cost, single-wire, UART-based automotive bus (up to 20 kbps) with one commander (master) and up to 15 responders (slaves). The commander sends a **header** (break, sync byte 0x55, protected identifier) and the addressed node responds with 1–8 data bytes plus a checksum. It is used for simple, non-critical body electronics (window motors, seat controls, mirrors, rain sensors, switches) where CAN would be too expensive; a CAN ECU usually acts as the LIN commander and gateway.
+
+**Frame**
+
+```
+| Break (≥13 dominant bits) | Sync 0x55 | PID (6-bit ID + 2 parity) | Data 1-8 bytes | Checksum |
+          ^----------- header (commander) -----------^   ^-------- response (responder) ---------^
+```
+
+**Key characteristics**
+
+| | LIN | CAN |
+|---|---|---|
+| Wires | 1 (+ 12 V and ground) | 2 (twisted pair) |
+| Speed | ≤ 20 kbps | 125 kbps–1 Mbps (FD faster) |
+| Access | commander polls via a schedule table | multi-controller arbitration |
+| Determinism | fully scheduled by the commander | priority-based |
+| Cost | very low (UART + simple transceiver, often an RC oscillator) | higher |
+
+**Details**
+
+- The **sync byte 0x55** lets responders with inaccurate RC oscillators measure the bit rate and adjust (auto-baud), which is why cheap nodes work.
+- The commander's **schedule table** defines which frames are sent when, giving deterministic timing.
+- Checksum: classic (data only) or enhanced (data + PID, LIN 2.x).
+- Diagnostics and node configuration are standardised (LIN 2.x, ISO 17987), and LIN supports sleep/wake-up over the bus.
+- Many MCUs have LIN mode in their UARTs (break generation/detection).
 
 ### What are the USB transfer types? {M}
-- **Control**: setup and configuration on endpoint 0 (enumeration, requests). Guaranteed delivery.
-- **Bulk**: large, error-checked data with no timing guarantee (mass storage, printers, CDC data).
-- **Interrupt**: small, periodic, guaranteed maximum latency (keyboards, mice, HID).
-- **Isochronous**: guaranteed bandwidth and timing but no retransmission (audio, video).
+**Short answer:** USB has four transfer types. **Control** transfers configure and query devices on endpoint 0 (enumeration, standard and class requests) with guaranteed delivery. **Bulk** transfers move large amounts of data with error checking and retries but no timing guarantee (mass storage, printers, CDC serial data). **Interrupt** transfers carry small, periodic data with a guaranteed maximum polling interval (keyboards, mice, HID, status). **Isochronous** transfers reserve bandwidth with fixed timing but no retransmission (audio, video).
 
-All transfers are host-initiated; a device can only respond when polled.
+| Type | Guaranteed delivery | Guaranteed timing | Max packet (FS / HS) | Typical use |
+|---|---|---|---|---|
+| Control | yes | best effort (reserved share) | 64 / 64 | enumeration, configuration |
+| Bulk | yes (retries) | no | 64 / 512 | storage, serial data, network |
+| Interrupt | yes (retries) | bounded polling interval | 64 / 1024 | HID, sensors, notifications |
+| Isochronous | no | yes | 1023 / 1024 | audio, video streaming |
+
+**Key facts**
+
+- **The host initiates every transfer**; a device can only answer when polled. "Interrupt" transfers are therefore polled, not true interrupts.
+- **Endpoints:** a device has endpoint 0 (control, bidirectional) plus up to 15 IN and 15 OUT endpoints. IN = device to host.
+- **Classes** standardise drivers: HID, CDC-ACM (virtual serial port), MSC (mass storage), UAC (audio), UVC (video), DFU (firmware update). Using a standard class means no custom host driver.
+- **Speeds:** low (1.5 Mbps), full (12 Mbps), high (480 Mbps), SuperSpeed (5 Gbps+); most MCUs have full-speed device controllers, some high-speed with an external or internal ULPI PHY.
+
+**Embedded stacks:** TinyUSB, vendor stacks (STM32 USB device library), Zephyr USB, and on Linux the gadget framework (configfs).
 
 ### What happens during USB enumeration? {H}
-1. Device attaches; host detects the pull-up on D+ (full speed) or D− (low speed).
-2. Host resets the bus; high-speed devices perform the chirp handshake.
-3. Host sends `GET_DESCRIPTOR(Device)` to address 0 to learn the max packet size of endpoint 0.
-4. Host assigns an address with `SET_ADDRESS`.
-5. Host reads the full device, configuration, interface, endpoint and string descriptors.
-6. Host selects a driver based on class/VID/PID, then sends `SET_CONFIGURATION`.
+**Short answer:** When a device is plugged in, the host detects it, resets it, reads its device descriptor at address 0 to learn the control endpoint's maximum packet size, assigns it a unique address, reads all its descriptors (device, configuration, interfaces, endpoints, strings), chooses a driver based on class or vendor/product ID, and selects a configuration. Only then can the device's other endpoints be used.
 
-After this the device's endpoints are usable. On Linux, `lsusb -v` shows the descriptors and `dmesg` the driver binding.
+**Step by step**
+
+1. **Attach:** the device connects a pull-up on D+ (full/high speed) or D− (low speed); the host sees the line change.
+2. **Reset:** the host drives SE0 for at least 10 ms; a high-speed-capable device performs the **chirp** handshake to switch to 480 Mbps.
+3. **GET_DESCRIPTOR (device)** to address 0, often only the first 8 bytes, to learn `bMaxPacketSize0`.
+4. **SET_ADDRESS:** the device must switch to the new address **after** the status stage of this request (a common firmware bug).
+5. **GET_DESCRIPTOR (device)** again (full 18 bytes): VID, PID, class, number of configurations.
+6. **GET_DESCRIPTOR (configuration)**: first 9 bytes for `wTotalLength`, then the full configuration with all interface and endpoint descriptors.
+7. **String descriptors** (manufacturer, product, serial number), optionally.
+8. **Driver binding:** the host OS matches class/subclass/protocol or VID/PID to a driver.
+9. **SET_CONFIGURATION:** the device becomes "configured" and its endpoints active. Class-specific requests follow (e.g. HID report descriptor, CDC line coding).
+
+**Common failure causes**
+
+- Descriptor errors (wrong lengths, `wTotalLength` mismatch, wrong endpoint addresses).
+- Slow responses to control requests (the host has timeouts, e.g. 500 ms for some stages).
+- Wrong USB clock accuracy (full speed needs ±0.25%; internal RC oscillators need clock recovery via SOF packets).
+- Missing pull-up or VBUS sensing configuration.
+
+**Debugging:** `dmesg` and `lsusb -v` on Linux, USBView on Windows, Wireshark with usbmon, or a hardware USB protocol analyser.
 
 ### What is Modbus? {E}
-A simple request/response industrial protocol. A client (master) sends a function code and register address to a server (slave), which replies. **Modbus RTU** runs over RS-485 with binary frames, a 1-byte address and CRC-16, and frames separated by 3.5 character times of silence. **Modbus TCP** wraps the same function codes in TCP on port 502. Common function codes: 03 (read holding registers), 06 (write single register), 16 (write multiple registers).
+**Short answer:** Modbus is a simple request/response protocol widely used in industrial automation. A **client** (master) sends a function code and a register address to a **server** (slave), which replies with data or an exception. **Modbus RTU** runs over RS-485 (or RS-232) with compact binary frames, a 1-byte server address and a CRC-16, with frames separated by 3.5 character times of silence. **Modbus TCP** carries the same function codes over TCP port 502 with an MBAP header instead of the address and CRC.
+
+**Data model**
+
+| Table | Access | Size | Function codes |
+|---|---|---|---|
+| Coils | read/write | 1 bit | 01 read, 05 write single, 15 write multiple |
+| Discrete inputs | read only | 1 bit | 02 |
+| Input registers | read only | 16 bit | 04 |
+| Holding registers | read/write | 16 bit | 03 read, 06 write single, 16 write multiple |
+
+**RTU frame example: read 2 holding registers starting at 0x0010 from server 0x11**
+
+```
+Request:  11 03 00 10 00 02 [CRC lo] [CRC hi]
+Response: 11 03 04 01 F4 00 64 [CRC lo] [CRC hi]   -> registers = 0x01F4 (500), 0x0064 (100)
+```
+
+**Register mapping in a device (design question):** document a map, e.g. 40001 = temperature × 10 (signed), 40002 = setpoint, 40003–40004 = 32-bit counter (decide word order!), 40010 = command register. Values above 16 bits span two registers, and different vendors use different word orders (big-endian bytes, but high or low word first), a classic integration bug.
+
+**Implementation details**
+
+- RTU timing: detect frame end with a 3.5-character silence (≈ 4 ms at 9600 baud); for baud rates above 19200 a fixed 1.75 ms is used. The UART idle-line interrupt or a hardware receiver timeout helps.
+- CRC-16 with polynomial 0xA001 (reflected 0x8005), initial value 0xFFFF, sent low byte first.
+- Exceptions: function code | 0x80 plus an exception code (01 illegal function, 02 illegal data address, 03 illegal value).
+- Broadcast address 0: writes to all servers, no reply.
+- Security: none built in; use network segmentation or Modbus/TCP Security (TLS).
 
 ### What layers does an embedded Ethernet interface involve? {M}
-- **MAC** (media access controller), usually inside the MCU or SoC, handles framing, CRC, and DMA descriptors.
-- **PHY**, often an external chip, handles the physical signalling (10/100/1000BASE-T) and auto-negotiation.
-- **MII/RMII/RGMII** connects MAC and PHY for data; **MDIO/MDC** is a management bus to read and write PHY registers (link status, speed).
-- A TCP/IP stack (lwIP, Zephyr's stack, or Linux) runs above the MAC driver.
+**Short answer:** The **MAC** (media access controller), usually inside the MCU or SoC, builds and checks frames (preamble, addresses, CRC) and moves them to and from memory with DMA descriptors. The **PHY**, often an external chip, handles the physical signalling on the cable (10/100/1000BASE-T, auto-negotiation, link detection). They connect through a data interface (**MII**, **RMII**, **RGMII**, **SGMII**) and a management bus (**MDIO/MDC**) that reads and writes PHY registers. A TCP/IP stack (lwIP, Zephyr's stack, FreeRTOS+TCP, or Linux) runs above the MAC driver.
 
-Common bring-up issues: wrong RMII reference clock, wrong PHY address, and missing reset timing.
+| Interface | Data width / clock | Speed | Notes |
+|---|---|---|---|
+| MII | 4 bits, 25 MHz TX and RX clocks | 100 Mbps | 16 pins |
+| RMII | 2 bits, 50 MHz reference clock | 100 Mbps | fewer pins; the 50 MHz clock must come from the PHY or MCU, not both |
+| RGMII | 4 bits, DDR at 125 MHz | 1 Gbps | needs ~2 ns clock delays (in PHY, MAC or PCB) |
+| SGMII | serial differential | 1 Gbps | SerDes |
+
+**Bring-up checklist and common issues**
+
+1. PHY reset and strap pins: the PHY address and mode (MII/RMII) are often set by pins at reset; wrong straps → no MDIO response.
+2. Read PHY ID registers (2 and 3) over MDIO to confirm communication.
+3. Reference clock: for RMII, exactly one 50 MHz source, with the right direction configured on both sides.
+4. RGMII delays: no delay or double delay → CRC errors or no traffic (`phy-mode = "rgmii-id"` etc. on Linux).
+5. Check link status and auto-negotiation result (speed/duplex) and configure the MAC to match.
+6. DMA descriptors, buffer alignment and cache maintenance in the MAC driver.
+7. Magnetics, cable and LEDs; check with `ethtool` on Linux.
+
+**Above the MAC:** ARP, IP, ICMP, UDP, TCP, DHCP, DNS; MCU stacks need tuning of buffer counts and sizes for RAM. Automotive Ethernet (100BASE-T1, 1000BASE-T1) uses a single twisted pair and a different PHY, with protocols such as SOME/IP and AVB/TSN on top.
 
 ### What is the difference between TCP and UDP for embedded devices? {E}
-TCP gives reliable, ordered, connection-oriented byte streams with retransmission and flow control, at the cost of RAM for buffers and higher latency. UDP sends independent datagrams with no delivery guarantee, so it is lighter and lower latency. Embedded protocols on UDP: CoAP, DNS, DHCP, real-time telemetry. On TCP: MQTT, HTTP, Modbus TCP. MQTT over TCP is the most common IoT choice; CoAP over UDP suits very constrained devices.
+**Short answer:** **TCP** provides a reliable, ordered, connection-oriented byte stream with retransmission, flow control and congestion control, at the cost of RAM for buffers and state, and higher latency when packets are lost. **UDP** sends independent datagrams with no delivery or ordering guarantee and no connection, so it is lighter and has lower, more predictable latency, but the application must handle loss if it matters.
+
+| | TCP | UDP |
+|---|---|---|
+| Connection | 3-way handshake, teardown | none |
+| Reliability and ordering | yes | no |
+| Message boundaries | no (byte stream) | yes (datagrams) |
+| Flow/congestion control | yes | no |
+| Overhead | 20+ byte header, ACKs, state per connection, buffers | 8-byte header |
+| Latency under loss | retransmission delays (head-of-line blocking) | none, data is just lost |
+| Multicast/broadcast | no | yes |
+| Embedded protocols | MQTT, HTTP(S), Modbus TCP, FTP | CoAP, DNS, DHCP, SNTP, mDNS, syslog, RTP, QUIC |
+
+**Choosing**
+
+- Use **TCP** for commands and data that must arrive intact and in order (configuration, firmware updates, MQTT telemetry).
+- Use **UDP** for real-time streams where late data is useless (audio, control loops, sensor streams), discovery (mDNS), and very constrained devices (CoAP with its own lightweight reliability), or when you need broadcast/multicast.
+
+**Embedded resource notes:** each TCP connection needs a TCB plus send/receive buffers (several KB in lwIP); MCUs often limit simultaneous connections. TLS on top of TCP adds tens of KB of RAM (mbedTLS); DTLS is TLS for UDP.
+
+**Interview follow-up:** "How would you make UDP reliable?" Sequence numbers, ACKs, retransmission timers and duplicate detection (CoAP confirmable messages, or QUIC, which builds a reliable, encrypted transport on UDP).
+
+### What is MQTT, and how do you make an MQTT client secure? {M}
+**Short answer:** MQTT is a lightweight **publish/subscribe** messaging protocol over TCP, widely used in IoT. Devices connect to a **broker**, **publish** messages to hierarchical **topics** (e.g. `factory/line1/temp`) and **subscribe** to topics they are interested in; the broker forwards messages, so senders and receivers never talk directly. It offers three **QoS** levels, retained messages, a "last will" message for unexpected disconnects, and keep-alive. Security comes from **TLS** (encryption and server authentication), **client authentication** (X.509 client certificates or username/password/tokens), and **authorisation** (each client can only publish/subscribe to its own topics).
+
+**QoS levels**
+
+| QoS | Guarantee | Mechanism | Use |
+|---|---|---|---|
+| 0 | at most once | fire and forget | frequent telemetry where loss is fine |
+| 1 | at least once | PUBACK; duplicates possible | most commands and events (make handlers idempotent) |
+| 2 | exactly once | 4-step handshake | rarely needed; expensive |
+
+**Useful features**
+
+- **Retained message:** the broker keeps the last message on a topic and sends it to new subscribers (current state).
+- **Last Will and Testament:** the broker publishes it if the client disappears without disconnecting (device offline detection).
+- **Keep-alive** pings detect dead connections; **persistent sessions** queue QoS 1/2 messages while a client is offline.
+- **MQTT 5** adds reason codes, message expiry, user properties, shared subscriptions and request/response.
+
+**Securing an embedded MQTT client**
+
+1. **TLS 1.2/1.3** on port 8883, with the broker's CA certificate pinned in the device; verify the server certificate and hostname.
+2. **Mutual TLS:** a unique client certificate and private key per device, ideally generated and stored in a secure element or TrustZone/secure storage (never the same key in every device).
+3. **Least-privilege topics:** broker ACLs so device 123 can only publish to `devices/123/#` and subscribe to its own command topic.
+4. **Validate payloads** from command topics (sizes, ranges); treat the broker as untrusted input.
+5. **Time:** certificate validation needs a correct clock (SNTP or RTC), and plan for certificate rotation before expiry.
+6. **Resilience:** reconnect with exponential back-off and jitter, buffer messages while offline, and secure OTA for updates.
+
+**Embedded clients:** Eclipse Paho Embedded C, coreMQTT (FreeRTOS), Zephyr's MQTT library, lwIP's MQTT app; with mbedTLS or wolfSSL for TLS.
+
+### What is Bluetooth Low Energy, and how do GAP and GATT work? {M}
+**Short answer:** Bluetooth Low Energy (BLE) is a 2.4 GHz wireless protocol designed for very low power, short-range communication (sensors, wearables, phone accessories). **GAP** (Generic Access Profile) defines how devices discover and connect: **advertisers/peripherals** broadcast advertising packets, **scanners/centrals** listen and initiate connections. **GATT** (Generic Attribute Profile) defines how data is exchanged once connected: a **server** exposes **services**, each containing **characteristics** (values with properties: read, write, notify, indicate), identified by UUIDs, and a **client** reads, writes or subscribes to them.
+
+**Typical sensor example**
+
+```
+GATT server (sensor)
+└── Service: Environmental Sensing (0x181A)
+    ├── Characteristic: Temperature (0x2A6E)   properties: read, notify
+    │    └── CCCD descriptor (client enables notifications here)
+    └── Characteristic: Humidity (0x2A6F)      properties: read, notify
+```
+
+The phone (central/GATT client) connects, discovers services, writes to the CCCD to enable notifications, and receives a notification each time the temperature changes.
+
+**Key concepts**
+
+- **Advertising:** packets every 20 ms–10 s on 3 advertising channels; can carry data without connecting (beacons, broadcast sensors).
+- **Connection interval** (7.5 ms–4 s), **peripheral latency** and **supervision timeout** trade latency for power.
+- **MTU and data length extension** decide how many bytes fit per packet (default 20 bytes of payload; up to ~244 with DLE and a larger MTU).
+- **Security:** pairing (Just Works, Passkey, Numeric Comparison, Out of Band), bonding (storing keys), LE Secure Connections (ECDH). Just Works has no man-in-the-middle protection.
+- **PHYs:** 1M, 2M (faster) and Coded (long range, 125/500 kbps).
+- Newer features: LE Audio (LC3 codec, Auracast broadcast), direction finding, periodic advertising.
+
+**Power:** a BLE sensor sleeping between connection events can average a few µA and run for years on a coin cell.
+
+**Embedded stacks:** Zephyr Bluetooth (used by nRF Connect SDK), NimBLE (Apache Mynewt, ESP-IDF), vendor stacks (TI, ST, Silicon Labs), BlueZ on Linux.
+
+### How do you choose a wireless technology for an IoT device? {M}
+**Short answer:** Match range, data rate, power budget, network topology, infrastructure and cost. **BLE** for short range, very low power and phone connectivity; **Wi-Fi** for high data rates and direct internet access with mains or large batteries; **Thread/Zigbee** (802.15.4) for low-power mesh networks in buildings (Thread with Matter for smart homes); **LoRaWAN** for kilometres of range with tiny data and multi-year battery life; **NB-IoT/LTE-M** (cellular) for wide-area coverage without your own gateways.
+
+| | BLE | Wi-Fi | Thread / Zigbee | LoRaWAN | NB-IoT / LTE-M |
+|---|---|---|---|---|---|
+| Range | 10–100 m | 30–100 m | 10–100 m per hop, mesh | 2–15 km | km (cellular) |
+| Data rate | 1–2 Mbps PHY, ~100s kbps app | 10–1000+ Mbps | 250 kbps | 0.3–50 kbps | ~60 kbps / ~1 Mbps |
+| Power | very low | high | low (routers mains-powered) | very low | low–medium (PSM, eDRX) |
+| Topology | star (mesh possible) | star (AP) | mesh | star of stars (gateways) | star (base stations) |
+| Infrastructure | phone or gateway | access point | border router | gateways + network server | operator network, SIM |
+| IP-native | no (yes over IPv6 in some profiles) | yes | Thread: IPv6; Zigbee: no | no | yes |
+| Typical use | wearables, sensors, provisioning | cameras, appliances | lighting, smart home (Matter) | agriculture, metering, asset tracking | trackers, meters, remote equipment |
+
+**Questions to ask in a design discussion**
+
+1. How much data, how often, and with what latency?
+2. Battery or mains power, and what lifetime is required?
+3. Indoor/outdoor range, and is there existing infrastructure (Wi-Fi, phones, cellular coverage)?
+4. Cost per unit (module, certification, subscription fees for cellular).
+5. Security and provisioning (how a device joins the network securely).
+6. Regulatory regions (sub-GHz frequencies differ by region).
+
+**Common combinations:** BLE for setup (phone app provisions Wi-Fi credentials) plus Wi-Fi for data; Thread devices exposed through Matter; LoRaWAN or cellular sensors with BLE for local maintenance.
+
+### How would you design a protocol gateway, for example Modbus RTU to MQTT? {H}
+**Short answer:** Split it into layers connected by queues: a **southbound** driver (RS-485 Modbus RTU client polling devices on a schedule), a **data model** that maps device registers to named, scaled values with timestamps and quality flags, and a **northbound** client (MQTT over TLS publishing values and receiving commands), plus configuration, buffering for offline periods, diagnostics and secure updates. Each side runs independently so a slow cloud connection never stalls field-bus polling.
+
+**Architecture**
+
+```
+[Modbus devices] --RS-485--> [Modbus RTU poller] --queue--> [Data model / mapping] --queue--> [MQTT client] --TLS--> [Broker]
+                                   ^                                  |                              |
+                           [Config: register map, poll rates]   [Store-and-forward buffer]   [Command handler → write queue]
+```
+
+**Design points to discuss**
+
+1. **Configuration-driven mapping:** a table per device: address, function code, register, data type (int16/uint32/float, word order), scale, units, poll period, MQTT topic. No code changes for a new device type.
+2. **Scheduling:** poll fast-changing values often and others rarely; respect inter-frame delays and timeouts; one outstanding request at a time per RS-485 bus.
+3. **Error handling:** retries with limits, mark values as stale/bad quality after timeouts, per-device health statistics, bus recovery.
+4. **Buffering:** store-and-forward in RAM/flash when the uplink is down, with a bounded size and a drop policy (oldest first) and timestamps from an RTC/NTP.
+5. **Commands (writes):** validate topic, range and permissions before writing to devices; send acknowledgements back over MQTT.
+6. **Publishing efficiency:** publish on change or with deadband, batch values into one JSON/CBOR/Protobuf message, use QoS 1 for important data.
+7. **Security:** TLS with per-device certificates, minimum broker permissions, signed firmware updates, no default passwords on a local web UI.
+8. **Observability:** logs, counters (polls, timeouts, CRC errors, publish failures), a status topic and a last-will message.
+9. **Platform:** an MCU with an RTOS for simple gateways, or embedded Linux (more protocols, containers, easier TLS and storage) for larger ones.
+
+**Interviewers are looking for:** decoupling with queues, explicit handling of failure and backlog, configuration over hard-coding, and security from the start.
