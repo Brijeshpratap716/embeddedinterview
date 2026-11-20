@@ -221,6 +221,7 @@ html.dark .qa summary:hover .qt{color:var(--accent)}
 @media (max-width:860px){.menu{display:grid}}
 @media (max-width:520px){.bar{gap:8px}.brand{font-size:16px}.chip{font-size:11px;padding:2px 5px}.tools{gap:4px}.icon{width:34px;height:34px}.pagehead h1{font-size:28px}}
 /* ---------- practice IDE ---------- */
+.ide>section{margin:0}
 .ide{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:0;min-height:calc(100vh - 60px);border-top:1px solid var(--line)}
 .ide-left{padding:22px 28px 10px;overflow:auto;max-height:calc(100vh - 60px);position:sticky;top:60px;border-right:1px solid var(--line);background:var(--surface)}
 .ide-left h1{font-size:clamp(22px,2.6vw,30px);margin:6px 0 4px}
