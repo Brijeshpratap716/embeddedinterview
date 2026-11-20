@@ -314,7 +314,7 @@ def build_problems(problems):
                     f'<td><a href="{url(p["slug"] + "/")}">{html.escape(p["title"])}</a></td><td class="tt">{html.escape(p["category"])}</td><td>{badge(p["difficulty"])}</td></tr>')
     opts = "".join(f'<option value="{slugify(c)}">{html.escape(c)}</option>' for c in cats)
     body = f"""
-<section class="wrap pagehead"><h1>Coding Practice</h1><p class="lead">{len(problems)} hands-on embedded C problems: bit manipulation, registers, drivers, buffers, RTOS patterns and parsers. Each one has a hint, a reference solution and an explanation. Open any problem in Compiler Explorer to run it.</p>
+<section class="wrap pagehead"><h1>Coding Practice</h1><p class="lead">{len(problems)} hands-on embedded C problems: bit manipulation, registers, drivers, buffers, RTOS patterns and parsers. Write your code in the browser, press Run, and hidden tests tell you instantly whether it works. Each problem has a hint, a reference solution and an explanation.</p>
 <div class="filters bank"><input id="bankQ" type="search" placeholder="Filter problems…"><select id="bankT"><option value="">All categories</option>{opts}</select>
 <select id="bankD"><option value="">All levels</option><option value="E">Easy</option><option value="M">Medium</option><option value="H">Hard</option></select>
 <label class="chk"><input type="checkbox" id="bankTodo"> Hide solved</label><span class="count" id="bankCount"></span></div></section>
