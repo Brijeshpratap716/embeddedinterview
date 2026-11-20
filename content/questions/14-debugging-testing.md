@@ -3,7 +3,7 @@ slug: debugging-testing
 title: Debugging, Testing & Tools
 icon: 🐞
 level: Intermediate
-order: 14
+order: 16
 desc: GDB, JTAG/SWD, printf vs trace, unit testing firmware, static analysis, build systems and version control.
 ---
 Interviewers often finish with "tell me about the hardest bug you fixed". These questions give you the vocabulary and the toolbox to answer well.

@@ -3,7 +3,7 @@ slug: cpp-embedded
 title: C++ for Embedded
 icon: ➕
 level: Intermediate
-order: 12
+order: 14
 desc: Classes, virtual functions, RAII, templates, constexpr, smart pointers and which C++ features are safe on a microcontroller.
 ---
 More firmware teams now use C++. Interviewers want to know you understand what each feature costs in flash, RAM and time.

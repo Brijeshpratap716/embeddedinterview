@@ -3,7 +3,7 @@ slug: data-structures
 title: Data Structures & Algorithms
 icon: 🧮
 level: Intermediate
-order: 11
+order: 12
 desc: Linked lists, ring buffers, stacks, queues, hashing, sorting and searching, written for memory-constrained systems.
 ---
 Firmware interviews ask DSA questions too, but with a twist: no heap, fixed sizes, and an eye on worst-case timing.

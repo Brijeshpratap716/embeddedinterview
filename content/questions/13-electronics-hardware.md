@@ -3,7 +3,7 @@ slug: electronics-hardware
 title: Electronics & Hardware Basics
 icon: 🔋
 level: Beginner
-order: 13
+order: 15
 desc: Ohm's law, pull-ups, level shifting, ADC and filters, power supplies, signal integrity and reading schematics.
 ---
 Firmware engineers are expected to read schematics, bring up boards and talk to hardware engineers. These are the basics that come up.
