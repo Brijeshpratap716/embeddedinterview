@@ -429,24 +429,7 @@ def build_home(topics, problems, articles, nquiz):
     prob = "".join(f'<a class="row" href="{url("problems/" + p["slug"] + "/")}"><span>{html.escape(p["title"])}</span><span class="tt">{html.escape(p["category"])}</span>{badge(p["difficulty"])}</a>' for p in featured)
     arts = "".join(f'<a class="row" href="{url("articles/" + a["slug"] + "/")}"><span>{html.escape(a["title"])}</span><span class="tt">{html.escape(a.get("tag",""))}</span></a>' for a in articles[:6])
     body = f"""
-<section class="hero"><div class="wrap herogrid">
-<div><p class="eyebrow">Firmware · Embedded C · RTOS · Linux kernel</p>
-<h1><span class="accent">Embedded interview</span> questions with detailed answers.</h1>
-<p class="lead">{total} embedded interview questions with model answers, plus coding problems you can run in the browser, quizzes and deep-dive articles: Embedded C, pointers, bit manipulation, ARM Cortex-M, RTOS, I2C/SPI/UART/CAN, Linux kernel and device drivers. Free, no sign-up.</p>
-<div class="cta"><a class="btn big" href="{url('roadmap/')}">Start the roadmap</a><a class="btn ghost big" href="{url('problems/')}">Practice coding</a></div>
-<div class="stats"><div><b>{total}</b><span>Interview Q&amp;A</span></div><div><b>{len(problems)}</b><span>Coding problems</span></div><div><b>{nquiz}</b><span>MCQs</span></div><div><b>{len(topics)}</b><span>Topics</span></div></div></div>
-<div class="term" aria-hidden="true"><div class="tbar"><i></i><i></i><i></i><span>interview.c</span></div><pre><span class="c">/* Q: set bit n of a register, atomically-safe */</span>
-<span class="k">#define</span> REG (*(<span class="k">volatile</span> uint32_t *)0x40021018u)
-
-<span class="k">static inline void</span> set_bit(<span class="k">unsigned</span> n)
-{{
-    REG |= (1u &lt;&lt; n);   <span class="c">/* read-modify-write! */</span>
-}}
-
-<span class="c">/* Interviewer: "What if an ISR touches REG?" */</span>
-<span class="c">/* You: use BSRR, or disable IRQs around the RMW */</span><span class="cur">█</span></pre></div>
-</div></section>
-<section class="wrap"><div class="sechead"><h2>Learn by topic</h2><a href="{url('topics/')}">All topics →</a></div><div class="grid cards">{cards}</div></section>
+<section class="wrap home-top"><div class="sechead"><h1>Learn by topic</h1><a href="{url('topics/')}">All topics →</a></div><div class="grid cards">{cards}</div></section>
 <section class="wrap two">
 <div class="panel"><div class="sechead"><h2>Practice problems</h2><a href="{url('problems/')}">See all →</a></div>{prob}</div>
 <div class="panel"><div class="sechead"><h2>Latest articles</h2><a href="{url('articles/')}">See all →</a></div>{arts}</div>

@@ -259,3 +259,6 @@ html.dark .qa summary:hover .qt{color:var(--accent)}
 
 .byline{font-size:.85rem;color:var(--muted);margin:10px 0 0}
 .byline a{color:inherit;text-decoration:underline}
+
+.sechead h1{margin:0;font-size:28px}
+.home-top{margin-top:32px}
