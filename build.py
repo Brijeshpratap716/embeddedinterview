@@ -90,7 +90,7 @@ def page(path, title, body, desc="", active="", schema=None):
     nav = "".join(
         f'<a href="{root}{url(h)}" class="{"on" if active == h else ""}">{n}</a>' for n, h in NAV)
     canon = SITE_URL + "/" + (path[: -len("index.html")] if path.endswith("index.html") else path)
-    full_title = f"{title} | {SITE_NAME}" if title != SITE_NAME else f"{SITE_NAME} — Embedded Systems Interview Preparation"
+    full_title = f"{title} | {SITE_NAME}" if title != SITE_NAME else "Embedded Interview Questions and Answers: Embedded C, RTOS, Linux Drivers | EmbeddedInterview"
     ld = f'<script type="application/ld+json">{json.dumps(schema)}</script>' if schema else ""
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -104,6 +104,9 @@ def page(path, title, body, desc="", active="", schema=None):
 <meta property="og:description" content="{html.escape(desc)}">
 <meta property="og:type" content="website">
 <meta property="og:url" content="{canon}">
+<meta property="og:image" content="{SITE_URL}/static/og.png">
+<meta property="og:site_name" content="{SITE_NAME}">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="{root}static/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -421,8 +424,8 @@ def build_home(topics, problems, articles, nquiz):
     body = f"""
 <section class="hero"><div class="wrap herogrid">
 <div><p class="eyebrow">Firmware · Embedded C · RTOS · Linux kernel</p>
-<h1>Crack your next <span class="accent">embedded</span> interview.</h1>
-<p class="lead">Hand-written questions with model answers, hands-on coding problems, quizzes and deep-dive articles, from C basics up to Linux device drivers. Free, no sign-up.</p>
+<h1><span class="accent">Embedded interview</span> questions with detailed answers.</h1>
+<p class="lead">{total} embedded interview questions with model answers, plus coding problems you can run in the browser, quizzes and deep-dive articles: Embedded C, pointers, bit manipulation, ARM Cortex-M, RTOS, I2C/SPI/UART/CAN, Linux kernel and device drivers. Free, no sign-up.</p>
 <div class="cta"><a class="btn big" href="{url('roadmap/')}">Start the roadmap</a><a class="btn ghost big" href="{url('problems/')}">Practice coding</a></div>
 <div class="stats"><div><b>{total}</b><span>Interview Q&amp;A</span></div><div><b>{len(problems)}</b><span>Coding problems</span></div><div><b>{nquiz}</b><span>MCQs</span></div><div><b>{len(topics)}</b><span>Topics</span></div></div></div>
 <div class="term" aria-hidden="true"><div class="tbar"><i></i><i></i><i></i><span>interview.c</span></div><pre><span class="c">/* Q: set bit n of a register, atomically-safe */</span>
@@ -444,11 +447,13 @@ def build_home(topics, problems, articles, nquiz):
 <section class="wrap"><div class="banner"><div><h2>Test yourself in 5 minutes</h2><p>10 random MCQs with explanations. Track your best score.</p></div><a class="btn big" href="{url('quiz/')}">Take the quiz</a></div></section>
 <section class="wrap how"><h2>How to use this site</h2><div class="grid three">
 <div><b>1. Read</b><p>Work through a topic. Each answer is written the way you would say it in an interview: the short version first, then the detail.</p></div>
-<div><b>2. Code</b><p>Solve the practice problems without looking. Run your code in Compiler Explorer, then compare with the reference solution.</p></div>
+<div><b>2. Code</b><p>Solve the practice problems in the built-in editor. Press Run and hidden tests check your code instantly; then compare with the reference solution.</p></div>
 <div><b>3. Track</b><p>Mark questions done. Your progress is saved in your browser, so you can see what is left before the interview.</p></div></div></section>"""
-    schema = {"@context": "https://schema.org", "@type": "WebSite", "name": SITE_NAME, "url": SITE_URL,
-              "potentialAction": {"@type": "SearchAction", "target": SITE_URL + "/questions/?q={q}", "query-input": "required name=q"}}
-    write("index.html", page("index.html", SITE_NAME, body, "Free embedded systems interview preparation: C, Embedded C, RTOS, ARM Cortex-M, I2C/SPI/UART/CAN, Linux device drivers. Questions, coding problems, quizzes.", "", schema))
+    schema = {"@context": "https://schema.org", "@graph": [
+        {"@type": "WebSite", "name": SITE_NAME, "alternateName": "Embedded Interview", "url": SITE_URL,
+         "potentialAction": {"@type": "SearchAction", "target": SITE_URL + "/questions/?q={q}", "query-input": "required name=q"}},
+        {"@type": "Organization", "name": SITE_NAME, "url": SITE_URL, "logo": SITE_URL + "/static/og.png"}]}
+    write("index.html", page("index.html", SITE_NAME, body, f"{total} embedded interview questions and answers with detailed explanations: Embedded C, RTOS, ARM Cortex-M, I2C, SPI, UART, CAN, Linux device drivers, plus coding practice and quizzes.", "", schema))
 
 
 def build_search(topics, problems, articles):
