@@ -4,81 +4,372 @@ title: Linux Kernel & Device Drivers
 icon: 🐧
 level: Advanced
 order: 8
-desc: Kernel modules, char drivers, the driver model, device tree, interrupts, bottom halves, locking, memory, DMA and DRM.
+desc: Kernel modules, char drivers with ioctl, the driver model, device tree, I2C/SPI client drivers, GPIO/pinctrl/clocks, interrupts, bottom halves, locking, wait queues, timers, memory, DMA, mmap, power management, PREEMPT_RT, debugging and DRM.
 ---
-For Linux BSP and driver roles, expect questions on kernel internals, how drivers bind to hardware, and concurrency in the kernel. Answers refer to recent mainline kernels (6.x).
+For Linux BSP and driver roles, expect questions on kernel internals, how drivers bind to hardware, and concurrency in the kernel. Answers refer to recent mainline kernels (6.x). Each answer gives a short version first, then details, code and the follow-ups interviewers ask.
 
 ### What is the difference between kernel space and user space? {E}
-Kernel space runs in the CPU's privileged mode (EL1 on ARM64, ring 0 on x86) with full access to hardware and all memory. User space runs unprivileged in isolated virtual address spaces, one per process. User programs enter the kernel only through **system calls**, exceptions and interrupts. A bug in a user process kills that process; a bug in kernel code can crash or corrupt the whole system.
+**Short answer:** Kernel space runs in the CPU's privileged mode (EL1 on ARM64, ring 0 on x86) with full access to hardware and all memory. User space runs unprivileged (EL0, ring 3) in isolated virtual address spaces, one per process. User programs enter the kernel only through **system calls**, exceptions (page faults) and interrupts. A bug in a user process kills that process; a bug in kernel code can crash or corrupt the whole system.
+
+| | User space | Kernel space |
+|---|---|---|
+| CPU mode | EL0 / ring 3 | EL1 / ring 0 |
+| Memory | own virtual address space, protected | all memory, shared by all kernel code |
+| Hardware access | only via the kernel (or mapped regions like UIO/VFIO) | direct |
+| Failure impact | process crashes (SIGSEGV) | oops/panic, whole system |
+| Libraries | libc and anything | no libc; kernel APIs only, no floating point by default |
+| Stack | large, grows | small, fixed (16 KB on ARM64/x86-64) |
+
+**How a system call works (ARM64):** user code puts the syscall number in `x8` and arguments in `x0`–`x5`, executes `svc #0`, the CPU switches to EL1 and jumps to the exception vector, the kernel saves registers, looks up `sys_call_table[x8]`, runs the handler, puts the return value in `x0` and returns with `eret`. On x86-64 it is the `syscall` instruction with the number in `rax`.
+
+**Address-space layout:** on ARM64 the kernel uses the upper half (TTBR1) and user space the lower half (TTBR0), so system calls do not need to switch page tables; KPTI (Meltdown mitigation) changes this on affected CPUs.
+
+**Follow-ups:** why the kernel cannot use floating point freely (FP state is not saved on kernel entry; use `kernel_neon_begin/end`), and why the kernel stack is small (one per thread; deep recursion and large locals are bugs).
 
 ### What is a loadable kernel module? {E}
-A piece of kernel code (`.ko`) that can be inserted and removed at run time without rebooting:
+**Short answer:** A loadable kernel module (`.ko` file) is kernel code that can be inserted into and removed from a running kernel without rebooting. It has an init function (run on load) and an exit function (run on unload), and it can use only symbols the kernel exports (`EXPORT_SYMBOL`, `EXPORT_SYMBOL_GPL`). Most drivers are built as modules so the kernel image stays small and hardware support loads on demand.
 
 ```c
 #include <linux/module.h>
 #include <linux/init.h>
 
-static int __init hello_init(void) { pr_info("hello\n"); return 0; }
-static void __exit hello_exit(void) { pr_info("bye\n"); }
+static int debug;
+module_param(debug, int, 0644);                 /* /sys/module/hello/parameters/debug */
+MODULE_PARM_DESC(debug, "enable debug output");
+
+static int __init hello_init(void)
+{
+    pr_info("hello: loaded, debug=%d\n", debug);
+    return 0;                                   /* non-zero = load fails */
+}
+
+static void __exit hello_exit(void)
+{
+    pr_info("hello: unloaded\n");
+}
 
 module_init(hello_init);
 module_exit(hello_exit);
 MODULE_LICENSE("GPL");
+MODULE_AUTHOR("You");
 MODULE_DESCRIPTION("Minimal example");
 ```
 
-Load with `insmod` or `modprobe` (which also loads dependencies), remove with `rmmod`, and list with `lsmod`. Without a GPL-compatible `MODULE_LICENSE` the kernel is tainted and GPL-only symbols are unavailable.
+**Key points**
+
+- `__init` code is discarded after loading (for built-in code, after boot); `__exit` code is dropped if the module is built in.
+- Without a GPL-compatible `MODULE_LICENSE`, the kernel is **tainted** and GPL-only symbols are unavailable.
+- Parameters can be given at load time (`insmod hello.ko debug=1`) or on the kernel command line for built-in code (`hello.debug=1`).
+- Commands: `insmod`/`modprobe` to load, `rmmod`/`modprobe -r` to remove, `lsmod`, `modinfo hello.ko`.
+- The module must match the kernel's version and configuration (`vermagic`); with `CONFIG_MODVERSIONS`, symbol CRCs are checked too. Secure-boot systems may require signed modules.
+
+**Built-in vs module:** `obj-y` (always in the image, needed for the root filesystem or early boot) vs `obj-m` (loadable). Kconfig choices `y`/`m`/`n`.
 
 ### What is the difference between insmod and modprobe? {E}
-`insmod file.ko` loads exactly one module file and fails if its dependencies are not loaded. `modprobe name` looks the module up in `/lib/modules/$(uname -r)`, reads `modules.dep` (generated by `depmod`) and loads dependencies first. It also applies options and aliases from `/etc/modprobe.d/` and is what udev uses to autoload drivers from `modalias` strings.
+**Short answer:** `insmod file.ko` loads exactly the module file you give it and fails if the modules it depends on are not already loaded. `modprobe name` finds the module by name under `/lib/modules/$(uname -r)`, reads the dependency list in `modules.dep` (generated by `depmod`) and loads dependencies first, applies options and aliases from `/etc/modprobe.d/`, and is what udev uses to auto-load drivers.
+
+| | insmod | modprobe |
+|---|---|---|
+| Argument | path to a `.ko` | module name or alias |
+| Dependencies | not handled | loaded automatically |
+| Config files | ignored | `/etc/modprobe.d/*.conf` (options, blacklist, aliases) |
+| Removal | `rmmod` | `modprobe -r` (also removes unused dependencies) |
+
+**How auto-loading works**
+
+1. A driver declares the devices it supports with `MODULE_DEVICE_TABLE(of|pci|usb|i2c, ...)`.
+2. `depmod` turns those tables into aliases in `modules.alias`.
+3. When the kernel creates a device, it sends a uevent with a `MODALIAS` (e.g. `of:NtempT(null)Cti,tmp102`).
+4. udev runs `modprobe <modalias>`, which finds and loads the matching module.
+
+**Useful commands:** `modinfo -F depends mymod`, `cat /sys/module/mymod/parameters/*`, `modprobe --show-depends mymod`, and `blacklist mymod` in a modprobe config file to prevent auto-loading.
 
 ### What are the types of device drivers in Linux? {E}
-- **Character drivers**: byte-stream access through `/dev` nodes with `open`, `read`, `write`, `ioctl`, `mmap` (serial ports, sensors, custom hardware).
-- **Block drivers**: random-access fixed-size blocks through the block layer and I/O scheduler (eMMC, NVMe, SD).
-- **Network drivers**: packet interfaces (`eth0`, `wlan0`) registered with `net_device`, with no `/dev` node.
+**Short answer:** The classic three are **character drivers** (byte-stream access through `/dev` nodes with `open`, `read`, `write`, `ioctl`, `mmap`), **block drivers** (random-access, fixed-size blocks through the block layer: eMMC, NVMe, SD) and **network drivers** (packet interfaces such as `eth0` registered as `net_device`, with no `/dev` node). In practice most drivers plug into a **subsystem framework** (input, IIO, ALSA, V4L2, DRM, GPIO, regulator, power supply, hwmon, PWM, watchdog...) that provides the user-space interface for them.
 
-Most real drivers are built on a **subsystem** framework instead of a raw char device: input, IIO, ALSA, V4L2, DRM, GPIO, regulator, power supply, and so on.
+| Type | Interface | Examples |
+|---|---|---|
+| Character | `/dev/xxx`, file operations | serial ports (`tty`), `/dev/mem`, custom FPGA interfaces |
+| Block | `/dev/mmcblk0`, `/dev/nvme0n1`, via filesystems | eMMC, SD, NVMe, virtio-blk |
+| Network | sockets, `ip link` | Ethernet MACs, Wi-Fi, CAN (SocketCAN) |
+| Subsystem-based | the subsystem's standard API | input (`/dev/input/event*`), IIO sensors (`/sys/bus/iio`), ALSA, V4L2 (`/dev/video*`), DRM (`/dev/dri/*`) |
+
+**Why use subsystems:** user-space tools work unchanged (a touchscreen driver using input works with every GUI; an IIO sensor works with `iio_readdev`), and the subsystem handles buffering, locking, sysfs and power management.
+
+**Another classification:** by bus (platform, I2C, SPI, PCI, USB) — the bus decides how the driver is matched and how it talks to the device; the subsystem decides what interface it offers. An I2C temperature sensor is "an I2C client driver registered with hwmon or IIO".
 
 ### How do you write a character driver? {M}
-1. Allocate a device number: `alloc_chrdev_region(&devt, 0, 1, "mydev")`.
-2. Initialise and add a `struct cdev` with your `file_operations`: `cdev_init(&cdev, &fops); cdev_add(&cdev, devt, 1)`.
-3. Create a class and device so udev makes `/dev/mydev`: `class_create("mydev")` and `device_create(...)`.
-4. Implement the `file_operations` callbacks: `.open`, `.release`, `.read`, `.write`, `.unlocked_ioctl`, `.poll`, `.mmap`.
-5. Clean up in reverse order on exit or on error paths.
+**Short answer:** Allocate a device number (`alloc_chrdev_region`), set up a `struct cdev` with your `file_operations` and add it (`cdev_init`, `cdev_add`), create a class and device so udev creates the `/dev` node (`class_create`, `device_create`), implement the operations (`open`, `release`, `read`, `write`, `unlocked_ioctl`, `poll`, `mmap`), and undo everything in reverse order on exit and on error paths. For a single simple device, `misc_register()` does the number, cdev and node creation in one call.
 
-For a single simple device, `misc_register()` with a `struct miscdevice` does steps 1–3 in one call. See the article *Writing your first Linux character driver*.
-
-### What are major and minor numbers? {E}
-A device number (`dev_t`) has a **major** number identifying the driver and a **minor** number identifying the device instance the driver handles. `ls -l /dev/ttyS0` shows them (major 4, minor 64). Use `MAJOR()`, `MINOR()` and `MKDEV()` to work with them; allocate dynamically with `alloc_chrdev_region` instead of hard-coding a major.
-
-### Why use copy_to_user and copy_from_user instead of memcpy? {M}
-A user pointer may be invalid, point into kernel memory, or refer to a page that is not resident. `copy_from_user`/`copy_to_user`:
-
-- check that the address range belongs to user space (`access_ok`),
-- handle page faults safely, returning the number of bytes **not** copied instead of crashing,
-- respect hardware protections like ARM PAN/SMAP that block direct kernel access to user memory.
-
-Always check the return value and return `-EFAULT` if it is non-zero. For single values use `get_user`/`put_user`.
-
-### What is ioctl and how do you define commands? {M}
-`ioctl` is a catch-all system call for device-specific operations that do not fit read/write. Define command numbers with the macros so they encode direction, size and a magic type:
+**Minimal misc-device driver with a buffer**
 
 ```c
-#define MYDEV_MAGIC 'M'
-#define MYDEV_RESET    _IO(MYDEV_MAGIC, 0)
-#define MYDEV_GET_CFG  _IOR(MYDEV_MAGIC, 1, struct mydev_cfg)
-#define MYDEV_SET_CFG  _IOW(MYDEV_MAGIC, 2, struct mydev_cfg)
+#include <linux/module.h>
+#include <linux/miscdevice.h>
+#include <linux/fs.h>
+#include <linux/uaccess.h>
+#include <linux/mutex.h>
+
+#define BUF_SZ 256
+static char buf[BUF_SZ];
+static size_t len;
+static DEFINE_MUTEX(lock);
+
+static ssize_t demo_read(struct file *f, char __user *ubuf, size_t n, loff_t *pos)
+{
+    ssize_t ret;
+    mutex_lock(&lock);
+    ret = simple_read_from_buffer(ubuf, n, pos, buf, len);   /* handles *pos and copy_to_user */
+    mutex_unlock(&lock);
+    return ret;
+}
+
+static ssize_t demo_write(struct file *f, const char __user *ubuf, size_t n, loff_t *pos)
+{
+    if (n > BUF_SZ) n = BUF_SZ;
+    mutex_lock(&lock);
+    if (copy_from_user(buf, ubuf, n)) { mutex_unlock(&lock); return -EFAULT; }
+    len = n;
+    mutex_unlock(&lock);
+    return n;
+}
+
+static const struct file_operations demo_fops = {
+    .owner = THIS_MODULE,
+    .read  = demo_read,
+    .write = demo_write,
+    .llseek = default_llseek,
+};
+
+static struct miscdevice demo_dev = {
+    .minor = MISC_DYNAMIC_MINOR,
+    .name  = "demo",                 /* creates /dev/demo */
+    .fops  = &demo_fops,
+    .mode  = 0666,
+};
+module_misc_device(demo_dev);
+MODULE_LICENSE("GPL");
 ```
 
-Implement `.unlocked_ioctl` (no Big Kernel Lock) and `.compat_ioctl` for 32-bit user space on a 64-bit kernel. Use fixed-size types in structs so 32- and 64-bit layouts match. New interfaces often prefer sysfs, configfs or netlink.
+Test: `echo hello > /dev/demo; cat /dev/demo`.
 
-### What is the Linux device model (bus, device, driver)? {M}
-The kernel represents hardware as **devices** sitting on **buses** (platform, I2C, SPI, PCI, USB). **Drivers** register with a bus and declare which devices they support (an ID table or OF match table). When a device and driver match, the bus core calls the driver's `probe()`; on removal or unbind it calls `remove()`. All of this is exposed in `/sys/bus`, `/sys/devices` and `/sys/class`. The result is that drivers do not hard-code board details; the device tree or ACPI describes the hardware.
-
-### What is a platform device and platform driver? {M}
-Platform devices are SoC peripherals that are not on a discoverable bus: they sit at fixed memory addresses described by the device tree. A platform driver:
+**Full cdev path (for multiple minors or more control)**
 
 ```c
+static dev_t devt; static struct cdev cdev; static struct class *cls;
+
+static int __init my_init(void)
+{
+    int ret = alloc_chrdev_region(&devt, 0, 1, "mydev");
+    if (ret) return ret;
+    cdev_init(&cdev, &demo_fops);
+    ret = cdev_add(&cdev, devt, 1);
+    if (ret) goto err_region;
+    cls = class_create("mydev");                     /* 6.4+: no THIS_MODULE argument */
+    if (IS_ERR(cls)) { ret = PTR_ERR(cls); goto err_cdev; }
+    if (IS_ERR(device_create(cls, NULL, devt, NULL, "mydev0"))) { ret = -ENOMEM; goto err_class; }
+    return 0;
+err_class:  class_destroy(cls);
+err_cdev:   cdev_del(&cdev);
+err_region: unregister_chrdev_region(devt, 1);
+    return ret;
+}
+```
+
+**Important details**
+
+- `read`/`write` return the number of bytes transferred, 0 for end-of-file, or a negative error code (`-EFAULT`, `-EAGAIN` for non-blocking with no data, `-ERESTARTSYS` if interrupted by a signal).
+- Update `*pos` for seekable devices.
+- Use `file->private_data` (set in `open`) to reach per-device state; with a real device, use `container_of(inode->i_cdev, struct mydev, cdev)`.
+- Protect shared state: several processes can call `read`/`write` concurrently.
+- In real hardware drivers, create the device from `probe()` so it exists only when the hardware does.
+
+### How do you implement ioctl in a character driver, with a complete example? {H}
+**Short answer:** Define command numbers in a header shared with user space using `_IO`, `_IOR`, `_IOW` and `_IOWR` (they encode direction, a magic type, a number and the argument size), implement `.unlocked_ioctl` with a `switch` on the command, copy arguments with `copy_from_user`/`copy_to_user`, return `-ENOTTY` for unknown commands, and add `.compat_ioctl = compat_ptr_ioctl` so 32-bit programs work on a 64-bit kernel (use fixed-size types so layouts match).
+
+**Shared header (`mydev_ioctl.h`)**
+
+```c
+#include <linux/ioctl.h>
+#include <linux/types.h>
+
+struct mydev_cfg {
+    __u32 sample_rate;      /* fixed-size types: same layout for 32- and 64-bit user space */
+    __u32 gain;
+    __u64 reserved;         /* room for future fields; must be zero */
+};
+
+#define MYDEV_MAGIC   'M'
+#define MYDEV_RESET   _IO(MYDEV_MAGIC, 0)
+#define MYDEV_GET_CFG _IOR(MYDEV_MAGIC, 1, struct mydev_cfg)
+#define MYDEV_SET_CFG _IOW(MYDEV_MAGIC, 2, struct mydev_cfg)
+#define MYDEV_GET_CNT _IOR(MYDEV_MAGIC, 3, __u32)
+```
+
+**Driver side**
+
+```c
+static long mydev_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
+{
+    struct mydev *d = f->private_data;
+    void __user *uarg = (void __user *)arg;
+    struct mydev_cfg cfg;
+    long ret = 0;
+
+    if (_IOC_TYPE(cmd) != MYDEV_MAGIC) return -ENOTTY;
+
+    mutex_lock(&d->lock);
+    switch (cmd) {
+    case MYDEV_RESET:
+        mydev_hw_reset(d);
+        break;
+    case MYDEV_GET_CFG:
+        if (copy_to_user(uarg, &d->cfg, sizeof d->cfg)) ret = -EFAULT;
+        break;
+    case MYDEV_SET_CFG:
+        if (copy_from_user(&cfg, uarg, sizeof cfg)) { ret = -EFAULT; break; }
+        if (cfg.reserved || cfg.sample_rate == 0 || cfg.sample_rate > 100000 || cfg.gain > 7) {
+            ret = -EINVAL; break;                   /* validate everything from user space */
+        }
+        d->cfg = cfg;
+        mydev_hw_apply(d);
+        break;
+    case MYDEV_GET_CNT:
+        ret = put_user(d->irq_count, (__u32 __user *)uarg);
+        break;
+    default:
+        ret = -ENOTTY;                              /* conventional "unknown ioctl" */
+    }
+    mutex_unlock(&d->lock);
+    return ret;
+}
+
+static const struct file_operations mydev_fops = {
+    .owner          = THIS_MODULE,
+    .open           = mydev_open,
+    .release        = mydev_release,
+    .unlocked_ioctl = mydev_ioctl,
+    .compat_ioctl   = compat_ptr_ioctl,            /* fine because the structs are layout-identical */
+};
+```
+
+**User space**
+
+```c
+int fd = open("/dev/mydev0", O_RDWR);
+struct mydev_cfg c = { .sample_rate = 1000, .gain = 2 };
+if (ioctl(fd, MYDEV_SET_CFG, &c) < 0) perror("SET_CFG");
+```
+
+**Interview points**
+
+- `unlocked_ioctl` means no Big Kernel Lock: you provide your own locking.
+- Never trust user input: check ranges, reserved fields and sizes, and never pass a user pointer to hardware.
+- `_IOR` means user space **reads** (kernel writes to user memory).
+- Check `capable(CAP_SYS_ADMIN)` for privileged operations.
+- Alternatives for new interfaces: sysfs attributes (single values), configfs, netlink, or a subsystem's standard API, which reviewers often prefer over custom ioctls.
+
+### What are major and minor numbers? {E}
+**Short answer:** Every device node has a device number (`dev_t`) made of a **major** number, which identifies the driver, and a **minor** number, which the driver uses to identify the device instance. `ls -l /dev/ttyS0` shows `4, 64` (major 4, minor 64). Use `MAJOR()`, `MINOR()` and `MKDEV()` to work with them, and allocate numbers dynamically with `alloc_chrdev_region` rather than hard-coding a major.
+
+**Details**
+
+- `dev_t` is 32 bits: 12 bits major and 20 bits minor.
+- Character and block devices have separate number spaces; `/proc/devices` lists registered majors.
+- The `/dev` node is just a pointer (type + major + minor); `mknod /dev/x c 240 0` creates one manually, but devtmpfs and udev normally create them automatically when `device_create()` is called.
+- In `open()`, a driver can find the instance with `iminor(inode)` or, better, `container_of(inode->i_cdev, struct mydev, cdev)`.
+- Well-known fixed majors exist (1 = mem, 4 = tty, 8 = SCSI disks), documented in `Documentation/admin-guide/devices.txt`; new drivers should not take fixed ones.
+- Misc devices all share major 10 with different minors.
+
+### Why use copy_to_user and copy_from_user instead of memcpy? {M}
+**Short answer:** A pointer from user space is untrusted: it may be invalid, point into kernel memory, or refer to a page that is not resident yet. `copy_from_user`/`copy_to_user` check that the range is in user space (`access_ok`), handle page faults safely (returning the number of bytes **not** copied instead of crashing), and temporarily lift hardware protections such as ARM PAN and x86 SMAP that block the kernel from touching user memory by accident. A plain `memcpy` could crash the kernel or be used to read or overwrite kernel memory.
+
+```c
+if (copy_from_user(&cfg, ubuf, sizeof cfg))
+    return -EFAULT;                 /* non-zero return = some bytes failed */
+
+if (put_user(value, (u32 __user *)arg))   /* single values: get_user / put_user */
+    return -EFAULT;
+```
+
+**Details**
+
+- These functions may **sleep** (page faults can require reading from disk), so they cannot be called in atomic context or with a spinlock held. Copy into a kernel buffer first, then take the spinlock.
+- The `__user` annotation marks user pointers; `sparse` (`make C=1`) warns when they are dereferenced directly.
+- For strings use `strncpy_from_user`, or `memdup_user` / `memdup_user_nul` to allocate and copy in one step.
+- **Double-fetch bugs:** reading the same user memory twice (e.g. once to read a length, again to copy) lets another thread change it in between; copy once into kernel memory and validate the copy.
+- Hardening (`CONFIG_HARDENED_USERCOPY`) checks that kernel objects copied out are within their slab bounds.
+
+### What is the Linux device model (bus, device, driver)? {M}
+**Short answer:** The kernel represents hardware as **devices** that sit on **buses** (platform, I2C, SPI, PCI, USB, virtio). **Drivers** register with a bus and declare which devices they support (ID tables, OF/ACPI match tables). When the bus core finds a device and a driver that match, it calls the driver's `probe()`; on removal or unbinding it calls `remove()`. Everything is exposed in sysfs (`/sys/bus`, `/sys/devices`, `/sys/class`), and board-specific details come from the device tree or ACPI rather than driver code.
+
+**Core objects**
+
+| Object | Role |
+|---|---|
+| `struct bus_type` | knows how to match devices and drivers (`match()`), probe, uevents |
+| `struct device` | one instance of hardware; parent/child hierarchy, power state, resources, `of_node` |
+| `struct device_driver` | probe/remove/shutdown, PM ops, match tables |
+| `struct class` | a user-facing grouping (input, net, tty, backlight), independent of the bus |
+| `struct kobject` | reference counting and sysfs representation underneath all of these |
+
+**Matching order for platform devices:** device tree `compatible` → ACPI ID → ID table (`platform_device_id`) → driver name.
+
+**Probe lifecycle**
+
+1. The device is registered (from the device tree at boot, by a bus scan such as PCI/USB enumeration, or by hot-plug).
+2. The core tries each driver on that bus; the first match runs `probe()`.
+3. If `probe()` returns `-EPROBE_DEFER` (a needed clock, regulator or GPIO provider is not ready yet), the core retries later.
+4. On `remove()` (module unload, unbind, hot-unplug), the driver releases everything; `devm_` resources are freed automatically after `remove()`.
+
+**Manual binding:** `echo 1-0048 > /sys/bus/i2c/drivers/tmp102/unbind` and `.../bind`; `driver_override` forces a specific driver (used with VFIO).
+
+**Benefit:** one driver works on any board; the same kernel image boots many boards; power management walks the device hierarchy in the correct order (children suspend before parents).
+
+### What is a platform device and platform driver? {M}
+**Short answer:** Platform devices are peripherals that are not on a discoverable bus: SoC blocks at fixed memory addresses (UARTs, timers, I2C/SPI controllers, GPIO banks, display controllers), usually described in the device tree. A platform driver registers a `struct platform_driver` with an OF match table; in `probe()` it gets its memory region, interrupts, clocks, resets and regulators from the device's resources and sets up the hardware.
+
+```c
+#include <linux/module.h>
+#include <linux/platform_device.h>
+#include <linux/io.h>
+#include <linux/clk.h>
+#include <linux/interrupt.h>
+
+struct mydev { void __iomem *base; struct clk *clk; int irq; };
+
+static irqreturn_t mydev_irq(int irq, void *data)
+{
+    struct mydev *d = data;
+    u32 st = readl(d->base + 0x04);
+    if (!st) return IRQ_NONE;                 /* not ours (shared line) */
+    writel(st, d->base + 0x04);               /* acknowledge */
+    return IRQ_HANDLED;
+}
+
+static int mydev_probe(struct platform_device *pdev)
+{
+    struct device *dev = &pdev->dev;
+    struct mydev *d = devm_kzalloc(dev, sizeof(*d), GFP_KERNEL);
+    int ret;
+
+    if (!d) return -ENOMEM;
+    d->base = devm_platform_ioremap_resource(pdev, 0);
+    if (IS_ERR(d->base)) return PTR_ERR(d->base);
+
+    d->clk = devm_clk_get_enabled(dev, NULL);          /* get + prepare + enable, auto-disabled */
+    if (IS_ERR(d->clk)) return dev_err_probe(dev, PTR_ERR(d->clk), "no clock\n");
+
+    d->irq = platform_get_irq(pdev, 0);
+    if (d->irq < 0) return d->irq;
+    ret = devm_request_irq(dev, d->irq, mydev_irq, 0, dev_name(dev), d);
+    if (ret) return ret;
+
+    platform_set_drvdata(pdev, d);
+    dev_info(dev, "probed, version 0x%x\n", readl(d->base));
+    return 0;
+}
+
 static const struct of_device_id mydev_of_match[] = {
     { .compatible = "acme,mydev" },
     { }
@@ -87,182 +378,1074 @@ MODULE_DEVICE_TABLE(of, mydev_of_match);
 
 static struct platform_driver mydev_driver = {
     .probe  = mydev_probe,
-    .remove = mydev_remove,
     .driver = { .name = "mydev", .of_match_table = mydev_of_match },
 };
 module_platform_driver(mydev_driver);
+MODULE_LICENSE("GPL");
 ```
 
-In `probe`, get resources with `devm_platform_ioremap_resource()`, `platform_get_irq()`, `devm_clk_get()` and so on.
-
-### What is the device tree and why is it used? {M}
-A data structure that describes hardware that cannot be discovered at run time: CPUs, memory, peripherals, their addresses, interrupts, clocks, GPIOs and pin configuration. Source files (`.dts`/`.dtsi`) are compiled by `dtc` into a binary blob (`.dtb`) that the bootloader passes to the kernel. This lets one kernel image support many boards, since board details live in data instead of C code.
+**Matching device tree node**
 
 ```dts
-i2c1: i2c@40005400 {
-    compatible = "st,stm32f7-i2c";
-    reg = <0x40005400 0x400>;
-    interrupts = <31>, <32>;
-    clocks = <&rcc I2C1_K>;
-    #address-cells = <1>;
-    #size-cells = <0>;
+mydev@40010000 {
+    compatible = "acme,mydev";
+    reg = <0x40010000 0x1000>;
+    interrupts = <GIC_SPI 45 IRQ_TYPE_LEVEL_HIGH>;
+    clocks = <&ccu 12>;
+};
+```
 
-    temp@48 {
-        compatible = "ti,tmp102";
-        reg = <0x48>;
+**Tips:** use `dev_err_probe()` for errors (it stays quiet for `-EPROBE_DEFER`), store per-device state in a struct (no globals, so multiple instances work), and use `of_device_get_match_data()` to pass per-variant data from the match table.
+
+### How do you write an I2C (or SPI) client driver? {M}
+**Short answer:** Register a `struct i2c_driver` with an OF match table and an `i2c_device_id` table. In `probe(struct i2c_client *client)` you get the device's address and adapter; talk to it with `i2c_smbus_read_byte_data()`/`i2c_smbus_write_byte_data()`, `i2c_transfer()` for combined messages, or more commonly through **regmap** (`devm_regmap_init_i2c`). Then register with the right subsystem (hwmon, IIO, input...). These calls **sleep**, so use them only in process context (threaded IRQs, workqueues), never in a hard IRQ handler or under a spinlock.
+
+```c
+#include <linux/module.h>
+#include <linux/i2c.h>
+#include <linux/regmap.h>
+
+#define REG_ID   0x0F
+#define REG_CTRL 0x20
+
+struct mysensor { struct regmap *map; };
+
+static const struct regmap_config mysensor_regmap = {
+    .reg_bits = 8, .val_bits = 8, .max_register = 0x7F,
+};
+
+static int mysensor_probe(struct i2c_client *client)
+{
+    struct mysensor *s = devm_kzalloc(&client->dev, sizeof(*s), GFP_KERNEL);
+    unsigned int id;
+    int ret;
+
+    if (!s) return -ENOMEM;
+    s->map = devm_regmap_init_i2c(client, &mysensor_regmap);
+    if (IS_ERR(s->map)) return PTR_ERR(s->map);
+
+    ret = regmap_read(s->map, REG_ID, &id);
+    if (ret) return dev_err_probe(&client->dev, ret, "no response at 0x%02x\n", client->addr);
+    if (id != 0x33) return dev_err_probe(&client->dev, -ENODEV, "unexpected id 0x%02x\n", id);
+
+    ret = regmap_update_bits(s->map, REG_CTRL, 0x0F, 0x07);   /* enable axes, set rate */
+    if (ret) return ret;
+
+    i2c_set_clientdata(client, s);
+    return 0;                                   /* then register with IIO/hwmon/input */
+}
+
+static const struct of_device_id mysensor_of_match[] = { { .compatible = "acme,mysensor" }, { } };
+MODULE_DEVICE_TABLE(of, mysensor_of_match);
+static const struct i2c_device_id mysensor_id[] = { { "mysensor" }, { } };
+MODULE_DEVICE_TABLE(i2c, mysensor_id);
+
+static struct i2c_driver mysensor_driver = {
+    .driver   = { .name = "mysensor", .of_match_table = mysensor_of_match },
+    .probe    = mysensor_probe,
+    .id_table = mysensor_id,
+};
+module_i2c_driver(mysensor_driver);
+MODULE_LICENSE("GPL");
+```
+
+```dts
+&i2c1 {
+    status = "okay";
+    clock-frequency = <400000>;
+    sensor@18 {
+        compatible = "acme,mysensor";
+        reg = <0x18>;
+        interrupt-parent = <&gpio2>;
+        interrupts = <5 IRQ_TYPE_EDGE_RISING>;
     };
 };
 ```
 
-Bindings (in `Documentation/devicetree/bindings`, YAML schemas) define which properties each `compatible` requires.
+**SPI is almost identical:** `struct spi_driver`, `probe(struct spi_device *spi)`, `spi_setup()` for mode/speed, `spi_sync()`/`spi_write_then_read()` or `devm_regmap_init_spi()`, and `spi-max-frequency` in the device tree.
+
+**Why regmap:** one register API for I2C, SPI and MMIO, a register cache (fewer bus transactions, restore after suspend), range checks, and a debugfs dump of all registers (`/sys/kernel/debug/regmap/`).
+
+**Testing without a driver:** `i2cdetect`, `i2cget`, `i2cset` (with `-f` if a driver owns the address).
+
+### What is the device tree and why is it used? {M}
+**Short answer:** The device tree is a data structure that describes hardware that cannot be discovered at run time: CPUs, memory, peripherals, their addresses, interrupts, clocks, GPIOs, regulators and pin configuration. Source files (`.dts`/`.dtsi`) are compiled by `dtc` into a binary blob (`.dtb`) that the bootloader passes to the kernel. One kernel image can then support many boards, because board details live in data instead of C code.
+
+```dts
+/ {
+    model = "Acme Board";
+    compatible = "acme,board", "st,stm32mp157";
+
+    memory@c0000000 { device_type = "memory"; reg = <0xc0000000 0x20000000>; };
+
+    leds {
+        compatible = "gpio-leds";
+        status_led: led-0 { gpios = <&gpioa 13 GPIO_ACTIVE_LOW>; linux,default-trigger = "heartbeat"; };
+    };
+};
+
+&i2c1 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&i2c1_pins>;
+    clock-frequency = <400000>;
+    status = "okay";
+
+    temp@48 { compatible = "ti,tmp102"; reg = <0x48>; };
+};
+```
+
+**Key concepts**
+
+| Concept | Meaning |
+|---|---|
+| `compatible` | most specific first, e.g. `"acme,board-v2", "acme,board"`; drivers match on it |
+| `reg` | address and size, interpreted with the parent's `#address-cells` / `#size-cells` |
+| `interrupts`, `interrupt-parent` | which interrupt controller line and trigger type |
+| phandles (`&label`) | references to other nodes: clocks, GPIO controllers, regulators, pinctrl states |
+| `status = "okay"/"disabled"` | enable/disable a node, commonly in board `.dts` files |
+| `.dtsi` includes | SoC description shared by many boards; the board file overrides nodes with `&label { ... }` |
+
+**Bindings:** `Documentation/devicetree/bindings/` contains YAML schemas that define which properties each `compatible` requires; `make dt_binding_check` and `make dtbs_check` validate them.
+
+**At run time:** `/sys/firmware/devicetree/base/` (or `/proc/device-tree`) shows the tree the kernel received; `dtc -I fs /sys/firmware/devicetree/base` decompiles it, which is very useful when debugging which properties actually reached the kernel.
+
+**In drivers:** `of_property_read_u32()`, `device_property_read_u32()` (works for DT and ACPI), `devm_gpiod_get()`, `devm_clk_get()`, `devm_regulator_get()`.
+
+**ACPI** is the equivalent on x86 and ARM servers.
 
 ### What are device tree overlays? {M}
-An overlay (`.dtbo`) is a fragment applied on top of a base device tree to add or modify nodes, typically by the bootloader (U-Boot `fdt apply`) before the kernel starts. They are used for add-on boards, HATs and capes, and for enabling optional peripherals without rebuilding the base DTB. Compile with `dtc -@` so symbols are available for references.
+**Short answer:** An overlay (`.dtbo`) is a device tree fragment applied on top of a base tree to add or modify nodes, usually by the bootloader (`fdt apply` in U-Boot, `dtoverlay=` in the Raspberry Pi firmware) before the kernel starts. Overlays are used for add-on boards (HATs, capes, mezzanines), optional peripherals and per-product variants without rebuilding the base DTB.
+
+```dts
+/dts-v1/;
+/plugin/;
+
+&i2c1 {
+    #address-cells = <1>;
+    #size-cells = <0>;
+    status = "okay";
+
+    rtc@68 {
+        compatible = "dallas,ds1307";
+        reg = <0x68>;
+    };
+};
+```
+
+**Build and apply**
+
+```sh
+dtc -@ -I dts -O dtb -o rtc.dtbo rtc-overlay.dts      # -@ keeps symbols for &label references
+# U-Boot
+fdt addr ${fdt_addr_r}; fdt resize 8192
+load mmc 0:1 ${loadaddr} rtc.dtbo; fdt apply ${loadaddr}
+```
+
+The base DTB must also be compiled with `-@` so it contains a `__symbols__` node that overlays can reference.
+
+**Run-time overlays:** applying overlays after boot (configfs overlay interface) is not in mainline in a general form because removing hardware descriptions safely is hard; it exists in vendor kernels and for FPGA manager use cases.
+
+**Alternatives:** separate DTBs per variant selected by the bootloader, FIT images with multiple configurations, or U-Boot board code that patches the tree (`ft_board_setup`).
 
 ### What are the devm_ (managed) APIs? {M}
-Device-managed resource functions, such as `devm_kzalloc`, `devm_ioremap_resource`, `devm_request_irq` and `devm_clk_get`, register a release action with the device. If `probe` fails or the device is unbound, the resources are released automatically in reverse order. This removes most error-path cleanup code and the leaks that come with it. Be careful with ordering, for example a managed IRQ handler can still fire after your `remove()` frees something it uses.
+**Short answer:** Device-managed resource functions (`devm_kzalloc`, `devm_platform_ioremap_resource`, `devm_request_irq`, `devm_clk_get_enabled`, `devm_regulator_get`, `devm_gpiod_get`...) record a release action on the device. If `probe` fails, or the device is later unbound, all managed resources are released automatically in reverse order. This removes most error-path cleanup code and the leaks that come with it.
+
+**Before and after**
+
+```c
+/* manual: every error path must undo the previous steps */
+base = ioremap(res->start, resource_size(res));
+if (!base) return -ENOMEM;
+ret = request_irq(irq, handler, 0, "x", d);
+if (ret) { iounmap(base); return ret; }
+
+/* managed: just return on error */
+base = devm_ioremap_resource(dev, res);
+if (IS_ERR(base)) return PTR_ERR(base);
+ret = devm_request_irq(dev, irq, handler, 0, "x", d);
+if (ret) return ret;
+```
+
+**Custom cleanup:** `devm_add_action_or_reset(dev, my_cleanup, data)` registers any function to run on release (e.g. to put hardware into reset).
+
+**Pitfalls**
+
+- **Ordering with `remove()`:** managed resources are released **after** `remove()` returns. A managed IRQ can still fire after `remove()` has stopped or freed something the handler uses; disable the device's interrupts in hardware in `remove()`, or make that teardown itself a devm action registered in the right order.
+- **Lifetime:** memory from `devm_kzalloc` is freed when the device unbinds, even if user space still has the `/dev` file open; data reachable from open files must be reference-counted separately.
+- Do not use devm functions outside probe paths for resources that are created and destroyed repeatedly (they accumulate until unbind).
+
+### What is pinctrl, and how do GPIO, clock and regulator frameworks work in drivers? {M}
+**Short answer:** These frameworks let drivers request board resources by name from the device tree instead of programming SoC registers directly. **pinctrl** sets pin multiplexing and electrical settings (pull-ups, drive strength) for named states (`default`, `sleep`), applied automatically before `probe`. The **GPIO** consumer API (`devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH)`, `gpiod_set_value_cansleep()`) handles active-low polarity from the DT. The **clock** framework (`devm_clk_get`, `clk_prepare_enable`, `clk_set_rate`) manages clock trees and reference counts. The **regulator** framework (`devm_regulator_get`, `regulator_enable`, `regulator_set_voltage`) controls power rails.
+
+**Device tree side**
+
+```dts
+panel@0 {
+    compatible = "acme,panel";
+    reset-gpios = <&gpio3 7 GPIO_ACTIVE_LOW>;
+    vdd-supply = <&ldo3>;
+    clocks = <&ccu CLK_DSI>;
+    clock-names = "pixel";
+    pinctrl-names = "default", "sleep";
+    pinctrl-0 = <&panel_pins_default>;
+    pinctrl-1 = <&panel_pins_sleep>;
+};
+```
+
+**Driver side (power-on sequence)**
+
+```c
+d->vdd   = devm_regulator_get(dev, "vdd");                       /* matches vdd-supply */
+d->reset = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);         /* asserted (logical 1) */
+d->clk   = devm_clk_get(dev, "pixel");
+
+ret = regulator_enable(d->vdd);
+usleep_range(10000, 11000);                 /* datasheet: power stable before reset release */
+ret = clk_prepare_enable(d->clk);
+gpiod_set_value_cansleep(d->reset, 0);      /* logical deassert; framework handles ACTIVE_LOW */
+msleep(120);
+```
+
+**Points interviewers check**
+
+- GPIO descriptor values are **logical**: 1 = active, regardless of the physical polarity, which the DT defines.
+- `_cansleep` variants are needed for GPIOs on I2C expanders.
+- `clk_prepare` may sleep, `clk_enable` may not: hence `clk_prepare_enable` in process context.
+- Regulators and clocks are reference-counted: balance every enable with a disable.
+- Missing providers make `devm_*_get` return `-EPROBE_DEFER`; return it from `probe` and the core retries.
+- Debug: `/sys/kernel/debug/pinctrl/`, `/sys/kernel/debug/gpio`, `/sys/kernel/debug/clk/clk_summary`, `/sys/kernel/debug/regulator/regulator_summary`.
+
+### What is deferred probing (-EPROBE_DEFER)? {M}
+**Short answer:** If a driver's `probe()` needs a resource from another driver that has not probed yet (a clock, regulator, GPIO controller, PHY, interrupt controller, I2C bus), the `get` function returns `-EPROBE_DEFER`. The driver returns that code, and the driver core puts the device on a deferred list and retries it whenever another driver binds successfully. This handles arbitrary probe ordering without hard-coded init sequences.
+
+**Correct handling**
+
+```c
+d->vdd = devm_regulator_get(dev, "vdd");
+if (IS_ERR(d->vdd))
+    return dev_err_probe(dev, PTR_ERR(d->vdd), "failed to get vdd\n");
+/* dev_err_probe() prints nothing for -EPROBE_DEFER and records the reason */
+```
+
+**Debugging a device that never probes**
+
+- `cat /sys/kernel/debug/devices_deferred` lists deferred devices with the reason recorded by `dev_err_probe`.
+- Common causes: the provider driver is not enabled in the kernel config or is a module not yet loaded; a typo in the DT phandle or `-supply` name; the provider node has `status = "disabled"`.
+- **fw_devlink** (enabled by default) uses DT phandles to create device links, so consumers are not probed before suppliers at all, which reduces repeated deferrals and orders suspend/resume correctly.
+- `deferred_probe_timeout=` on the command line makes the kernel give up after a time so optional dependencies don't block forever.
+
+**Do not:** busy-wait or sleep in `probe` hoping the resource appears, or treat `-EPROBE_DEFER` as a fatal error and print scary messages.
 
 ### What are top halves and bottom halves? {M}
-Interrupt work is split so the hard IRQ handler stays fast:
+**Short answer:** Interrupt handling is split in two so that the hard IRQ handler stays short. The **top half** is the handler registered with `request_irq`: it runs in hard-interrupt context with its line masked, acknowledges the device, grabs urgent data (e.g. a status register or a received byte) and schedules the rest. The **bottom half** is deferred work that runs later with interrupts enabled: **softirqs**, **tasklets** (deprecated), **workqueues** and **threaded IRQs**.
 
-- **Top half**: the handler registered with `request_irq`. It runs with that interrupt line disabled, in atomic context, so it acknowledges the hardware, grabs urgent data and schedules the rest.
-- **Bottom half**: deferred work that runs later with interrupts enabled. Mechanisms: **softirqs** (static, used by networking and block), **tasklets** (built on softirqs, being phased out), **workqueues** (run in kernel threads and can sleep), and **threaded IRQs**.
+**Why split:** while a hard IRQ handler runs, its line (and on many systems, other interrupts on that CPU) is blocked, increasing interrupt latency for everyone; it also cannot sleep, so anything involving I2C/SPI, mutexes or memory allocation with `GFP_KERNEL` must be deferred.
+
+**Typical flow for a network or DMA device**
+
+```
+IRQ → top half: read & clear status, disable further device IRQs, napi_schedule() → return IRQ_HANDLED
+     → softirq (NET_RX): NAPI poll processes up to "budget" packets, re-enables device IRQs when done
+```
+
+**Choosing a bottom half**
+
+| Need | Use |
+|---|---|
+| Must sleep (I2C/SPI, mutex, GFP_KERNEL) | threaded IRQ or workqueue |
+| Very high rate, per-CPU, no sleeping | softirq (subsystem-level: networking, block, timers) or BH workqueue |
+| Delay before running | `delayed_work` (`schedule_delayed_work`) |
+| Run on a schedulable RT priority | threaded IRQ (`irq/NN-name` thread, SCHED_FIFO 50 by default) |
+
+**Return values of the top half:** `IRQ_HANDLED`, `IRQ_NONE` (not my device: important for shared interrupt lines and spurious-IRQ detection) and `IRQ_WAKE_THREAD` (run the threaded handler).
 
 ### What is the difference between a tasklet, a workqueue and a threaded IRQ? {H}
+**Short answer:** A **tasklet** runs in softirq context: soon after the interrupt, on the same CPU, but it cannot sleep, and tasklets are deprecated for new code. A **workqueue** item runs in a kernel thread (`kworker`) in process context, so it can sleep, at the cost of more scheduling latency. A **threaded IRQ** gives each interrupt its own kernel thread (`irq/NN-name`) with real-time priority; it can sleep and is the standard choice for devices on slow buses like I2C and SPI.
+
 | | Tasklet / softirq | Workqueue | Threaded IRQ |
 |---|---|---|---|
-| Context | Softirq (atomic) | Process (kworker thread) | Process (dedicated irq thread) |
-| Can sleep | No | Yes | Yes |
-| Latency | Low | Higher | Low-ish, schedulable priority |
-| Typical use | Legacy fast deferral | Slow work: I2C/SPI access, firmware loading | Devices on slow buses, most new drivers |
+| Context | softirq (atomic) | process (kworker thread) | process (dedicated irq thread) |
+| Can sleep | no | yes | yes |
+| Latency | low | higher (normal priority, shared workers) | low, SCHED_FIFO priority |
+| Concurrency | a given tasklet never runs on two CPUs at once | configurable (ordered, unbound, per-CPU) | one thread per IRQ |
+| Typical use | legacy fast deferral | slow or delayed work, firmware loading, retries | I2C/SPI devices, GPIO interrupts, most new drivers |
+| Status | deprecated (use BH workqueues) | current | current |
+
+**Threaded IRQ for an I2C device**
 
 ```c
-ret = devm_request_threaded_irq(dev, irq, NULL, my_thread_fn,
-                                IRQF_ONESHOT, "mydev", priv);
+static irqreturn_t sensor_thread(int irq, void *data)
+{
+    struct mysensor *s = data;
+    unsigned int status;
+
+    if (regmap_read(s->map, REG_STATUS, &status))     /* sleeps: OK in the thread */
+        return IRQ_NONE;
+    if (!(status & DATA_READY))
+        return IRQ_NONE;
+    read_sample_and_push(s);
+    return IRQ_HANDLED;
+}
+
+ret = devm_request_threaded_irq(dev, client->irq, NULL, sensor_thread,
+                                IRQF_ONESHOT, "mysensor", s);
 ```
 
-With `IRQF_ONESHOT` and no primary handler, the line stays masked until the thread finishes. That is the standard pattern for I2C/SPI devices, where talking to the chip has to sleep. Tasklets are deprecated for new code; use threaded IRQs or workqueues (or the newer BH workqueues).
+With no primary handler and `IRQF_ONESHOT`, the core masks the line until the thread finishes, which is required for level-triggered interrupts that can only be cleared by an I2C read.
+
+**Workqueue example**
+
+```c
+INIT_WORK(&d->work, mydev_work_fn);                 /* in probe */
+schedule_work(&d->work);                            /* from the IRQ handler */
+cancel_work_sync(&d->work);                         /* in remove: wait for it to finish */
+```
+
+**Follow-up:** with PREEMPT_RT, all interrupt handlers are forced into threads (except those marked `IRQF_NO_THREAD`), and softirqs run in thread context too.
 
 ### What is atomic context and what can't you do in it? {M}
-Code runs in atomic context when it must not sleep: hard IRQ handlers, softirqs/tasklets, while holding a spinlock, or with pre-emption or interrupts disabled. In atomic context you must not:
+**Short answer:** Code is in atomic context when it must not sleep or be scheduled out: hard IRQ handlers, softirqs and tasklets, sections holding a spinlock, and sections with pre-emption or interrupts disabled (also `rcu_read_lock()` sections on non-RT kernels). In atomic context you must not call anything that may sleep: `mutex_lock`, `msleep`, `kmalloc(GFP_KERNEL)`, `copy_to_user`/`copy_from_user`, I2C/SPI transfers, `wait_event`, `vmalloc`, `request_firmware`, and most `regulator`/`clk_prepare` calls.
 
-- call anything that may sleep: `mutex_lock`, `msleep`, `kmalloc(GFP_KERNEL)`, `copy_to_user`, I2C/SPI transfers,
-- block waiting for events.
+**What to use instead**
 
-Use `GFP_ATOMIC` allocations, `udelay`/`ndelay` for very short busy-waits, and defer the rest. Enable `CONFIG_DEBUG_ATOMIC_SLEEP` to catch "BUG: sleeping function called from invalid context".
+| Instead of | Use in atomic context |
+|---|---|
+| `kmalloc(GFP_KERNEL)` | `kmalloc(GFP_ATOMIC)` (may fail; preallocate where possible) |
+| `msleep`, `usleep_range` | `udelay`/`ndelay` for a few microseconds, or defer |
+| `mutex_lock` | spinlock |
+| I2C/SPI transfer | defer to a threaded IRQ or workqueue |
+| `copy_to_user` | copy to a kernel buffer, then copy out later in process context |
+
+**Why sleeping is forbidden:** with a spinlock held or pre-emption disabled, sleeping would let another task run on this CPU that might spin on the same lock forever (deadlock); in interrupt context there is no task to put to sleep at all.
+
+**Detecting bugs:** `CONFIG_DEBUG_ATOMIC_SLEEP` makes `might_sleep()` calls (present in all sleeping functions) print "BUG: sleeping function called from invalid context" with a backtrace. Lockdep also reports locking problems. Check with `in_atomic()`, `in_interrupt()`, `in_task()` only for debugging, not to change behaviour.
 
 ### What is the difference between a spinlock and a mutex in the kernel? {M}
+**Short answer:** A **spinlock** busy-waits until the lock is free and disables pre-emption while held, so it can be used in atomic and interrupt context but must only protect very short critical sections that never sleep. A **mutex** puts the waiting task to sleep, so it can only be used in process context, but the holder may sleep (e.g. do I2C transfers) and hold it longer; it also enforces ownership.
+
 | | Spinlock | Mutex |
 |---|---|---|
-| Waiting | Busy-waits on the CPU | Sleeps, CPU runs other tasks |
-| Usable in atomic/IRQ context | Yes | No |
-| Hold time | Very short | Can be longer, may sleep while held |
-| Pre-emption while held | Disabled | Allowed |
-| Ownership checks | No | Yes (only the owner unlocks) |
+| Waiting | busy-waits (spins) | sleeps (other tasks run) |
+| Usable in IRQ/softirq context | yes | no |
+| May sleep while held | no | yes |
+| Pre-emption while held | disabled | allowed |
+| Hold time | very short (microseconds) | can be longer |
+| Ownership | no | yes; only the owner unlocks, debug checks |
+| On PREEMPT_RT | becomes a sleeping rt_mutex (except `raw_spinlock_t`) | rt_mutex with priority inheritance |
 
-Rule of thumb: if the critical section can sleep or is long, use a mutex; if it is short or the data is touched from interrupt context, use a spinlock. On a single-core non-pre-emptive kernel, spinlocks compile down to pre-emption and IRQ control.
+**Other primitives**
+
+- **Semaphore:** counting, can be released by another task; rarely the right choice for new code.
+- **rwlock / rw_semaphore:** many readers or one writer.
+- **Completion:** "wait until X is done" (`wait_for_completion`, `complete`).
+- **Atomics and RCU:** lock-free options for counters and read-mostly data.
+
+**Rule of thumb:** if the critical section can sleep or is long → mutex. If it is short or the data is touched from interrupt context → spinlock (with the correct irq variant). Never hold a spinlock while calling a function that might sleep.
+
+**On a single-CPU kernel** without `CONFIG_SMP`, spinlocks reduce to disabling pre-emption (and interrupts for the `_irqsave` variants), because there is no other CPU to race with — but the code must still be written correctly for SMP.
 
 ### When should you use spin_lock_irqsave? {H}
-When the data protected by the lock is also accessed from a **hard interrupt handler**. If process-context code holds a plain `spin_lock` and the IRQ fires on the same CPU, the handler spins forever on a lock its own CPU holds: deadlock.
-
-- `spin_lock_irqsave(&lock, flags)` disables local interrupts and saves their previous state, safe from any context.
-- `spin_lock_irq` disables and later unconditionally re-enables them; only use it when you know interrupts were enabled.
-- `spin_lock_bh` disables softirqs, for data shared with softirqs/tasklets.
-- In the IRQ handler itself, a plain `spin_lock` is enough.
-
-### What are atomic_t, RCU and seqlocks? {H}
-- **`atomic_t`/`atomic64_t`, `refcount_t`**: lock-free integer operations (`atomic_inc`, `atomic_dec_and_test`). Use `refcount_t` for reference counts because it saturates instead of overflowing.
-- **RCU (read-copy-update)**: readers take no locks (`rcu_read_lock` only disables pre-emption). Writers create a new copy, publish it with `rcu_assign_pointer`, and free the old one after a **grace period** (`synchronize_rcu` or `call_rcu`). It is ideal for read-mostly data like routing tables.
-- **Seqlocks**: writers increment a sequence counter; readers retry if the counter changed during their read. Good for small, frequently read data like the system time.
-
-### What is the difference between kmalloc, vmalloc and kzalloc? {M}
-- `kmalloc(size, flags)` returns **physically contiguous** memory from the slab allocator. Fast, suitable for DMA (when allocated from a DMA-capable zone), limited to relatively small sizes.
-- `kzalloc` is `kmalloc` plus zeroing; `kcalloc` adds overflow checking for arrays.
-- `vmalloc(size)` returns memory that is **virtually** contiguous but may be physically scattered. Good for large buffers, slower (page table setup, TLB pressure), not usable for DMA directly, and it may sleep.
-- `kvmalloc` tries `kmalloc` first and falls back to `vmalloc`.
-
-### What do GFP_KERNEL and GFP_ATOMIC mean? {E}
-They are allocation flags. `GFP_KERNEL` may sleep to reclaim memory, so it can only be used in process context with no spinlocks held; it is the normal choice. `GFP_ATOMIC` never sleeps and may dip into emergency reserves, so it is used in interrupt handlers and under spinlocks, but it fails more often. `GFP_DMA`/`GFP_DMA32` restrict the zone for devices with limited addressing.
-
-### How does a driver access device registers? {M}
-Map the physical register range into kernel virtual space, then use the accessor functions, never raw pointer dereferences:
+**Short answer:** Use `spin_lock_irqsave` when the data protected by the lock is also accessed from a **hard interrupt handler**. If process-context code takes a plain `spin_lock` and the interrupt fires on the same CPU, the handler spins forever on a lock that its own CPU holds, and the CPU deadlocks. `spin_lock_irqsave(&lock, flags)` disables local interrupts and saves their previous state, so it is safe from any context.
 
 ```c
-void __iomem *base = devm_platform_ioremap_resource(pdev, 0);
-u32 v = readl(base + CTRL);
-writel(v | CTRL_EN, base + CTRL);
+/* process context (e.g. ioctl) */
+unsigned long flags;
+spin_lock_irqsave(&d->lock, flags);
+d->config = new_config;
+spin_unlock_irqrestore(&d->lock, flags);
+
+/* hard IRQ handler on the same data */
+static irqreturn_t mydev_irq(int irq, void *data)
+{
+    struct mydev *d = data;
+    spin_lock(&d->lock);        /* interrupts are already disabled here: plain lock is enough */
+    d->count++;
+    spin_unlock(&d->lock);
+    return IRQ_HANDLED;
+}
 ```
 
-`readl`/`writel` include the barriers needed for ordering against DMA and are endian-correct for the device. `readl_relaxed`/`writel_relaxed` drop the barriers for speed when ordering does not matter. For complex register maps, many drivers use **regmap**, which also handles I2C/SPI-based registers, caching and debugfs dumps.
+**Choosing the variant**
 
-### How do drivers do DMA in Linux? {H}
-Drivers use the DMA API, which handles IOMMUs, address translation and cache maintenance:
+| Data shared with | Process-context side uses |
+|---|---|
+| only other process context | `spin_lock` (or a mutex if it may sleep) |
+| softirq / tasklet / timer | `spin_lock_bh` (disables bottom halves locally) |
+| hard IRQ handler | `spin_lock_irqsave` (or `spin_lock_irq` if interrupts are known to be enabled) |
 
-- **Coherent (consistent) mappings**: `dma_alloc_coherent()` returns a buffer that CPU and device can both access without explicit cache operations. Used for descriptor rings and long-lived shared buffers.
-- **Streaming mappings**: `dma_map_single()`/`dma_map_sg()` for one transfer of an existing buffer, with an explicit direction. Call `dma_unmap_*` when done or `dma_sync_*_for_cpu/device` to transfer ownership.
+- `spin_lock_irq` / `spin_unlock_irq` unconditionally re-enable interrupts, which is a bug if they were already disabled by the caller; `irqsave/irqrestore` restores the original state.
+- Interrupts are disabled only on the **local** CPU; another CPU can still run the handler and spin briefly on the lock, which is fine — that is what the spinlock is for.
+- Lockdep reports "inconsistent lock state" when a lock is taken both with and without IRQs disabled where an IRQ could interrupt the holder.
+- Keep these sections short: interrupt latency on that CPU grows while they are held.
 
-Set the device's addressable range with `dma_set_mask_and_coherent()`. For memory-to-peripheral transfers using a separate DMA controller, use the **dmaengine** API.
+### What are atomic_t, RCU and seqlocks? {H}
+**Short answer:** **`atomic_t`/`atomic64_t`** provide lock-free integer operations (`atomic_inc`, `atomic_dec_and_test`, `atomic_cmpxchg`), and **`refcount_t`** is the safe type for reference counts (it saturates and warns instead of wrapping). **RCU (read-copy-update)** lets readers access shared data with almost no overhead and no locks: writers publish a new version with `rcu_assign_pointer` and free the old version only after a **grace period**, when all pre-existing readers have finished. **Seqlocks** let readers proceed without locks and retry if a writer changed the data during the read; they suit small, frequently read, rarely written data like timekeeping.
+
+**RCU example: read-mostly configuration**
+
+```c
+struct cfg { int rate; int gain; struct rcu_head rcu; };
+static struct cfg __rcu *cur_cfg;
+static DEFINE_MUTEX(cfg_lock);
+
+int read_rate(void)                               /* readers: fast, never block */
+{
+    int r;
+    rcu_read_lock();
+    r = rcu_dereference(cur_cfg)->rate;
+    rcu_read_unlock();
+    return r;
+}
+
+int update_cfg(int rate, int gain)                /* writers: copy, publish, free later */
+{
+    struct cfg *new = kmalloc(sizeof(*new), GFP_KERNEL), *old;
+    if (!new) return -ENOMEM;
+    new->rate = rate; new->gain = gain;
+    mutex_lock(&cfg_lock);
+    old = rcu_dereference_protected(cur_cfg, lockdep_is_held(&cfg_lock));
+    rcu_assign_pointer(cur_cfg, new);
+    mutex_unlock(&cfg_lock);
+    if (old) kfree_rcu(old, rcu);                 /* freed after all current readers finish */
+    return 0;
+}
+```
+
+**Seqlock pattern**
+
+```c
+unsigned int seq;
+do {
+    seq = read_seqbegin(&tk_lock);
+    t = timekeeper_time;                          /* copy the data */
+} while (read_seqretry(&tk_lock, seq));           /* writer was active: retry */
+```
+
+**Comparison**
+
+| | Readers | Writers | Good for |
+|---|---|---|---|
+| spinlock / mutex | take the lock | take the lock | general use |
+| rwlock | shared lock (still cache-line bouncing) | exclusive | rarely the best choice today |
+| RCU | nearly free, never block | copy + publish + deferred free | read-mostly lists, tables, configs (routing, module lists) |
+| seqlock | lock-free, may retry | exclusive, never wait for readers | small data, frequent reads, readers can retry (no pointers to chase) |
+| atomics | – | – | counters, flags, refcounts |
+
+**Memory ordering:** `atomic_inc` alone has no ordering guarantees; use `smp_mb__after_atomic()` or ordered variants (`atomic_inc_return`, `_acquire`/`_release`) when ordering matters.
+
+### What are wait queues and completions? {M}
+**Short answer:** A **wait queue** lets a task sleep until a condition becomes true: the sleeper calls `wait_event_interruptible(wq, condition)`, and the code that changes the condition (often an interrupt handler) calls `wake_up_interruptible(&wq)`; the condition is re-checked after every wake-up, so spurious wake-ups are harmless. A **completion** is a simpler wrapper for the common case "wait until this one thing has finished" (`wait_for_completion_timeout()` and `complete()`), e.g. waiting for a DMA transfer or a firmware response.
+
+**Blocking read using a wait queue**
+
+```c
+static ssize_t mydev_read(struct file *f, char __user *ubuf, size_t n, loff_t *pos)
+{
+    struct mydev *d = f->private_data;
+    u32 val;
+
+    if (f->f_flags & O_NONBLOCK) {
+        if (!READ_ONCE(d->data_ready)) return -EAGAIN;
+    } else if (wait_event_interruptible(d->wq, READ_ONCE(d->data_ready))) {
+        return -ERESTARTSYS;                        /* interrupted by a signal */
+    }
+
+    spin_lock_irq(&d->lock);
+    val = d->sample;
+    d->data_ready = false;
+    spin_unlock_irq(&d->lock);
+
+    if (n < sizeof(val)) return -EINVAL;
+    return copy_to_user(ubuf, &val, sizeof(val)) ? -EFAULT : sizeof(val);
+}
+
+/* in the IRQ handler */
+spin_lock(&d->lock);
+d->sample = readl(d->base + DATA);
+d->data_ready = true;
+spin_unlock(&d->lock);
+wake_up_interruptible(&d->wq);
+```
+
+**Completion for a DMA transfer**
+
+```c
+reinit_completion(&d->dma_done);
+start_dma(d);
+if (!wait_for_completion_timeout(&d->dma_done, msecs_to_jiffies(100))) {
+    dmaengine_terminate_sync(d->chan);
+    return -ETIMEDOUT;
+}
+/* DMA callback: complete(&d->dma_done); */
+```
+
+**Points**
+
+- Always use a timeout for hardware events, and handle signals (`-ERESTARTSYS`).
+- `wait_event_killable` only lets fatal signals interrupt the wait.
+- Never wait in atomic context.
+- Wait queues also back `poll()` (next question).
 
 ### How does user space wait for events from a driver (poll/select)? {M}
-Implement `.poll` in `file_operations`. It registers the caller on a wait queue with `poll_wait()` and returns a mask of what is ready now:
+**Short answer:** Implement `.poll` in `file_operations`. It calls `poll_wait()` to add the caller to the driver's wait queue (this does **not** sleep) and returns a mask of the events that are ready **now** (`EPOLLIN | EPOLLRDNORM` for readable, `EPOLLOUT | EPOLLWRNORM` for writable, `EPOLLERR`/`EPOLLHUP`). When data arrives, the driver calls `wake_up_interruptible(&wq)`, which makes `poll`, `select` and `epoll` callers re-check.
 
 ```c
 static __poll_t mydev_poll(struct file *f, poll_table *wait)
 {
     struct mydev *d = f->private_data;
-    poll_wait(f, &d->wq, wait);
-    return data_available(d) ? EPOLLIN | EPOLLRDNORM : 0;
+    __poll_t mask = 0;
+
+    poll_wait(f, &d->wq, wait);                 /* registers; the VFS does the sleeping */
+    if (READ_ONCE(d->data_ready))
+        mask |= EPOLLIN | EPOLLRDNORM;
+    if (fifo_has_space(d))
+        mask |= EPOLLOUT | EPOLLWRNORM;
+    if (d->disconnected)
+        mask |= EPOLLHUP;
+    return mask;
 }
 ```
 
-When data arrives (typically in the interrupt path), call `wake_up_interruptible(&d->wq)`. Blocking `read` uses the same wait queue with `wait_event_interruptible()`.
+**User space**
+
+```c
+struct pollfd p = { .fd = fd, .events = POLLIN };
+int r = poll(&p, 1, 1000);                      /* 1 s timeout */
+if (r > 0 && (p.revents & POLLIN)) read(fd, &val, sizeof val);
+```
+
+**How it works internally:** the VFS calls your `.poll`; if no requested event is ready, it sleeps; your `wake_up` wakes it, and it calls `.poll` again to get the new mask. That is why `.poll` must be cheap and must not block.
+
+**Other notification mechanisms**
+
+- `fasync` / `SIGIO` (`kill_fasync`): asynchronous signal to user space; rarely used now.
+- `eventfd`: a simple counter file descriptor, used by KVM/VFIO/vhost to signal interrupts.
+- sysfs `sysfs_notify()` wakes user programs polling a sysfs attribute (used by GPIO and IIO events).
+- uevents (`kobject_uevent`) for device state changes handled by udev.
 
 ### What is sysfs and how do you add attributes? {M}
-Sysfs (`/sys`) exposes kernel objects, their attributes and relationships as files, one value per file. Drivers add attributes with `DEVICE_ATTR_RW(name)` and `name_show`/`name_store` functions, and register groups via the driver's `dev_groups` field so they are created and removed with the device automatically. Use `sysfs_emit()` in show functions. Use **debugfs** instead for debugging information that is not a stable ABI.
+**Short answer:** Sysfs (`/sys`) exposes the kernel's device model as a directory tree: each device is a directory, and each **attribute** is a file holding one value (in text). Drivers add attributes with `DEVICE_ATTR_RW(name)` plus `name_show()`/`name_store()` functions, group them, and attach the group through the driver's `.dev_groups` field so they are created and removed together with the device (no race with user space).
+
+```c
+static ssize_t gain_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    struct mydev *d = dev_get_drvdata(dev);
+    return sysfs_emit(buf, "%u\n", d->gain);
+}
+
+static ssize_t gain_store(struct device *dev, struct device_attribute *attr,
+                          const char *buf, size_t count)
+{
+    struct mydev *d = dev_get_drvdata(dev);
+    unsigned int val;
+    int ret = kstrtouint(buf, 0, &val);
+    if (ret) return ret;
+    if (val > 7) return -EINVAL;
+    mutex_lock(&d->lock);
+    d->gain = val;
+    mydev_apply_gain(d);
+    mutex_unlock(&d->lock);
+    return count;
+}
+static DEVICE_ATTR_RW(gain);
+
+static struct attribute *mydev_attrs[] = { &dev_attr_gain.attr, NULL };
+ATTRIBUTE_GROUPS(mydev);                     /* defines mydev_groups */
+
+static struct platform_driver mydev_driver = {
+    .driver = { .name = "mydev", .of_match_table = mydev_of_match, .dev_groups = mydev_groups },
+    .probe = mydev_probe,
+};
+```
+
+Use: `cat /sys/bus/platform/devices/40010000.mydev/gain`, `echo 3 > .../gain`.
+
+**Rules**
+
+- One value per file; text format; `sysfs_emit()` in show functions (bounds-safe).
+- Attributes are ABI: document them in `Documentation/ABI/` and do not change them casually.
+- Validate input in `store` and return `count` on success or a negative error.
+- `DEVICE_ATTR_RO` / `_WO` for read-only/write-only; binary attributes for blobs (e.g. EEPROM contents).
+- For debug-only data, use debugfs instead (next question).
 
 ### What is the difference between procfs, sysfs and debugfs? {E}
-- **procfs** (`/proc`): process information and some legacy kernel tunables (`/proc/cpuinfo`, `/proc/<pid>/maps`). New device data should not go here.
-- **sysfs** (`/sys`): structured device model, one value per file, a stable ABI documented in `Documentation/ABI`.
-- **debugfs** (`/sys/kernel/debug`): free-form debugging interface with no ABI guarantees, usually root only.
+**Short answer:** **procfs** (`/proc`) exposes process information and some legacy kernel tunables (`/proc/cpuinfo`, `/proc/<pid>/maps`, `/proc/sys/` sysctls); new device data should not go there. **sysfs** (`/sys`) exposes the structured device model with one value per file and is a stable ABI. **debugfs** (`/sys/kernel/debug`) is a free-form debugging interface with no ABI guarantees, usually root-only and often disabled in production kernels.
+
+| | procfs | sysfs | debugfs |
+|---|---|---|---|
+| Purpose | processes, system info, sysctls | devices, drivers, buses, classes | debugging |
+| Format | free-form text | one value per file | anything |
+| ABI stability | yes (for existing files) | yes | no |
+| Typical use | `ps`, `top`, `free` read it | udev, configuration tools, power management | register dumps, statistics, fault injection, tracing (`tracefs`) |
+| Driver API | `proc_create` (discouraged for drivers) | `DEVICE_ATTR_*`, attribute groups | `debugfs_create_file/u32/regset32` |
+
+**debugfs example:** `debugfs_create_regset32("regs", 0400, dir, &d->regset)` dumps a list of registers; `debugfs_create_u32("irq_count", 0444, dir, &d->irq_count)` exposes a counter. Errors from debugfs functions can be ignored by design (debugging must not break the driver).
+
+**Other pseudo-filesystems:** `configfs` (user space creates kernel objects: USB gadgets, iSCSI targets), `tracefs` (`/sys/kernel/tracing`), `cgroupfs`, `bpffs`, `securityfs`.
+
+### What is the difference between kmalloc, vmalloc and kzalloc? {M}
+**Short answer:** `kmalloc(size, flags)` returns **physically contiguous** memory from the slab allocator: fast, cache-friendly, usable for DMA (through the DMA API), and best for small to medium sizes (practically up to a few pages; large requests may fail when memory is fragmented). `kzalloc` is `kmalloc` plus zeroing, and `kcalloc`/`kmalloc_array` add overflow checks for arrays. `vmalloc(size)` returns memory that is **virtually** contiguous but physically scattered: good for large buffers, but slower (page-table setup, TLB pressure), it may sleep, and it is not directly usable for device DMA. `kvmalloc` tries `kmalloc` and falls back to `vmalloc`.
+
+| | kmalloc / kzalloc | vmalloc | alloc_pages | dma_alloc_coherent |
+|---|---|---|---|---|
+| Physically contiguous | yes | no | yes (2^order pages) | yes (or IOMMU-contiguous) |
+| Size | small–medium | large | whole pages | device buffers |
+| Atomic context | yes with `GFP_ATOMIC` | no | yes with `GFP_ATOMIC` | depends; usually process context |
+| Free with | `kfree` | `vfree` | `__free_pages` | `dma_free_coherent` |
+| Use for | structs, small buffers | large tables, module code | page-level buffers | DMA descriptors, shared buffers |
+
+**Other allocators to mention**
+
+- **`kmem_cache_create` / `kmem_cache_alloc`:** dedicated slab caches for many objects of the same size (e.g. network buffers, inodes).
+- **`devm_kzalloc`:** freed automatically when the device unbinds.
+- **CMA** (Contiguous Memory Allocator): large physically contiguous buffers for cameras/displays without IOMMU, reserved at boot, used through the DMA API.
+- **mempool:** guaranteed allocations under memory pressure for I/O paths.
+
+**Common bugs:** freeing with the wrong function (`kfree` on `vmalloc` memory), forgetting to check for `NULL`, `kmalloc(n * size)` overflow (use `kmalloc_array`), and DMA from stack or `vmalloc` buffers.
+
+### What do GFP_KERNEL and GFP_ATOMIC mean? {E}
+**Short answer:** They are allocation flags that tell the allocator what it is allowed to do. `GFP_KERNEL` may sleep to reclaim memory (write back pages, swap, compact), so it may only be used in process context with no spinlocks held; it is the normal choice and rarely fails. `GFP_ATOMIC` never sleeps and may use emergency reserves, so it can be used in interrupt handlers and under spinlocks, but it fails more often and callers must handle `NULL`.
+
+| Flag | Sleeps | Use |
+|---|---|---|
+| `GFP_KERNEL` | yes | normal kernel allocations in process context |
+| `GFP_ATOMIC` | no | IRQ/softirq context, under spinlocks |
+| `GFP_NOWAIT` | no | like ATOMIC but without emergency reserves; fail fast |
+| `GFP_NOIO` | yes, but no I/O | inside block I/O paths (avoid recursion into the I/O you are servicing) |
+| `GFP_NOFS` | yes, but no filesystem calls | inside filesystem code |
+| `GFP_DMA` / `GFP_DMA32` | modifier | memory below 16 MB / 4 GB for devices with limited addressing (prefer the DMA API) |
+| `__GFP_ZERO` | modifier | zeroed memory (`kzalloc`) |
+| `__GFP_NOWARN`, `__GFP_RETRY_MAYFAIL`, `__GFP_NOFAIL` | modifiers | control warnings and retry behaviour |
+
+**Best practice:** avoid allocations in atomic context altogether where possible: preallocate buffers in `probe` or `open`, or use mempools; `memalloc_noio_save()`/`memalloc_nofs_save()` scopes are preferred over passing NOIO/NOFS flags everywhere.
+
+### How does a driver access device registers? {M}
+**Short answer:** Map the physical register range into kernel virtual address space (`devm_platform_ioremap_resource()` or `devm_ioremap()`), which returns an `void __iomem *`, then access registers only through the I/O accessors `readl`/`writel` (and `readb/w/q`, `writeb/w/q`), never through plain pointer dereferences. The accessors use the right instruction width, include the barriers needed to order MMIO against DMA and normal memory, and handle endianness. For complex register maps, many drivers use **regmap**.
+
+```c
+void __iomem *base = devm_platform_ioremap_resource(pdev, 0);
+if (IS_ERR(base)) return PTR_ERR(base);
+
+u32 v = readl(base + CTRL);
+writel(v | CTRL_EN, base + CTRL);
+
+/* poll a status bit with timeout (sleeps between reads) */
+ret = readl_poll_timeout(base + STATUS, v, v & STATUS_READY, 10, 1000);   /* 10 µs, 1 ms */
+if (ret) return dev_err_probe(dev, ret, "device not ready\n");
+```
+
+**Accessor variants**
+
+| Accessor | Ordering |
+|---|---|
+| `readl` / `writel` | ordered against other MMIO and DMA buffers: `writel` comes after earlier normal memory writes (so a descriptor written before the doorbell is visible to the device) |
+| `readl_relaxed` / `writel_relaxed` | no barriers against normal memory; faster for register-only sequences |
+| `ioread32` / `iowrite32` | work for both MMIO and port I/O (PCI) |
+| `ioread32be`, `readl_be` (via `__raw` + swab) | big-endian device registers |
+| `readl_poll_timeout(_atomic)` | polling with a timeout |
+
+**Why not a plain pointer:** the compiler may reorder, merge or cache accesses (`volatile` only partly helps), the architecture may need specific instructions or barriers (Arm device memory, `dsb`/`dmb`), and sparse checks `__iomem` annotations to catch mistakes.
+
+**Bit helpers:** `FIELD_PREP(GENMASK(7, 4), val)` and `FIELD_GET` from `<linux/bitfield.h>` make field updates clear.
+
+**Debugging from user space:** `devmem2` or `busybox devmem 0x40010000 32` (needs `/dev/mem` access, often restricted with `CONFIG_STRICT_DEVMEM`).
+
+### How do drivers do DMA in Linux? {H}
+**Short answer:** Drivers use the **DMA API**, which hides IOMMUs, bus-address translation, bounce buffers and cache maintenance. **Coherent mappings** (`dma_alloc_coherent()`) give a buffer that CPU and device can both access at any time without explicit cache operations, used for descriptor rings and long-lived shared structures. **Streaming mappings** (`dma_map_single()`, `dma_map_sg()`) map an existing buffer for one transfer in one direction, with ownership handed between CPU and device by `dma_unmap_*` or `dma_sync_*_for_cpu/for_device`. The device is told the returned `dma_addr_t`, never the CPU virtual or physical address. Transfers through a separate DMA controller use the **dmaengine** API.
+
+**Setup and coherent buffer**
+
+```c
+ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));   /* device can address 32 bits */
+if (ret) return ret;
+
+d->ring = dma_alloc_coherent(dev, RING_BYTES, &d->ring_dma, GFP_KERNEL);
+if (!d->ring) return -ENOMEM;
+writel(lower_32_bits(d->ring_dma), d->base + RING_BASE);  /* the device gets the DMA address */
+```
+
+**Streaming mapping for a transmit buffer**
+
+```c
+dma_addr_t a = dma_map_single(dev, skb_data, len, DMA_TO_DEVICE);   /* cleans caches */
+if (dma_mapping_error(dev, a)) return -ENOMEM;
+desc->addr = cpu_to_le64(a);
+desc->len  = cpu_to_le32(len);
+dma_wmb();                                   /* descriptor fields visible before ownership flag */
+desc->flags = cpu_to_le32(DESC_OWN_HW);
+writel(1, d->base + DOORBELL);
+/* in the completion handler: dma_unmap_single(dev, a, len, DMA_TO_DEVICE); */
+```
+
+**dmaengine (memory ↔ peripheral via a system DMA controller)**
+
+```c
+chan = dma_request_chan(dev, "rx");                       /* from DT dmas/dma-names */
+dmaengine_slave_config(chan, &cfg);                       /* FIFO address, width, burst */
+desc = dmaengine_prep_slave_single(chan, buf_dma, len, DMA_DEV_TO_MEM, DMA_PREP_INTERRUPT);
+desc->callback = rx_done; desc->callback_param = d;
+dmaengine_submit(desc);
+dma_async_issue_pending(chan);
+```
+
+**Rules**
+
+- Never DMA to or from stack memory or `vmalloc` memory (not physically contiguous, may share cache lines).
+- Do not touch a streaming buffer while the device owns it.
+- With non-coherent devices, the DMA API performs cache clean/invalidate; buffers should be cache-line aligned (kmalloc guarantees `ARCH_DMA_MINALIGN`).
+- **IOMMU** (Arm SMMU, Intel VT-d) translates device addresses, gives isolation and makes scattered pages look contiguous to the device.
+- **dma-buf** shares DMA buffers between drivers (camera → GPU → display) without copying.
+
+### How does mmap work in a driver? {H}
+**Short answer:** Implementing `.mmap` lets user space map device memory or a driver buffer directly into its address space, avoiding copies. The driver checks the requested size and offset in the `vm_area_struct`, then maps the pages: `remap_pfn_range()` (or `io_remap_pfn_range` / `vm_iomap_memory()`) for device registers or reserved physical memory, `dma_mmap_coherent()` for DMA buffers, or `vm_insert_page`/`vm_map_pages` for normal kernel pages. Register mappings must be **uncached** (`pgprot_noncached` / `pgprot_device`).
+
+**Mapping a DMA buffer to user space**
+
+```c
+static int mydev_mmap(struct file *f, struct vm_area_struct *vma)
+{
+    struct mydev *d = f->private_data;
+    size_t size = vma->vm_end - vma->vm_start;
+
+    if (vma->vm_pgoff != 0 || size > d->buf_size)
+        return -EINVAL;                               /* never map more than you own */
+    return dma_mmap_coherent(d->dev, vma, d->buf, d->buf_dma, size);
+}
+```
+
+**Mapping a register page (e.g. for a user-space data path)**
+
+```c
+static int regs_mmap(struct file *f, struct vm_area_struct *vma)
+{
+    struct mydev *d = f->private_data;
+    vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+    return vm_iomap_memory(vma, d->regs_phys, d->regs_len);   /* checks size/offset for you */
+}
+```
+
+**User space**
+
+```c
+uint32_t *buf = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+```
+
+**Points to discuss**
+
+- **Security:** validate size and offset; exposing registers can let user space break isolation (e.g. by programming DMA to arbitrary memory) — usually only for trusted or privileged processes, or use VFIO with an IOMMU.
+- **Lifetime:** the mapping can outlive `close()`; the buffer must stay valid until the VMA is unmapped (reference counting, or `vm_operations_struct.close`).
+- **Synchronisation:** user space and hardware now share memory directly: define a protocol (head/tail indices, memory barriers, cache maintenance for non-coherent buffers).
+- **Page-fault-based mapping:** for large or lazily allocated buffers, implement `vm_ops->fault` and insert pages on demand.
+- Frameworks provide this already: V4L2 (`VIDIOC_REQBUFS` + mmap), DRM dumb buffers/GEM, UIO, and `dma-heap`.
+
+### What are kernel timers, hrtimers and delays? {M}
+**Short answer:** **Timers** (`timer_list`, `mod_timer`) run a callback in softirq context after a delay measured in **jiffies** (resolution 1/HZ, e.g. 4 ms with HZ=250), suitable for timeouts that do not need precision. **High-resolution timers** (`hrtimer`) have nanosecond-based expiry using the hardware clock event device, for precise timing. For **delays**, use `udelay`/`ndelay` (busy-wait, for microseconds, allowed in atomic context), `usleep_range` (sleep, 10 µs–20 ms), and `msleep`/`fsleep` (sleep, longer).
+
+**Timer example (watchdog-style timeout)**
+
+```c
+static void mydev_timeout(struct timer_list *t)
+{
+    struct mydev *d = from_timer(d, t, timer);      /* timer_container_of() on newest kernels */
+    dev_warn(d->dev, "no response, resetting\n");
+    schedule_work(&d->reset_work);                  /* softirq context: defer anything that sleeps */
+}
+
+timer_setup(&d->timer, mydev_timeout, 0);           /* in probe */
+mod_timer(&d->timer, jiffies + msecs_to_jiffies(500));   /* (re)arm */
+timer_delete_sync(&d->timer);                       /* in remove (del_timer_sync on older kernels) */
+```
+
+**hrtimer example (periodic 1 ms)**
+
+```c
+static enum hrtimer_restart tick(struct hrtimer *t)
+{
+    struct mydev *d = container_of(t, struct mydev, hrt);
+    sample(d);
+    hrtimer_forward_now(t, ms_to_ktime(1));
+    return HRTIMER_RESTART;
+}
+hrtimer_setup(&d->hrt, tick, CLOCK_MONOTONIC, HRTIMER_MODE_REL);  /* hrtimer_init on older kernels */
+hrtimer_start(&d->hrt, ms_to_ktime(1), HRTIMER_MODE_REL);
+```
+
+**Choosing a delay**
+
+| Duration | Context | Use |
+|---|---|---|
+| < 10 µs | any | `udelay`, `ndelay` |
+| 10 µs – 20 ms | process | `usleep_range(min, max)` (gives the scheduler slack to batch wake-ups) |
+| > 10 ms | process | `msleep`, `msleep_interruptible` |
+| unsure | process | `fsleep(us)` picks the right function |
+
+**Pitfalls:** `msleep(1)` can sleep much longer (rounded up to jiffies, at least 1–2 jiffies); compare jiffies with `time_after()` (handles wrap-around); always cancel timers synchronously before freeing their data.
+
+### How does power management work for drivers (system suspend and runtime PM)? {H}
+**Short answer:** Drivers implement two kinds of power management through `dev_pm_ops`. **System sleep** callbacks (`suspend`/`resume`, plus `_late`/`_noirq` variants) save state and power the device down when the whole system suspends (to RAM or disk), then restore it. **Runtime PM** (`runtime_suspend`/`runtime_resume`) powers an individual device down whenever it is idle while the system runs: the driver calls `pm_runtime_resume_and_get()` before using the hardware and `pm_runtime_put_autosuspend()` when done, and the core suspends it after an autosuspend delay when the usage count reaches zero.
+
+```c
+static int mydev_runtime_suspend(struct device *dev)
+{
+    struct mydev *d = dev_get_drvdata(dev);
+    clk_disable_unprepare(d->clk);
+    return regulator_disable(d->vdd);
+}
+
+static int mydev_runtime_resume(struct device *dev)
+{
+    struct mydev *d = dev_get_drvdata(dev);
+    int ret = regulator_enable(d->vdd);
+    if (ret) return ret;
+    ret = clk_prepare_enable(d->clk);
+    if (ret) { regulator_disable(d->vdd); return ret; }
+    regcache_cache_only(d->map, false);
+    return regcache_sync(d->map);                 /* restore registers after power loss */
+}
+
+static const struct dev_pm_ops mydev_pm = {
+    RUNTIME_PM_OPS(mydev_runtime_suspend, mydev_runtime_resume, NULL)
+    SYSTEM_SLEEP_PM_OPS(pm_runtime_force_suspend, pm_runtime_force_resume)
+};
+/* .driver.pm = pm_ptr(&mydev_pm) */
+
+/* in probe */
+pm_runtime_set_autosuspend_delay(dev, 200);
+pm_runtime_use_autosuspend(dev);
+devm_pm_runtime_enable(dev);
+
+/* around each hardware access */
+ret = pm_runtime_resume_and_get(dev);
+if (ret) return ret;
+do_transfer(d);
+pm_runtime_mark_last_busy(dev);
+pm_runtime_put_autosuspend(dev);
+```
+
+**Concepts to mention**
+
+- **Device hierarchy:** children suspend before parents and resume after them; device links handle non-parent dependencies (fw_devlink).
+- **PM domains (genpd):** power islands shared by several devices, switched off when all are runtime-suspended.
+- **Wake-up sources:** `device_init_wakeup()`, `enable_irq_wake()` so a button or RTC can wake the system.
+- **Clocks and voltages:** DVFS via OPP tables and cpufreq/devfreq; interconnect bandwidth votes.
+- **Debugging:** `/sys/devices/.../power/runtime_status`, `/sys/kernel/debug/pm_genpd/`, `echo mem > /sys/power/state`, `pm_test`, and `no_console_suspend` to see messages during suspend.
+
+### What is PREEMPT_RT and what changes for drivers? {H}
+**Short answer:** PREEMPT_RT (merged into mainline in 6.12, `CONFIG_PREEMPT_RT`) turns Linux into a real-time OS with bounded latencies of typically tens of microseconds. It makes almost all kernel code pre-emptible: interrupt handlers run in **threads** with configurable priorities, `spinlock_t` and `rwlock_t` become **sleeping rt_mutexes with priority inheritance**, softirqs run in thread context, and long non-pre-emptible sections are broken up. Drivers must not rely on "spinlock means interrupts and pre-emption are off".
+
+**What changes**
+
+| | Standard kernel | PREEMPT_RT |
+|---|---|---|
+| Hard IRQ handlers | run in interrupt context | forced into threads (`irq/NN-name`, SCHED_FIFO 50) unless `IRQF_NO_THREAD` |
+| `spinlock_t` | spins, disables pre-emption | sleeping lock (rt_mutex) with priority inheritance |
+| `raw_spinlock_t` | spins | still spins: only for very short, truly atomic sections (IRQ chips, scheduler) |
+| `local_irq_disable()` around data | common (bad) practice | breaks: use proper locks (`local_lock`) |
+| Softirqs | after IRQs, or ksoftirqd | in thread context, per-CPU, pre-emptible |
+| Memory allocation under spinlock | allowed with `GFP_ATOMIC` | spinlocks can sleep, so allocations in raw-spinlock or hard-IRQ sections are forbidden |
+
+**Driver guidelines for RT**
+
+- Use threaded IRQs and normal `spinlock_t`; use `raw_spinlock_t` only where required (interrupt controller, clock event code) and keep those sections tiny.
+- Do not disable interrupts or pre-emption to protect data; use locks or `local_lock_t` for per-CPU data.
+- Avoid unbounded loops with locks held.
+- Mark interrupt handlers that must stay in hard IRQ context with `IRQF_NO_THREAD` (timers, IPIs) and keep them minimal.
+
+**Tuning a real-time system**
+
+1. RT application threads use `SCHED_FIFO` with priorities above the IRQ threads they don't depend on; set the relevant IRQ thread priorities with `chrt`.
+2. `mlockall(MCL_CURRENT | MCL_FUTURE)` and pre-fault stacks/heap to avoid page faults.
+3. Isolate CPUs (`isolcpus=`, `nohz_full=`, `rcu_nocbs=`, `irqaffinity=`) for critical threads.
+4. Disable deep CPU idle states and frequency scaling for lowest latency, or accept the trade-off.
+5. Measure with `cyclictest` under load (`stress-ng`, `hackbench`), and find latency sources with `ftrace` (osnoise, timerlat tracers, `rtla`).
+
+**Limits:** RT Linux gives bounded latency for most workloads but is not formally certified for hard safety-critical use; those systems pair Linux with an RTOS on another core or a hypervisor.
+
+### How do you write a user-space driver, and when is it a good idea (UIO, VFIO, spidev, libgpiod)? {M}
+**Short answer:** Some devices can be driven from user space using generic kernel interfaces: **UIO** maps device registers into a process and delivers interrupts via `read()` on `/dev/uioN`; **VFIO** does the same with IOMMU protection and full DMA support (used by DPDK, SPDK and QEMU device pass-through); **spidev**, **i2c-dev** and **libgpiod** (`/dev/gpiochipN` character device) expose buses and GPIOs. User-space drivers are easier to develop and debug and avoid GPL constraints, but they have higher latency for interrupts, cannot integrate with kernel subsystems (network stack, filesystems, input), and need care with security.
+
+| Interface | Gives | Typical use |
+|---|---|---|
+| UIO (`uio_pdrv_genirq`) | mmap of registers, interrupt count via `read`, re-enable via `write` | FPGA IP cores, simple custom peripherals |
+| VFIO (`vfio-pci`, `vfio-platform`) | registers, interrupts via eventfd, IOMMU-protected DMA | DPDK/SPDK high-performance NIC/NVMe drivers, VM pass-through |
+| spidev / i2c-dev | raw SPI/I2C transfers | prototyping, simple sensors |
+| GPIO character device (libgpiod) | line requests, events with timestamps | buttons, enables, bit-banging (the old sysfs GPIO interface is deprecated) |
+
+**UIO interrupt loop**
+
+```c
+int fd = open("/dev/uio0", O_RDWR);
+volatile uint32_t *regs = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+uint32_t enable = 1, count;
+for (;;) {
+    write(fd, &enable, sizeof enable);         /* (re)enable the interrupt */
+    read(fd, &count, sizeof count);            /* blocks until the next interrupt */
+    handle(regs);
+}
+```
+
+**When kernel drivers are the right choice:** the device must integrate with a subsystem (Ethernet, storage, display, input, audio), needs low interrupt latency, must be shared safely among processes, must work at boot before user space, or must protect the system from misbehaving software (DMA without an IOMMU).
+
+**When user space is fine:** prototypes, low-rate devices, high-throughput polling designs (DPDK), and proprietary code that cannot be GPL.
 
 ### How does the kernel boot on an ARM64 system? {M}
-1. Boot ROM loads the first stage (e.g. SPL or TF-A BL2), which initialises DRAM.
-2. Trusted Firmware-A sets up secure world and EL3 services (PSCI), then loads the bootloader (U-Boot or UEFI) at EL2.
-3. The bootloader loads the kernel `Image`, the DTB and optionally an initramfs, then jumps to the kernel with the DTB address in `x0`.
-4. The kernel sets up page tables and the MMU, parses the device tree, initialises memory, the scheduler and interrupts (`start_kernel`), probes drivers via `initcall`s, mounts the root filesystem, and runs `/sbin/init` (systemd, BusyBox init) as PID 1.
+**Short answer:** The boot ROM loads a first-stage loader (SPL or TF-A BL2) that initialises DRAM; Trusted Firmware-A sets up the secure world and EL3 services (PSCI), then hands over to U-Boot or UEFI at EL2; the bootloader loads the kernel `Image`, the device tree and optionally an initramfs, and jumps to the kernel with the DTB address in `x0`, MMU off, at EL2 or EL1. The kernel sets up page tables and enables the MMU, then `start_kernel()` initialises memory, interrupts, timers and the scheduler, brings up secondary CPUs through PSCI, runs driver initcalls (probing devices from the DT), mounts the root filesystem and executes `/sbin/init` as PID 1.
+
+**Kernel-side steps in more detail**
+
+1. `head.S` (`primary_entry`): checks the boot exception level, sets up identity and kernel page tables, enables the MMU, jumps to the virtual address space.
+2. `start_kernel()`: `setup_arch()` (parse DT memory, reserved regions, early console via `earlycon`), memory allocators (memblock → buddy/slab), `trap_init`, IRQ controller (GIC) init, timers (arch timer), `sched_init`, console, `rest_init()`.
+3. `kernel_init` thread: SMP bring-up (`PSCI CPU_ON`), `do_initcalls()` in levels (core → postcore → arch → subsys → fs → device → late), which registers buses and drivers; devices from the DT are created by `of_platform_populate`.
+4. Unpack initramfs (if any) and run its `/init`, or mount the root device given by `root=` and run `/sbin/init`.
+5. PID 1 (systemd, BusyBox init) starts services and user space.
+
+**Debugging early boot:** `earlycon` on the kernel command line, `initcall_debug`, `ignore_loglevel`, `keep_bootcon`, JTAG with the kernel stopped at `start_kernel`, and checking that the DTB address and memory node are correct.
+
+See the Embedded Linux topic for bootloader details (SPL, U-Boot internals, FIT images).
 
 ### How do you debug a kernel oops or panic? {M}
-- Read the oops: it shows the faulting address, the instruction (`pc : my_func+0x48/0x120 [mymod]`), registers and the call trace.
-- Translate offsets to lines with `./scripts/faddr2line vmlinux my_func+0x48/0x120` or `gdb`'s `list *(my_func+0x48)` on the module `.ko` built with debug info.
-- Use `dmesg`, `pr_debug` with **dynamic debug**, `ftrace` (`function_graph`, tracepoints), and `trace-cmd`/`kernelshark`.
-- Turn on debug options: KASAN (memory errors), lockdep (`CONFIG_PROVE_LOCKING`), KCSAN (data races), `DEBUG_ATOMIC_SLEEP`.
-- For hangs: magic SysRq (`echo t > /proc/sysrq-trigger`), the soft/hard lockup detector, and kdump/crash or KGDB over serial or JTAG.
+**Short answer:** Read the oops message: it gives the reason (e.g. "Unable to handle kernel NULL pointer dereference at virtual address 0000000000000010"), the faulting instruction (`pc : my_func+0x48/0x120 [mymod]`), registers and the call trace. Translate the offset to a source line with `scripts/faddr2line` or gdb on a debug build, reproduce with debugging options enabled (KASAN, lockdep, KCSAN, `DEBUG_ATOMIC_SLEEP`), and use tracing (ftrace, dynamic debug) to see what led up to it. For crashes that stop the system, capture logs over serial, with pstore/ramoops, or with kdump.
+
+**Reading an oops**
+
+```
+Unable to handle kernel NULL pointer dereference at virtual address 0000000000000010
+pc : mydev_irq+0x24/0x80 [mydev]
+lr : __handle_irq_event_percpu+0x5c/0x1e0
+...
+Call trace:
+ mydev_irq+0x24/0x80 [mydev]
+ handle_irq_event+0x4c/0xa8
+ ...
+```
+
+- Address 0x10 → dereferencing a field at offset 16 of a NULL struct pointer.
+- `pc` gives function + offset/size; `lr` the caller.
+- "Tainted: G O" flags show out-of-tree (O) or proprietary (P) modules are loaded.
+
+```sh
+./scripts/faddr2line drivers/misc/mydev.ko mydev_irq+0x24/0x80
+# or
+gdb drivers/misc/mydev.ko -ex 'list *(mydev_irq+0x24)'
+./scripts/decode_stacktrace.sh vmlinux < oops.txt      # decodes a whole trace
+```
+
+**Toolbox**
+
+| Problem | Tool |
+|---|---|
+| use-after-free, out-of-bounds | KASAN (`CONFIG_KASAN`), KFENCE (low-overhead, for production) |
+| locking errors, deadlocks | lockdep (`CONFIG_PROVE_LOCKING`) |
+| data races | KCSAN |
+| sleeping in atomic context | `CONFIG_DEBUG_ATOMIC_SLEEP` |
+| memory leaks | kmemleak |
+| hangs | soft/hard lockup and hung task detectors, `echo t > /proc/sysrq-trigger`, `echo l > ...` (backtraces of all CPUs) |
+| understanding flow | ftrace (`function_graph`), tracepoints, `trace-cmd`/KernelShark, `pr_debug` with dynamic debug, bpftrace |
+| crash dumps | kdump + `crash` utility, pstore/ramoops (logs survive reboot) |
+| live debugging | KGDB over serial, JTAG/OpenOCD with `vmlinux` symbols, QEMU + gdb (`-s -S`) |
+
+**Method:** make it reproducible, simplify the test case, check recent changes (`git bisect`), and check the obvious: reference counting, missing locking, use after `remove()`, IRQ firing before initialisation completes.
 
 ### What is the DRM/KMS display stack? {H}
-The Direct Rendering Manager is the Linux graphics and display subsystem. **KMS** (kernel mode setting) models the display pipeline as objects:
+**Short answer:** The Direct Rendering Manager (DRM) is the Linux graphics and display subsystem; **KMS** (kernel mode setting) is the display part. KMS models the display pipeline as objects: **framebuffers** (memory holding pixels, backed by GEM buffer objects), **planes** (layers that scan out a framebuffer: primary, overlay, cursor, with format, scaling and position), **CRTCs** (the scan-out engines that blend planes and generate timing for one display mode), **encoders** (convert the pixel stream to a signal type: DSI, HDMI, eDP, LVDS) and **connectors** (the outputs with their modes and hot-plug status), plus **bridges** and **panels** for external chips and displays. User space commits a complete new state with the **atomic** API, which is validated (`atomic_check`) and applied at vblank (`atomic_commit`), so updates are all-or-nothing and tear-free.
 
-- **Framebuffer**: memory holding the pixels (allocated as GEM objects, often via dma-buf).
-- **Plane**: a layer that scans out a framebuffer (primary, overlay, cursor) with format, scaling and position.
-- **CRTC**: the scan-out engine that blends planes and produces timing for one display mode.
-- **Encoder**: converts the CRTC's pixel stream to a signal type (DSI, HDMI, eDP).
-- **Connector**: the physical output with its modes and hot-plug status; **bridges** and **panels** model external chips and displays.
+```
+GEM buffers → framebuffers → planes ─┐
+                                     ├→ CRTC (timing, blending) → encoder → bridge(s) → connector → panel/monitor
+                         overlay ────┘
+```
 
-User space (Wayland compositors, `modetest`) commits a complete new state with the **atomic** API, which is checked (`atomic_check`) and then applied at vblank (`atomic_commit`), so updates are all-or-nothing and tear-free. A MIPI DSI panel driver implements `drm_panel` operations (prepare, enable, get_modes) and sends initialisation commands with `mipi_dsi_dcs_write`.
+**Atomic commit flow**
+
+1. User space (Wayland compositor, Android HWComposer via drm_hwcomposer, `modetest`, Weston) builds a property set: plane FB_ID, CRTC_X/Y/W/H, CRTC MODE_ID, ACTIVE, connector CRTC_ID.
+2. `DRM_IOCTL_MODE_ATOMIC` with `TEST_ONLY` can check a configuration without applying it.
+3. The driver's `atomic_check` callbacks validate bandwidth, formats, scaling limits and clocks.
+4. `atomic_commit` programs the hardware (usually through helpers: `drm_atomic_helper_commit_tail`), latches at the next vblank, and sends page-flip events with timestamps to user space.
+
+**MIPI DSI panel driver essentials**
+
+```c
+static int mypanel_prepare(struct drm_panel *panel)
+{
+    struct mypanel *p = container_of(panel, struct mypanel, panel);
+    int ret = regulator_bulk_enable(ARRAY_SIZE(p->supplies), p->supplies);
+    if (ret) return ret;
+    gpiod_set_value_cansleep(p->reset, 0);
+    msleep(20);
+    mipi_dsi_dcs_exit_sleep_mode(p->dsi);
+    msleep(120);
+    return mipi_dsi_dcs_set_display_on(p->dsi);
+}
+/* get_modes() returns the panel's drm_display_mode (timings, size);
+ * probe sets dsi->lanes, dsi->format, dsi->mode_flags and calls mipi_dsi_attach() */
+```
+
+**Concepts interviewers probe**
+
+- **GEM** (buffer objects), **dumb buffers** (simple CPU-drawn framebuffers), **PRIME/dma-buf** (sharing buffers between GPU, camera and display), **fences** (implicit/explicit synchronisation: render finished before scan-out).
+- **Vblank handling** and page-flip events; **underflow** debugging (memory bandwidth, QoS, clocks).
+- **Mode timings:** pixel clock, hactive/hfp/hsync/hbp, same for vertical; refresh = pixel clock / (htotal × vtotal).
+- **DSI:** video vs command mode, lanes, burst mode, low-power vs high-speed transmission for DCS commands.
+- Debug: `modetest -M <driver>`, `/sys/kernel/debug/dri/0/state`, `drm.debug=0x1e` on the command line, `cat /sys/class/drm/card0-DSI-1/modes`.
 
 ### What is the difference between a kernel thread and a user thread? {E}
-A kernel thread (`kthread_run`) runs entirely in kernel space with no user address space (its `mm` is NULL), scheduled like any task. Examples are `kworker`, `ksoftirqd` and `irq/NN-name` threads. User threads belong to a process, share its address space and run user code, entering the kernel only through system calls and exceptions.
+**Short answer:** A kernel thread runs entirely in kernel space, has no user address space (its `mm` is NULL; it borrows the previous task's page tables), and is created with `kthread_run()` or by subsystems (`kworker`, `ksoftirqd`, `irq/NN-name`, `kswapd`, `rcu_*`). A user thread belongs to a process, shares that process's address space and file descriptors, runs user code at EL0, and enters the kernel only through system calls, exceptions and interrupts. Both are `task_struct`s scheduled by the same scheduler.
+
+**Creating a kernel thread in a driver**
+
+```c
+static int poll_fn(void *data)
+{
+    struct mydev *d = data;
+    while (!kthread_should_stop()) {
+        poll_hardware(d);
+        msleep_interruptible(10);
+    }
+    return 0;
+}
+
+d->task = kthread_run(poll_fn, d, "mydev-poll");
+if (IS_ERR(d->task)) return PTR_ERR(d->task);
+/* in remove: */ kthread_stop(d->task);
+```
+
+**Points**
+
+- Kernel threads appear in `ps` in square brackets (`[kworker/0:1H]`).
+- Prefer workqueues or threaded IRQs over custom kthreads unless you need a dedicated, long-running loop or a specific RT priority (`sched_set_fifo(task)`).
+- In Linux, user threads are created with `clone()` sharing the address space (pthreads, 1:1 model): each user thread has its own kernel `task_struct` and kernel stack.
+- Kernel threads can be frozen during suspend (`set_freezable()`, `try_to_freeze()`).
 
 ### How do you build an out-of-tree kernel module? {E}
-With a minimal Kbuild Makefile:
+**Short answer:** Write a minimal Kbuild Makefile that sets `obj-m` and calls the kernel build system with `M=$(PWD)`. Build against the configured source or headers of the exact kernel the module will run on (`vermagic` must match). For an embedded target, point `KDIR` at the target kernel build tree and pass `ARCH` and `CROSS_COMPILE`.
 
 ```make
 obj-m += mydrv.o
+mydrv-y := main.o hw.o          # module built from several files
 
 KDIR ?= /lib/modules/$(shell uname -r)/build
+
 all:
 	$(MAKE) -C $(KDIR) M=$(PWD) modules
 clean:
 	$(MAKE) -C $(KDIR) M=$(PWD) clean
+install:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules_install
 ```
 
-For an embedded target, point `KDIR` at the configured target kernel source and pass `ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-`. The module must be built against the same kernel version and configuration it will be loaded into (`vermagic`).
+**Cross-compiling for an ARM64 board**
+
+```sh
+make KDIR=~/linux-build ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-
+```
+
+The `KDIR` tree must have been configured and built (`make modules_prepare` at least) with the same configuration as the target kernel.
+
+**Integration options**
+
+- **Yocto:** a recipe inheriting `module` builds it with the image kernel automatically.
+- **Buildroot:** `kernel-module` package infrastructure.
+- **DKMS:** rebuilds out-of-tree modules automatically when distribution kernels update.
+- **In-tree:** add a Kconfig entry and `obj-$(CONFIG_MYDRV) += mydrv.o` to the subsystem's Makefile; upstreaming the driver avoids constant rebuilding for API changes.
+
+**Common errors:** "Invalid module format" or "disagrees about version of symbol" (built against a different kernel), "Unknown symbol" (missing dependency, or using a GPL-only symbol without a GPL licence), and missing `modules_prepare` in the build tree.
