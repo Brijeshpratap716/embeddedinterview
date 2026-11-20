@@ -55,7 +55,10 @@ def front_matter(raw):
         for line in fm.strip().splitlines():
             if ":" in line:
                 k, v = line.split(":", 1)
-                meta[k.strip()] = v.strip()
+                v = v.strip()
+                if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+                    v = v[1:-1]                      # strip YAML quotes
+                meta[k.strip()] = v
         return meta, body.strip()
     return meta, raw.strip()
 
