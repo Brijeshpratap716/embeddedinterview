@@ -84,6 +84,10 @@ NAV = [("Topics", "topics/"), ("Questions", "questions/"), ("Practice", "problem
        ("Quiz", "quiz/"), ("Articles", "articles/"), ("Roadmap", "roadmap/")]
 
 
+AUTHOR = {"@type": "Person", "name": "Brijesh Pratap Singh", "url": "https://embeddedinterview.com/about/",
+          "jobTitle": "Senior Embedded Software Engineer"}
+
+
 def page(path, title, body, desc="", active="", schema=None):
     depth = path.count("/")
     root = "../" * depth
@@ -249,6 +253,7 @@ def build_topics(topics):
 <section class="wrap pagehead"><div class="crumbs"><a href="../{url('')}">Topics</a> / {html.escape(t['title'])}</div>
 <h1><span class="ticon">{t.get('icon','')}</span>{html.escape(t['title'])}</h1>
 <div class="lead">{md(t['intro'])}</div>
+<p class="byline">Written by <a href="../../{url('about/')}">Brijesh Pratap Singh</a>, senior embedded software engineer (Qualcomm, Intel, Boeing)</p>
 <div class="meta"><span>{len(t['qs'])} questions</span><span>Level: {t.get('level','')}</span><span class="prog" data-topic="{t['slug']}" data-total="{len(t['qs'])}"></span></div>
 <div class="filters" data-target=".qa"><button class="f on" data-f="all">All</button><button class="f" data-f="E">Easy</button><button class="f" data-f="M">Medium</button><button class="f" data-f="H">Hard</button><button class="f" data-f="todo">Not done</button><button class="ghost" id="expandAll">Expand all</button></div>
 </section>
@@ -265,13 +270,14 @@ def build_topics(topics):
                  (f'<a class="r" href="../{url(nxt["slug"] + "/")}">{inline(nxt["q"])} →</a>' if nxt else "<span></span>") + "</div>"
             schema = {"@context": "https://schema.org", "@type": "QAPage", "mainEntity": {
                 "@type": "Question", "name": q["q"], "answerCount": 1,
-                "acceptedAnswer": {"@type": "Answer", "text": plain(q["md"], 1000)}}}
+                "acceptedAnswer": {"@type": "Answer", "text": plain(q["md"], 1000), "author": AUTHOR}}}
             body = f"""
 <article class="wrap narrow single">
 <div class="crumbs"><a href="../../{url('')}">Topics</a> / <a href="../{url('')}">{html.escape(t['title'])}</a> / Q{i+1}</div>
 <h1>{inline(q['q'])}</h1>
 <div class="meta">{badge(q['d'])}<span>{html.escape(t['title'])}</span><button class="mark" data-id="{qid}">Mark as done</button></div>
 <div class="prose">{md(q['md'])}</div>
+<p class="byline">Written by <a href="../../../{url('about/')}">Brijesh Pratap Singh</a>, senior embedded software engineer</p>
 {pn}
 </article>"""
             write(f"topics/{t['slug']}/{q['slug']}/index.html",
@@ -382,7 +388,7 @@ def build_articles(articles):
         body_html = md(a["body"])
         body_html = re.sub(r"<h2>(.*?)</h2>", lambda m: f'<h2 id="{slugify(m.group(1))}">{m.group(1)}</h2>', body_html)
         schema = {"@context": "https://schema.org", "@type": "Article", "headline": a["title"], "description": a.get("desc", ""),
-                  "datePublished": a.get("date", TODAY), "author": {"@type": "Organization", "name": SITE_NAME}}
+                  "datePublished": a.get("date", TODAY), "author": AUTHOR}
         write(f"articles/{a['slug']}/index.html", page(f"articles/{a['slug']}/index.html", a["title"], f"""
 <article class="wrap narrow single">
 <div class="crumbs"><a href="../{url('')}">Articles</a> / {html.escape(a.get('tag',''))}</div>

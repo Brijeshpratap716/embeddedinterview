@@ -256,3 +256,6 @@ html.dark .qa summary:hover .qt{color:var(--accent)}
   .edwrap{min-height:300px}
   #code{min-height:300px}
 }
+
+.byline{font-size:.85rem;color:var(--muted);margin:10px 0 0}
+.byline a{color:inherit;text-decoration:underline}
