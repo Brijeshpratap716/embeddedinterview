@@ -85,7 +85,8 @@ NAV = [("Topics", "topics/"), ("Questions", "questions/"), ("Practice", "problem
 
 
 AUTHOR = {"@type": "Person", "name": "Brijesh Pratap Singh", "url": "https://embeddedinterview.com/about/",
-          "jobTitle": "Senior Embedded Software Engineer"}
+          "jobTitle": "Senior Embedded Software Engineer",
+          "sameAs": ["https://www.linkedin.com/in/brijesh9/"]}
 
 
 def page(path, title, body, desc="", active="", schema=None):
@@ -458,7 +459,7 @@ def build_home(topics, problems, articles, nquiz):
     schema = {"@context": "https://schema.org", "@graph": [
         {"@type": "WebSite", "name": SITE_NAME, "alternateName": "Embedded Interview", "url": SITE_URL,
          "potentialAction": {"@type": "SearchAction", "target": SITE_URL + "/questions/?q={q}", "query-input": "required name=q"}},
-        {"@type": "Organization", "name": SITE_NAME, "url": SITE_URL, "logo": SITE_URL + "/static/og.png"}]}
+        {"@type": "Organization", "name": SITE_NAME, "url": SITE_URL, "logo": SITE_URL + "/static/og.png", "founder": AUTHOR}]}
     write("index.html", page("index.html", SITE_NAME, body, f"{total} embedded interview questions and answers with detailed explanations: Embedded C, RTOS, ARM Cortex-M, I2C, SPI, UART, CAN, Linux device drivers, plus coding practice and quizzes.", "", schema))
 
 

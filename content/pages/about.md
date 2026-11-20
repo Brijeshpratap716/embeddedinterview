@@ -6,7 +6,7 @@ EmbeddedInterview.com is a free resource for engineers preparing for embedded so
 
 ## Who writes it
 
-I'm **Brijesh Pratap Singh**, a senior embedded software engineer with about **7 years of experience** across bare-metal firmware, the Linux kernel, device drivers and virtualization.
+I'm **[Brijesh Pratap Singh](https://www.linkedin.com/in/brijesh9/)**, a senior embedded software engineer with about **7 years of experience** across bare-metal firmware, the Linux kernel, device drivers and virtualization.
 
 - **Qualcomm** — Senior Engineer, display and touch drivers (DRM/KMS, MIPI DSI).
 - **Boeing** — QEMU/KVM virtualization.
@@ -14,6 +14,8 @@ I'm **Brijesh Pratap Singh**, a senior embedded software engineer with about **7
 - **Cyient** — bare-metal firmware.
 
 In embedded interviews the same topics come up again and again: `volatile`, interrupts, pointers and memory, bit manipulation, RTOS synchronisation, I2C/SPI/UART/CAN, the Linux driver model, and coding rounds with ring buffers, linked lists and memory allocators. Most material I found online either stopped at one-line answers or was written for web developers, so I started writing the answers I wish I had read before my own interviews.
+
+You can find my full professional background on [LinkedIn](https://www.linkedin.com/in/brijesh9/).
 
 ## How the content is written
 
