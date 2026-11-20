@@ -52,6 +52,21 @@ Using `1u` makes the shift unsigned. With a plain `1`, `1 << 31` shifts into the
 
 **Follow-ups:** How would you do this on a real register shared with an ISR? (Critical section, or atomic set/reset registers like STM32 `BSRR`.) What about a multi-bit field? See *Extract and Insert a Register Field*.
 
+**Walk-through with x = 0b1010, n = 1**
+
+| operation | mask | result |
+|---|---|---|
+| set | `1u << 1` = 0b0010 | `x | mask` = 0b1010 (already set) |
+| clear | `~(1u << 1)` = …1101 | `x & ~mask` = 0b1000 |
+| toggle | 0b0010 | `x ^ mask` = 0b1000 |
+| test | 0b0010 | `(x >> 1) & 1u` = 1 → true |
+
+**Common mistakes:** `1 << 31` on a signed int (undefined before C23 — use `1u`); `x & 1 << n` without parentheses (works here, but `x & 1 << n == 0` does not, because `==` binds tighter than `&`); testing with `x & (1u << n) == 1`, which is false for any bit except bit 0.
+
+**Interview follow-ups:** do it on a hardware register (read-modify-write races with interrupts → use the peripheral's set/clear registers or a critical section); set or clear several bits at once with a mask; write the macros `BIT(n)`, `SET_BITS(reg, mask)` with proper parentheses.
+
+**Complexity:** O(1), one or two instructions each.
+
 @@@ count-set-bits
 title: Count the Set Bits
 difficulty: E
@@ -105,6 +120,28 @@ unsigned popcount(uint32_t x)
 Subtracting 1 flips the lowest set bit to 0 and all bits below it to 1; ANDing with the original clears exactly that bit. The loop runs once per set bit (Brian Kernighan's algorithm), so it is fast for sparse values.
 
 For constant time, use the SWAR (parallel bit count) method, or a 16-entry nibble lookup table. In real code, `__builtin_popcount` lets the compiler pick the best instruction sequence for the target.
+
+**Walk-through for x = 0b101100 (3 bits set)**
+
+| iteration | x before | x & (x − 1) | count |
+|---|---|---|---|
+| 1 | 101100 | 101000 | 1 |
+| 2 | 101000 | 100000 | 2 |
+| 3 | 100000 | 000000 | 3 |
+
+**Comparison of methods**
+
+| Method | Work | Notes |
+|---|---|---|
+| Test every bit | 32 iterations | simplest |
+| Kernighan `x &= x − 1` | one iteration per set bit | asked here |
+| Nibble table (16 entries) | 8 lookups | small table, constant time |
+| SWAR (parallel adds) | ~12 operations | constant time, no table |
+| `__builtin_popcount` / `CNT` (NEON) | 1–few instructions | best in production |
+
+**Uses:** parity (`popcount & 1`), Hamming distance (`popcount(a ^ b)`), counting free blocks in a bitmap, counting active channels.
+
+**Follow-up:** popcount of 64-bit values and arrays — use `__builtin_popcountll`, or sum per-byte counts with a 256-entry table.
 
 @@@ reverse-bits-byte
 title: Reverse the Bits of a Byte
@@ -160,6 +197,25 @@ Three swap stages of width 4, 2 and 1 reverse 8 bits in constant time with no lo
 
 Alternatives: a loop that shifts bits out of `b` and into the result (8 iterations), or a 256-byte lookup table in flash for the fastest speed. On ARMv7-M, `__RBIT(x) >> 24` does it in one instruction.
 
+**Walk-through of the swap method for b = 0xB0 (1011 0000)**
+
+1. Swap nibbles: 0000 1011 (0x0B)
+2. Swap bit pairs within each nibble: 00 00 10 11 → 00 00 11 10 (0x0E)
+3. Swap adjacent bits: 0000 1110 → 0000 1101 (0x0D) ✓
+
+Each step uses two masks and two shifts: three steps for 8 bits, five for 32 bits — log₂(width) steps instead of a loop over every bit.
+
+**Alternatives**
+
+| Method | Cost |
+|---|---|
+| Loop over 8 bits (shift out, shift in) | 8 iterations, tiny code |
+| 256-byte lookup table | 1 load, 256 bytes of flash |
+| 16-entry nibble table | 2 loads + shift |
+| Arm `RBIT` instruction (`__RBIT` intrinsic) | 1 instruction for 32 bits (`>> 24` for a byte) |
+
+**Where it is used:** SPI/serial peripherals that only shift LSB first, CRC algorithms with reflected input/output, FFT bit-reversed addressing, and displays wired with reversed data lines.
+
 @@@ swap-nibbles-endian
 title: Swap Byte Order of a 32-bit Value
 difficulty: E
@@ -214,6 +270,22 @@ uint32_t load_be32(const uint8_t *p)
 Casting `buf + 1` to `uint32_t *` would be both an unaligned access (HardFault on Cortex-M0) and a strict-aliasing violation, and it would still give the wrong answer on a little-endian host. Assembling from bytes is portable and the compiler turns it into `LDR` + `REV` where the hardware allows.
 
 Note the casts to `uint32_t` before shifting: `p[0]` promotes to `int`, and `0xDE << 24` overflows a signed int.
+
+**Walk-through of `bswap32(0x11223344)`**
+
+| term | value |
+|---|---|
+| `x << 24` | 0x44000000 |
+| `(x << 8) & 0x00FF0000` | 0x00330000 |
+| `(x >> 8) & 0x0000FF00` | 0x00002200 |
+| `x >> 24` | 0x00000011 |
+| OR of all | **0x44332211** |
+
+**Why `load_be32` uses shifts on bytes:** `(p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]` gives the same result on little- and big-endian hosts and never performs an unaligned 32-bit access, so it is safe on Cortex-M0 and with packed protocol buffers. Casting `p` to `uint32_t *` would be both endian-dependent and potentially a HardFault or strict-aliasing violation. Cast `p[0]` to `uint32_t` before shifting by 24, otherwise the promoted `int` can overflow.
+
+**In production:** `__builtin_bswap32` (one `REV` instruction on Arm), `htonl`/`ntohl` for network order, and Linux `be32_to_cpu` / `get_unaligned_be32`.
+
+**Interview follow-ups:** detect host endianness at run time (`*(uint8_t *)&(uint32_t){1}` is 1 on little-endian), swap 16-bit values (`REV16`), and write `store_le32`.
 
 @@@ register-field
 title: Extract and Insert a Register Field
@@ -285,6 +357,23 @@ The textbook `(1u << width) - 1` breaks for `width == 32` because shifting by th
 
 When applied to a real register this is a read-modify-write. If an ISR or another core can modify the same register, protect it with a critical section, or use hardware set/clear registers. In the Linux kernel, the same job is done by `FIELD_GET()` and `FIELD_PREP()` with `GENMASK()`.
 
+**Walk-through: `field_set(0xFFFF0000, 4, 4, 0xA)`**
+
+1. `mask = ((1u << 4) − 1) << 4` = 0x000000F0
+2. Clear the field: `0xFFFF0000 & ~0xF0` = 0xFFFF0000
+3. Insert: `(0xA << 4) & 0xF0` = 0xA0
+4. Result: **0xFFFF00A0**
+
+`field_get(0xFFFF00A0, 4, 4)` = `(0xFFFF00A0 >> 4) & 0xF` = 0xA.
+
+**The width-32 trap:** `1u << 32` is undefined behaviour, so a full-width field needs a special case (`width == 32 ? 0xFFFFFFFFu : (1u << width) − 1u`) — that is what the tests check.
+
+**Why mask `val` before inserting:** an oversized value (e.g. 0x1A into a 4-bit field) would otherwise overwrite neighbouring bits; masking silently truncates it (some APIs assert instead).
+
+**Real-world equivalents:** CMSIS `_Pos`/`_Msk` macros, `MODIFY_REG(reg, clear_mask, set_mask)` on STM32, Linux `FIELD_PREP(GENMASK(7, 4), val)` and `FIELD_GET`.
+
+**Hardware caution:** on an actual register this is a read-modify-write — protect it from interrupts that write the same register, and never use it on write-1-to-clear registers.
+
 @@@ safe-string-copy
 title: Safe String Copy (strlcpy)
 difficulty: E
@@ -346,6 +435,27 @@ size_t my_strlcpy(char *dst, const char *src, size_t size)
 `strncpy` is not a safe replacement for `strcpy`: it does not terminate the destination when the source is too long, and it zero-pads the whole buffer, which wastes time. `strlcpy` semantics (BSD, and now in glibc 2.38 and POSIX 2024) fix both. Returning the full source length lets callers write `if (my_strlcpy(d, s, n) >= n) /* truncated */`.
 
 Edge cases interviewers check: `size == 0`, empty source, and exact-fit strings.
+
+**Walk-through**
+
+| call | copied | dst | return | truncated? |
+|---|---|---|---|---|
+| `my_strlcpy(d, "hi", 8)` | `h i \0` | "hi" | 2 | no (2 < 8) |
+| `my_strlcpy(d, "hello", 4)` | `h e l \0` | "hel" | 5 | yes (5 ≥ 4) |
+| `my_strlcpy(d, "x", 0)` | nothing | unchanged | 1 | yes |
+
+**Why return the source length:** the caller can check `if (ret >= size)` to detect truncation and, if needed, allocate `ret + 1` bytes and retry.
+
+**Compared with the standard alternatives**
+
+| Function | Always terminates | Detects truncation | Notes |
+|---|---|---|---|
+| `strcpy` | yes | no | no bounds check at all |
+| `strncpy` | **no** (if src ≥ n) | no | zero-pads, slow for big buffers |
+| `snprintf(d, n, "%s", s)` | yes (n > 0) | yes (return value) | heavier, available everywhere |
+| `strlcpy` | yes | yes | BSD, glibc 2.38+, Linux kernel uses `strscpy` |
+
+**Complexity:** O(len(src)) — it scans the whole source to compute the return value even when copying less. Linux's `strscpy` returns `-E2BIG` instead and stops at the buffer size, which avoids reading a huge or unterminated source.
 
 @@@ implement-memmove
 title: Implement memmove
@@ -411,6 +521,23 @@ void *my_memmove(void *dst, const void *src, size_t n)
 Comparing unrelated pointers with `<` is technically unspecified in C, which is why the comparison is done on `uintptr_t`. Real library versions copy word by word once both pointers are aligned, which is much faster for large buffers.
 
 **Follow-up:** why is `memcpy` allowed to be faster? Because its `restrict` parameters let it assume no overlap and copy in any order, including with SIMD or DMA.
+
+**Walk-through: shift right by 2 inside one buffer**
+
+`buf = "ABCDE__"`, `my_memmove(buf + 2, buf, 5)`: the destination starts inside the source range, so copy backwards: E → buf[6], D → buf[5], C → buf[4], B → buf[3], A → buf[2] → `"ABABCDE"`. Copying forwards would read A, B, then the already-overwritten A, B again → `"ABABABA"`.
+
+**Decision rule**
+
+| condition | direction |
+|---|---|
+| `dst <= src` or `dst >= src + n` | forward |
+| `src < dst < src + n` | backward |
+
+**Why not use a temporary buffer:** it needs O(n) extra memory (stack or heap), which may not exist on an MCU, and doubles the copying.
+
+**Edge cases tested:** `n == 0`, `dst == src`, full overlap in both directions, and non-overlapping copies.
+
+**Performance follow-up:** copy word-sized chunks after aligning, in either direction (the backward loop aligns from the end). Comparing unrelated pointers with `<` is technically unspecified in C; converting to `uintptr_t` (as libraries do) avoids the issue.
 
 @@@ atoi-overflow
 title: String to Integer with Error Checking
@@ -488,6 +615,31 @@ bool parse_int32(const char *s, int32_t *out)
 
 The standard-library alternative is `strtol` with `errno` and `endptr` checks.
 
+**The overflow check without overflowing**
+
+Accumulate in a wider or in the negative range. One clean way: accumulate the magnitude in `uint32_t` / `int64_t` and check against the limit **before** each multiply-add:
+
+- positive limit 2,147,483,647, negative limit 2,147,483,648 (one larger in magnitude).
+- `if (acc > (limit − digit) / 10) → overflow`.
+
+**Walk-through**
+
+| input | result |
+|---|---|
+| `"123"` | 123, true |
+| `"-2147483648"` | INT32_MIN, true (the asymmetric limit) |
+| `"2147483648"` | false (one too large) |
+| `"+"`, `""`, `"12a"`, `" 12"` | false (no digits / invalid characters — this API does not skip spaces) |
+
+**Common mistakes**
+
+- Computing `acc * 10 + d` first and checking afterwards — signed overflow is undefined, so the check may be optimised away.
+- Building a positive number and negating it: `-(2147483648)` does not fit in `int32_t`.
+- Accepting an empty string or a lone sign as 0.
+- Using `atoi`, which has no error reporting at all; `strtol` with `errno` and `endptr` checks is the standard alternative.
+
+**Why it matters in firmware:** parsing configuration values and commands from UART, BLE or a web interface — unvalidated numbers are a common source of crashes and security bugs.
+
 @@@ reverse-linked-list
 title: Reverse a Singly Linked List
 difficulty: E
@@ -550,6 +702,27 @@ struct node *reverse(struct node *head)
 Each step detaches the current node and pushes it onto the front of the reversed list held in `prev`. O(n) time, O(1) space. A recursive solution is shorter but uses O(n) stack, which is unacceptable on a small MCU stack for long lists.
 
 **Follow-ups:** reverse in groups of k; reverse a doubly linked list (swap `next` and `prev` in each node); detect a cycle first.
+
+**Walk-through for 1 → 2 → 3**
+
+| step | prev | cur | next saved | list state |
+|---|---|---|---|---|
+| start | NULL | 1 | — | 1 → 2 → 3 |
+| 1 | 1 | 2 | 2 | NULL ← 1 2 → 3 |
+| 2 | 2 | 3 | 3 | NULL ← 1 ← 2 3 |
+| 3 | 3 | NULL | NULL | NULL ← 1 ← 2 ← 3 |
+
+Return `prev` (node 3).
+
+**The one rule:** save `cur->next` **before** overwriting it, or the rest of the list is lost.
+
+**Edge cases tested:** empty list (returns NULL), single node (returns itself), two nodes.
+
+**Why not recursion:** the recursive version is elegant but uses one stack frame per node; on an MCU with a 1 KB task stack, a few hundred nodes can overflow it.
+
+**Follow-ups:** reverse between positions m and n, reverse in groups of k, check whether the list is a palindrome (reverse the second half), reverse a doubly linked list (swap `next` and `prev` in every node).
+
+**Complexity:** O(n) time, O(1) extra space.
 
 @@@ ring-buffer
 title: Lock-Free Ring Buffer (SPSC)
@@ -653,6 +826,23 @@ Free-running counters solve the classic full-versus-empty ambiguity without wast
 
 On a multi-core or out-of-order CPU, replace the compiler barrier with real ordering: C11 `atomic_store_explicit(&head, h + 1, memory_order_release)` in the producer and an acquire load in the consumer.
 
+**Why free-running indices use all slots:** `head` and `tail` only ever increase; the number of stored bytes is `head − tail` (unsigned, wrap-safe), so full is `count == RB_SIZE` and empty is `count == 0` — no slot has to stay empty to tell them apart. The array position is `index & (RB_SIZE − 1)`.
+
+**Walk-through (RB_SIZE = 4)**
+
+| op | head | tail | count | result |
+|---|---|---|---|---|
+| put ×4 | 4 | 0 | 4 | full |
+| put | 4 | 0 | 4 | false |
+| get | 4 | 1 | 3 | first byte |
+| put | 5 | 1 | 4 | stored in slot 5 & 3 = 0 |
+
+Wrap-around of the 32-bit counters after 4 billion bytes is harmless: unsigned subtraction still gives the right count.
+
+**ISR safety:** the ISR writes only `head`, the main loop writes only `tail`; on a single-core MCU, `volatile` indices with the data written **before** `head` is updated are enough. On Cortex-M7 or multi-core, use C11 atomics with release/acquire ordering.
+
+**Follow-ups:** what if two ISRs write (needs a critical section), overwrite-oldest mode, bulk `rb_read(buf, n)` with two `memcpy` calls around the wrap, and DMA-fed circular buffers.
+
 @@@ memory-pool
 title: Fixed-Block Memory Pool
 difficulty: M
@@ -746,6 +936,24 @@ The union guarantees each block is large enough and aligned for a pointer. Alloc
 
 For use from both tasks and ISRs, wrap `alloc` and `free` in a critical section. Debug builds often add a magic value or a range check in `pool_free` to catch double frees and foreign pointers.
 
+**How the free list lives inside the free blocks:** each free block's first bytes store a pointer to the next free block, so no extra memory is needed. `pool_alloc` pops the head of the list; `pool_free` pushes the block back. Both are O(1) and deterministic.
+
+**Walk-through (3 blocks: A, B, C)**
+
+```
+init:          free → A → B → C → NULL
+alloc() → A    free → B → C
+alloc() → B    free → C
+free(A)        free → A → C
+alloc() → A    (last freed is reused first)
+```
+
+**Requirements the tests check:** `BLOCK_SIZE` must be at least `sizeof(void *)` and blocks must be aligned for the data stored in them (`_Alignas(max_align_t)` on the array, or round the block size up to 8); `pool_alloc` returns NULL when exhausted.
+
+**Robustness extras interviewers like:** detect double free and foreign pointers (range check, `(p − base) % BLOCK_SIZE == 0`, a used/free bitmap), keep a usage high-water mark, fill freed blocks with a pattern to catch use-after-free, and protect with a critical section if ISRs allocate.
+
+**Why pools beat malloc in firmware:** no fragmentation, bounded time, and failures happen only when the pool is genuinely exhausted — which you can size from measurements.
+
 @@@ moving-average
 title: Moving Average Filter
 difficulty: E
@@ -807,6 +1015,24 @@ uint16_t ma_add(uint16_t x)
 The running sum makes each update O(1) regardless of window size. A `uint32_t` sum cannot overflow for 12-bit samples unless N exceeds about one million. If N is a power of two, the division becomes a shift once the window is full.
 
 Alternatives: an exponential moving average `avg += (x - avg) >> k` uses no buffer, which is popular on small MCUs; a median filter rejects spikes better than an average.
+
+**Walk-through (N = 4)**
+
+| sample | buffer | sum | count | average |
+|---|---|---|---|---|
+| 100 | 100 | 100 | 1 | 100 |
+| 200 | 100 200 | 300 | 2 | 150 |
+| 300 | 100 200 300 | 600 | 3 | 200 |
+| 400 | 100 200 300 400 | 1000 | 4 | 250 |
+| 500 | 500 200 300 400 | 1400 | 4 | 350 (100 dropped) |
+
+**O(1) trick:** keep a running sum — subtract the sample being overwritten, add the new one — instead of summing N values each time.
+
+**Integer details:** 12-bit samples (max 4095) × N must fit in the sum type (`uint32_t` is fine for N up to a million); with N a power of two, `sum >> log2(N)` replaces the division; add `count / 2` before dividing to round instead of truncating.
+
+**Startup behaviour:** averaging over `count` samples until the buffer is full avoids a slow ramp from zero (which the tests check).
+
+**Alternatives:** exponential moving average `y += (x − y) >> k` (no buffer, one subtraction and shift), median filter for spikes, and proper FIR/IIR filters for defined frequency responses.
 
 @@@ debounce-button
 title: Debounce a Push Button
@@ -884,6 +1110,30 @@ This is a two-state machine with a counter. Any sample matching the stable state
 
 A compact alternative keeps an 8-bit shift-register history and checks for `0x1F`/`0xE0` patterns. Avoid debouncing with edge interrupts alone: a bouncing contact can fire dozens of interrupts. Five milliseconds suits most tactile switches; check the switch datasheet.
 
+**Walk-through (threshold 5 samples)**
+
+| raw samples | stable state | return |
+|---|---|---|
+| 1 0 1 1 0 (bounce) | released | 0 each time |
+| 1 1 1 1 1 | → pressed on the 5th | **1** once |
+| 1 1 1 … | pressed | 0 |
+| 0 0 0 0 0 | → released on the 5th | **−1** once |
+
+The counter resets whenever the raw level matches the current stable state, so only five **consecutive** different samples change the state, and events are reported only on the transition.
+
+**Choosing the time:** mechanical switches bounce for roughly 1–20 ms; 5 samples at 1 ms (5 ms) suits most tactile switches, 20–50 ms for cheap or large switches.
+
+**Alternatives**
+
+| Method | Notes |
+|---|---|
+| Counter (this solution) | simple, symmetric press/release |
+| Shift-register history (`hist = (hist << 1) | raw`; pressed when `hist == 0xFF`) | elegant, 8-sample window |
+| Interrupt on edge + timer to re-check after 10 ms | low power, no constant sampling |
+| Hardware RC filter + Schmitt trigger | no firmware, costs parts |
+
+**Follow-ups:** long-press and double-click detection (a small state machine with timestamps), debouncing many buttons at once with bit-parallel "vertical counters", and why sampling must be periodic (from a timer, not the main loop).
+
 @@@ wrap-safe-timeout
 title: Wrap-Safe Timeout Check
 difficulty: E
@@ -933,6 +1183,21 @@ bool timeout_expired(uint32_t now, uint32_t start, uint32_t timeout_ms)
 Unsigned arithmetic is modulo 2³², so `now - start` is the true elapsed time even if `now` has wrapped past zero, provided the real interval is shorter than 2³² ms. The buggy version fails because `start + timeout_ms` itself overflows to a small number, making the timeout expire immediately (or never).
 
 The `(uint32_t)` cast matters on 8- and 16-bit targets where narrower types would be promoted to signed `int`. Linux uses `time_after(a, b)` macros on `jiffies` for exactly this reason.
+
+**Why `now − start >= timeout` works across the wrap**
+
+| now | start | `now − start` (uint32) | elapsed |
+|---|---|---|---|
+| 1000 | 900 | 100 | 100 ms |
+| 50 | 0xFFFFFFCE (−50) | 100 | 100 ms across the wrap ✓ |
+
+Unsigned subtraction is modulo 2³², which is exactly the elapsed time as long as it is less than 2³² ms (49.7 days).
+
+**The broken version:** `now >= start + timeout` — if `start + timeout` wraps to a small number, the condition is true immediately; if `now` wraps before reaching it, it may take 49 days to become true.
+
+**Equivalent signed form for deadlines:** `(int32_t)(now − deadline) >= 0` tests whether a precomputed deadline has passed, valid while the timeout is under 2³¹ ms (24.8 days). Linux uses this in `time_after(a, b)`.
+
+**Testing tip:** start your tick counter near 0xFFFFFFFF in debug builds (Linux starts jiffies 5 minutes before the wrap) so wrap bugs appear in the first minutes rather than after weeks in the field.
 
 @@@ crc16-ccitt
 title: CRC-16/CCITT-FALSE
@@ -991,6 +1256,23 @@ uint16_t crc16_ccitt(const uint8_t *data, size_t len)
 This is polynomial long division in GF(2), processed MSB first. It costs 8 iterations per byte. A 256-entry `uint16_t` table (512 bytes of flash) processes a byte in one lookup: `crc = (crc << 8) ^ table[(crc >> 8) ^ byte]`. Many MCUs (STM32, nRF) include a hardware CRC unit.
 
 There are dozens of "CRC-16" variants differing in polynomial, initial value, reflection and final XOR. Always confirm the parameters against a check value like the one in the test.
+
+**How the bitwise loop works:** XOR the next data byte into the top 8 bits of the 16-bit CRC, then process 8 bits: if the top bit is 1, shift left and XOR with the polynomial 0x1021; otherwise just shift left. This is long division in GF(2), keeping only the remainder.
+
+**Check value:** for the ASCII string `"123456789"`, CCITT-FALSE gives **0x29B1** — always verify an implementation against the catalogue check value, because CRC "names" are ambiguous.
+
+**Parameters that define a CRC-16**
+
+| Variant | Init | Reflect in/out | Final XOR | Check |
+|---|---|---|---|---|
+| CCITT-FALSE (this one) | 0xFFFF | no | 0 | 0x29B1 |
+| XMODEM | 0x0000 | no | 0 | 0x31C3 |
+| KERMIT | 0x0000 | yes | 0 | 0x2189 |
+| MODBUS (poly 0x8005) | 0xFFFF | yes | 0 | 0x4B37 |
+
+**Faster versions:** a 256-entry table (512 bytes of flash) processes a byte per lookup: `crc = (crc << 8) ^ table[(crc >> 8) ^ byte]`; a 16-entry nibble table is a good compromise; many MCUs have a configurable CRC peripheral (polynomial, init, reflection).
+
+**What CRC-16 detects:** all single- and double-bit errors, all odd numbers of bit errors (this polynomial), and all bursts up to 16 bits — but it is not a security check; anyone can forge a matching CRC.
 
 @@@ frame-parser
 title: UART Packet Parser State Machine
@@ -1091,6 +1373,30 @@ A byte-at-a-time state machine never blocks, works directly from a UART ISR or r
 
 Improvements for production: copy the payload to the application only after the checksum passes (here a failing packet partially overwrites `rx_payload`), add an inter-byte timeout to reset the state, and use a CRC instead of XOR. Because `0xAA` can appear in the payload, real protocols often use **byte stuffing** (SLIP, COBS, HDLC) so the start marker is unique.
 
+**State machine**
+
+```
+WAIT_START --0xAA--> GET_LEN --1..16--> GET_PAYLOAD (len bytes) --> GET_CHECKSUM --ok--> deliver, WAIT_START
+     ^                  |invalid length                               |bad checksum
+     +------------------+---------------------------------------------+
+```
+
+**Walk-through: `AA 02 10 20 22`**
+
+| byte | state | action |
+|---|---|---|
+| AA | WAIT_START | → GET_LEN |
+| 02 | GET_LEN | len = 2, chk = 0x02 |
+| 10 | GET_PAYLOAD | chk ^= 0x10 → 0x12 |
+| 20 | GET_PAYLOAD | chk ^= 0x20 → 0x32 |
+| 22 | GET_CHECKSUM | 0x22 ≠ 0x32 → error, back to WAIT_START |
+
+(With checksum byte 0x32 the frame would be accepted.)
+
+**Robustness points the tests check:** invalid lengths (0 or > 16) are rejected immediately instead of waiting for many bytes; a corrupted frame does not desynchronise the parser — it returns to hunting for 0xAA; one byte at a time, so it can run from a UART ISR or a ring-buffer reader.
+
+**Improvements for real protocols:** an inter-byte timeout that resets the parser if a frame stalls, a CRC instead of XOR (XOR misses many errors, e.g. two bytes with the same bit flipped), byte stuffing (SLIP/COBS) so the start byte cannot appear inside the payload, and sequence numbers to detect lost frames.
+
 @@@ nmea-checksum
 title: Validate an NMEA Sentence
 difficulty: M
@@ -1173,6 +1479,28 @@ The checks are ordered so the code never reads past the terminator: `s[1]` is on
 
 In a real receiver you would accumulate characters from the UART ring buffer into a line buffer of bounded size (NMEA allows 82 characters), validate, and then split fields on commas.
 
+**Walk-through for `$GPGLL,4916.45,N,12311.12,W,225444,A*1D`**
+
+1. Start after `$`, XOR every character up to (not including) `*`.
+2. Parse the two characters after `*` as hex (`1D` → 0x1D), accepting upper and lower case.
+3. Valid if the computed XOR equals the parsed value.
+
+**Validation cases the tests check:** missing `$`, missing `*`, fewer than two hex digits, invalid hex characters, a wrong checksum, and an optional trailing `\r\n`.
+
+**Hex parsing without library calls**
+
+```c
+static int hexval(char c)
+{
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    return -1;
+}
+```
+
+**Context:** NMEA sentences arrive over UART at 9600–115200 baud from GPS modules; a typical receiver collects characters into a line buffer (bounded length, 82 characters max per NMEA), validates the checksum, then splits fields at commas. The XOR checksum only detects simple errors — it cannot detect two swapped characters — so treat field values carefully (range checks).
+
 @@@ bitbang-spi
 title: Bit-Banged SPI Transfer (Mode 0)
 difficulty: M
@@ -1253,6 +1581,30 @@ SPI is just two shift registers connected in a loop: each clock pulse sends one 
 
 On real hardware add delays to meet the device's maximum clock and setup/hold times, and toggle chip select around the transfer. For mode 1 you would shift on the rising edge and sample on the falling edge instead. Bit-banging is useful when you run out of hardware SPI blocks or need an odd frame length.
 
+**Timing for one bit in mode 0 (CPOL = 0, CPHA = 0)**
+
+```
+MOSI: set bit 7 ──┐            set bit 6 ──┐
+SCK:  ____________|‾‾‾‾‾‾‾‾|______________|‾‾‾‾‾‾‾|___
+                  ↑ both sides sample on the rising edge
+MISO: read here ──┘ (after raising SCK)
+```
+
+Per bit: put the output bit on MOSI while SCK is low, raise SCK (both sides sample), read MISO, lower SCK (the peripheral shifts out its next bit). Repeat 8 times, MSB first, shifting the received bit into the result.
+
+**Walk-through: sending 0xA5 (1010 0101)** — MOSI goes 1,0,1,0,0,1,0,1 on successive clocks while the received byte is built as `in = (in << 1) | miso()`.
+
+**Other modes**
+
+| Mode | Change data | Sample |
+|---|---|---|
+| 0 | SCK low, before rising | rising |
+| 1 | on rising | falling |
+| 2 | SCK high, before falling | falling |
+| 3 | on falling | rising |
+
+**Real hardware notes:** add delays (or rely on GPIO speed) to respect the device's maximum SCK frequency and setup/hold times; control chip select around multi-byte transfers; use the GPIO set/reset registers for fast, atomic pin changes; bit-banging costs 100% CPU, so prefer the hardware SPI peripheral except when pins or modes are unusual.
+
 @@@ reset-handler
 title: Write the Reset Handler
 difficulty: M
@@ -1318,6 +1670,26 @@ void reset_init(void)
 On real hardware the symbols come from the linker script, declared as `extern uint32_t _sdata, _edata, ...;` and used by address (`&_sdata`). The linker script aligns the sections to 4 bytes so word copies are safe.
 
 A real reset handler then calls `SystemInit()` (clocks, FPU enable), `__libc_init_array()` for C++ constructors, and finally `main()`. It must not rely on any initialised global data before these loops run, and it must be careful not to let the compiler turn the loops into calls to `memcpy`/`memset` that themselves depend on initialised data (`-ffreestanding` or `-fno-builtin` help). Some projects write this in assembly for that reason.
+
+**What the linker-script symbols mean**
+
+| symbol | meaning |
+|---|---|
+| `_sidata` | load address of .data initial values (in flash) |
+| `_sdata`, `_edata` | run address range of .data (in RAM) |
+| `_sbss`, `_ebss` | range of .bss in RAM |
+
+**Steps in a real reset handler**
+
+1. (Optional) set the stack pointer, enable the FPU, configure clocks (`SystemInit`).
+2. Copy `_edata − _sdata` bytes from `_sidata` to `_sdata`.
+3. Zero `_sbss`..`_ebss`.
+4. Call C++ constructors (`__libc_init_array`).
+5. Call `main()`; if it returns, loop forever or reset.
+
+**Why copy .data:** RAM contents are undefined after power-up, so initialised globals must get their values from flash at every boot. **Why zero .bss:** C guarantees zero for uninitialised statics; storing zeros in flash would waste space.
+
+**Common bugs:** using `<=` instead of `<` at the end address (writes one word too far), copying bytes when the symbols are word-aligned (slower, but correct), forgetting to zero .bss (variables start with garbage, often only noticed after a warm reset), and calling functions that use globals before this initialisation (e.g. a clock-setup function that writes a global `SystemCoreClock`).
 
 @@@ hardfault-handler
 title: HardFault Handler that Captures the Stack Frame
@@ -1395,6 +1767,21 @@ The stacked PC is the address of the faulting instruction (for precise faults), 
 
 Production handlers save this data to a no-init RAM region, trigger a reset, and report it on the next boot. If the FPU was active, bit 4 of `EXC_RETURN` is 0 and the frame is 26 words long, but the first 8 words are laid out the same way.
 
+**Selecting the stack with EXC_RETURN**
+
+| EXC_RETURN | meaning |
+|---|---|
+| 0xFFFFFFF9 | return to Thread mode, MSP (bit 2 = 0) |
+| 0xFFFFFFFD | return to Thread mode, PSP (bit 2 = 1) — typical for RTOS tasks |
+| 0xFFFFFFF1 | return to Handler mode (fault inside an ISR), MSP |
+| 0xFFFFFFE9 / …ED | same, with an FPU frame stacked |
+
+The frame at the selected stack pointer is `[R0, R1, R2, R3, R12, LR, PC, xPSR]`, so the faulting PC is word 6 and the caller's LR is word 5.
+
+**Using the decoded values:** look up PC with `arm-none-eabi-addr2line -e app.elf 0x0800xxxx`; check `CFSR` (0xE000ED28) to see why (e.g. `PRECISERR` with `BFAR` = the bad address, `UNDEFINSTR`, `INVSTATE` for a function pointer without the Thumb bit, `STKERR` for stack overflow); `HFSR.FORCED` means a configurable fault escalated.
+
+**In real firmware:** the assembly entry (`tst lr, #4; ite eq; mrseq r0, msp; mrsne r0, psp; b fault_decode`) passes the frame pointer to C; the C code saves the registers to a `.noinit` area, then resets, so the next boot can report the crash. Breakpoint (`BKPT`) only when a debugger is attached.
+
 @@@ aligned-malloc
 title: Aligned Allocation
 difficulty: H
@@ -1469,6 +1856,20 @@ Reserving `sizeof(void *)` bytes before rounding up guarantees there is always r
 
 C11 provides `aligned_alloc(align, size)` (size must be a multiple of align) and POSIX provides `posix_memalign`; the Linux kernel's `kmalloc` gives natural alignment for power-of-two sizes. For DMA buffers on cached cores, also round the **size** up to a cache-line multiple so invalidation does not destroy neighbouring data.
 
+**Walk-through (align = 64, malloc returns 0x1004, pointer size 8)**
+
+1. Request `size + 63 + 8` bytes.
+2. `start = 0x1004 + 8 = 0x100C`.
+3. `aligned = (0x100C + 63) & ~63 = 0x1040`.
+4. Store 0x1004 at `0x1038` (the word just before 0x1040); return 0x1040.
+5. `aligned_free_x(0x1040)` reads 0x1004 from 0x1038 and calls `free(0x1004)`.
+
+**Checks the tests expect:** non-power-of-two alignment → NULL; alignment smaller than a pointer is raised (or rejected); `size + extra` overflow → NULL; `aligned_free_x(NULL)` does nothing; the returned pointer is aligned and the full `size` bytes are usable.
+
+**Why it matters:** DMA buffers on cores with caches must not share a cache line with other data (cache maintenance on the buffer would corrupt the neighbour), so they are aligned and sized to the cache line (32 bytes on Cortex-M7, 64 on most Cortex-A). Other uses: SIMD loads, page-aligned buffers for the MMU, hardware descriptor tables.
+
+**Standard alternatives:** C11 `aligned_alloc` (size must be a multiple of the alignment), POSIX `posix_memalign`, and static buffers with `_Alignas(64)`.
+
 @@@ q15-saturating-multiply
 title: Q15 Fixed-Point Multiply with Saturation
 difficulty: H
@@ -1534,6 +1935,22 @@ int16_t q15_add(int16_t a, int16_t b)
 The only product that overflows Q15 is −1 × −1 = +1, which cannot be represented, so it saturates to 0x7FFF. Saturation is preferred over wrap-around in signal processing because wrapping turns a slightly too-loud sample into a huge negative spike, which is audible and can destabilise control loops.
 
 `p >> 15` on a negative value relies on arithmetic right shift (implementation-defined but universal on GCC/Clang/Arm compilers). Cortex-M4 and later provide `QADD`, `SSAT` and `SMULBB` instructions (exposed through CMSIS intrinsics and CMSIS-DSP's `arm_mult_q15`) that do this in a cycle or two.
+
+**Q15 basics:** an `int16_t` value v represents v / 32768, so 0x4000 = 0.5, 0x7FFF ≈ 0.99997, 0x8000 = −1.0.
+
+**Multiplication walk-through: 0.5 × 0.5**
+
+1. `0x4000 * 0x4000 = 0x1000_0000` (a Q30 result in 32 bits).
+2. Add rounding: `+ (1 << 14)`.
+3. Shift right by 15 → 0x2000 = 0.25 ✓
+
+**The one overflow case:** −1 × −1 = +1, which Q15 cannot represent; `0x8000 * 0x8000 >> 15` = 0x8000 (−1) without saturation. Clamp the result to 0x7FFF.
+
+**Saturating add:** compute in 32 bits, then clamp to [−32768, 32767]. Without saturation, 0.75 + 0.5 wraps to a negative number — in an audio or control loop, a wrap produces a loud click or a violent actuator jump, while saturation just clips.
+
+**On real hardware:** Cortex-M4/M7 DSP instructions do this in one cycle: `QADD16`, `SMULBB`, `SSAT`, `QDADD`; CMSIS-DSP provides `arm_mult_q15`, `arm_add_q15`. Right-shifting a negative number is implementation-defined in C (arithmetic on all common compilers) — mention it.
+
+**Other formats:** Q31 for higher precision, Q7 for neural networks on MCUs (CMSIS-NN); choose a format by the value range and the precision you need.
 
 @@@ lookup-interpolation
 title: Calibration Table Interpolation
@@ -1613,6 +2030,22 @@ A piecewise-linear table in flash is how most firmware linearises non-linear sen
 
 Watch for overflow in `dt * (adc - a->adc)` when tables have large ranges, and note that integer division truncates towards zero. Add `dx / 2` with the right sign for rounding if needed.
 
+**Walk-through:** table points (1000, 250) and (1200, 200) — ADC 1000 = 25.0 °C, ADC 1200 = 20.0 °C. For adc = 1050:
+
+`temp = 250 + (1050 − 1000) × (200 − 250) / (1200 − 1000) = 250 − 12.5 = 237.5` → 238 with rounding (23.8 °C) or 237 with truncation, so round deliberately.
+
+**Steps**
+
+1. Clamp: below the first entry return the first temperature, above the last return the last (avoid extrapolating).
+2. Binary search for the last index `i` with `table[i].adc <= adc` — O(log n).
+3. Interpolate between `i` and `i + 1` with 32-bit intermediates (the product can exceed 16 bits).
+
+**Integer arithmetic details:** do the multiplication before the division to keep precision; use signed types because the temperature slope is negative for NTC thermistors; add half the divisor for rounding (with care for the sign).
+
+**Why a table instead of the formula:** the Steinhart–Hart equation needs logarithms and floating point; a 16–33 point table with linear interpolation is fast, accurate enough (better than ±0.1 °C with good point placement) and can include per-board calibration.
+
+**Uses beyond thermistors:** battery voltage → state of charge, gamma correction, non-linear sensors (pressure, flow), and motor control lookup tables.
+
 @@@ run-length-encoding
 title: Run-Length Encoding
 difficulty: M
@@ -1678,3 +2111,28 @@ size_t rle_encode(const uint8_t *in, size_t n, uint8_t *out, size_t cap)
 Plain RLE can double the size of data with no repeats, so real formats use a flag bit to mix literal runs and repeated runs (PackBits, the TGA format). The bounds check before each write is the important part: compression code that trusts its output buffer size is a common source of overflows.
 
 **Follow-up:** write the decoder, checking that the expanded output fits its buffer before writing each run.
+
+**Walk-through:** input `AA AA AA BB CC CC` → output pairs `(3, AA) (1, BB) (2, CC)` = 6 bytes.
+
+**Splitting long runs:** a run of 300 identical bytes becomes `(255, X) (45, X)` because the count is one byte.
+
+**Worst case:** input with no repeats doubles in size (every byte becomes a `(1, value)` pair), so `cap` must be checked before **every** write — returning 0 when the output does not fit, as the tests require.
+
+**Decoder (for the follow-up)**
+
+```c
+size_t rle_decode(const uint8_t *in, size_t n, uint8_t *out, size_t cap)
+{
+    size_t w = 0;
+    for (size_t i = 0; i + 1 < n; i += 2) {
+        if (in[i] > cap - w) return 0;           /* would overflow out */
+        for (uint8_t k = 0; k < in[i]; k++) out[w++] = in[i + 1];
+    }
+    return w;
+}
+```
+
+**Better variants used in practice:** PackBits (a control byte says "next N literal bytes" or "repeat next byte N times", so non-repeating data grows by at most 1/128), bit-level RLE for 1-bit display bitmaps and fonts, and LZ-family compressors (heatshrink, LZ4) when RAM allows.
+
+**Complexity:** O(n) time, O(1) extra memory — suitable for MCUs that decompress images straight into a display buffer.
+

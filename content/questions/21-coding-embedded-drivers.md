@@ -9,6 +9,8 @@ desc: UART TX/RX, SPI and I2C transfer functions, busy-wait delays, lock-free SP
 These are the "write the driver code" questions from embedded interviews. Register names follow STM32-style conventions (`SR`, `DR`, flag bits) but the patterns apply to any MCU: wait with a timeout, never block forever, keep ISRs short, and make shared data safe between interrupt and task context. Each answer is brief: working C plus what the interviewer checks.
 
 ### Implement a delay without using a library function. {E}
+**Short answer:** Use a free-running hardware counter and busy-wait until the required number of ticks has passed: on Cortex-M3 and above the DWT cycle counter (`CYCCNT`) gives cycle accuracy for microsecond delays, and a 1 ms SysTick counter works for millisecond delays. Compare with unsigned subtraction `(now - start) < ticks`, which stays correct when the counter wraps around.
+
 ```c
 #include <stdint.h>
 
@@ -40,7 +42,27 @@ void delay_ms(uint32_t ms) { uint32_t s = g_ms; while ((uint32_t)(g_ms - s) < ms
 
 **Points:** a plain `for (i = 0; i < N; i++);` loop is a bad delay: the optimiser can delete it, and its duration changes with clock speed, flash wait states and compiler flags (add `volatile` and calibrate if you must). Hardware counters give accurate timing; unsigned subtraction handles wrap-around. Busy delays waste CPU and power: use timers or an RTOS delay for anything long. (Cortex-M0/M0+ has no DWT counter: use SysTick or a timer.)
 
+**Why unsigned subtraction is wrap-safe:** with a 32-bit counter, if `start = 0xFFFFFFF0` and `now = 0x00000010` after wrapping, `now - start` = 0x20 (32 ticks) in unsigned arithmetic — exactly the elapsed time. Comparing `now < start + ticks` instead breaks at the wrap.
+
+**Numbers to know:** at 168 MHz, 1 µs = 168 cycles; `CYCCNT` wraps every 2³² / 168 MHz ≈ 25.6 s, so a single delay must be shorter than that.
+
+**Choosing a delay method**
+
+| Method | Resolution | CPU usage | Use |
+|---|---|---|---|
+| Calibrated `volatile` loop | rough | 100% | early boot before clocks/timers are set up |
+| DWT `CYCCNT` busy-wait | 1 cycle | 100% | short µs delays (sensor timing, bit-banging) |
+| SysTick ms counter busy-wait | 1 ms | 100% | simple bare-metal code |
+| Hardware timer + interrupt / one-pulse mode | sub-µs | ~0% | precise delays without blocking |
+| RTOS `vTaskDelay` | 1 tick | 0% (task blocked) | anything ≥ 1 tick in an RTOS |
+
+**Pitfalls:** interrupts lengthen busy-wait delays (the delay is a **minimum**, not exact); `SystemCoreClock` must match the real clock after any frequency change; the DWT counter does not run on Cortex-M0/M0+ and may need the debug unit enabled; and busy loops prevent sleep modes, wasting power.
+
+**Interview follow-up:** "How would you make a 10 µs delay accurate even with interrupts?" Briefly disable interrupts around it (if the system tolerates the latency) or use a hardware timer in one-pulse mode to generate the timing in hardware.
+
 ### Write a UART transmit routine (polled and interrupt-driven). {M}
+**Short answer:** In the **polled** version, for each byte wait until the transmit data register is empty (`TXE`), then write the byte; at the end wait for transmission complete (`TC`) if the caller needs the line idle. In the **interrupt-driven** version, the caller copies data into a ring buffer and enables the TXE interrupt; the ISR moves one byte from the buffer to the data register each time TXE fires and disables the interrupt when the buffer is empty, so the CPU is free while bytes go out.
+
 ```c
 #include <stdint.h>
 #include <stddef.h>
@@ -94,7 +116,26 @@ void UART_IRQHandler(void)
 
 **Points:** wait for `TXE` before writing `DR`; wait for `TC` before disabling the UART or turning an RS-485 driver around (the last byte is still shifting out when TXE is set); always use timeouts in polled code; in the interrupt version, disable the TXE interrupt when the buffer empties, otherwise it fires continuously. For large transfers, use DMA.
 
+**TXE vs TC (frequently asked)**
+
+| Flag | Meaning | Use |
+|---|---|---|
+| TXE (TX empty) | the data register can accept the next byte (previous byte moved to the shift register) | feed the next byte |
+| TC (transmission complete) | the shift register has finished sending the last bit, including the stop bit | before turning off an RS-485 driver, changing baud rate or entering low-power mode |
+
+**Interrupt flow**
+
+1. `uart_write()` puts bytes into the TX ring buffer (inside a short critical section if shared with the ISR) and sets `TXEIE`.
+2. The ISR fires as soon as TXE is set: writes the next byte; if the buffer is now empty, clears `TXEIE`.
+3. Optionally enable the `TC` interrupt to signal "all sent" (e.g. to release an RS-485 transmitter).
+
+**Timing math:** at 115200 baud (8N1), each byte takes 86.8 µs. Polled transmission of a 100-byte message blocks the CPU for 8.7 ms; interrupt-driven transmission costs only a short ISR per byte; DMA costs nothing per byte.
+
+**Design questions to discuss:** what happens when the TX buffer is full (block with timeout, drop, or return a partial count); thread safety when several tasks print (a mutex around `uart_write`, or a dedicated logging task); and the DMA approach for long or frequent transfers (configure source address and length, start, get a transfer-complete interrupt).
+
 ### Write a UART receive interrupt handler with a ring buffer. {E}
+**Short answer:** In the RX interrupt, read the status register, read the received byte from the data register (which clears the RXNE flag), and store it in a ring buffer at the head index, dropping and counting it if the buffer is full. The application reads bytes from the tail index in the main loop or a task. With one producer (the ISR) and one consumer (the task), each index has a single writer, so no lock is needed on a single core.
+
 ```c
 #include <stdint.h>
 #include <stdbool.h>
@@ -131,7 +172,23 @@ bool uart_getc(uint8_t *c)                       /* called from the main loop or
 
 **Points:** read `DR` in every path that clears the interrupt; check and count errors (overrun, framing, noise) instead of ignoring them; single producer (ISR) and single consumer means each index has one writer, so no lock is needed on a single core; count dropped bytes so you can size the buffer. On a Cortex-M7 or multi-core system, add barriers (see the lock-free SPSC question).
 
+**ISR steps**
+
+1. Read the status register once.
+2. If an error flag is set (overrun ORE, framing FE, noise NE, parity PE): count it and clear it as the reference manual describes (often by reading SR then DR) — an uncleared overrun flag can block further reception on some MCUs.
+3. If RXNE: read DR, compute `next = (head + 1) % N`; if `next != tail`, store the byte and publish `head = next`; otherwise increment a `dropped` counter.
+
+**Buffer sizing:** bytes arriving during the longest time the consumer can be delayed, plus margin. At 115200 baud ≈ 11,520 bytes/s; if the task may be blocked for 20 ms, you need at least ~230 bytes → choose 256 or 512.
+
+**Detecting message boundaries:** for line-based protocols, the consumer looks for `'\n'`; for binary protocols, use a length field or framing (SLIP, COBS) plus a CRC; for "end of burst", use the UART **IDLE line** interrupt.
+
+**Faster alternative — DMA circular reception:** the DMA writes into a circular buffer by itself; firmware learns the head position from the DMA counter on the half-transfer, transfer-complete and IDLE interrupts. This removes the per-byte interrupt entirely, which matters above about 1 Mbaud.
+
+**Common bugs:** forgetting `volatile`/atomic on the indices, processing data inside the ISR (keep it minimal), and signed/unsigned mix-ups in the index arithmetic.
+
 ### Write an SPI transfer function. {E}
+**Short answer:** SPI is full duplex: every byte you send clocks one byte back in. A transfer routine asserts chip select, then for each byte waits for TXE, writes the byte to the data register, waits for RXNE and reads the received byte; after the last byte it waits until the BSY flag clears before releasing chip select. To read from a device you send dummy bytes (often 0xFF or 0x00) and keep what comes back.
+
 ```c
 #include <stdint.h>
 #include <stddef.h>
@@ -176,7 +233,28 @@ int sensor_read_reg(spi_t *s, uint8_t reg, uint8_t *val)
 
 **Points:** SPI is full duplex, so you must read a byte for every byte written (or RXNE/overrun errors build up); send dummy bytes to read; wait for `BSY` to clear before releasing chip select; set the right mode (CPOL/CPHA), bit order and clock speed for the device; use byte access to `DR` on parts with a FIFO so the peripheral does not send 16 bits; use DMA for long transfers.
 
+**Typical register read from an SPI sensor**
+
+```
+CS low
+send  [reg | 0x80]  (read bit)  → receive garbage
+send  0x00 (dummy)              → receive register value
+CS high
+```
+
+**Why read for every write:** if you skip reading DR, the RX side overflows (OVR flag), and on some MCUs later reads return stale data or the peripheral stops.
+
+**Why wait for BSY before raising CS:** TXE only means the data register is free; the last byte may still be shifting out. Raising CS too early truncates the last byte.
+
+**Device settings to match:** SPI mode (CPOL/CPHA), bit order (usually MSB first), word size (8/16 bit), maximum clock rate, and CS setup/hold times from the device datasheet.
+
+**Shared bus with several devices:** each device has its own CS; reconfigure mode and speed per device; protect the bus with a mutex in an RTOS so two tasks do not interleave transactions.
+
+**Performance:** byte-by-byte polling has gaps between bytes (software overhead). For long transfers (displays, flash, SD cards), use DMA for both TX and RX channels and wait for the RX DMA complete (RX finishes last). On Linux, the equivalent is `spi_sync()` with `spi_transfer` structures or the `spidev` interface from user space.
+
 ### Write I2C register read and write functions. {M}
+**Short answer:** A **register write** is: START, device address + W, register address, data byte(s), STOP. A **register read** is: START, address + W, register address, then a **repeated START**, address + R, read the data bytes (ACK each except the last, which gets a NACK), STOP. Every step needs a timeout and a check for NACK, and the driver must be able to recover a stuck bus.
+
 ```c
 #include <stdint.h>
 #include <stddef.h>
@@ -220,7 +298,30 @@ int i2c_xfer(uint8_t addr7, const uint8_t *w, size_t wlen, uint8_t *r, size_t rl
 
 **Points:** a register read is a write of the register address followed by a **repeated START** and a read (no STOP in between, or some devices lose the address); the controller NACKs the last byte to tell the target to stop sending; check for NACK on the address (device missing) and on data; add timeouts and bus recovery (clock out 9 pulses if SDA is stuck low); respect the device's maximum burst length and page boundaries (EEPROMs); 16-bit register addresses send two address bytes, usually MSB first.
 
+**Bus sequence for reading 2 bytes from register 0x0F of device 0x68**
+
+```
+S | 0xD0 (0x68<<1 | W) | A | 0x0F | A | Sr | 0xD1 (0x68<<1 | R) | A | data0 | A | data1 | N | P
+```
+
+**Error handling to include**
+
+| Condition | Meaning | Action |
+|---|---|---|
+| NACK after the address | device missing, wrong address, or busy (EEPROM writing) | return `-ENODEV`/retry later |
+| NACK after a data byte | device rejected the data/register | return an error |
+| Timeout waiting for a flag | bus stuck (SDA or SCL held low), clock stretching too long | reset the peripheral, run bus recovery |
+| Arbitration lost | another controller on the bus | retry after the bus is free |
+
+**Bus recovery:** if a device holds SDA low (it was reset in the middle of a read), switch SCL to GPIO, clock up to 9 pulses until SDA is released, generate a STOP, then re-initialise the I2C peripheral.
+
+**Device-specific details:** EEPROMs need page-aligned writes and a write-cycle delay (poll with address NACK until ready); multi-byte registers may need an auto-increment bit in the register address; some devices require no STOP between write and read (repeated START).
+
+**On Linux:** `i2c_smbus_read_byte_data()` / `i2c_transfer()` in drivers, or `ioctl(I2C_RDWR)` from user space with `/dev/i2c-N`.
+
 ### Implement a lock-free single-producer single-consumer (SPSC) ring buffer. {H}
+**Short answer:** Use a power-of-two buffer with two free-running indices: only the producer writes `head`, only the consumer writes `tail`. The producer writes the data, then publishes the new head with a **release** store; the consumer reads head with an **acquire** load before reading the data, then publishes the new tail with a release store. Full is `head - tail == N`, empty is `head == tail`. No locks, no disabled interrupts, O(1) per operation.
+
 ```c
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -264,7 +365,23 @@ bool ring_pop(ring_t *r, uint8_t *v)                  /* consumer: task, or thre
 - **Why a power-of-two size?** `& (SIZE - 1)` replaces a slow modulo, and wrap-around of the free-running counters stays consistent only if SIZE divides 2³².
 - **No atomics (Cortex-M0, old compiler)?** Make the indexes `volatile`, aligned 32-bit (atomic loads/stores on Arm), and put a compiler barrier between the data write and the index update.
 
+**Why it is safe without a lock**
+
+- **Single writer per variable:** no read-modify-write races on the indices.
+- **Ordering:** release/acquire guarantees that when the consumer sees the new `head`, the data written before it is also visible (important on Cortex-M7, Cortex-A and multi-core systems with out-of-order memory systems).
+- **Atomic index size:** 32-bit loads and stores are single instructions on 32-bit MCUs.
+
+**Free-running indices:** the indices only ever increase and wrap naturally at 2³²; `head - tail` (unsigned) is always the number of items, and `index & (N - 1)` picks the slot. This uses every slot (no "one empty slot" rule) and handles wrap-around for free, as long as N is a power of two.
+
+**Dry run (N = 4):** producer writes items at head 0, 1, 2, 3 → `head - tail = 4` → full. Consumer reads one → tail = 1 → producer may write again into slot `4 & 3 = 0`.
+
+**Where it is used:** UART RX ISR → task, audio DMA → processing task, inter-core mailboxes (with cache maintenance or uncached memory), Linux `kfifo`, and the virtio/virtqueue rings between guest and host.
+
+**Limits:** exactly one producer and one consumer. With several producers, use a lock, a CAS-based multi-producer queue, or one SPSC queue per producer.
+
 ### Implement a ring buffer that overwrites the oldest data when full. {M}
+**Short answer:** When the buffer is full, a new item is still written at the head position and the oldest item is discarded by advancing the tail (or by keeping only a head index and a count). The buffer therefore always holds the most recent N items, which is exactly what logging and 'last N samples' buffers need.
+
 ```c
 #include <stdint.h>
 #include <stdbool.h>
@@ -291,7 +408,24 @@ bool log_get(const log_ring_t *r, uint32_t i, int16_t *v)
 
 **Points:** used for "last N samples" (oscilloscope pre-trigger buffers, moving averages) and crash logs ("last N events before the fault", often kept in a `.noinit` RAM section). The oldest index is derived from `head` and `count`. If a separate reader consumes concurrently, overwriting means the writer also moves the reader's tail, which needs a lock or a sequence counter.
 
+**Dry run (N = 3):** write 1, 2, 3 → [1 2 3] full; write 4 → overwrite the oldest → contents in order 2, 3, 4; write 5 → 3, 4, 5.
+
+**Reading out in chronological order:** the oldest element is at `(head - count) mod N`; iterate `count` elements from there.
+
+**Overwrite vs reject**
+
+| Policy | Use |
+|---|---|
+| Overwrite oldest | event logs, crash history, pre-trigger capture, telemetry where the latest data matters most |
+| Reject newest (return "full") | commands, protocol messages, anything that must not silently lose data |
+
+**Concurrency caveat:** in overwrite mode the producer also moves the tail, so the producer and consumer both write the tail — the lock-free SPSC guarantee no longer holds. Options: a short critical section around reads, a sequence number per entry so the reader can detect that it was overwritten, or have the reader copy the whole buffer snapshot while the writer is paused.
+
+**Crash-log trick:** place the buffer in a `.noinit` RAM section (not zeroed at reset) with a magic number, so after a watchdog reset the firmware can dump the last events that happened before the crash.
+
 ### Implement a blocking producer-consumer ring buffer (mutex + condition variable). {M}
+**Short answer:** Protect the buffer with a mutex and use two condition variables: producers wait on `not_full` while the buffer is full, consumers wait on `not_empty` while it is empty. After a put, signal `not_empty`; after a get, signal `not_full`. Always wait inside a `while` loop that re-checks the condition after waking.
+
 ```c
 #include <pthread.h>
 #include <stdint.h>
@@ -329,7 +463,28 @@ uint8_t bq_get(bqueue_t *q)
 
 **Points:** wait in a `while` loop (spurious wake-ups, several consumers); the mutex protects all queue state; signal the other condition after changing the count. Works with many producers and consumers. Never call this from an ISR (it blocks): in an RTOS the equivalent is a message queue (`xQueueSend` / `xQueueReceive`), with `FromISR` variants for interrupts.
 
+**Why a `while`, not an `if`**
+
+- **Spurious wake-ups:** `pthread_cond_wait` may return without a signal.
+- **Stolen wake-ups:** with several consumers, another consumer may take the item between the signal and this thread re-acquiring the mutex.
+
+**Why `pthread_cond_wait` takes the mutex:** it atomically releases the mutex and sleeps, then re-acquires the mutex before returning, so no signal can be lost between checking the condition and going to sleep.
+
+**Sequence of a put**
+
+1. `pthread_mutex_lock(&m)`
+2. `while (count == N) pthread_cond_wait(&not_full, &m);`
+3. Store the item, advance head, `count++`.
+4. `pthread_cond_signal(&not_empty);`
+5. `pthread_mutex_unlock(&m)`
+
+**Extensions interviewers ask:** timeouts (`pthread_cond_timedwait` with an absolute `CLOCK_MONOTONIC` deadline), shutdown (a `closing` flag plus `pthread_cond_broadcast` so blocked threads wake up and exit), and signal vs broadcast (signal wakes one waiter — enough when any waiter can make progress).
+
+**RTOS equivalent:** a FreeRTOS queue (`xQueueSend`/`xQueueReceive` with a block time) implements exactly this, including the waiting lists, and adds `FromISR` variants so interrupts can produce without blocking.
+
 ### Implement an ISR-safe queue (interrupt producer, task consumer) using a critical section. {M}
+**Short answer:** Let the ISR enqueue and the task dequeue, and protect any state that both sides modify. If the design keeps a shared `count`, the task must disable the relevant interrupt (a short critical section) while it updates the queue, because the ISR could fire in the middle of its read-modify-write. The ISR itself needs no lock on a single core, since the task cannot run while the ISR runs (unless a higher-priority ISR also uses the queue).
+
 ```c
 #include <stdint.h>
 #include <stdbool.h>
@@ -369,7 +524,31 @@ bool mq_get(msg_t *out)                            /* called from task context *
 
 **Points:** the shared `count` is modified by both sides, so the task side needs a critical section (the ISR cannot be interrupted by the task on a single core, so it needs none, unless a higher-priority ISR also uses the queue). Keep the critical section to a single copy. Alternatives: the lock-free SPSC ring (no shared counter), or an RTOS queue with `xQueueSendFromISR` and a context-switch request.
 
+**The race being prevented**
+
+```
+task: load count (5)      ← ISR fires here: count = 6
+task: store count - 1 (4) ← the ISR's increment is lost; count is now wrong
+```
+
+**Critical section options on Cortex-M**
+
+| Method | Effect |
+|---|---|
+| `__disable_irq()` / restore PRIMASK | blocks all maskable interrupts (simplest) |
+| Raise `BASEPRI` | blocks only interrupts at or below a priority; urgent ISRs still run |
+| `NVIC_DisableIRQ(irq)` | blocks only the producing interrupt |
+| RTOS `taskENTER_CRITICAL()` | the RTOS's own version (BASEPRI on Cortex-M3+) |
+
+**Keep it short:** copy one item (or just update the index) inside the critical section, not the processing. Interrupt latency grows by the length of the critical section.
+
+**Signalling the task:** after enqueueing, the ISR can give a semaphore or send a task notification (`vTaskNotifyGiveFromISR` + `portYIELD_FROM_ISR`) so the task blocks instead of polling, which saves CPU and power.
+
+**Alternative without any critical section:** the SPSC ring with separate head/tail indices (no shared count), as in the lock-free question.
+
 ### Implement a software timer module. {M}
+**Short answer:** Keep a table of timers, each with an expiry time, a period (0 for one-shot), an active flag and a callback. A 1 ms tick interrupt only increments a time counter; the main loop (or a timer task) calls `timer_process()`, which compares each active timer's expiry with the current time using a wrap-safe signed difference, runs the callback for expired timers, and re-arms periodic ones by adding the period to the previous expiry.
+
 ```c
 #include <stdint.h>
 #include <stdbool.h>
@@ -411,7 +590,28 @@ void timer_poll(void)                                 /* call from the main loop
 
 **Points:** wrap-safe comparison with signed difference; periodic timers add the period to the old expiry (not to "now") so they do not drift; callbacks run in the main loop, not in the tick ISR, so they can take time (but must not block). Scaling up: keep timers in a list sorted by expiry (or a timer wheel) so each tick checks only the first one, and program a hardware timer for the next expiry (tickless) to save power. RTOS equivalents: FreeRTOS software timers (run in the timer service task), Zephyr `k_timer`.
 
+**Wrap-safe comparison:** `(int32_t)(now - expiry) >= 0` is true when `now` has reached `expiry`, even when the 32-bit counter wraps (valid as long as timeouts are shorter than 2³¹ ticks ≈ 24.8 days at 1 kHz).
+
+**Drift-free periodic timers:** `expiry += period` keeps the long-term rate exact even if a callback runs late; `expiry = now + period` would accumulate the lateness every period.
+
+**Dry run:** timer A one-shot at 100 ms, timer B periodic 50 ms. At t = 50 → B fires, B.expiry = 100. At t = 100 → A fires (deactivated) and B fires, B.expiry = 150.
+
+**API to present**
+
+| Function | Purpose |
+|---|---|
+| `timer_start(id, delay, period, cb, arg)` | arm a timer |
+| `timer_stop(id)` | cancel |
+| `timer_process()` | run expired callbacks (main loop / timer task) |
+| `timer_next_expiry()` | how long the CPU may sleep (tickless low power) |
+
+**Scaling up:** a sorted list or min-heap of timers makes `timer_process` check only the earliest one; hierarchical timer wheels (Linux) give O(1) insert and expiry; programming a hardware compare register for the next expiry allows tickless sleep.
+
+**Pitfalls:** running callbacks inside the tick ISR (they then delay all other interrupts), modifying the timer table from an ISR without protection, and starting/stopping a timer from inside its own callback (design the loop to handle it).
+
 ### Implement a simple cooperative task scheduler. {M}
+**Short answer:** Store tasks in a table with a function pointer, a period and the next run time. The main loop repeatedly checks each task: if its time has come, it calls the function and adds the period to its next run time. Each task must do a little work and return quickly (no blocking), so the scheduler needs no stacks, no context switching and no locks between tasks.
+
 ```c
 #include <stdint.h>
 
@@ -450,7 +650,26 @@ void scheduler_run(void)
 
 **Points:** each task is a function that does a small amount of work and returns (long jobs become state machines); tasks run in table order, so order sets priority on ties; the worst-case response time is the sum of the longest task runs, so measure task execution times; no task stacks or context switches, so it is tiny and easy to debug. Add an overrun check (`next_ms` falling behind `now`) to detect overload. When you need pre-emption or blocking APIs, move to an RTOS.
 
+**Dry run (1 ms tick):** tasks: `read_sensors` every 10 ms, `update_display` every 100 ms, `blink_led` every 500 ms. At t = 0 all run; at t = 10, 20 … only `read_sensors`; at t = 100 both `read_sensors` and `update_display` run; at t = 500 all three run.
+
+**Turning long jobs into state machines:** a task that would wait (e.g. for an ADC conversion) instead starts the conversion, records its state and returns; on the next call it checks whether the result is ready.
+
+**Worst-case response time:** a task can be delayed by every other task that runs before it in the same loop pass, so latency ≈ sum of the longest execution times. Measure execution times (DWT cycle counter or GPIO toggles) and keep each task short.
+
+**Cooperative vs pre-emptive (RTOS)**
+
+| | Cooperative loop | Pre-emptive RTOS |
+|---|---|---|
+| Code size / RAM | tiny, one stack | kernel + one stack per task |
+| Shared data | safe between tasks (no pre-emption); only ISRs need care | needs mutexes/queues |
+| Latency for urgent work | bounded by the longest task | bounded by kernel latency |
+| Blocking calls | not allowed | allowed |
+
+**Improvements:** priority order in the table, overrun detection (log when `now` is already past the next run time by more than one period), idle sleep (`__WFI()`) when no task is due, and a watchdog kick after a full pass.
+
 ### Write a watchdog service routine. {E}
+**Short answer:** Configure an independent watchdog timer early in start-up and refresh ('kick') it only when the whole system is healthy. A robust design has every critical task set its bit in a 'checked-in' word; a supervisor kicks the watchdog only when all bits are set, then clears them for the next period. If any task hangs, the watchdog is not refreshed and the MCU resets.
+
 ```c
 #include <stdint.h>
 #include <stdbool.h>
@@ -480,7 +699,27 @@ void wdg_service(void)                                   /* called periodically,
 
 **Points:** kick only when **every** critical task has proven it is running, not from a timer interrupt alone; use a window watchdog to also catch code that runs too fast; record the reset cause at boot; freeze the watchdog in debug halt. On Cortex-M0 (no atomic OR instructions) wrap the read-modify-write in a short critical section.
 
+**Why not kick from a timer interrupt:** the interrupt keeps running even if the main loop or a task is stuck, so the watchdog would never fire — the most common watchdog design mistake.
+
+**Independent vs window watchdog**
+
+| Type | Detects | Notes |
+|---|---|---|
+| Independent (IWDG) | code stopped or too slow | own low-speed clock, keeps running if the main clock fails |
+| Window (WWDG) | too slow **or too fast** | refreshing too early also resets: catches runaway loops that kick repeatedly |
+| External watchdog chip | MCU completely dead, clock failure | safety designs |
+
+**Choosing the timeout:** longer than the worst-case normal loop or task period (including flash erase operations — kick or pause the watchdog around long erases), short enough that recovery time is acceptable (typically 100 ms – a few seconds).
+
+**At boot:** read and log the reset cause (watchdog, brown-out, pin, software) and any crash record; count consecutive watchdog resets and enter a safe/recovery mode if they repeat (to avoid a reset loop).
+
+**During debugging:** freeze the watchdog when the core is halted (`DBGMCU` freeze bits on STM32), otherwise breakpoints cause resets.
+
+**Note:** once enabled, an independent watchdog usually cannot be disabled by software (by design) until the next reset.
+
 ### Implement a state machine for a traffic light. {E}
+**Short answer:** Model the light as a set of states (for example RED, RED_AMBER, GREEN, AMBER), each with an output pattern and a duration, stored in a constant table along with the next state. The main loop checks whether the current state's time has elapsed (using a timestamp, not a blocking delay); if so, it moves to the next state and sets the lamp outputs for that state.
+
 ```c
 #include <stdint.h>
 
@@ -517,7 +756,31 @@ void traffic_light_task(void)                     /* call often from the main lo
 
 **Points:** a `const` table describes states, durations and outputs (easy to check against the specification); timing uses timestamps, not blocking delays; outputs are set on state entry. Extensions interviewers ask for: a pedestrian button (an event that shortens GREEN), a fault state (flashing amber) entered on lamp failure, and a safe start-up state (all red).
 
+**State table (UK-style sequence)**
+
+| State | Red | Amber | Green | Duration | Next |
+|---|---|---|---|---|---|
+| RED | on | off | off | 30 s | RED_AMBER |
+| RED_AMBER | on | on | off | 2 s | GREEN |
+| GREEN | off | off | on | 25 s | AMBER |
+| AMBER | off | on | off | 3 s | RED |
+
+**Why table-driven:** the behaviour can be checked line by line against the specification, changing timings does not touch the logic, and adding a state is a new row.
+
+**Why timestamps instead of `delay()`:** a blocking delay of 30 s means the controller cannot react to a pedestrian button, a fault input or communication during that time. With `if ((now - entered_at) >= duration)` the loop keeps running.
+
+**Extensions interviewers ask for**
+
+- Pedestrian request: an event that shortens GREEN (but respects a minimum green time) and inserts a WALK phase.
+- Fault handling: lamp failure or conflict detection → FLASHING_AMBER state, entered from any state.
+- Safe start-up: begin in ALL_RED for a few seconds.
+- Two directions: states describe both roads, and the table guarantees they are never green together (a safety property you can check with an assertion in every state).
+
+**Event-driven form:** `next = transition[state][event]` handles both timeouts and inputs uniformly (see the next question).
+
 ### Implement a finite state machine for a device driver. {M}
+**Short answer:** Represent the driver as a per-device context with a current state, and convert everything that happens — API calls, interrupts, timeouts — into events. A transition function (a `switch` on the state, or a state × event table) decides, for each event, the action to perform and the next state. Events that are illegal in the current state are rejected, and errors move to a recovery state with limited retries.
+
 ```c
 #include <stdint.h>
 
@@ -558,7 +821,37 @@ void drv_handle(drv_t *d, drv_event_t ev)
 
 **Points:** the driver's API calls and interrupts become events; the state decides what is legal (e.g. `EV_START` is ignored or rejected unless IDLE); errors move to a recovery state with limited retries; the state is per device instance (a struct), so several devices can share the code. Feed events from ISRs through a queue so the FSM runs in one context.
 
+**Example states for a sensor/ADC driver**
+
+```
+UNINIT --init--> IDLE --start--> BUSY --irq_done--> DATA_READY --read--> IDLE
+                  ^                |  \--timeout/err--> ERROR --reset(ok)--> IDLE
+                  |                                       \--retries exceeded--> FAULT
+                  +---------------------------------------- stop (from BUSY) ----+
+```
+
+**Why FSMs suit drivers**
+
+- Interrupt-driven hardware is naturally event based.
+- Each state documents what is allowed: `start` in BUSY returns `-EBUSY` instead of corrupting a transfer in progress.
+- Error recovery becomes explicit and testable (feed events in unit tests and check the transitions).
+
+**Running the FSM in one context:** ISRs should only post events to a queue; the FSM runs in a task or the main loop, so state changes are never interleaved and no locking is needed inside the FSM.
+
+**Implementation choices**
+
+| Style | Pros | Cons |
+|---|---|---|
+| `switch (state)` with nested `switch (event)` | readable, flexible actions | grows long |
+| Table of `{next_state, action_fn}` per state/event | compact, data-driven, easy to review | actions separate from the table |
+| State functions (`state = state(event)`) | each state self-contained | harder to see the whole picture |
+| Hierarchical (QP framework, UML statecharts) | shared behaviour in parent states | more machinery |
+
+**Testing:** a transition coverage test that feeds every event in every state; log every transition (state, event, next) to a trace buffer for field debugging.
+
 ### Implement atomic bit set and clear on a shared flags word. {M}
+**Short answer:** `flags |= bit` is a load, OR and store, so an interrupt or another core can change the word in between and one update is lost. Use an atomic read-modify-write: C11 `atomic_fetch_or` / `atomic_fetch_and` (LDREX/STREX loops on Cortex-M3 and above), or on cores without exclusive instructions, a tiny critical section that disables interrupts around the read-modify-write.
+
 ```c
 #include <stdatomic.h>
 #include <stdint.h>
@@ -577,7 +870,31 @@ static inline bool flag_test_and_clear(unsigned n)
 
 **Points:** `flags |= bit` is a non-atomic read-modify-write; C11 atomics compile to an `LDREX`/`STREX` retry loop on Cortex-M3+ (or single `LDSET`/`LDCLR` instructions on Armv8.1-A). On Cortex-M0/M0+, which lack exclusives, the compiler calls a library helper that disables interrupts; doing that yourself in a tiny critical section is equivalent. For hardware registers, use the peripheral's set/clear registers or bit-banding instead (atomic instructions often do not work on device memory). `test_and_clear` is the typical "consume an event flag" operation.
 
+**The lost update**
+
+```
+task: r = flags            (0b0001)
+      ISR: flags |= 0b0100 (now 0b0101)
+task: flags = r | 0b0010   (0b0011)  ← the ISR's bit is lost
+```
+
+**How LDREX/STREX works:** `LDREX` loads the value and marks the address as exclusively monitored; `STREX` stores only if nothing touched that address (or an exception occurred) since the `LDREX`, and returns failure otherwise, so the code retries. This gives an atomic update without disabling interrupts.
+
+**Alternatives worth mentioning**
+
+| Technique | Where |
+|---|---|
+| Bit-banding (alias address per bit, single write sets/clears one bit atomically) | Cortex-M3/M4 SRAM and peripheral regions only |
+| Peripheral set/clear registers (GPIO `BSRR`, `ODR` set/clear, NVIC ISER/ICER) | hardware registers designed for atomic bit access |
+| One variable (byte/word) per flag | each flag has one writer; reads and writes of aligned words are atomic |
+| RTOS event groups / task notifications | flags plus waiting |
+| Linux `set_bit()`, `clear_bit()`, `test_and_set_bit()` | kernel atomic bitops |
+
+**Test-and-set:** `atomic_fetch_or` returns the old value, so `if (!(atomic_fetch_or(&flags, BIT) & BIT))` tells you whether this caller was the one that set it — useful for "only one context may start this operation".
+
 ### Parse a hardware status register into named fields. {E}
+**Short answer:** Read the register **once** into a local variable, then extract each field with mask-then-shift: `(val & FIELD_Msk) >> FIELD_Pos`. Define every field's position and mask once in macros (or use `FIELD_GET`/`GENMASK` style helpers), and fill a struct of named values that the rest of the code uses.
+
 ```c
 #include <stdint.h>
 #include <stdbool.h>
@@ -607,7 +924,29 @@ status_t parse_status(uint32_t reg)          /* read the register ONCE, then dec
 
 **Points:** read the register once into a local (re-reading may give inconsistent fields, and some status bits clear on read); decode with mask-then-shift; define each field once with `_Pos`/`_Msk` macros; check reserved bits are ignored. To clear write-1-to-clear flags afterwards, write only the bits you handled.
 
+**Example: an 8-bit status register**
+
+```
+bit:   7     6..4      3      2..0
+      BUSY   ERRCODE   RDY    FIFO_LEVEL
+```
+
+`val = 0xA5` = 1010 0101 → BUSY = 1, ERRCODE = 010 (2), RDY = 0, FIFO_LEVEL = 101 (5).
+
+**Why read once:** the register can change between reads (hardware updates it continuously), so reading it separately per field may combine values from different moments; some bits are **clear-on-read**, so a second read loses information.
+
+**Mask-then-shift vs shift-then-mask:** both work; mask-then-shift lets you reuse the same `_Msk` macro for setting and clearing the field in the register, which is the CMSIS convention (`USART_SR_RXNE_Msk`, `USART_CR1_M_Pos`).
+
+**Writing fields back (read-modify-write):**
+`reg = (reg & ~FIELD_Msk) | ((value << FIELD_Pos) & FIELD_Msk);` — the final mask stops an oversized value from corrupting neighbouring fields.
+
+**Why not C bit-fields for registers:** bit order and access width are implementation-defined, and the compiler may use byte accesses on a register that requires 32-bit accesses. Bit-fields are acceptable for the **decoded** struct, not for mapping the register itself.
+
+**Write-1-to-clear flags:** clear them by writing a 1 only to the bits you handled (`reg = HANDLED_BITS;`), never with a read-modify-write, which would clear other pending flags.
+
 ### Implement a DMA descriptor ring (as used by Ethernet drivers). {H}
+**Short answer:** A descriptor ring is an array of descriptors shared between the CPU and a DMA engine (as in Ethernet MACs). Each descriptor holds a buffer address, a length, status bits and an **OWN** bit saying who may touch it. For receive, software gives empty buffers to the hardware (OWN = hardware); the hardware fills one, writes the length/status and clears OWN; software processes it, refills it and hands it back. Both sides walk the ring in order and wrap at the end.
+
 ```c
 #include <stdint.h>
 #include <stddef.h>
@@ -651,7 +990,24 @@ void rx_poll(void (*deliver)(const uint8_t *frame, size_t len))
 
 **Points:** each descriptor has an **ownership bit**: hardware fills a buffer and clears OWN; software processes it and sets OWN again. Software must never touch a descriptor the hardware owns. Descriptors and buffers need the alignment the DMA requires, cache maintenance on cached cores (or a non-cacheable region), and memory barriers between writing buffer/length fields and setting OWN. This is the same producer/consumer idea as a ring buffer, with the hardware as one side; Linux NIC drivers, virtio virtqueues and USB controllers all use variants of it.
 
+**RX loop step by step**
+
+1. Init: allocate N aligned buffers, fill N descriptors with their addresses, set OWN = DMA, write the ring base address to the MAC, start reception.
+2. Interrupt (or poll): starting at `rx_index`, while the descriptor's OWN bit is clear: read the status and length, check errors, pass the frame up (or copy it), refill/reuse the buffer, set OWN = DMA, advance `rx_index` with wrap-around.
+3. If the DMA stopped because it ran out of descriptors ("buffer unavailable"), write the poll-demand register to restart it.
+
+**Memory ordering and caches (key interview points)**
+
+- Write buffer address and length **before** setting OWN, with a barrier (`__DMB()` or `dma_wmb()`) in between, so the device never sees OWN with stale fields.
+- On cores with data caches (Cortex-M7, Cortex-A): clean the cache before giving a TX buffer to the DMA, invalidate it before reading an RX buffer, or place descriptors/buffers in a non-cacheable MPU region. Buffers should be cache-line aligned so maintenance doesn't affect neighbours.
+
+**TX side:** fill a buffer, set length and flags (first/last segment), set OWN; the DMA sends it and clears OWN; the TX-complete handler reclaims descriptors whose OWN is clear and frees their buffers.
+
+**Why rings:** no allocation in the data path, the hardware can work ahead on several frames without CPU involvement, and flow control is natural (no free descriptor = back-pressure). The same design is used by virtio virtqueues, NVMe submission/completion queues and USB controllers.
+
 ### Implement a packet queue for a network driver (TX path). {M}
+**Short answer:** Keep a fixed pool of packet buffers and a FIFO of packets waiting for transmission. `net_send()` (called by the protocol stack) copies or attaches the packet to a free buffer, appends it to the queue and, if the hardware is idle, starts the first transmission. The TX-complete interrupt frees the finished buffer and starts the next queued packet, so the link stays busy. When the pool or queue is full, `net_send()` returns an error so the stack slows down.
+
 ```c
 #include <stdint.h>
 #include <stdbool.h>
@@ -699,3 +1055,20 @@ void tx_done_isr(void)                          /* hardware finished sending poo
 ```
 
 **Points:** a fixed pool avoids fragmentation; when the queue is full, return an error so the protocol stack applies back-pressure (Linux drivers call `netif_stop_queue()` and wake it in the TX-complete interrupt); the completion interrupt starts the next packet so the link stays busy; shared counters need a critical section because `net_send` (task) and `tx_done_isr` (interrupt) both modify them. Zero-copy designs pass buffer ownership (pointers) instead of copying frames.
+
+**Flow**
+
+```
+stack → net_send() → [free pool] → [TX queue] → hardware/DMA → TX-done IRQ → buffer back to pool
+                         ↑ full? return -EBUSY / stop queue                 ↓ start next packet
+```
+
+**Shared state and locking:** the queue head/tail and counters are touched by both `net_send` (task context) and the TX-done ISR, so updates need a short critical section — or split ownership so the task only writes the tail and the ISR only writes the head (SPSC).
+
+**Back-pressure:** in Linux, the driver calls `netif_stop_queue()` when the ring is full and `netif_wake_queue()` from the completion interrupt when space returns; this tells the network stack to hold packets in its own queues (qdiscs) instead of dropping them in the driver.
+
+**Statistics to keep:** packets sent, bytes, drops because the queue was full, errors, and the queue high-water mark (to size the pool).
+
+**Priorities:** for real-time traffic (e.g. control messages over Ethernet), use several queues with a strict priority or weighted scheduling, which is what TSN-capable MACs and Linux `mqprio` provide.
+
+**Zero-copy option:** instead of copying into driver buffers, keep a pointer to the stack's buffer (lwIP `pbuf`, Linux `sk_buff`) and release it in the completion handler — fewer copies, but the buffer must stay valid until the DMA finishes.

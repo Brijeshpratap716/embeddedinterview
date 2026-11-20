@@ -1,77 +1,902 @@
 [
-{"cat":"C Programming","q":"What is the default initial value of a static local variable that is not explicitly initialised?","o":["Garbage","0","1","It depends on the compiler"],"a":1,"e":"Objects with static storage duration (globals and statics) are zero-initialised. They live in .bss, which start-up code zeroes."},
-{"cat":"C Programming","q":"What does `static` on a file-scope function do?","o":["Makes it run faster","Keeps its local variables between calls","Gives it internal linkage, so it is visible only in that file","Places it in RAM"],"a":2,"e":"At file scope, static gives internal linkage. It is C's way to make a function or variable private to one translation unit."},
-{"cat":"C Programming","q":"Which of these is undefined behaviour?","o":["Unsigned integer overflow","Signed integer overflow","Dividing an unsigned by a power of two","Comparing two pointers for equality"],"a":1,"e":"Unsigned arithmetic wraps modulo 2^N by definition. Signed overflow is undefined, and compilers optimise assuming it never happens."},
-{"cat":"C Programming","q":"`#define SQ(x) x*x` — what is `SQ(1+2)`?","o":["9","5","6","Compile error"],"a":1,"e":"It expands to 1+2*1+2 = 5. Always parenthesise macro arguments and the whole body: ((x)*(x))."},
-{"cat":"C Programming","q":"What is `sizeof(char)`?","o":["Always 1","1 on most systems, 2 on some","Always 8","Implementation-defined"],"a":0,"e":"sizeof(char) is 1 by definition. A char may have more than 8 bits (CHAR_BIT), but sizeof measures in chars."},
-{"cat":"C Programming","q":"For `const int *p;` which statement is legal?","o":["*p = 5;","p++;","Both","Neither"],"a":1,"e":"p is a pointer to const int: the pointed-to value cannot be modified through p, but p itself can move."},
-{"cat":"C Programming","q":"In which section does `int g = 0;` at file scope usually end up?","o":[".data",".bss",".rodata",".text"],"a":1,"e":"Zero-initialised globals go in .bss, which takes no space in the flash image; start-up code zeroes it."},
-{"cat":"C Programming","q":"`uint8_t a = 200, b = 100; uint8_t c = a + b;` What is c?","o":["300","44","255","Undefined"],"a":1,"e":"a + b is computed as int 300 after integer promotion; converting to uint8_t takes it modulo 256, giving 44. This is well defined."},
-{"cat":"C Programming","q":"What does `strncpy(d, s, n)` NOT guarantee?","o":["That at most n bytes are written","That d is NUL-terminated","That s is unchanged","That the copy stops at a NUL in s"],"a":1,"e":"If s has n or more characters, strncpy fills d with n characters and no terminator. Use snprintf or strlcpy instead."},
-{"cat":"C Programming","q":"`int i = -1; unsigned u = 1;` Is `i < u` true?","o":["Yes","No","Undefined","Depends on optimisation"],"a":1,"e":"i is converted to unsigned (0xFFFFFFFF), which is larger than 1. Signed/unsigned comparisons are a classic bug; -Wsign-compare catches them."},
-{"cat":"Pointers & Memory","q":"If `uint32_t *p` holds 0x1000, what does `p + 2` hold?","o":["0x1002","0x1004","0x1008","0x1010"],"a":2,"e":"Pointer arithmetic scales by the pointed-to size: 2 × 4 bytes = 8, so 0x1008."},
-{"cat":"Pointers & Memory","q":"Which declaration is a pointer to an array of 10 ints?","o":["int *p[10];","int (*p)[10];","int *(p[10]);","int p*[10];"],"a":1,"e":"[] binds tighter than *, so int *p[10] is an array of pointers. Parentheses make p a pointer first: int (*p)[10]."},
-{"cat":"Pointers & Memory","q":"Writing to `char *s = \"abc\"; s[0] = 'X';` is:","o":["Fine","Undefined behaviour","A compile error in C","Only a warning"],"a":1,"e":"String literals may be in read-only memory and modifying them is undefined. Declare such pointers as const char *."},
-{"cat":"Pointers & Memory","q":"Which function must be used when source and destination may overlap?","o":["memcpy","memmove","strcpy","memset"],"a":1,"e":"memmove handles overlap; memcpy's behaviour is undefined for overlapping regions."},
-{"cat":"Pointers & Memory","q":"On a little-endian CPU, how is 0x12345678 stored at increasing addresses?","o":["12 34 56 78","78 56 34 12","56 78 12 34","34 12 78 56"],"a":1,"e":"Little-endian stores the least significant byte at the lowest address."},
-{"cat":"Pointers & Memory","q":"Which is the main reason heap allocation is avoided in long-running firmware?","o":["malloc is not available in C","Fragmentation and non-deterministic timing","It uses flash","It is slower than the stack in all cases"],"a":1,"e":"Fragmentation can make allocations fail after weeks of uptime, and allocation time is not bounded. Static allocation or fixed-size pools avoid both."},
-{"cat":"Embedded C","q":"What does `volatile` guarantee?","o":["Atomic access","Every access in the source actually happens","Memory ordering between cores","That the variable is placed in RAM"],"a":1,"e":"volatile prevents the compiler from removing or caching accesses. It does not provide atomicity or hardware memory barriers."},
-{"cat":"Embedded C","q":"A flag set in an ISR and polled in main() should be declared:","o":["static","register","volatile","const"],"a":2,"e":"Without volatile, the compiler may read the flag once and loop forever on a cached register value."},
-{"cat":"Embedded C","q":"Is `count++` on a volatile uint32_t atomic on Cortex-M?","o":["Yes, volatile makes it atomic","Yes, all 32-bit operations are atomic","No, it is a load, add and store","Only with -O0"],"a":2,"e":"An increment is a read-modify-write of three instructions. An ISR between the load and store loses an update. Use a critical section or LDREX/STREX."},
-{"cat":"Embedded C","q":"Which is the BEST thing to do inside an ISR?","o":["printf the received data","Wait for a mutex","Store the data in a buffer and signal a task","Call malloc for a new buffer"],"a":2,"e":"ISRs should be short and non-blocking: capture data, clear the flag, and defer processing."},
-{"cat":"Embedded C","q":"What does start-up code do with the .bss section?","o":["Copies it from flash","Fills it with zeros","Marks it read-only","Nothing"],"a":1,"e":"Start-up code copies .data from flash to RAM and zeroes .bss before calling main()."},
-{"cat":"Embedded C","q":"Why is `(uint32_t)(now - start) >= timeout` preferred over `now >= start + timeout`?","o":["It is faster","It works correctly when the tick counter wraps","It avoids volatile","It uses less RAM"],"a":1,"e":"Unsigned subtraction gives the correct elapsed time across a wrap; start + timeout can overflow to a small number."},
-{"cat":"Embedded C","q":"What is the purpose of a watchdog timer?","o":["Measure execution time","Reset the system if software stops responding","Generate PWM","Count external events"],"a":1,"e":"If the watchdog is not refreshed in time, it resets the MCU, recovering from hangs."},
-{"cat":"Embedded C","q":"A weak symbol is:","o":["A variable that may be optimised away","A default definition that a normal definition overrides at link time","A symbol stored in RAM","A deprecated function"],"a":1,"e":"Start-up files define ISR handlers as weak aliases so your own handler with the same name replaces them."},
-{"cat":"Bit Manipulation","q":"Which expression clears bit n of x?","o":["x | (1u << n)","x & ~(1u << n)","x ^ (1u << n)","x & (1u << n)"],"a":1,"e":"AND with a mask that has every bit set except bit n."},
-{"cat":"Bit Manipulation","q":"`x & (x - 1)` does what?","o":["Sets the lowest zero bit","Clears the lowest set bit","Isolates the highest bit","Inverts x"],"a":1,"e":"Subtracting 1 flips the lowest set bit and the zeros below it; ANDing clears that bit. Used to count bits and test powers of two."},
-{"cat":"Bit Manipulation","q":"Which value is a power of two test for x = 64?","o":["x & (x + 1) == 0","x && !(x & (x - 1))","x % 2 == 0","x >> 1 == 32"],"a":1,"e":"A power of two has exactly one bit set, so x & (x-1) is zero. The x && excludes zero."},
-{"cat":"Bit Manipulation","q":"What is `0xF0 ^ 0xFF`?","o":["0xFF","0x0F","0xF0","0x00"],"a":1,"e":"XOR gives 1 where bits differ: the low nibble."},
-{"cat":"Bit Manipulation","q":"Why write `1u << 31` rather than `1 << 31`?","o":["Style only","1 << 31 shifts into the sign bit of a signed int (undefined before C23)","1u is faster","1 << 31 does not compile"],"a":1,"e":"The u suffix makes the shift unsigned, avoiding signed overflow."},
-{"cat":"Bit Manipulation","q":"For unsigned x, `x % 16` equals:","o":["x >> 4","x & 15","x & 16","x | 15"],"a":1,"e":"Modulo a power of two keeps the low bits: x & (16 - 1)."},
-{"cat":"ARM Cortex-M","q":"On Cortex-M, a lower priority number means:","o":["Lower urgency","Higher urgency","Nothing, only order of enabling matters","It is ignored"],"a":1,"e":"Priority 0 is the highest configurable priority. Reset, NMI and HardFault have fixed negative priorities."},
-{"cat":"ARM Cortex-M","q":"Which registers does Cortex-M hardware push automatically on exception entry?","o":["R0-R12","R4-R11","R0-R3, R12, LR, PC, xPSR","Only PC and LR"],"a":2,"e":"The 8-word frame contains the caller-saved registers, so ISRs can be ordinary C functions."},
-{"cat":"ARM Cortex-M","q":"Which exception do RTOSes typically use to perform the context switch?","o":["SysTick","PendSV","NMI","HardFault"],"a":1,"e":"PendSV is set to the lowest priority, so the switch runs after all other ISRs have finished."},
-{"cat":"ARM Cortex-M","q":"What is the first word of the Cortex-M vector table?","o":["Reset handler address","Initial main stack pointer","NMI handler address","Magic number"],"a":1,"e":"Entry 0 is the initial MSP value; entry 1 is the reset handler."},
-{"cat":"ARM Cortex-M","q":"Which mask register blocks only interrupts at or below a given priority?","o":["PRIMASK","FAULTMASK","BASEPRI","CONTROL"],"a":2,"e":"BASEPRI masks exceptions with priority value ≥ the setting, leaving more urgent interrupts enabled. Not on ARMv6-M."},
-{"cat":"ARM Cortex-M","q":"Which Cortex-M core faults on any unaligned access?","o":["Cortex-M0+","Cortex-M4","Cortex-M7","Cortex-M33"],"a":0,"e":"ARMv6-M (M0/M0+) does not support unaligned accesses at all."},
-{"cat":"ARM Cortex-M","q":"An open-drain output can:","o":["Only drive high","Only pull low; a resistor pulls it high","Drive both levels strongly","Only be used as input"],"a":1,"e":"Open-drain is used for I2C and shared lines so several devices can pull the line low safely."},
-{"cat":"ARM Cortex-M","q":"Timer clock 1 MHz, ARR = 999, PWM mode. The PWM frequency is:","o":["1 MHz","1 kHz","999 Hz","10 kHz"],"a":1,"e":"The counter counts 0..999, i.e. 1000 ticks per period: 1 MHz / 1000 = 1 kHz."},
-{"cat":"RTOS","q":"Which primitive supports priority inheritance in FreeRTOS?","o":["Binary semaphore","Mutex","Queue","Event group"],"a":1,"e":"Mutexes have an owner, so the kernel can temporarily raise the owner's priority. Semaphores do not."},
-{"cat":"RTOS","q":"Priority inversion occurs when:","o":["A low-priority task runs while the CPU is idle","A high-priority task waits on a resource held by a low-priority task that is pre-empted by a medium task","Two tasks have the same priority","An ISR pre-empts a task"],"a":1,"e":"The medium task indirectly blocks the high one. Priority inheritance or ceiling protocols bound it."},
-{"cat":"RTOS","q":"Which is NOT a necessary condition for deadlock?","o":["Mutual exclusion","Hold and wait","Circular wait","Pre-emptive scheduling"],"a":3,"e":"The four Coffman conditions are mutual exclusion, hold and wait, no pre-emption of resources, and circular wait."},
-{"cat":"RTOS","q":"Which API should an ISR use to wake a task in FreeRTOS?","o":["xSemaphoreTake","vTaskDelay","vTaskNotifyGiveFromISR","xQueueReceive"],"a":2,"e":"ISRs must use the FromISR variants, which never block."},
-{"cat":"RTOS","q":"For a fixed-rate control loop, which is better?","o":["vTaskDelay","vTaskDelayUntil","A busy loop","taskYIELD"],"a":1,"e":"vTaskDelayUntil wakes at absolute times, so the period does not drift with the loop's execution time."},
-{"cat":"RTOS","q":"Under rate-monotonic scheduling, which task gets the highest priority?","o":["The longest-running task","The task with the shortest period","The most important task","The task created first"],"a":1,"e":"RMS assigns priorities by rate: shorter period, higher priority."},
-{"cat":"RTOS","q":"What is a counting semaphore initialised to 3 typically used for?","o":["Mutual exclusion","Managing 3 identical resources","Signalling one event","Delaying 3 ticks"],"a":1,"e":"Each take claims one of the resources; take blocks when all three are in use."},
-{"cat":"Protocols","q":"How many wires does I2C use (excluding ground)?","o":["1","2","3","4"],"a":1,"e":"SDA (data) and SCL (clock), both open-drain with pull-ups."},
-{"cat":"Protocols","q":"In SPI mode 0, data is sampled on:","o":["The rising edge, clock idles low","The falling edge, clock idles low","The rising edge, clock idles high","Both edges"],"a":0,"e":"CPOL=0 (idle low), CPHA=0 (sample on the first edge, which is rising)."},
-{"cat":"Protocols","q":"UART 115200 8N1 transfers about how many bytes per second?","o":["14400","11520","115200","12800"],"a":1,"e":"Each byte takes 10 bits (start + 8 data + stop), so 115200 / 10."},
-{"cat":"Protocols","q":"In CAN arbitration, which message wins?","o":["The longest one","The one with the lowest identifier","The one sent first","The one with the highest identifier"],"a":1,"e":"Dominant 0 bits override recessive 1s, so the lowest ID wins without corruption."},
-{"cat":"Protocols","q":"What is the maximum payload of a classic CAN frame?","o":["8 bytes","16 bytes","64 bytes","255 bytes"],"a":0,"e":"Classic CAN carries 0–8 bytes; CAN FD carries up to 64."},
-{"cat":"Protocols","q":"An I2C transaction starts with SDA going low while SCL is:","o":["Low","High","Toggling","Irrelevant"],"a":1,"e":"START is a falling SDA while SCL is high; STOP is a rising SDA while SCL is high."},
-{"cat":"Protocols","q":"Which USB transfer type gives guaranteed bandwidth but no retransmission?","o":["Bulk","Control","Interrupt","Isochronous"],"a":3,"e":"Isochronous suits audio and video, where late data is useless."},
-{"cat":"Protocols","q":"What resistance should you measure between CAN_H and CAN_L on a correctly terminated, powered-off bus?","o":["120 Ω","60 Ω","240 Ω","Open circuit"],"a":1,"e":"Two 120 Ω terminators in parallel give 60 Ω."},
-{"cat":"Linux Kernel","q":"Which function must be used to copy data from a user-space buffer in a driver?","o":["memcpy","copy_from_user","strcpy","ioread32"],"a":1,"e":"copy_from_user checks the address and safely handles page faults."},
-{"cat":"Linux Kernel","q":"Which lock can be used inside a hard IRQ handler?","o":["mutex","semaphore","spinlock","rwsem"],"a":2,"e":"IRQ handlers cannot sleep, so only spinlocks (and atomics) are allowed."},
-{"cat":"Linux Kernel","q":"Which allocation flag must be used in interrupt context?","o":["GFP_KERNEL","GFP_ATOMIC","GFP_USER","GFP_HIGHUSER"],"a":1,"e":"GFP_ATOMIC never sleeps. GFP_KERNEL may sleep to reclaim memory."},
-{"cat":"Linux Kernel","q":"kmalloc returns memory that is:","o":["Virtually but not physically contiguous","Physically contiguous","Always in high memory","Swappable"],"a":1,"e":"vmalloc gives virtually contiguous memory that may be physically scattered."},
-{"cat":"Linux Kernel","q":"Which deferral mechanism can sleep?","o":["Softirq","Tasklet","Workqueue","Hard IRQ handler"],"a":2,"e":"Workqueue items run in kernel threads (process context) and may sleep."},
-{"cat":"Linux Kernel","q":"The device tree property that binds a node to a driver is:","o":["reg","compatible","status","interrupts"],"a":1,"e":"The driver's of_match_table lists compatible strings; a match triggers probe()."},
-{"cat":"Linux Kernel","q":"What does devm_kzalloc add compared with kzalloc?","o":["Faster allocation","Memory is freed automatically when the device is unbound","DMA capability","Allocation from user space"],"a":1,"e":"devm_ resources are released automatically on probe failure or driver detach."},
-{"cat":"Linux Kernel","q":"In DRM/KMS, which object scans out and produces display timing?","o":["Plane","CRTC","Connector","Encoder"],"a":1,"e":"The CRTC blends planes and generates the timing for a mode; encoders and connectors carry the signal out."},
-{"cat":"Embedded Linux","q":"Which U-Boot command boots an ARM64 Image with a device tree?","o":["bootz","booti","bootm","go"],"a":1,"e":"booti boots a raw ARM64 Image; bootz is for ARM32 zImage; bootm for FIT/uImage."},
-{"cat":"Embedded Linux","q":"Which filesystem is designed for raw NAND flash?","o":["ext4","UBIFS","FAT32","NTFS"],"a":1,"e":"UBIFS runs on UBI, which handles wear levelling and bad blocks on raw NAND."},
-{"cat":"Embedded Linux","q":"In Yocto, a .bbappend file is used to:","o":["Define a new machine","Modify an existing recipe from another layer","Create a root filesystem image","Configure the kernel"],"a":1,"e":"bbappends let you patch or extend recipes without editing other layers."},
-{"cat":"Embedded Linux","q":"What is the main benefit of A/B updates?","o":["Smaller images","Atomic updates with automatic rollback","Faster boot","No need for a bootloader"],"a":1,"e":"The inactive slot is updated and verified; if it fails to boot, the device falls back to the old slot."},
-{"cat":"Electronics","q":"An RC low-pass filter with R = 1 kΩ and C = 1 µF has a cut-off of about:","o":["16 Hz","160 Hz","1.6 kHz","16 kHz"],"a":1,"e":"f = 1/(2πRC) = 1/(2π × 0.001) ≈ 159 Hz."},
-{"cat":"Electronics","q":"Why is a flyback diode placed across a relay coil?","o":["To speed up switching on","To absorb the voltage spike when the current is switched off","To limit coil current","To protect against reverse battery"],"a":1,"e":"An inductor resists sudden current change and produces a large reverse voltage that can destroy the transistor."},
-{"cat":"Electronics","q":"To sample a 1 kHz signal without aliasing you must sample faster than:","o":["500 Hz","1 kHz","2 kHz","10 kHz"],"a":2,"e":"Nyquist: more than twice the highest frequency component."},
-{"cat":"Electronics","q":"An LDO dropping 5 V to 3.3 V at 200 mA dissipates about:","o":["0.34 W","0.66 W","1 W","0.2 W"],"a":0,"e":"P = (Vin − Vout) × I = 1.7 V × 0.2 A = 0.34 W."},
-{"cat":"Data Structures","q":"Which algorithm detects a cycle in a linked list with O(1) memory?","o":["Hashing visited nodes","Floyd's slow/fast pointers","Sorting the nodes","Recursion"],"a":1,"e":"The fast pointer catches the slow one inside a cycle."},
-{"cat":"Data Structures","q":"Why use a power-of-two size for a ring buffer?","o":["It uses less memory","Wrapping becomes a cheap AND mask","It is required by C","It avoids volatile"],"a":1,"e":"index & (SIZE - 1) replaces a division or comparison."},
-{"cat":"Data Structures","q":"What is wrong with `mid = (lo + hi) / 2` in binary search?","o":["Nothing","lo + hi can overflow","It rounds up","It is too slow"],"a":1,"e":"Use lo + (hi - lo) / 2."},
-{"cat":"OS Concepts","q":"After fork(), parent and child memory pages are initially:","o":["Copied immediately","Shared copy-on-write","Unmapped in the child","Shared read-write"],"a":1,"e":"Linux marks pages read-only and copies a page only when one side writes to it."},
-{"cat":"OS Concepts","q":"What does the TLB cache?","o":["Instructions","Virtual-to-physical address translations","File data","Interrupt vectors"],"a":1,"e":"It avoids walking the page tables on every memory access."},
-{"cat":"OS Concepts","q":"An MPU differs from an MMU because it:","o":["Translates addresses","Only enforces permissions on physical regions, without translation","Is faster","Supports paging"],"a":1,"e":"MPUs protect regions; MMUs provide virtual memory."}
+ {
+  "cat": "C Programming",
+  "q": "What is the default initial value of a static local variable that is not explicitly initialised?",
+  "o": [
+   "Garbage",
+   "0",
+   "1",
+   "It depends on the compiler"
+  ],
+  "a": 1,
+  "e": "Objects with static storage duration — globals and `static` locals — are zero-initialised if you give no initialiser, so the answer is 0, never garbage. The linker places them in .bss, and the start-up code fills .bss with zeros before `main()` runs. If a bare-metal start-up file forgets this step, these variables really do start with random values, which is a classic bring-up bug. Automatic (stack) variables, by contrast, are not initialised."
+ },
+ {
+  "cat": "C Programming",
+  "q": "What does `static` on a file-scope function do?",
+  "o": [
+   "Makes it run faster",
+   "Keeps its local variables between calls",
+   "Gives it internal linkage, so it is visible only in that file",
+   "Places it in RAM"
+  ],
+  "a": 2,
+  "e": "At file scope, `static` gives a function or variable internal linkage: other .c files cannot see or call it, even with an `extern` declaration. This is C's way to make helpers private to one module, it avoids name clashes between modules at link time, and it lets the compiler inline or remove the function more aggressively. Note the different meaning inside a function, where `static` changes the storage duration instead."
+ },
+ {
+  "cat": "C Programming",
+  "q": "Which of these is undefined behaviour?",
+  "o": [
+   "Unsigned integer overflow",
+   "Signed integer overflow",
+   "Dividing an unsigned by a power of two",
+   "Comparing two pointers for equality"
+  ],
+  "a": 1,
+  "e": "Signed integer overflow is undefined behaviour: the compiler may assume it never happens, and for example turn `x + 1 > x` into `true` or remove overflow checks written after the operation. Unsigned arithmetic, by contrast, is defined to wrap modulo 2^N, which is why tick counters and wrap-safe timeouts use unsigned types. Check for overflow before the operation (`if (a > INT_MAX - b)`) or use `__builtin_add_overflow`."
+ },
+ {
+  "cat": "C Programming",
+  "q": "`#define SQ(x) x*x` — what is `SQ(1+2)`?",
+  "o": [
+   "9",
+   "5",
+   "6",
+   "Compile error"
+  ],
+  "a": 1,
+  "e": "Macros are plain text substitution, so `SQ(1+2)` becomes `1+2*1+2`. Multiplication binds tighter than addition, giving 1 + 2 + 2 = 5 instead of 9. The fix is to parenthesise every argument and the whole body: `#define SQ(x) ((x)*(x))`. Even then, `SQ(i++)` evaluates `i++` twice (undefined behaviour), which is why `static inline` functions are preferred for anything non-trivial."
+ },
+ {
+  "cat": "C Programming",
+  "q": "What is `sizeof(char)`?",
+  "o": [
+   "Always 1",
+   "1 on most systems, 2 on some",
+   "Always 8",
+   "Implementation-defined"
+  ],
+  "a": 0,
+  "e": "`sizeof(char)` is 1 by definition, on every platform. `sizeof` measures sizes in units of `char`, so the question 'how many bits are in a byte' is answered by `CHAR_BIT` instead — 8 on all mainstream CPUs, but 16 or 32 on some DSPs (e.g. TI C2000), where `sizeof(int)` can also be 1. Use `uint8_t` when you need exactly 8 bits; it simply does not exist on such DSPs."
+ },
+ {
+  "cat": "C Programming",
+  "q": "For `const int *p;` which statement is legal?",
+  "o": [
+   "*p = 5;",
+   "p++;",
+   "Both",
+   "Neither"
+  ],
+  "a": 1,
+  "e": "`const int *p` means 'pointer to const int': you cannot change the int through `p` (`*p = 5` is an error), but the pointer itself is not const, so `p++` or `p = &other` is fine. Read declarations right to left: `int *const p` is a const pointer to a modifiable int (`*p = 5` OK, `p++` not), and `const int *const p` makes both read-only. Functions use `const T *` parameters to promise they will not modify the caller's data."
+ },
+ {
+  "cat": "C Programming",
+  "q": "In which section does `int g = 0;` at file scope usually end up?",
+  "o": [
+   ".data",
+   ".bss",
+   ".rodata",
+   ".text"
+  ],
+  "a": 1,
+  "e": "Globals initialised to zero (or with no initialiser) go into .bss. The .bss section takes no space in the flash image — the linker only records its size — and start-up code clears it to zero at boot. Globals with a non-zero initialiser go into .data, which needs space twice: the initial values in flash and the variables in RAM, copied by the start-up code. Some compilers move explicitly zero-initialised variables to .bss automatically."
+ },
+ {
+  "cat": "C Programming",
+  "q": "`uint8_t a = 200, b = 100; uint8_t c = a + b;` What is c?",
+  "o": [
+   "300",
+   "44",
+   "255",
+   "Undefined"
+  ],
+  "a": 1,
+  "e": "Before the addition, both `uint8_t` operands are promoted to `int`, so `a + b` is 300 as an int with no overflow. Assigning 300 to a `uint8_t` converts it modulo 256: 300 − 256 = 44. This is well defined (unsigned conversion), but often a hidden bug; compile with `-Wconversion` to see such narrowing. Integer promotion also explains why `~a` on a `uint8_t` gives a negative int rather than a small value."
+ },
+ {
+  "cat": "C Programming",
+  "q": "What does `strncpy(d, s, n)` NOT guarantee?",
+  "o": [
+   "That at most n bytes are written",
+   "That d is NUL-terminated",
+   "That s is unchanged",
+   "That the copy stops at a NUL in s"
+  ],
+  "a": 1,
+  "e": "If the source string has `n` or more characters, `strncpy` copies exactly `n` characters and writes **no** terminating `'\\0'`, so later string functions run past the end of the buffer. It also pads with zeros when the source is short, which wastes time on large buffers. Prefer `snprintf(d, size, \"%s\", s)` or an `strlcpy`-style function, which always terminate and let you detect truncation from the return value."
+ },
+ {
+  "cat": "C Programming",
+  "q": "`int i = -1; unsigned u = 1;` Is `i < u` true?",
+  "o": [
+   "Yes",
+   "No",
+   "Undefined",
+   "Depends on optimisation"
+  ],
+  "a": 1,
+  "e": "In `i < u`, the usual arithmetic conversions convert the signed `int` to `unsigned int`, so −1 becomes 0xFFFFFFFF (4,294,967,295), which is greater than 1 — the comparison is false. This is a classic source of bugs, e.g. comparing a function's −1 error return with an unsigned length. Enable `-Wsign-compare` (part of `-Wextra`), keep both operands of the same signedness, or cast deliberately after checking for negative values."
+ },
+ {
+  "cat": "Pointers & Memory",
+  "q": "If `uint32_t *p` holds 0x1000, what does `p + 2` hold?",
+  "o": [
+   "0x1002",
+   "0x1004",
+   "0x1008",
+   "0x1010"
+  ],
+  "a": 2,
+  "e": "Pointer arithmetic is scaled by the size of the pointed-to type: `p + 2` moves by 2 × `sizeof(uint32_t)` = 8 bytes, so 0x1000 becomes 0x1008. That is why `p[i]` and `*(p + i)` both reach element i whatever the element size. To move by bytes, cast to `uint8_t *` (or `char *`) first. Arithmetic on `void *` is not allowed in standard C (GCC allows it as an extension, treating the size as 1)."
+ },
+ {
+  "cat": "Pointers & Memory",
+  "q": "Which declaration is a pointer to an array of 10 ints?",
+  "o": [
+   "int *p[10];",
+   "int (*p)[10];",
+   "int *(p[10]);",
+   "int p*[10];"
+  ],
+  "a": 1,
+  "e": "`[]` binds tighter than `*`, so `int *p[10]` declares an array of 10 pointers to int. The parentheses in `int (*p)[10]` make `p` a pointer first, pointing to an array of 10 ints; `p + 1` then advances by 40 bytes (a whole row). This type appears when passing 2D arrays to functions: `void f(int (*m)[10], int rows)`. A `typedef int row_t[10];` makes such declarations easier to read."
+ },
+ {
+  "cat": "Pointers & Memory",
+  "q": "Writing to `char *s = \"abc\"; s[0] = 'X';` is:",
+  "o": [
+   "Fine",
+   "Undefined behaviour",
+   "A compile error in C",
+   "Only a warning"
+  ],
+  "a": 1,
+  "e": "String literals may be stored in read-only memory (flash on an MCU, a read-only page on Linux), and modifying them is undefined behaviour: on Linux it usually crashes with SIGSEGV, on an MCU the write may be silently ignored or cause a bus fault. Declare such pointers as `const char *s = \"abc\";` so the compiler rejects writes. If you need a modifiable string, use an array: `char s[] = \"abc\";` copies the literal into writable memory."
+ },
+ {
+  "cat": "Pointers & Memory",
+  "q": "Which function must be used when source and destination may overlap?",
+  "o": [
+   "memcpy",
+   "memmove",
+   "strcpy",
+   "memset"
+  ],
+  "a": 1,
+  "e": "`memmove` is specified to work when the source and destination overlap: it behaves as if the data were first copied to a temporary buffer (real implementations choose to copy forwards or backwards instead). `memcpy` assumes no overlap and may copy in any order or in large chunks, so overlapping use is undefined and can corrupt data. Typical overlapping cases are shifting the contents of a buffer left or right, for example after consuming a frame."
+ },
+ {
+  "cat": "Pointers & Memory",
+  "q": "On a little-endian CPU, how is 0x12345678 stored at increasing addresses?",
+  "o": [
+   "12 34 56 78",
+   "78 56 34 12",
+   "56 78 12 34",
+   "34 12 78 56"
+  ],
+  "a": 1,
+  "e": "Little-endian CPUs store the least significant byte at the lowest address, so 0x12345678 appears in memory as 78 56 34 12. Arm Cortex-M, x86 and RISC-V are little-endian; network protocols (TCP/IP) use big-endian 'network byte order', so convert with `htonl`/`ntohl` or explicit shifts. Endianness matters when you send structs over a link, parse binary files, or reinterpret a byte buffer as a larger integer."
+ },
+ {
+  "cat": "Pointers & Memory",
+  "q": "Which is the main reason heap allocation is avoided in long-running firmware?",
+  "o": [
+   "malloc is not available in C",
+   "Fragmentation and non-deterministic timing",
+   "It uses flash",
+   "It is slower than the stack in all cases"
+  ],
+  "a": 1,
+  "e": "With many allocations and frees of different sizes, free memory becomes split into small, scattered holes (fragmentation), so a large allocation can fail after days or weeks even though plenty of memory is free in total. Allocation time also depends on the heap's state, which breaks real-time guarantees, and a failed `malloc` deep in the system is hard to handle safely. Firmware therefore allocates statically, allocates only during start-up, or uses fixed-size block pools."
+ },
+ {
+  "cat": "Embedded C",
+  "q": "What does `volatile` guarantee?",
+  "o": [
+   "Atomic access",
+   "Every access in the source actually happens",
+   "Memory ordering between cores",
+   "That the variable is placed in RAM"
+  ],
+  "a": 1,
+  "e": "`volatile` tells the compiler that every read and write written in the source must actually be performed, in order relative to other volatile accesses, because the value can change or matter outside the program's view (hardware registers, ISR-shared flags). It does **not** make operations atomic (`x++` is still load-add-store), and it does not add CPU memory barriers, so it is not enough for synchronising between cores or for ordering normal memory around it."
+ },
+ {
+  "cat": "Embedded C",
+  "q": "A flag set in an ISR and polled in main() should be declared:",
+  "o": [
+   "static",
+   "register",
+   "volatile",
+   "const"
+  ],
+  "a": 2,
+  "e": "Without `volatile`, the compiler sees that `main()` never writes the flag inside the loop, so it may load the flag into a register once and loop forever on that stale copy. Declaring it `volatile` forces a fresh memory read on every iteration. For flags that also carry data or are shared between cores, use C11 atomics with release/acquire ordering; for multi-step updates, also use a critical section."
+ },
+ {
+  "cat": "Embedded C",
+  "q": "Is `count++` on a volatile uint32_t atomic on Cortex-M?",
+  "o": [
+   "Yes, volatile makes it atomic",
+   "Yes, all 32-bit operations are atomic",
+   "No, it is a load, add and store",
+   "Only with -O0"
+  ],
+  "a": 2,
+  "e": "`count++` compiles to three instructions: load the value, add 1, store it back. If an interrupt that also increments `count` occurs between the load and the store, its update is overwritten, so one increment is lost. `volatile` does not change this. Fix it with a critical section (disable interrupts briefly), with `LDREX`/`STREX` exclusive access (C11 `atomic_fetch_add` on Cortex-M3 and above), or by ensuring only one context ever writes the variable."
+ },
+ {
+  "cat": "Embedded C",
+  "q": "Which is the BEST thing to do inside an ISR?",
+  "o": [
+   "printf the received data",
+   "Wait for a mutex",
+   "Store the data in a buffer and signal a task",
+   "Call malloc for a new buffer"
+  ],
+  "a": 2,
+  "e": "ISRs should be short and predictable: read the hardware data, clear the interrupt flag, put the data into a buffer, and signal a task or set a flag so the main code processes it later. Long processing, `printf`, waiting loops and blocking RTOS calls inside an ISR increase interrupt latency for every other interrupt, can cause missed data, and may deadlock. With an RTOS, use the `FromISR` APIs and request a context switch on exit."
+ },
+ {
+  "cat": "Embedded C",
+  "q": "What does start-up code do with the .bss section?",
+  "o": [
+   "Copies it from flash",
+   "Fills it with zeros",
+   "Marks it read-only",
+   "Nothing"
+  ],
+  "a": 1,
+  "e": "Before `main()` runs, the start-up code (the reset handler) copies the initial values of .data from flash to RAM and fills .bss with zeros, then usually calls `SystemInit()` (clock setup) and the C library initialisation (`__libc_init_array` for C++ constructors). If either step is missing, global variables start with wrong values. The linker script provides the symbols (`_sbss`, `_ebss`, `_sidata`, ...) that tell the start-up code where these sections are."
+ },
+ {
+  "cat": "Embedded C",
+  "q": "Why is `(uint32_t)(now - start) >= timeout` preferred over `now >= start + timeout`?",
+  "o": [
+   "It is faster",
+   "It works correctly when the tick counter wraps",
+   "It avoids volatile",
+   "It uses less RAM"
+  ],
+  "a": 1,
+  "e": "With unsigned arithmetic, `now - start` gives the true elapsed time even if the 32-bit tick counter wrapped from 0xFFFFFFFF to 0 in between, because subtraction is modulo 2^32. The other form adds first: `start + timeout` can wrap to a small number, so `now >= start + timeout` becomes true immediately (or never). The subtraction form works as long as the timeout is less than the counter's full range — about 49.7 days for a 1 ms 32-bit counter."
+ },
+ {
+  "cat": "Embedded C",
+  "q": "What is the purpose of a watchdog timer?",
+  "o": [
+   "Measure execution time",
+   "Reset the system if software stops responding",
+   "Generate PWM",
+   "Count external events"
+  ],
+  "a": 1,
+  "e": "A watchdog is a hardware timer that resets the MCU if software does not refresh ('kick') it within a set time. It recovers the system from hangs, infinite loops and deadlocks that would otherwise need a manual power cycle. To be effective, kick it only when all critical tasks have proven they are running — never from a timer interrupt alone — and log the reset cause at boot to diagnose field problems."
+ },
+ {
+  "cat": "Embedded C",
+  "q": "A weak symbol is:",
+  "o": [
+   "A variable that may be optimised away",
+   "A default definition that a normal definition overrides at link time",
+   "A symbol stored in RAM",
+   "A deprecated function"
+  ],
+  "a": 1,
+  "e": "A weak symbol is a default definition that the linker uses only if no normal (strong) definition with the same name exists. Start-up files define every interrupt handler as a weak alias to a default handler (often an infinite loop), so writing your own `void USART2_IRQHandler(void)` automatically replaces it. If you misspell the name, or forget `extern \"C\"` in C++, the weak default is used and the interrupt 'hangs' in `Default_Handler`."
+ },
+ {
+  "cat": "Bit Manipulation",
+  "q": "Which expression clears bit n of x?",
+  "o": [
+   "x | (1u << n)",
+   "x & ~(1u << n)",
+   "x ^ (1u << n)",
+   "x & (1u << n)"
+  ],
+  "a": 1,
+  "e": "`1u << n` has only bit n set; `~(1u << n)` has every bit set except bit n. ANDing `x` with that mask keeps all other bits and forces bit n to 0. Use `x | (1u << n)` to set the bit, `x ^ (1u << n)` to toggle it, and `(x >> n) & 1u` to test it. Use unsigned constants (`1u`), so shifting into bit 31 is well defined, and `1ull` for 64-bit values."
+ },
+ {
+  "cat": "Bit Manipulation",
+  "q": "`x & (x - 1)` does what?",
+  "o": [
+   "Sets the lowest zero bit",
+   "Clears the lowest set bit",
+   "Isolates the highest bit",
+   "Inverts x"
+  ],
+  "a": 1,
+  "e": "Subtracting 1 turns the lowest set bit into 0 and every zero below it into 1, while higher bits are unchanged; ANDing with the original value then clears exactly that lowest set bit (e.g. 0b10110 → 0b10100). Repeating it until the value is 0 counts set bits in one step per bit (Kernighan's method), and `x & (x - 1) == 0` tests whether x has at most one bit set (a power of two or zero)."
+ },
+ {
+  "cat": "Bit Manipulation",
+  "q": "Which value is a power of two test for x = 64?",
+  "o": [
+   "x & (x + 1) == 0",
+   "x && !(x & (x - 1))",
+   "x % 2 == 0",
+   "x >> 1 == 32"
+  ],
+  "a": 1,
+  "e": "A power of two has exactly one bit set, so clearing its lowest set bit with `x & (x - 1)` leaves 0; for 64 (0b1000000), `64 & 63` = 0. Zero would also pass that test, so `x &&` excludes it. This check is used to validate buffer sizes for mask-based ring buffers and alignment values for `aligned_malloc`, both of which require powers of two."
+ },
+ {
+  "cat": "Bit Manipulation",
+  "q": "What is `0xF0 ^ 0xFF`?",
+  "o": [
+   "0xFF",
+   "0x0F",
+   "0xF0",
+   "0x00"
+  ],
+  "a": 1,
+  "e": "XOR produces 1 where the two bits differ. 0xF0 = 1111 0000 and 0xFF = 1111 1111 differ only in the low nibble, so the result is 0000 1111 = 0x0F. XOR with all ones inverts bits, XOR with a mask toggles only the masked bits, and XORing a value twice with the same key restores it — the basis of toggling GPIOs, simple checksums and the 'single number' interview problem."
+ },
+ {
+  "cat": "Bit Manipulation",
+  "q": "Why write `1u << 31` rather than `1 << 31`?",
+  "o": [
+   "Style only",
+   "1 << 31 shifts into the sign bit of a signed int (undefined before C23)",
+   "1u is faster",
+   "1 << 31 does not compile"
+  ],
+  "a": 1,
+  "e": "The literal `1` is a signed int; shifting it into bit 31 produces a value that cannot be represented in a 32-bit signed int, which is undefined behaviour before C23. `1u << 31` is an unsigned shift and is well defined (0x80000000). The same applies to masks built for register bit 31, and shifting by 32 or more is undefined for any 32-bit type, so use `1ull` for 64-bit masks."
+ },
+ {
+  "cat": "Bit Manipulation",
+  "q": "For unsigned x, `x % 16` equals:",
+  "o": [
+   "x >> 4",
+   "x & 15",
+   "x & 16",
+   "x | 15"
+  ],
+  "a": 1,
+  "e": "For unsigned x and a power-of-two divisor, the remainder is just the low bits: `x % 16 == x & 15`. Compilers do this optimisation automatically for unsigned types; for signed ints it is wrong for negative numbers (−1 % 16 is −1 in C, but −1 & 15 is 15). That is why ring-buffer indices are kept unsigned and sizes are powers of two, so wrapping is a single AND instruction."
+ },
+ {
+  "cat": "ARM Cortex-M",
+  "q": "On Cortex-M, a lower priority number means:",
+  "o": [
+   "Lower urgency",
+   "Higher urgency",
+   "Nothing, only order of enabling matters",
+   "It is ignored"
+  ],
+  "a": 1,
+  "e": "On Cortex-M, a numerically lower priority value means higher urgency: priority 0 pre-empts priority 1. Only the top few bits of the 8-bit field are implemented (e.g. 4 bits = 16 levels on STM32), so CMSIS `NVIC_SetPriority` takes the unshifted value. Reset (−3), NMI (−2) and HardFault (−1) have fixed priorities above all configurable ones. FreeRTOS requires ISRs that call its API to have a priority value ≥ `configMAX_SYSCALL_INTERRUPT_PRIORITY`."
+ },
+ {
+  "cat": "ARM Cortex-M",
+  "q": "Which registers does Cortex-M hardware push automatically on exception entry?",
+  "o": [
+   "R0-R12",
+   "R4-R11",
+   "R0-R3, R12, LR, PC, xPSR",
+   "Only PC and LR"
+  ],
+  "a": 2,
+  "e": "On exception entry the hardware automatically pushes R0–R3, R12, LR, PC and xPSR (8 words) onto the current stack — exactly the registers that the AAPCS calling convention says a called function may overwrite. That is why an interrupt handler can be an ordinary C function without special keywords. If the FPU is in use, S0–S15 and FPSCR are stacked too (lazily, by default). The handler returns with a special EXC_RETURN value in LR."
+ },
+ {
+  "cat": "ARM Cortex-M",
+  "q": "Which exception do RTOSes typically use to perform the context switch?",
+  "o": [
+   "SysTick",
+   "PendSV",
+   "NMI",
+   "HardFault"
+  ],
+  "a": 1,
+  "e": "RTOSes set PendSV to the lowest interrupt priority and trigger it whenever a context switch is needed (from the tick, an API call or an ISR). Because it has the lowest priority, the switch runs only after all other interrupts have finished, so a switch never happens in the middle of an ISR, and several switch requests during nested interrupts collapse into one. SVC is often used once at start-up to launch the first task."
+ },
+ {
+  "cat": "ARM Cortex-M",
+  "q": "What is the first word of the Cortex-M vector table?",
+  "o": [
+   "Reset handler address",
+   "Initial main stack pointer",
+   "NMI handler address",
+   "Magic number"
+  ],
+  "a": 1,
+  "e": "The first word of the Cortex-M vector table is the initial value of the main stack pointer (MSP); the second word is the address of the reset handler, followed by NMI, HardFault and the other exception and interrupt handlers. At reset the core loads both words from address 0 (or the boot address), so the stack is valid before any code runs, and C code can be used even in the reset handler."
+ },
+ {
+  "cat": "ARM Cortex-M",
+  "q": "Which mask register blocks only interrupts at or below a given priority?",
+  "o": [
+   "PRIMASK",
+   "FAULTMASK",
+   "BASEPRI",
+   "CONTROL"
+  ],
+  "a": 2,
+  "e": "BASEPRI masks only exceptions whose priority value is greater than or equal to the configured value, leaving more urgent interrupts enabled. PRIMASK, by contrast, masks all configurable interrupts. RTOS kernels on Cortex-M3/M4/M7 use BASEPRI for their critical sections, so very time-critical interrupts (motor control, for example) keep running — but those interrupts must not call RTOS APIs. Armv6-M (Cortex-M0/M0+) has no BASEPRI."
+ },
+ {
+  "cat": "ARM Cortex-M",
+  "q": "Which Cortex-M core faults on any unaligned access?",
+  "o": [
+   "Cortex-M0+",
+   "Cortex-M4",
+   "Cortex-M7",
+   "Cortex-M33"
+  ],
+  "a": 0,
+  "e": "Armv6-M cores (Cortex-M0 and M0+) do not support unaligned accesses at all: a 32-bit load from an address that is not a multiple of 4 causes a HardFault. Cortex-M3/M4/M7 support unaligned single loads and stores (slower), but not `LDM`/`STM` or exclusive accesses. Watch out when casting byte buffers (e.g. received packets) to `uint32_t *` or packed structs; use `memcpy` into a local variable instead."
+ },
+ {
+  "cat": "ARM Cortex-M",
+  "q": "An open-drain output can:",
+  "o": [
+   "Only drive high",
+   "Only pull low; a resistor pulls it high",
+   "Drive both levels strongly",
+   "Only be used as input"
+  ],
+  "a": 1,
+  "e": "An open-drain output can only pull the line low or release it (high impedance); an external or internal pull-up resistor provides the high level. Because no device actively drives high, several devices can share one line safely (wired-AND), which is how I2C and shared interrupt lines work. Rise time depends on the pull-up resistor and line capacitance, so open-drain is slower than push-pull for fast signals."
+ },
+ {
+  "cat": "ARM Cortex-M",
+  "q": "Timer clock 1 MHz, ARR = 999, PWM mode. The PWM frequency is:",
+  "o": [
+   "1 MHz",
+   "1 kHz",
+   "999 Hz",
+   "10 kHz"
+  ],
+  "a": 1,
+  "e": "The counter counts from 0 to ARR = 999 and then restarts, which is 1000 timer ticks per period. With a 1 MHz timer clock each tick is 1 µs, so the period is 1 ms and the PWM frequency is 1 kHz. The general formula is f_PWM = f_timer / ((PSC + 1) × (ARR + 1)), and the duty cycle is CCR / (ARR + 1) — here each step of CCR changes the duty by 0.1%."
+ },
+ {
+  "cat": "RTOS",
+  "q": "Which primitive supports priority inheritance in FreeRTOS?",
+  "o": [
+   "Binary semaphore",
+   "Mutex",
+   "Queue",
+   "Event group"
+  ],
+  "a": 1,
+  "e": "A mutex has an owner — the task that took it — so when a higher-priority task blocks on it, the kernel knows which task to boost to that higher priority until it releases the mutex (priority inheritance). Binary and counting semaphores have no owner (any task or ISR can give them), so the kernel cannot do this; using a semaphore as a lock therefore risks unbounded priority inversion."
+ },
+ {
+  "cat": "RTOS",
+  "q": "Priority inversion occurs when:",
+  "o": [
+   "A low-priority task runs while the CPU is idle",
+   "A high-priority task waits on a resource held by a low-priority task that is pre-empted by a medium task",
+   "Two tasks have the same priority",
+   "An ISR pre-empts a task"
+  ],
+  "a": 1,
+  "e": "A high-priority task H blocks on a mutex held by a low-priority task L; a medium-priority task M, which does not need the mutex, becomes ready and pre-empts L. Now H effectively waits for M, possibly for a long time, even though H has the highest priority. This happened on Mars Pathfinder in 1997. Priority inheritance (boost L to H's priority) or the priority ceiling protocol bounds the delay to L's critical section."
+ },
+ {
+  "cat": "RTOS",
+  "q": "Which is NOT a necessary condition for deadlock?",
+  "o": [
+   "Mutual exclusion",
+   "Hold and wait",
+   "Circular wait",
+   "Pre-emptive scheduling"
+  ],
+  "a": 3,
+  "e": "Deadlock needs all four Coffman conditions: mutual exclusion (resources cannot be shared), hold and wait (holding one resource while waiting for another), no pre-emption of resources (they cannot be taken away), and circular wait. Pre-emptive **scheduling** of the CPU is unrelated — deadlocks happen with cooperative scheduling too. Preventing any one condition prevents deadlock; the most practical is a global lock ordering, which removes circular wait."
+ },
+ {
+  "cat": "RTOS",
+  "q": "Which API should an ISR use to wake a task in FreeRTOS?",
+  "o": [
+   "xSemaphoreTake",
+   "vTaskDelay",
+   "vTaskNotifyGiveFromISR",
+   "xQueueReceive"
+  ],
+  "a": 2,
+  "e": "Interrupt handlers must never block, so FreeRTOS provides `...FromISR` variants that never wait and report through a `pxHigherPriorityTaskWoken` flag whether a context switch is needed. A direct-to-task notification (`vTaskNotifyGiveFromISR`) is the fastest and lightest way to wake one task, with no separate kernel object. Call `portYIELD_FROM_ISR(woken)` at the end of the ISR so the woken task runs immediately."
+ },
+ {
+  "cat": "RTOS",
+  "q": "For a fixed-rate control loop, which is better?",
+  "o": [
+   "vTaskDelay",
+   "vTaskDelayUntil",
+   "A busy loop",
+   "taskYIELD"
+  ],
+  "a": 1,
+  "e": "`vTaskDelayUntil` (or `xTaskDelayUntil`) wakes the task at absolute times: last wake time + period, so the loop runs at a fixed rate no matter how long each iteration takes. `vTaskDelay` waits relative to the moment it is called, so the period becomes 'execution time + delay' and drifts. Both are limited to tick resolution; for low-jitter control loops, trigger the task from a hardware timer interrupt instead."
+ },
+ {
+  "cat": "RTOS",
+  "q": "Under rate-monotonic scheduling, which task gets the highest priority?",
+  "o": [
+   "The longest-running task",
+   "The task with the shortest period",
+   "The most important task",
+   "The task created first"
+  ],
+  "a": 1,
+  "e": "Rate-monotonic scheduling gives the highest fixed priority to the task with the shortest period (highest rate). For independent periodic tasks with deadlines equal to their periods, it is the optimal fixed-priority assignment, and a task set is guaranteed schedulable when total utilisation ≤ n(2^(1/n) − 1), which approaches 69% for many tasks. Above that bound, exact response-time analysis can still prove a set schedulable."
+ },
+ {
+  "cat": "RTOS",
+  "q": "What is a counting semaphore initialised to 3 typically used for?",
+  "o": [
+   "Mutual exclusion",
+   "Managing 3 identical resources",
+   "Signalling one event",
+   "Delaying 3 ticks"
+  ],
+  "a": 1,
+  "e": "A counting semaphore initialised to N represents N identical resources, such as 3 DMA channels or 3 buffers in a pool. Each take decrements the count and claims one resource; when the count is 0, the next take blocks (or fails after its timeout) until another task gives one back. Counting semaphores are also used for event counting, where an ISR gives once per event so that no events are lost if the task is slow."
+ },
+ {
+  "cat": "Protocols",
+  "q": "How many wires does I2C use (excluding ground)?",
+  "o": [
+   "1",
+   "2",
+   "3",
+   "4"
+  ],
+  "a": 1,
+  "e": "I2C uses two wires besides ground: SDA (serial data) and SCL (serial clock). Both are open-drain with pull-up resistors, which allows many devices and even multiple controllers on the same two wires, using 7-bit addresses to select devices. The price is lower speed (100 kHz, 400 kHz, 1 MHz typical) and edge rates that depend on the pull-ups and bus capacitance."
+ },
+ {
+  "cat": "Protocols",
+  "q": "In SPI mode 0, data is sampled on:",
+  "o": [
+   "The rising edge, clock idles low",
+   "The falling edge, clock idles low",
+   "The rising edge, clock idles high",
+   "Both edges"
+  ],
+  "a": 0,
+  "e": "SPI mode 0 means CPOL = 0 (the clock idles low) and CPHA = 0 (data is sampled on the first clock edge, which is rising when the clock idles low), with data changing on the falling edge. Mode 3 also samples on rising edges but idles high. The controller must match the mode in the device's datasheet; the wrong mode typically shifts data by one bit."
+ },
+ {
+  "cat": "Protocols",
+  "q": "UART 115200 8N1 transfers about how many bytes per second?",
+  "o": [
+   "14400",
+   "11520",
+   "115200",
+   "12800"
+  ],
+  "a": 1,
+  "e": "With 8N1 framing, each byte is sent as 10 bits: 1 start bit, 8 data bits and 1 stop bit. At 115200 bits per second that gives 115200 / 10 = 11,520 bytes per second, or about 86.8 µs per byte. Adding parity or a second stop bit makes it 11 bits per byte. This number is used to size receive buffers and to check whether polling or DMA is needed."
+ },
+ {
+  "cat": "Protocols",
+  "q": "In CAN arbitration, which message wins?",
+  "o": [
+   "The longest one",
+   "The one with the lowest identifier",
+   "The one sent first",
+   "The one with the highest identifier"
+  ],
+  "a": 1,
+  "e": "During arbitration every node sends its identifier bit by bit and reads the bus. A dominant bit (0) overrides a recessive bit (1), so a node sending 1 while reading 0 knows it has lost, stops transmitting and retries later. The message with the lowest identifier always wins, without being corrupted or delayed — so in CAN the identifier is also the message priority, and urgent messages get low IDs."
+ },
+ {
+  "cat": "Protocols",
+  "q": "What is the maximum payload of a classic CAN frame?",
+  "o": [
+   "8 bytes",
+   "16 bytes",
+   "64 bytes",
+   "255 bytes"
+  ],
+  "a": 0,
+  "e": "A classic CAN 2.0 data frame carries 0 to 8 data bytes, set by the 4-bit DLC field. CAN FD keeps the same arbitration but allows up to 64 bytes and a faster bit rate in the data phase; CAN XL goes up to 2048 bytes. Because overhead (ID, CRC, stuff bits) is around 50–70 bits per frame, classic CAN payload efficiency is below 50%, which is a main motivation for CAN FD."
+ },
+ {
+  "cat": "Protocols",
+  "q": "An I2C transaction starts with SDA going low while SCL is:",
+  "o": [
+   "Low",
+   "High",
+   "Toggling",
+   "Irrelevant"
+  ],
+  "a": 1,
+  "e": "A START condition is SDA going from high to low while SCL is high; a STOP is SDA going from low to high while SCL is high. During normal data transfer SDA may only change while SCL is low, so these two patterns are unambiguous markers. A repeated START (a new START without a STOP) is used to switch from writing a register address to reading data without releasing the bus."
+ },
+ {
+  "cat": "Protocols",
+  "q": "Which USB transfer type gives guaranteed bandwidth but no retransmission?",
+  "o": [
+   "Bulk",
+   "Control",
+   "Interrupt",
+   "Isochronous"
+  ],
+  "a": 3,
+  "e": "Isochronous transfers reserve bandwidth on the bus and are delivered at fixed intervals, but corrupted packets are not retransmitted. That suits audio and video streams, where late data is useless and an occasional glitch is better than a delay. Bulk transfers are the opposite (retries, no timing guarantee), interrupt transfers give bounded latency for small data, and control transfers configure the device."
+ },
+ {
+  "cat": "Protocols",
+  "q": "What resistance should you measure between CAN_H and CAN_L on a correctly terminated, powered-off bus?",
+  "o": [
+   "120 Ω",
+   "60 Ω",
+   "240 Ω",
+   "Open circuit"
+  ],
+  "a": 1,
+  "e": "A CAN bus needs a 120 Ω terminator at each end to match the cable impedance. With power off, measuring between CAN_H and CAN_L shows the two in parallel: 120 Ω ∥ 120 Ω = 60 Ω. A reading of 120 Ω means one terminator is missing; a much lower value means too many terminators or a short. Missing termination causes reflections and bit errors, especially at higher bit rates."
+ },
+ {
+  "cat": "Linux Kernel",
+  "q": "Which function must be used to copy data from a user-space buffer in a driver?",
+  "o": [
+   "memcpy",
+   "copy_from_user",
+   "strcpy",
+   "ioread32"
+  ],
+  "a": 1,
+  "e": "A user-space pointer cannot be trusted: it may be invalid, point into kernel memory, or refer to a page that is not resident. `copy_from_user` checks that the range belongs to user space, handles page faults safely, and returns the number of bytes that could not be copied (return `-EFAULT` if non-zero). Hardware features like Arm PAN and x86 SMAP even block direct kernel access to user memory."
+ },
+ {
+  "cat": "Linux Kernel",
+  "q": "Which lock can be used inside a hard IRQ handler?",
+  "o": [
+   "mutex",
+   "semaphore",
+   "spinlock",
+   "rwsem"
+  ],
+  "a": 2,
+  "e": "Hard IRQ handlers run in atomic context and must never sleep, so mutexes, semaphores and any function that may block are forbidden. A spinlock busy-waits instead of sleeping, so it can be used there (as can atomic operations). Process-context code that shares data with an IRQ handler must take the lock with `spin_lock_irqsave` to avoid deadlocking against the interrupt on the same CPU."
+ },
+ {
+  "cat": "Linux Kernel",
+  "q": "Which allocation flag must be used in interrupt context?",
+  "o": [
+   "GFP_KERNEL",
+   "GFP_ATOMIC",
+   "GFP_USER",
+   "GFP_HIGHUSER"
+  ],
+  "a": 1,
+  "e": "`GFP_ATOMIC` tells the allocator it must not sleep, so it is safe in interrupt handlers and while holding spinlocks; it may use emergency reserves, but fails more often, so always check for NULL. `GFP_KERNEL` may sleep to reclaim memory (writing back pages, swapping) and is only allowed in process context. Where possible, preallocate buffers so that interrupt context does not need to allocate at all."
+ },
+ {
+  "cat": "Linux Kernel",
+  "q": "kmalloc returns memory that is:",
+  "o": [
+   "Virtually but not physically contiguous",
+   "Physically contiguous",
+   "Always in high memory",
+   "Swappable"
+  ],
+  "a": 1,
+  "e": "`kmalloc` returns memory that is physically contiguous (from the slab allocator), which suits small buffers and DMA through the DMA API. `vmalloc` returns memory that is only virtually contiguous — the pages can be anywhere in physical RAM — which works for large buffers but is slower to set up, cannot be used directly for DMA, and may sleep. `kvmalloc` tries `kmalloc` and falls back to `vmalloc`."
+ },
+ {
+  "cat": "Linux Kernel",
+  "q": "Which deferral mechanism can sleep?",
+  "o": [
+   "Softirq",
+   "Tasklet",
+   "Workqueue",
+   "Hard IRQ handler"
+  ],
+  "a": 2,
+  "e": "Workqueue items run in kernel worker threads (`kworker`), i.e. in process context, so they may sleep: take mutexes, allocate with `GFP_KERNEL`, or talk to I2C/SPI devices. Softirqs and tasklets run in atomic context and cannot sleep. Threaded IRQs also run in process context and are the usual choice for devices on slow buses, with `IRQF_ONESHOT` keeping the line masked until the thread finishes."
+ },
+ {
+  "cat": "Linux Kernel",
+  "q": "The device tree property that binds a node to a driver is:",
+  "o": [
+   "reg",
+   "compatible",
+   "status",
+   "interrupts"
+  ],
+  "a": 1,
+  "e": "The `compatible` property lists strings such as `\"ti,tmp102\"`, most specific first. A platform or I2C driver lists the strings it supports in its `of_match_table`; when the driver core finds a match, it calls the driver's `probe()` function. The same strings appear in the binding documentation (YAML schemas), and `MODULE_DEVICE_TABLE(of, ...)` lets udev auto-load the right module."
+ },
+ {
+  "cat": "Linux Kernel",
+  "q": "What does devm_kzalloc add compared with kzalloc?",
+  "o": [
+   "Faster allocation",
+   "Memory is freed automatically when the device is unbound",
+   "DMA capability",
+   "Allocation from user space"
+  ],
+  "a": 1,
+  "e": "`devm_kzalloc` allocates zeroed memory tied to the device's lifetime: if `probe()` fails, or the device is later unbound, the memory is freed automatically, in reverse order with other `devm_` resources. This removes most error-path cleanup code. The catch is lifetime: data still used after unbinding (for example by an open file) must not live in devm memory."
+ },
+ {
+  "cat": "Linux Kernel",
+  "q": "In DRM/KMS, which object scans out and produces display timing?",
+  "o": [
+   "Plane",
+   "CRTC",
+   "Connector",
+   "Encoder"
+  ],
+  "a": 1,
+  "e": "In DRM/KMS, the CRTC is the scan-out engine: it reads and blends the planes (primary, overlays, cursor) and generates the timing (pixel clock, sync signals) for one display mode. Encoders convert its pixel stream into a signal type such as DSI or HDMI, and connectors represent the physical outputs. User space sets planes, CRTC and connector together in one atomic commit, applied at the next vblank."
+ },
+ {
+  "cat": "Embedded Linux",
+  "q": "Which U-Boot command boots an ARM64 Image with a device tree?",
+  "o": [
+   "bootz",
+   "booti",
+   "bootm",
+   "go"
+  ],
+  "a": 1,
+  "e": "`booti` boots a raw ARM64 `Image` (kernel address, optional initramfs address, device tree address). `bootz` is for 32-bit Arm `zImage` files, and `bootm` boots legacy uImage or FIT images, which can bundle the kernel, device trees and an initramfs with hashes and signatures — the usual choice for verified boot. Load the files first with `load`/`tftp`."
+ },
+ {
+  "cat": "Embedded Linux",
+  "q": "Which filesystem is designed for raw NAND flash?",
+  "o": [
+   "ext4",
+   "UBIFS",
+   "FAT32",
+   "NTFS"
+  ],
+  "a": 1,
+  "e": "UBIFS is designed for raw NAND flash: it runs on top of UBI, which handles wear levelling across the whole flash device, bad block management and logical-to-physical erase block mapping. Filesystems like ext4 expect a block device that already does this (eMMC, SD and SSDs have their own controller with an FTL). JFFS2 is the older raw-flash filesystem, fine for small NOR flash but slow to mount on large devices."
+ },
+ {
+  "cat": "Embedded Linux",
+  "q": "In Yocto, a .bbappend file is used to:",
+  "o": [
+   "Define a new machine",
+   "Modify an existing recipe from another layer",
+   "Create a root filesystem image",
+   "Configure the kernel"
+  ],
+  "a": 1,
+  "e": "A `.bbappend` file in your own layer extends a recipe defined in another layer — adding patches, configuration files, extra packages or changing variables — without editing that layer. This keeps vendor and community layers untouched, so they can be updated cleanly. The file name must match the recipe (with `%` as a version wildcard, e.g. `linux-imx_%.bbappend`)."
+ },
+ {
+  "cat": "Embedded Linux",
+  "q": "What is the main benefit of A/B updates?",
+  "o": [
+   "Smaller images",
+   "Atomic updates with automatic rollback",
+   "Faster boot",
+   "No need for a bootloader"
+  ],
+  "a": 1,
+  "e": "With A/B (dual-slot) updates, the new image is written to the inactive slot while the device keeps running from the active one. After verification, the bootloader is told to try the new slot; if it fails to boot or the application does not confirm it within a few attempts, the bootloader falls back to the old slot. The update is therefore atomic and recoverable, at the cost of twice the storage."
+ },
+ {
+  "cat": "Electronics",
+  "q": "An RC low-pass filter with R = 1 kΩ and C = 1 µF has a cut-off of about:",
+  "o": [
+   "16 Hz",
+   "160 Hz",
+   "1.6 kHz",
+   "16 kHz"
+  ],
+  "a": 1,
+  "e": "The cut-off frequency of an RC low-pass filter is f_c = 1 / (2πRC). With R = 1 kΩ and C = 1 µF, RC = 1 ms, so f_c = 1 / (2π × 0.001) ≈ 159 Hz, about 160 Hz. At f_c the output is 3 dB down (about 70.7% amplitude), and above it the response falls by 20 dB per decade. The time constant RC also tells you settling time: about 5RC to reach 99% after a step."
+ },
+ {
+  "cat": "Electronics",
+  "q": "Why is a flyback diode placed across a relay coil?",
+  "o": [
+   "To speed up switching on",
+   "To absorb the voltage spike when the current is switched off",
+   "To limit coil current",
+   "To protect against reverse battery"
+  ],
+  "a": 1,
+  "e": "A relay coil is an inductor, which resists sudden changes in current. When the transistor switches off, the collapsing magnetic field produces a large reverse voltage spike (hundreds of volts possible) that can destroy the transistor or MCU pin. A diode across the coil, reverse-biased in normal operation, gives the current a path to decay safely, clamping the spike to about one diode drop above the supply."
+ },
+ {
+  "cat": "Electronics",
+  "q": "To sample a 1 kHz signal without aliasing you must sample faster than:",
+  "o": [
+   "500 Hz",
+   "1 kHz",
+   "2 kHz",
+   "10 kHz"
+  ],
+  "a": 2,
+  "e": "The Nyquist–Shannon theorem says you must sample at more than twice the highest frequency present, so a 1 kHz signal needs more than 2 kHz. Components above half the sample rate fold back as false lower frequencies (aliasing) and cannot be removed afterwards, so an analog anti-aliasing filter is placed before the ADC. In practice sample 5–10× faster to relax the filter requirements."
+ },
+ {
+  "cat": "Electronics",
+  "q": "An LDO dropping 5 V to 3.3 V at 200 mA dissipates about:",
+  "o": [
+   "0.34 W",
+   "0.66 W",
+   "1 W",
+   "0.2 W"
+  ],
+  "a": 0,
+  "e": "A linear regulator drops the voltage difference across its pass transistor, so the power lost as heat is (V_in − V_out) × I = (5 − 3.3) × 0.2 = 0.34 W. Efficiency is only 3.3 / 5 = 66%. That is manageable in a small package with good copper area, but at higher currents or larger voltage drops (12 V → 3.3 V) a switching regulator is needed to avoid overheating."
+ },
+ {
+  "cat": "Data Structures",
+  "q": "Which algorithm detects a cycle in a linked list with O(1) memory?",
+  "o": [
+   "Hashing visited nodes",
+   "Floyd's slow/fast pointers",
+   "Sorting the nodes",
+   "Recursion"
+  ],
+  "a": 1,
+  "e": "Floyd's algorithm moves a slow pointer one node at a time and a fast pointer two nodes at a time. If the list has a loop, the fast pointer eventually catches up with the slow one inside it; if it reaches NULL, there is no loop. It needs O(n) time and only two pointers of memory, and resetting one pointer to the head then advancing both one step at a time finds the node where the loop starts."
+ },
+ {
+  "cat": "Data Structures",
+  "q": "Why use a power-of-two size for a ring buffer?",
+  "o": [
+   "It uses less memory",
+   "Wrapping becomes a cheap AND mask",
+   "It is required by C",
+   "It avoids volatile"
+  ],
+  "a": 1,
+  "e": "With a power-of-two size N, wrapping an index is `i & (N - 1)` — a single AND instruction — instead of a division (`i % N`, slow on cores without a hardware divider) or a compare-and-reset branch. It also lets head and tail be free-running counters whose unsigned difference is the number of items, which distinguishes full from empty without wasting a slot."
+ },
+ {
+  "cat": "Data Structures",
+  "q": "What is wrong with `mid = (lo + hi) / 2` in binary search?",
+  "o": [
+   "Nothing",
+   "lo + hi can overflow",
+   "It rounds up",
+   "It is too slow"
+  ],
+  "a": 1,
+  "e": "If `lo` and `hi` are large (close to the type's maximum), `lo + hi` overflows, producing a negative or wrapped index — a real bug found in Java's library binary search in 2006. `lo + (hi - lo) / 2` computes the same midpoint without overflow because `hi - lo` is always in range. With unsigned indices, also take care that `mid - 1` cannot underflow when mid is 0."
+ },
+ {
+  "cat": "OS Concepts",
+  "q": "After fork(), parent and child memory pages are initially:",
+  "o": [
+   "Copied immediately",
+   "Shared copy-on-write",
+   "Unmapped in the child",
+   "Shared read-write"
+  ],
+  "a": 1,
+  "e": "After `fork()`, the child gets a copy of the parent's page tables, and all writable pages are marked read-only in both processes and shared. When either process writes a page, the page fault handler copies that one page and gives the writer a private copy (copy-on-write). This makes `fork()` fast, and `fork()` followed by `exec()` copies almost nothing."
+ },
+ {
+  "cat": "OS Concepts",
+  "q": "What does the TLB cache?",
+  "o": [
+   "Instructions",
+   "Virtual-to-physical address translations",
+   "File data",
+   "Interrupt vectors"
+  ],
+  "a": 1,
+  "e": "The TLB (translation lookaside buffer) is a small cache in the MMU of recent virtual-to-physical page translations with their permissions. A TLB hit translates an address in the same cycle; a miss requires a page-table walk (several memory accesses). Context switches may need TLB flushes, which ASIDs (address space IDs) avoid, and huge pages increase TLB coverage."
+ },
+ {
+  "cat": "OS Concepts",
+  "q": "An MPU differs from an MMU because it:",
+  "o": [
+   "Translates addresses",
+   "Only enforces permissions on physical regions, without translation",
+   "Is faster",
+   "Supports paging"
+  ],
+  "a": 1,
+  "e": "An MPU (memory protection unit) only enforces access permissions — read/write/execute, privileged/unprivileged, cacheability — on a small number of physical address regions; addresses are not translated. An MMU provides virtual memory: per-process address spaces, page-based translation, demand paging. Cortex-M and Cortex-R use MPUs (for stack guards and task isolation), Cortex-A uses MMUs (needed for Linux)."
+ }
 ]
