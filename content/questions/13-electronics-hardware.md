@@ -4,60 +4,391 @@ title: Electronics & Hardware Basics
 icon: 🔋
 level: Beginner
 order: 15
-desc: Ohm's law, pull-ups, level shifting, ADC and filters, power supplies, signal integrity and reading schematics.
+desc: Ohm's law and power, pull-ups, GPIO modes, LEDs, level shifting, decoupling, LDO vs buck, ADC/DAC, Nyquist, filters, oscillators, MOSFETs, flyback diodes, ESD, signal integrity, low power, schematics and bring-up.
 ---
-Firmware engineers are expected to read schematics, bring up boards and talk to hardware engineers. These are the basics that come up.
+Firmware engineers are expected to read schematics, bring up boards and talk to hardware engineers. These are the basics that come up, each with a short answer, the numbers to know and the follow-ups.
+
+### What are Ohm's law and the power formula, and how do you use them on a board? {E}
+**Short answer:** Ohm's law says **V = I × R** (voltage across a resistor equals current times resistance). Power dissipated is **P = V × I = I² × R = V² / R**. Firmware engineers use them to size pull-ups and LED resistors, estimate current draw and battery life, check that a GPIO can drive a load, and choose resistor power ratings.
+
+**Worked examples**
+
+- A 10 kΩ pull-up to 3.3 V with the line held low draws I = 3.3 / 10,000 = **0.33 mA**, power 1.1 mW. A 1 kΩ pull-up would draw 3.3 mA — significant for a battery device that holds the line low.
+- A 0.1 Ω current-sense resistor carrying 2 A drops 0.2 V and dissipates 0.4 W: needs at least a 1/2 W part (use a 2× margin).
+- Voltage divider: Vout = Vin × R2 / (R1 + R2). Measuring a 12 V battery with a 3.3 V ADC: R1 = 100 kΩ, R2 = 27 kΩ gives 12 × 27/127 = 2.55 V full scale, drawing only ~94 µA. Higher resistances save current but the ADC's sampling capacitor needs a low source impedance (add a capacitor at the ADC pin or a slower sampling time).
+
+**Battery life estimate:** average current = Σ(current × time fraction). A sensor drawing 5 mA for 10 ms every second and 5 µA otherwise averages 5 × 0.01 + 0.005 × 0.99 ≈ 55 µA; a 220 mAh coin cell lasts about 220 / 0.055 ≈ 4000 h ≈ 5.5 months (before derating for temperature, self-discharge and peak current limits).
+
+**Kirchhoff's laws:** currents into a node sum to zero (KCL); voltages around a loop sum to zero (KVL). They explain dividers, ground offsets and why a shared ground return matters.
 
 ### What are pull-up and pull-down resistors? {E}
-A pull-up connects a signal to the supply through a resistor so it reads a defined high when nothing drives it; a pull-down connects it to ground for a defined low. Without them, an unconnected input "floats" and picks up noise, reading random values and wasting power. Typical values are 4.7 kΩ to 100 kΩ; lower values give faster edges and better noise immunity but more current when the line is driven low. Most MCUs have selectable internal pulls of roughly 30–50 kΩ.
+**Short answer:** A pull-up resistor connects a signal to the supply so the line reads a defined **high** when nothing actively drives it; a pull-down connects it to ground for a defined **low**. Without one, an unconnected (floating) CMOS input picks up noise, reads random values and can draw extra current because the input stage sits halfway between levels. Typical values are 4.7 kΩ–100 kΩ; lower values give faster edges and better noise immunity but waste more current when the line is driven to the opposite level. Most MCUs have selectable internal pulls of roughly 30–50 kΩ.
+
+**Where they are needed**
+
+| Situation | Typical choice |
+|---|---|
+| Button to ground | pull-up (internal is fine), button pulls low |
+| Open-drain buses (I2C, 1-Wire, interrupt lines shared by several devices) | external pull-up, sized for rise time |
+| Reset lines (nRST) | pull-up so the device runs by default |
+| Boot-mode/strap pins | pull-up or pull-down to select the boot mode at reset |
+| Chip selects | pull-up so devices stay deselected while the MCU is in reset |
+| MOSFET gates | pull-down (or pull-up for P-channel) so loads stay off while the MCU boots |
+
+**Choosing a value:** balance rise time (R × C of the line: 10 kΩ with 50 pF gives τ = 0.5 µs) against current when the line is low (V/R) and the strength of the driving device; weak pulls (100 kΩ+) are sensitive to leakage and noise.
+
+**Firmware note:** internal pull-ups are configured in the GPIO registers and take effect only after the code runs; anything that must be defined during reset (enables, gates, boot pins) needs external resistors.
+
+### What are the GPIO output modes (push-pull vs open-drain) and input options? {E}
+**Short answer:** A **push-pull** output actively drives both high (to VDD) and low (to ground), giving fast, strong edges for normal signals. An **open-drain** output can only pull low or release the line (high impedance); a pull-up resistor makes the high level. Open-drain allows several devices to share one line (wired-AND, as in I2C and shared interrupt lines), lets a device "drive" a line to a different voltage than its own supply (within the pin's tolerance), and prevents shorts when two outputs disagree. Inputs can be floating, pulled up or down, with optional Schmitt trigger and analog mode.
+
+| Mode | Drives high | Drives low | Use |
+|---|---|---|---|
+| Push-pull output | yes | yes | LEDs, chip selects, SPI, UART TX, enables |
+| Open-drain output | no (pull-up) | yes | I2C, shared IRQ lines, level translation to a lower/equal voltage |
+| Input, floating | – | – | driven by an external push-pull source |
+| Input with pull-up/down | – | – | buttons, open-drain sources |
+| Analog | – | – | ADC/DAC/comparator pins (digital input buffer disabled: lowest leakage) |
+| Alternate function | peripheral controls the pin | | UART, SPI, timers, etc. |
+
+**Other GPIO settings worth knowing:** output speed/slew rate (slower edges = less EMI and ringing), drive strength, and whether a pin is **5 V tolerant** (FT pins on STM32 can accept 5 V inputs when configured as digital, not analog).
+
+**Why unused pins should be configured:** floating inputs can toggle and draw current; set unused pins to analog mode (lowest power) or output low.
+
+**Atomic GPIO writes:** use the set/reset register (e.g. STM32 `BSRR`) to change individual pins without a read-modify-write that could race with an interrupt changing other pins on the same port.
 
 ### How do you calculate the current-limiting resistor for an LED? {E}
-R = (Vsupply − Vf) / I. For a 3.3 V GPIO driving a red LED with Vf ≈ 2.0 V at 5 mA: R = (3.3 − 2.0) / 0.005 = 260 Ω, so use 270 Ω. Check that the GPIO can source or sink that current and that the total current for the port stays within the datasheet limit.
+**Short answer:** **R = (V_supply − V_f) / I_f**, where V_f is the LED's forward voltage and I_f the desired current. For a red LED (V_f ≈ 2.0 V) from 3.3 V at 5 mA: R = (3.3 − 2.0) / 0.005 = **260 Ω** → use 270 Ω. Then check the GPIO's maximum output current and the total current for the port and package.
+
+**Typical forward voltages:** red/yellow ≈ 1.8–2.2 V, green ≈ 2.0–3.2 V, blue/white ≈ 2.8–3.4 V. A white LED may barely light from 3.3 V without a resistor margin; drive it through a transistor from a higher supply or use a constant-current driver.
+
+**GPIO limits:** many MCUs allow ~20 mA absolute per pin but specify output voltage levels only at much lower currents, and have a total limit per port or package (e.g. 100–150 mA); modern LEDs are bright enough at 1–5 mA. Above a few mA or for several LEDs, use a transistor or MOSFET switch.
+
+**Sink vs source:** connecting the LED from VDD to the GPIO (active-low, the pin sinks current) is common because some pins sink current better than they source it; remember the inverted logic in firmware.
+
+**Brightness control:** PWM at a frequency above flicker perception (> 200 Hz, often 1–20 kHz); perceived brightness is non-linear, so use a gamma-corrected table.
+
+**Resistor power:** P = I² × R = 0.005² × 270 ≈ 7 mW, fine for any small resistor.
 
 ### How do you interface a 3.3 V MCU with a 5 V device? {M}
-- **5 V output into a 3.3 V input**: use a resistor divider, a level-shifter IC, or a pin that is explicitly **5 V tolerant** (check the datasheet "FT" pins).
-- **3.3 V output into a 5 V input**: often works if the 5 V device's VIH is ≤ about 2.5 V (TTL-compatible inputs, e.g. 74HCT); otherwise use a buffer or level shifter.
-- **Bidirectional open-drain (I2C)**: a MOSFET-based shifter (BSS138 circuit) or a dedicated I2C level translator.
+**Short answer:** Check both directions against the datasheets. **3.3 V → 5 V**: the 5 V device may accept 3.3 V as a valid high (many TTL-compatible inputs need only V_IH ≈ 2.0 V); if it needs 0.7 × VDD = 3.5 V (CMOS), use a level shifter or an open-drain output with a pull-up to 5 V (only if the MCU pin is 5 V tolerant). **5 V → 3.3 V**: never connect directly unless the MCU pin is specified as 5 V tolerant; otherwise use a resistor divider, a series resistor (limiting current into the protection diode, not a robust design), or a buffer powered at 3.3 V with 5 V-tolerant inputs.
 
-Never feed 5 V into a non-tolerant pin; the internal clamp diodes can conduct and back-power the MCU.
+**Options**
+
+| Method | Direction | Speed | Notes |
+|---|---|---|---|
+| Direct connection | 3.3 → 5 V | fast | only if 5 V device's V_IH ≤ ~2.4 V (TTL-level inputs, 74HCT) |
+| Resistor divider (e.g. 1.8 kΩ / 3.3 kΩ) | 5 → 3.3 V | moderate (RC with input capacitance) | simple, one direction |
+| 5 V-tolerant MCU pin | 5 → 3.3 V | fast | check "FT" pins and that they are not in analog mode |
+| Unidirectional buffer (74LVC1T45, 74AHCT125) | either | fast | proper solution for SPI, UART, clock lines |
+| MOSFET bidirectional shifter (BSS138 + pull-ups) | both | slow–moderate (≤ ~400 kHz–1 MHz) | standard for I2C |
+| Auto-direction translators (TXB/TXS0108) | both | varies | TXS for open-drain, TXB for push-pull; can misbehave with strong pull-ups/loads |
+
+**Things to check**
+
+- **Power sequencing/back-powering:** if the 5 V device is powered while the 3.3 V MCU is off, current can flow through input protection diodes and partially power the MCU, causing latch-up or strange behaviour. Use translators with power-off protection (I_off).
+- **Thresholds:** V_OH of the driver must exceed V_IH of the receiver with margin, and V_OL must be below V_IL.
+- **Speed:** dividers and MOSFET shifters slow edges; fast SPI needs a proper buffer.
+- **Analog signals:** use a divider sized for the ADC input impedance, possibly with an op-amp buffer.
 
 ### What is a decoupling capacitor and where should it be placed? {E}
-A small capacitor (typically 100 nF ceramic, plus a 1–10 µF bulk capacitor) between each supply pin and ground that supplies fast current spikes locally and filters high-frequency noise. It must be placed as **close as possible** to the pin with a short path to ground, because trace inductance makes a distant capacitor ineffective. Missing or badly placed decoupling causes resets, ADC noise and unreliable high-speed interfaces.
+**Short answer:** A decoupling (bypass) capacitor is placed between a chip's supply pin and ground, **as close to the pin as possible**, to supply the short bursts of current the chip draws when its transistors switch. Without it, those current spikes flowing through the inductance of the power traces cause the supply voltage at the pin to dip and ring, leading to resets, data errors and noise. The usual practice is 100 nF ceramic per supply pin, plus 1–10 µF bulk capacitance per chip or power domain.
+
+**Why close to the pin:** a trace has roughly 1 nH per mm of inductance; V = L × di/dt, so even a few nH with fast current edges creates significant voltage drops. The capacitor must be in a small loop: pin → capacitor → ground via → ground plane, with the via right next to the pad.
+
+**Choosing capacitors**
+
+| Value | Role |
+|---|---|
+| 10–100 nF ceramic (X7R/X5R) at each pin | high-frequency current |
+| 1–10 µF ceramic per chip/rail | mid-frequency, local reservoir |
+| 10–100+ µF (ceramic, tantalum, polymer) at the regulator / board input | bulk, low-frequency load steps |
+| Ferrite bead + capacitors | isolate analog supplies (AVDD, VREF+) from digital noise |
+
+**Details interviewers like**
+
+- Ceramic capacitors lose capacitance with DC bias and temperature (a 10 µF 6.3 V 0603 part may give only 3–5 µF at 3.3 V).
+- Each capacitor has a self-resonant frequency set by its ESL; above it the capacitor behaves like an inductor, which is why several values or many small capacitors are used in parallel.
+- Many MCUs require specific capacitors on internal regulator pins (e.g. VCAP on STM32F4: 2.2 µF low-ESR) — missing them causes the MCU not to start or crash randomly.
+- Firmware symptom of poor decoupling: random resets or hard faults when radios transmit, motors start or the CPU frequency increases.
 
 ### What is the difference between a linear regulator (LDO) and a switching regulator? {M}
-- **LDO**: drops the excess voltage across a pass transistor. Simple, quiet, cheap, but efficiency is roughly Vout/Vin, so power is wasted as heat (P = (Vin − Vout) × I). Good for small currents, noise-sensitive analog rails, or small voltage drops.
-- **Switching (buck/boost)**: switches an inductor at high frequency, with 80–95% efficiency over large voltage differences. More components, and it produces switching ripple and EMI that may need filtering.
+**Short answer:** A **linear regulator (LDO)** drops the excess voltage across a pass transistor, so it is simple, cheap, small and has very low output noise, but its efficiency is roughly V_out / V_in and the difference is wasted as heat: P_loss = (V_in − V_out) × I. A **switching regulator** (buck to step down, boost to step up, buck-boost both) rapidly switches a transistor and stores energy in an inductor, reaching 85–95% efficiency at the cost of switching noise (ripple and EMI), more components and layout care.
 
-Battery products usually use a buck converter for the main rail and an LDO after it for analog sections.
+| | LDO | Switching (buck) |
+|---|---|---|
+| Efficiency | ≈ V_out / V_in (3.3/5 V = 66%; 3.3/12 V = 27%) | 85–95% typical |
+| Heat | (V_in − V_out) × I | low |
+| Noise | very low (good PSRR) | ripple at switching frequency, EMI |
+| Components | regulator + 2 capacitors | regulator, inductor, capacitors, sometimes diode |
+| Can step up | no | yes (boost, buck-boost) |
+| Quiescent current | from < 1 µA (low-Iq parts) | low-Iq parts exist; light-load modes (PFM) |
+| Best for | small voltage drops, low current, noise-sensitive (ADC, RF, PLL) | large drops, high current, battery efficiency |
+
+**Worked example:** 12 V → 3.3 V at 300 mA with an LDO wastes (12 − 3.3) × 0.3 = **2.6 W** — far too hot for a small SOT-23 package. A buck converter at 90% efficiency loses only about 0.11 W.
+
+**Common architecture:** buck from the battery or input rail to an intermediate voltage, then an LDO for noise-sensitive analog or RF supplies ("buck + LDO post-regulation").
+
+**LDO dropout:** the minimum V_in − V_out at which it still regulates (e.g. 200 mV). A 3.3 V LDO from a Li-ion cell (4.2 V → 3.0 V) stops regulating when the cell falls below ~3.5 V — the system must handle brown-out (BOR thresholds, low-battery shutdown).
+
+**Firmware interaction:** some MCUs have both an internal LDO and SMPS (e.g. STM32L4+/U5/WB): software selects the SMPS for lower power at high load; switching regulators may have a power-save mode controlled by a GPIO (trade ripple for efficiency).
+
+### How does an ADC work, and what are resolution, reference and sampling time? {M}
+**Short answer:** An ADC converts an analog voltage into a number: `code = V_in / V_ref × (2^N − 1)` for an N-bit converter (often written × 2^N). **Resolution** is the number of bits (a 12-bit ADC with a 3.3 V reference has an LSB of 3.3 / 4096 ≈ 0.8 mV). The **reference voltage** sets full scale, so its accuracy and noise directly limit the measurement. MCU ADCs are mostly **SAR** (successive approximation) converters that first charge an internal **sampling capacitor** during the sampling time; if the source impedance is high, the capacitor does not charge fully and the reading is wrong.
+
+**Converting a reading**
+
+```c
+#include <stdint.h>
+#include <stdio.h>
+
+int main(void)
+{
+    const float vref = 3.3f;
+    uint16_t raw = 2482;                                 /* 12-bit reading */
+    float v = raw * vref / 4095.0f;                      /* ≈ 2.000 V */
+    uint32_t mv = (uint32_t)raw * 3300u / 4095u;         /* integer version: 2000 mV */
+    printf("%.3f V, %lu mV\n", v, (unsigned long)mv);
+    return 0;
+}
+```
+
+**Accuracy vs resolution:** a 12-bit ADC rarely gives 12 accurate bits: offset, gain error, integral/differential non-linearity (INL/DNL) and noise reduce the **effective number of bits (ENOB)** to maybe 10–11. Calibrate (many MCUs have a self-calibration routine and factory calibration values, e.g. for the internal reference VREFINT and temperature sensor).
+
+**Sampling time and source impedance:** the SAR ADC's sample-and-hold capacitor (a few pF) must charge to within ½ LSB during the sampling time. A high source impedance (e.g. a 100 kΩ divider) needs a longer sampling time, a capacitor at the ADC pin (e.g. 10–100 nF acting as a charge reservoir), or an op-amp buffer.
+
+**Improving measurements**
+
+- Oversample and average (each 4× oversampling adds about 1 bit of resolution if noise is present).
+- Measure VREFINT to compensate for a varying VDD reference.
+- Separate analog supply (VDDA) and reference with filtering; keep analog traces away from switching signals.
+- Trigger conversions from a timer (exact sample rate) and transfer with DMA.
+
+**Other ADC types:** sigma-delta (high resolution, slow: precision sensors, audio), pipelined and flash (very fast: video, oscilloscopes).
 
 ### What is the Nyquist theorem and what is aliasing? {E}
-To reconstruct a signal from samples, you must sample at more than **twice its highest frequency component**. Frequencies above half the sample rate (the Nyquist frequency) fold back and appear as false lower frequencies, called **aliasing**. A low-pass **anti-aliasing filter** before the ADC removes them. In practice sample at 5–10× the bandwidth of interest to make the filter realistic.
+**Short answer:** The Nyquist–Shannon sampling theorem says a signal must be sampled at **more than twice its highest frequency component** to be reconstructed without loss. If frequencies above half the sample rate (the **Nyquist frequency**, f_s/2) are present, they fold back and appear as false lower frequencies — **aliasing** — which cannot be removed after sampling. That is why an **anti-aliasing low-pass filter** is placed before the ADC.
+
+**Aliasing example:** sampling at 1 kHz, a 900 Hz signal appears at |900 − 1000| = **100 Hz**. Mains hum (50/60 Hz) harmonics and switching-regulator noise commonly alias into sensor readings this way.
+
+**Practical rules**
+
+- Sample at 5–10× the highest frequency of interest when possible; this relaxes the anti-aliasing filter (a simple RC filter rolls off slowly: only −20 dB/decade).
+- Put the filter's cut-off at or below the band of interest and well below f_s/2.
+- Use oversampling + digital filtering + decimation: sample fast with a simple analog filter, then filter and downsample digitally (sigma-delta ADCs do this internally).
+- For slow sensors, choose a sampling rate that rejects mains: averaging over exactly 20 ms (50 Hz) or 16.67 ms (60 Hz), or 100 ms for both.
+
+**Related:** quantisation noise (from finite resolution) is different from aliasing; dithering and oversampling can reduce its effect.
 
 ### What is a low-pass RC filter and how do you find its cut-off frequency? {E}
-A resistor in series with a capacitor to ground passes low frequencies and attenuates high ones. The cut-off (−3 dB) frequency is f = 1 / (2πRC). For R = 1 kΩ and C = 100 nF, f ≈ 1.6 kHz. Above the cut-off, a first-order filter attenuates by 20 dB per decade. It is used before ADC inputs and to smooth PWM into an analog voltage.
+**Short answer:** A resistor in series with the signal and a capacitor to ground form a first-order low-pass filter: low frequencies pass, high frequencies are attenuated at −20 dB per decade above the cut-off frequency **f_c = 1 / (2π R C)**, where the output is −3 dB (about 70.7% of the input amplitude). Example: R = 10 kΩ, C = 100 nF → f_c = 1 / (2π × 10⁴ × 10⁻⁷) ≈ **159 Hz**.
+
+**Time domain:** the time constant τ = R × C (1 ms in the example); after a step, the output reaches 63% after τ and ~99% after 5τ. This matters for debounce circuits and for how fast an ADC input settles after switching channels.
+
+**Uses on a board**
+
+- Anti-aliasing before ADCs.
+- Button debouncing (often with a Schmitt-trigger input).
+- Smoothing PWM into a DC voltage (cheap DAC): choose f_c well below the PWM frequency; ripple falls as the PWM frequency rises.
+- Filtering noise on reset lines and slow control signals.
+
+**Design trade-offs**
+
+- A large R reduces current but raises output impedance (the load, e.g. an ADC sampling capacitor, can disturb the filter) and thermal noise.
+- Higher-order filters (two RC stages, active Sallen-Key filters) give a steeper roll-off.
+- High-pass RC (capacitor in series, resistor to ground) blocks DC: same f_c formula.
+
+**Digital equivalent:** the first-order IIR (exponential moving average) `y += α (x − y)` with α ≈ 2π f_c / f_s for f_c ≪ f_s.
+
+### What is a DAC, and how can you generate an analog voltage with PWM? {E}
+**Short answer:** A DAC (digital-to-analog converter) produces an output voltage proportional to a digital code: `V_out = code / (2^N − 1) × V_ref`. Many MCUs have 12-bit DACs for waveform generation, audio, biasing and setpoints. Without a DAC, a **PWM output followed by a low-pass filter** gives an average voltage `V_out = duty × V_high`; resolution comes from the PWM timer's counts and the ripple from the filter.
+
+**PWM-DAC numbers**
+
+- Resolution: a timer clocked at 84 MHz with a period of 4096 counts gives 12-bit resolution at 84 MHz / 4096 ≈ **20.5 kHz** PWM frequency.
+- Filter: an RC filter with f_c ≈ 200 Hz attenuates the 20 kHz ripple by about 40 dB (100×); a two-stage filter gives more.
+- Trade-off: higher resolution means a lower PWM frequency (for a fixed timer clock), which needs more filtering and slows the response.
+
+**Generating waveforms:** use a timer to trigger DAC updates and DMA to feed a sine table (e.g. 64 samples per period) for exact frequencies without CPU load.
+
+**Other DAC concepts:** settling time, glitch energy at major code transitions, output buffer drive capability, and R-2R ladder or resistor-string architectures.
 
 ### What is the difference between a crystal and an RC oscillator? {E}
-A **crystal** (or ceramic resonator) uses a piezoelectric quartz resonator for an accurate, stable frequency (typically ±10–50 ppm), needed for USB, CAN, Ethernet, high baud rates and RTCs. It needs correctly sized load capacitors and takes milliseconds to start. An **internal RC oscillator** needs no external parts and starts quickly, but is only accurate to about ±1–2% across temperature and voltage unless trimmed or calibrated.
+**Short answer:** A **quartz crystal** (or crystal oscillator module) gives an accurate and stable frequency, typically ±10–50 ppm, needed for UART at high baud rates, USB, CAN, Ethernet, radio and real-time clocks. An internal **RC oscillator** costs nothing, starts quickly and saves pins and board space, but its accuracy is typically ±1–3% over temperature and voltage (factory-trimmed parts can be much better at room temperature), which is too inaccurate for USB, CAN or Ethernet and risky for fast UARTs.
+
+| | Crystal (HSE, LSE) | Internal RC (HSI, MSI, LSI) |
+|---|---|---|
+| Accuracy | ±10–50 ppm | ±0.5–3% (worse over temperature) |
+| Start-up | ms (32 kHz crystals: up to seconds) | µs |
+| Cost/pins | crystal + 2 load caps, 2 pins | none |
+| Uses | USB, CAN, Ethernet, radios, RTC timekeeping | general CPU clock, low-power wake-up, watchdogs (LSI) |
+
+**Error examples:** 1% error on a clock means 14 minutes per day for an RTC, while a 20 ppm crystal drifts about 1.7 s per day. For a UART, 1% error per side is acceptable for 8N1; 3% may not be.
+
+**Board design points**
+
+- Load capacitors: `C_load = (C1 × C2)/(C1 + C2) + C_stray`; for a crystal rated C_L = 12 pF with ~3 pF stray, C1 = C2 ≈ 18 pF. Wrong values shift the frequency.
+- Keep the crystal close to the MCU, with a ground guard and no signals routed underneath.
+- Check the oscillator's drive level and the MCU's recommended crystal ESR; low-power 32.768 kHz crystals are sensitive to leakage (flux residue) and layout.
+
+**Firmware:** enable clock security system (CSS) to fall back to the internal oscillator if the crystal fails; trim the RC oscillator against the crystal or USB SOF (clock recovery system) where available; add timeouts when waiting for the crystal to start.
 
 ### What is a MOSFET and how do you use one to switch a load? {M}
-A MOSFET is a voltage-controlled switch. For a **low-side switch**, use an N-channel MOSFET between the load and ground: driving the gate above its threshold turns it on. Choose a logic-level part whose **Rds(on)** is specified at your gate voltage (e.g. 2.5 V or 3.3 V). Add a gate resistor (10–100 Ω) to limit ringing and a pull-down (10–100 kΩ) so the load stays off during reset when the GPIO is floating. For inductive loads (relays, motors), add a **flyback diode** across the load.
+**Short answer:** A MOSFET is a voltage-controlled transistor: the gate-source voltage (V_GS) controls the resistance between drain and source. To switch a load from an MCU, use an **N-channel MOSFET as a low-side switch**: load between the supply and the drain, source to ground, GPIO to the gate through a small resistor, and a pull-down from gate to source. Choose a **logic-level** MOSFET whose R_DS(on) is specified at the GPIO voltage (e.g. V_GS = 2.5 V or 3.3 V), with enough drain-source voltage and current rating. Inductive loads need a flyback diode.
+
+```
+      +12 V
+        │
+      [Load]  ◄── flyback diode across the load (cathode to +12 V) if inductive
+        │
+        D
+GPIO ─[100 Ω]─ G   N-MOSFET (e.g. logic-level, R_DS(on) spec'd at 2.5 V)
+        │      S
+     [100 kΩ]  │
+        │      │
+       GND ────┘
+```
+
+**Key parameters**
+
+| Parameter | Why it matters |
+|---|---|
+| V_GS(th) | voltage where it **starts** to conduct — not where it is fully on; use R_DS(on) at your V_GS instead |
+| R_DS(on) at your V_GS | conduction loss P = I² × R_DS(on) (2 A × 2 A × 50 mΩ = 0.2 W) |
+| V_DS(max) | must exceed the supply plus any inductive spikes |
+| I_D, thermal resistance | current and heat limits; check the derating curves |
+| Gate charge Q_g | how fast it switches; matters for PWM (a GPIO can only source a few mA, so high-frequency PWM of big MOSFETs needs a gate driver) |
+
+**High-side switching:** switching the positive supply (so the load stays grounded) uses a P-channel MOSFET (gate pulled to the supply to turn off, pulled low to turn on; needs a small NPN/N-MOSFET level shifter if the supply is above the GPIO voltage) or an N-channel with a gate driver/charge pump; integrated "high-side switches" add current limiting and diagnostics (common in automotive).
+
+**Resistor roles:** the series gate resistor (10–100 Ω) limits ringing and the GPIO current spike charging the gate capacitance; the pull-down keeps the MOSFET off while the MCU is in reset with its pins floating.
+
+**BJT alternative:** an NPN transistor needs a base current (I_B ≈ I_C / 10 for saturation) through a base resistor; fine for small loads (relays, LEDs), but MOSFETs are more efficient for higher currents.
 
 ### What is a flyback diode and why is it needed? {E}
-When current through an inductor (relay coil, motor, solenoid) is switched off, the inductor generates a large reverse voltage spike (V = L·di/dt) that can destroy the switching transistor. A diode placed across the coil, reverse-biased in normal operation, gives the current a path to decay safely. A Zener or TVS in series makes relays release faster.
+**Short answer:** When current through an inductive load (relay coil, motor, solenoid) is switched off suddenly, the inductor's stored energy produces a large voltage spike (V = L × di/dt, often hundreds of volts) that can destroy the switching transistor or MCU pin. A **flyback (freewheeling) diode** across the load, reverse-biased in normal operation (cathode to the positive supply), gives the current a path to circulate and decay safely, clamping the spike to about one diode drop above the supply.
+
+**Trade-off: release time.** A plain diode lets the current decay slowly, so a relay opens more slowly (and motors keep spinning). For faster release, add a Zener or TVS in series with the diode (clamps at a higher voltage, dissipating energy faster) while keeping the voltage below the transistor's rating.
+
+**Motors driven in both directions (H-bridges)** have four freewheeling diodes (often the MOSFETs' body diodes, or synchronous rectification by switching on the opposite MOSFETs).
+
+**Choosing the diode:** reverse voltage above the supply, current rating at least the load current (for the decay time), fast or Schottky types for PWM-driven loads.
+
+**Firmware symptom of a missing or failed diode:** the MCU resets or a GPIO dies when a relay switches; noise on ADC readings at each motor commutation.
 
 ### What is ESD and how do you protect a board? {M}
-Electrostatic discharge is a sudden high-voltage, high-current pulse when a charged object (often a person) touches a circuit; it can damage or latch up ICs. Protect exposed connectors and buttons with **TVS diodes** close to the connector, series resistors, ferrites, good ground design and enclosures. Products are tested to IEC 61000-4-2 (e.g. ±8 kV contact discharge). Handle boards with wrist straps and ESD mats.
+**Short answer:** Electrostatic discharge is a fast, high-voltage pulse (thousands of volts, nanosecond rise times, amps of peak current) when a charged person or object touches a connector or pin. It can destroy or weaken ICs immediately or cause latent damage and glitches (resets, lock-ups, corrupted registers). Protect external interfaces with **TVS diodes** placed right at the connector with a short path to ground, add series resistors or ferrites on signals, use proper grounding and enclosure design, and design firmware to recover from glitches.
+
+**Hardware measures**
+
+- TVS/ESD diode arrays on every externally accessible line (USB, buttons, Ethernet, CAN, debug headers), chosen with low capacitance for fast signals (USB HS, HDMI).
+- Place protection **between the connector and anything else**, with a very short, wide ground connection; route the discharge current away from the MCU.
+- Series resistors (e.g. 22–100 Ω) limit current into IC pins; RC filters on slow inputs.
+- Solid ground planes, chassis ground connections at connectors, and spark gaps/shielding where required.
+- Test to IEC 61000-4-2 levels (e.g. ±8 kV contact, ±15 kV air discharge) for products.
+
+**Handling:** ESD-safe work areas (wrist straps, mats, ionisers), and shipping boards in anti-static packaging.
+
+**Firmware robustness against ESD and EMC events**
+
+- Watchdog enabled and serviced from a supervisory task.
+- Periodically re-write critical configuration registers (GPIO modes, peripheral settings) or verify them.
+- Detect and recover from communication errors (I2C bus recovery, re-initialising peripherals), and use CRCs on data.
+- Brown-out reset enabled; log reset causes to diagnose field issues.
 
 ### What is signal integrity and what causes ringing? {H}
-Signal integrity is how well a signal keeps its shape as it travels. Fast edges on long traces behave like transmission lines; if the trace impedance does not match the driver and receiver, reflections cause **ringing**, overshoot and false edges. Causes include long unterminated traces, poor return paths (gaps in the ground plane), crosstalk between parallel traces and too-fast slew rates. Fixes: series termination resistors (22–33 Ω near the driver), controlled-impedance routing, solid ground planes, and using the slowest GPIO speed setting that works.
+**Short answer:** Signal integrity is about whether a digital signal arrives at the receiver with clean edges and correct levels and timing. **Ringing** — overshoot and oscillation after an edge — happens when a fast edge travels along a trace that behaves as a transmission line whose impedance is not matched at the ends, so energy reflects back and forth; it can also come from parasitic inductance and capacitance forming a resonant circuit. Problems appear when the **edge rise time** is short compared with the trace's propagation delay (roughly when the trace length exceeds about 1/6 of the distance the edge travels during its rise time), regardless of the clock frequency.
+
+**Rule of thumb:** signals travel about 15 cm/ns on FR-4. An edge with a 1 ns rise time "sees" any trace longer than a few cm as a transmission line. Modern MCU GPIOs with fast slew settings have sub-ns edges even when toggled at only 1 MHz.
+
+**Fixes**
+
+| Problem | Fix |
+|---|---|
+| Reflections on point-to-point lines (SPI clock, SDRAM) | series termination resistor (22–33 Ω) near the driver, matching driver impedance to the trace impedance |
+| Unnecessary fast edges | reduce GPIO slew rate/speed setting |
+| Long buses (CAN, RS-485) | parallel termination at both ends matching the cable impedance (120 Ω) |
+| High-speed interfaces (USB, Ethernet, DDR, MIPI) | controlled-impedance traces (50 Ω single-ended, 90–100 Ω differential), length matching, continuous reference planes |
+| Crosstalk | spacing (3× trace width), ground between sensitive traces, avoid long parallel runs |
+| Ground bounce | good decoupling, solid ground plane, short return paths |
+
+**Measuring:** use an oscilloscope with enough bandwidth (5× the signal's knee frequency ≈ 0.35 / rise time) and a short ground connection on the probe (the long ground clip adds inductance and creates fake ringing).
+
+**Firmware-visible symptoms:** double-clocked SPI data (ringing on SCLK crosses the threshold twice), random bit errors at high clock rates that disappear at lower rates, and EMI test failures.
+
+### How do you design firmware and hardware for low power? {M}
+**Short answer:** Average current is what drains the battery, so minimise the time spent awake and the current in each state: run fast and sleep (race to idle), use the deepest sleep mode that still meets wake-up latency and retention needs, switch off unused peripherals, clocks and external components, avoid polling, wake on interrupts or low-power timers, configure every GPIO (no floating inputs, no pull-ups fighting outputs), and measure the real current profile with a power analyser.
+
+**MCU power modes (typical Cortex-M)**
+
+| Mode | CPU | Clocks | RAM | Typical current | Wake-up |
+|---|---|---|---|---|---|
+| Run | on | all | yes | 50–200 µA/MHz | – |
+| Sleep (WFI) | stopped | peripherals on | yes | ~30–50% of run | any interrupt, µs |
+| Stop / deep sleep | stopped | high-speed clocks off, LSE/RTC on | yes | 1–10 µA | RTC, EXTI, LP UART, ~5–50 µs |
+| Standby / shutdown | off | RTC only | lost (except backup) | 0.03–1 µA | reset-like boot, ms |
+
+**Checklist**
+
+1. Power budget: list every state, its current and time; compute the average and battery life.
+2. Clock tree: lower frequencies or voltage scaling for steady work; gate clocks of unused peripherals.
+3. Peripherals with DMA and low-power features (LPUART wake on character, ADC triggered by a low-power timer, comparator wake-up).
+4. RTOS tickless idle to avoid periodic wake-ups.
+5. External components: power-gate sensors with a load switch; check regulator quiescent current, pull-up currents, LED indicators, voltage dividers (switch them off between measurements).
+6. Radio: batch transmissions, use long connection intervals (BLE), sleep the radio.
+7. Debug: the debugger keeps clocks running in sleep modes (disable DBGMCU low-power debug bits in production), and leaky GPIOs often account for the "missing" microamps.
+
+**Measuring:** Nordic PPK2, Joulescope, Otii, or a shunt resistor with an oscilloscope; look at both the average and the peaks (battery internal resistance limits peak current, especially for coin cells).
 
 ### How do you read a datasheet efficiently? {E}
-1. **Front page and block diagram** for what the part does.
-2. **Absolute maximum ratings** (never exceed) and **recommended operating conditions**.
-3. **Electrical characteristics** with their test conditions: VIH/VIL, supply current, timing.
-4. **Timing diagrams** for the interface (setup/hold, clock limits, power-up sequence).
-5. **Register map** and the application section, with reference schematics and layout guidance.
-6. Always read the **errata** sheet for silicon bugs.
+**Short answer:** Start with the **front page** (key features, operating range) and the **block diagram**, then the **pin description** and **absolute maximum ratings** (never exceed) vs **recommended operating conditions** (where specifications apply). Read the **electrical characteristics** for the parameters you depend on (min/max, not typical), the **timing diagrams** for the interface you use, the **register map** and the **application circuit/layout guidelines**. Finally, always check the **errata** document for silicon bugs.
+
+**What to extract for firmware work**
+
+| Section | Look for |
+|---|---|
+| Interface timing | SPI mode and max clock, I2C address and clock stretching, setup/hold times, CS timing |
+| Power-up sequence | supply ramp, reset timing, delays before the first command, power-on default register values |
+| Register map | reset values, reserved bits (write as read or 0), read-to-clear or write-1-to-clear flags |
+| Electrical characteristics | V_IH/V_IL, output drive, supply current in each mode, ADC accuracy |
+| Conversion/start-up times | how long to wait before data is valid |
+| Application notes | recommended configuration sequences, typical pitfalls |
+| Errata | workarounds that firmware must implement |
+
+**Typical vs min/max:** design for the worst case (min/max over temperature and voltage); "typical" values are what you measure on the bench at 25 °C.
+
+**MCU documentation set:** the **datasheet** (pins, electrical specs, package), the **reference manual** (peripherals and registers), the **programming manual** (CPU core, instructions) and the **errata sheet** — you need all four.
+
+### How do you read a schematic as a firmware engineer? {E}
+**Short answer:** Find the MCU and trace from each of its pins to what they connect to: which peripherals use which pins (and therefore which alternate functions to configure), pull-up and pull-down resistors (default states), active-low signals (names with a bar, `n`, `#` or `_N`), power domains and enables, reset and boot-mode circuitry, debug connectors, clock sources and any level shifters. Use net names to follow signals across sheets, and keep a pin-mapping table that becomes your board configuration (device tree, pin mux files, CubeMX configuration).
+
+**Checklist when bringing up firmware on a new board**
+
+1. Power rails: which regulators exist, which are enabled by GPIOs (and their default state).
+2. Clocks: crystal frequency (HSE/LSE values in the clock configuration).
+3. Boot pins and reset: how the board selects boot mode; reset button; watchdog chips.
+4. Debug: SWD/JTAG pins, UART console pins and levels.
+5. Each peripheral: bus, address (I2C address pins), chip select, interrupt pin (and its polarity, open-drain or push-pull), reset pin, power enable.
+6. LEDs and buttons: polarity (active high/low).
+7. Analog: dividers (scaling factors for ADC conversion), reference voltage, filters.
+8. Protection and level shifting that may limit speed.
+
+**Symbols to recognise:** resistors, capacitors (polarised vs ceramic), inductors/ferrites, diodes (LED, Zener, Schottky, TVS), MOSFETs/BJTs, crystals, test points, net labels and no-connect markers.
+
+**Collaboration tip:** review schematics before layout and ask for test points on key signals, a UART console, SWD, a few spare GPIOs and LEDs; it saves weeks during bring-up.
 
 ### What tools do you use for board bring-up? {E}
-A **multimeter** for rails and continuity; an **oscilloscope** for clocks, power ripple, reset timing and signal shape; a **logic analyser** (Saleae, sigrok) with protocol decoders for UART/SPI/I2C/CAN; a **debug probe** (J-Link, ST-LINK) for flashing and stepping; a **bench power supply** with current limit to catch shorts; and a **current/power analyser** (Nordic PPK2, Joulescope) for low-power work. Bring-up order: power rails, clocks, reset, debug connection, then a blinking LED and a UART console.
+**Short answer:** A **multimeter** (rail voltages, continuity, current), a **bench power supply** with current limiting (catch shorts before they burn parts), an **oscilloscope** (analog behaviour: clocks, power ripple, edges, reset timing), a **logic analyser** (decoding SPI/I2C/UART/CAN over long captures), a **debug probe** (J-Link, ST-LINK, CMSIS-DAP via SWD/JTAG for flashing and debugging), a **USB-UART adapter** for the console, and sometimes a thermal camera (hot spots from shorts or wrong components).
+
+**Typical bring-up order**
+
+1. Visual inspection (orientation, solder bridges), then check rails for shorts with power off (resistance to ground).
+2. Power up with current limiting; measure every rail and check current draw against expectations.
+3. Check the crystal/oscillator with a scope and reset lines (MCU out of reset?).
+4. Connect the debug probe: read the device ID (`JLinkExe`, `openocd`), erase and flash a minimal program.
+5. Blink an LED, then bring up the UART console for logging.
+6. Configure the clock tree to full speed and verify with MCO (clock output pin) on the scope.
+7. Bring up each peripheral one by one: external memory (run a memory test), I2C scan, SPI device ID reads, then higher-level functions.
+8. Measure power in each mode, then run stress and temperature tests.
+
+**Useful habits:** keep a bring-up log, compare against a known-good board or evaluation kit, write small test firmware for each interface, and verify assumptions with measurements rather than with the schematic alone.
