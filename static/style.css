@@ -220,3 +220,38 @@ html.dark .qa summary:hover .qt{color:var(--accent)}
 .menu{display:none}
 @media (max-width:860px){.menu{display:grid}}
 @media (max-width:520px){.bar{gap:8px}.brand{font-size:16px}.chip{font-size:11px;padding:2px 5px}.tools{gap:4px}.icon{width:34px;height:34px}.pagehead h1{font-size:28px}}
+/* ---------- practice IDE ---------- */
+.ide{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:0;min-height:calc(100vh - 60px);border-top:1px solid var(--line)}
+.ide-left{padding:22px 28px 10px;overflow:auto;max-height:calc(100vh - 60px);position:sticky;top:60px;border-right:1px solid var(--line);background:var(--surface)}
+.ide-left h1{font-size:clamp(22px,2.6vw,30px);margin:6px 0 4px}
+.ide-left .meta{margin:6px 0 14px}
+.ide-right{display:flex;flex-direction:column;background:var(--code-bg);min-width:0}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:10px;flex-wrap:wrap}
+.tab{background:none;border:0;border-bottom:2px solid transparent;padding:9px 12px;font:inherit;font-size:14px;font-weight:600;color:var(--muted);cursor:pointer}
+.tab.on{color:var(--ink);border-bottom-color:var(--accent)}
+.tabpane{display:none}.tabpane.on{display:block}
+.howto{background:var(--accent-soft);border-radius:9px;padding:10px 14px;font-size:14px}
+.edtop{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#151d28;border-bottom:1px solid #1f2a37}
+.edtop .file{font:13px var(--mono);color:#9fb0c2}
+.edtop .sp{flex:1}
+.ghost.sm{padding:5px 10px;font-size:13px;color:#dbe4ee!important;border-color:#2f455d}
+.btn.run{padding:7px 18px}
+.btn.run:disabled{opacity:.6;cursor:wait}
+.edwrap{display:flex;flex:1;min-height:340px;overflow:hidden}
+.gutter{margin:0;padding:14px 8px 14px 12px;min-width:38px;text-align:right;color:#4b5b6d;font:13.5px/1.6 var(--mono);background:var(--code-bg);overflow:hidden;user-select:none;white-space:pre;border:0}
+#code{flex:1;min-width:0;border:0;outline:none;resize:none;background:var(--code-bg);color:#e6edf3;font:13.5px/1.6 var(--mono);padding:14px 16px 14px 8px;tab-size:4;white-space:pre;overflow:auto}
+.out{border-top:1px solid #1f2a37;background:#0a0f15;min-height:150px;max-height:40vh;display:flex;flex-direction:column}
+.outhead{display:flex;justify-content:space-between;gap:10px;padding:8px 14px;font:600 13px var(--sans);color:#c9d4df;background:#111924}
+.out pre{margin:0;padding:10px 14px;color:#d6dee8;font:13px/1.55 var(--mono);overflow:auto;white-space:pre-wrap;flex:1}
+.out.good .outhead{background:#0f3d2b;color:#7ff0c3}.out.good #outStatus{color:#7ff0c3;font-weight:700}
+.out.bad .outhead{background:#3d1414;color:#ffb4b4}.out.bad #outStatus{color:#ffb4b4;font-weight:700}
+.out.busy #outStatus{color:#f5c56b}
+.tests{background:#0a0f15;border-top:1px solid #1f2a37;color:#9fb0c2;font-size:13px}
+.tests summary{cursor:pointer;padding:8px 14px}
+.tests pre{margin:0;padding:8px 14px 14px;font:12.5px/1.5 var(--mono);color:#9fb0c2;overflow:auto;max-height:260px}
+@media (max-width:900px){
+  .ide{grid-template-columns:1fr}
+  .ide-left{position:static;max-height:none;border-right:0}
+  .edwrap{min-height:300px}
+  #code{min-height:300px}
+}

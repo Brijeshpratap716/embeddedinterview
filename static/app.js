@@ -134,32 +134,110 @@
   /* ---------- problem editor ---------- */
   var code = $("#code");
   if (code) {
-    var key = "ei-code:" + location.pathname;
+    var key = "ei-code2:" + location.pathname;
+    var gutter = $("#gutter"), outText = $("#outText"), outStatus = $("#outStatus"), out = $("#out");
     var saved = store.get(key, null);
     if (saved) code.value = saved;
-    code.addEventListener("input", function () { store.set(key, code.value); });
+
+    function lines() {
+      var n = code.value.split("\n").length, s = "";
+      for (var i = 1; i <= n; i++) s += i + "\n";
+      gutter.textContent = s;
+    }
+    function save() { store.set(key, code.value); lines(); }
+    lines();
+    code.addEventListener("input", save);
+    code.addEventListener("scroll", function () { gutter.scrollTop = code.scrollTop; });
     code.addEventListener("keydown", function (e) {
+      var s = code.selectionStart, v = code.value;
       if (e.key === "Tab") {
-        e.preventDefault(); var s = code.selectionStart;
-        code.value = code.value.slice(0, s) + "    " + code.value.slice(code.selectionEnd);
-        code.selectionStart = code.selectionEnd = s + 4; store.set(key, code.value);
+        e.preventDefault();
+        code.value = v.slice(0, s) + "    " + v.slice(code.selectionEnd);
+        code.selectionStart = code.selectionEnd = s + 4; save();
+      } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault(); run();
+      } else if (e.key === "Enter") {             /* keep the current line's indentation */
+        var ls = v.lastIndexOf("\n", s - 1) + 1, ind = (v.slice(ls, s).match(/^[ \t]*/) || [""])[0];
+        if (v.charAt(s - 1) === "{") ind += "    ";
+        e.preventDefault();
+        code.value = v.slice(0, s) + "\n" + ind + v.slice(code.selectionEnd);
+        code.selectionStart = code.selectionEnd = s + 1 + ind.length; save();
       }
     });
-    $("#resetCode").addEventListener("click", function () { code.value = $("#starter").value; store.set(key, null); });
+
+    $("#resetCode").addEventListener("click", function () {
+      if (!confirm("Replace your code with the starter code?")) return;
+      code.value = $("#starter").value; store.set(key, null); lines();
+    });
     $("#copyCode").addEventListener("click", function () {
       var b = this; (navigator.clipboard ? navigator.clipboard.writeText(code.value) : Promise.reject()).then(function () { b.textContent = "Copied"; setTimeout(function () { b.textContent = "Copy"; }, 1200); }, function () { code.select(); });
     });
-  }
-  $$("[data-godbolt]").forEach(function (b) {
-    b.addEventListener("click", function () {
-      var src = document.getElementById(b.dataset.godbolt).value;
-      var state = { sessions: [{ id: 1, language: "c", source: src,
-        compilers: [{ id: "cg132", options: "-O2 -Wall -Wextra -std=c11" }],
-        executors: [{ compiler: { id: "cg132", libs: [], options: "-O2 -std=c11" } }] }] };
-      var b64 = btoa(unescape(encodeURIComponent(JSON.stringify(state))));
-      window.open("https://godbolt.org/clientstate/" + encodeURIComponent(b64), "_blank", "noopener");
+    var ls = $("#loadSol");
+    if (ls) ls.addEventListener("click", function () {
+      if (!confirm("Replace your code with the reference solution?")) return;
+      code.value = $("#solsrc").value; save(); run();
     });
-  });
+
+    /* tabs */
+    $$(".tab").forEach(function (t) {
+      t.addEventListener("click", function () {
+        $$(".tab").forEach(function (x) { x.classList.toggle("on", x === t); });
+        $$(".tabpane").forEach(function (p) { p.classList.toggle("on", p.id === t.dataset.tab); });
+      });
+    });
+
+    /* run: compile and execute through the Compiler Explorer API */
+    function show(state, msg, text) {
+      out.className = "out " + state; outStatus.textContent = msg; outText.textContent = text || "";
+    }
+    function texts(a) { return (a || []).map(function (x) { return x.text; }).join("\n"); }
+    var running = false;
+    function run() {
+      if (running) return;
+      running = true;
+      var src = code.value + "\n" + $("#tests").value;
+      show("busy", "Compiling and running…", "");
+      $("#runCode").disabled = true;
+      fetch("https://godbolt.org/api/compiler/cg132/compile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({
+          source: src, lang: "c", allowStoreCodeDebug: false,
+          options: {
+            userArguments: "-O1 -std=gnu11 -Wall",
+            executeParameters: { args: [], stdin: "" },
+            compilerOptions: { executorRequest: true },
+            filters: { execute: true }, tools: [], libraries: []
+          }
+        })
+      }).then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      }).then(function (r) {
+        var b = r.buildResult || {};
+        if (b.code && b.code !== 0) {
+          show("bad", "Compile error", texts(b.stderr).replace(/<source>/g, "solution.c"));
+          return;
+        }
+        var stdout = texts(r.stdout), stderr = texts(r.stderr);
+        var txt = stdout + (stderr ? "\n" + stderr : "");
+        var warn = texts(b.stderr);
+        if (warn) txt += "\n\nCompiler warnings:\n" + warn.replace(/<source>/g, "solution.c");
+        if (r.code === 0 && /All tests passed/.test(stdout)) {
+          show("good", "✓ All tests passed", txt);
+          var id = "p/" + location.pathname.replace(/\/$/, "").split("/").pop();
+          if (!isDone(id)) toggle(id);
+        } else if (r.timedOut || r.code === -1) {
+          show("bad", "Timed out: check for an infinite loop", txt);
+        } else {
+          show("bad", "✗ Some tests failed (exit code " + r.code + ")", txt);
+        }
+      }).catch(function () {
+        show("bad", "Could not reach the online compiler.", "Check your internet connection and try again.\nYou can also copy your code and run it with: gcc -Wall solution.c && ./a.out");
+      }).then(function () { running = false; $("#runCode").disabled = false; });
+    }
+    $("#runCode").addEventListener("click", run);
+  }
 
   /* ---------- quiz ---------- */
   var qd = $("#quizData");

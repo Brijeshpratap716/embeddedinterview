@@ -332,21 +332,36 @@ def build_problems(problems):
         prv = problems[i - 1] if i > 0 else None
         pn = '<div class="pn">' + (f'<a href="../{url(prv["slug"] + "/")}">← {html.escape(prv["title"])}</a>' if prv else "<span></span>") + \
              (f'<a class="r" href="../{url(nxt["slug"] + "/")}">{html.escape(nxt["title"])} →</a>' if nxt else "<span></span>") + "</div>"
+        # split starter into the part the user edits and the hidden test harness
+        ti = starter_code.find(TEST_MARK)
+        user_code = (starter_code[:ti] if ti >= 0 else starter_code).rstrip() + "\n"
+        tests = starter_code[ti:] if ti >= 0 else ""
+        sol_user = sol_code.rstrip() + "\n"
         body = f"""
-<article class="wrap narrow single problem">
-<div class="crumbs"><a href="../{url('')}">Practice</a> / {html.escape(p['category'])}</div>
+<div class="ide">
+<section class="ide-left">
+<div class="crumbs"><a href="../{url('')}">← All problems</a> · {html.escape(p['category'])}</div>
 <h1>{html.escape(p['title'])}</h1>
-<div class="meta">{badge(p['difficulty'])}<span>{html.escape(p['category'])}</span><button class="mark" data-id="p/{p['slug']}">Mark as solved</button></div>
-<div class="prose">{md(s.get('problem',''))}</div>
-<h2 class="sec">Starter code</h2>
-<div class="editor"><textarea id="code" spellcheck="false">{html.escape(starter_code)}</textarea>
-<div class="edbar"><button class="btn" data-godbolt="code">Run in Compiler Explorer ↗</button><button class="ghost" id="copyCode">Copy</button><button class="ghost" id="resetCode">Reset</button><span class="muted">Your edits are saved in this browser.</span></div></div>
-<textarea id="starter" hidden>{html.escape(starter_code)}</textarea><textarea id="solsrc" hidden>{html.escape(runnable_solution(starter_code, sol_code))}</textarea>
-<details class="reveal"><summary>Hint</summary><div class="prose">{md(s.get('hint','Think about the constraints first.'))}</div></details>
-<details class="reveal"><summary>Reference solution</summary><div class="prose">{md(s.get('solution',''))}<p><button class="btn" data-godbolt="solsrc">Run solution ↗</button></p></div></details>
-<details class="reveal"><summary>Explanation &amp; follow-ups</summary><div class="prose">{md(s.get('explanation',''))}</div></details>
+<div class="meta">{badge(p['difficulty'])}<button class="mark" data-id="p/{p['slug']}">Mark as solved</button></div>
+<div class="tabs" role="tablist">
+<button class="tab on" data-tab="t-problem">Problem</button><button class="tab" data-tab="t-hint">Hint</button><button class="tab" data-tab="t-sol">Solution</button><button class="tab" data-tab="t-exp">Explanation</button>
+</div>
+<div class="tabpane prose on" id="t-problem">{md(s.get('problem',''))}
+<p class="howto">Write your code on the right and press <b>Run</b> (or Ctrl + Enter). Hidden tests check your functions and print the result below the editor.</p></div>
+<div class="tabpane prose" id="t-hint">{md(s.get('hint','Think about the constraints first.'))}</div>
+<div class="tabpane prose" id="t-sol">{md(s.get('solution',''))}<p><button class="btn" id="loadSol">Load solution into editor</button></p></div>
+<div class="tabpane prose" id="t-exp">{md(s.get('explanation',''))}</div>
 {pn}
-</article>"""
+</section>
+<section class="ide-right">
+<div class="edtop"><span class="file">solution.c</span>
+<span class="sp"></span><button class="ghost sm" id="resetCode" title="Restore the starter code">Reset</button><button class="ghost sm" id="copyCode">Copy</button><button class="btn run" id="runCode">▶ Run</button></div>
+<div class="edwrap"><pre class="gutter" id="gutter" aria-hidden="true">1</pre><textarea id="code" spellcheck="false" autocapitalize="off" autocomplete="off">{html.escape(user_code)}</textarea></div>
+<div class="out" id="out"><div class="outhead"><span>Output</span><span class="muted" id="outStatus">Press Run to compile and test your code.</span></div><pre id="outText"></pre></div>
+<details class="tests"><summary>Show the hidden tests</summary><pre>{html.escape(tests)}</pre></details>
+<textarea id="starter" hidden>{html.escape(user_code)}</textarea><textarea id="tests" hidden>{html.escape(tests)}</textarea><textarea id="solsrc" hidden>{html.escape(sol_user)}</textarea>
+</section>
+</div>"""
         write(f"problems/{p['slug']}/index.html", page(f"problems/{p['slug']}/index.html", p["title"], body,
               plain(s.get("problem", "")), "problems/"))
 
