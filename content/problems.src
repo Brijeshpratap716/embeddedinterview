@@ -1,0 +1,1680 @@
+@@@ set-clear-toggle-bits
+title: Set, Clear, Toggle and Test a Bit
+difficulty: E
+category: Bit Manipulation
+order: 1
+## Problem
+Write four functions that operate on a 32-bit register value: `bit_set`, `bit_clear`, `bit_toggle` and `bit_test`. Each takes the value and a bit position `n` (0–31). The first three return the new value; `bit_test` returns `true` if bit `n` is set.
+
+This is the most common opening question in firmware interviews. Write it without hesitation and explain why you use `1u`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stdbool.h>
+
+uint32_t bit_set(uint32_t v, unsigned n)    { return v; }
+uint32_t bit_clear(uint32_t v, unsigned n)  { return v; }
+uint32_t bit_toggle(uint32_t v, unsigned n) { return v; }
+bool     bit_test(uint32_t v, unsigned n)   { return false; }
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    CHECK(bit_set(0, 0) == 1u);
+    CHECK(bit_set(0, 31) == 0x80000000u);
+    CHECK(bit_clear(0xFFu, 3) == 0xF7u);
+    CHECK(bit_toggle(0x10u, 4) == 0u);
+    CHECK(bit_toggle(0u, 7) == 0x80u);
+    CHECK(bit_test(0x8u, 3));
+    CHECK(!bit_test(0x8u, 2));
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Build a mask with a single 1 at position `n` by shifting `1u`. OR sets, AND with the inverted mask clears, XOR toggles.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stdbool.h>
+
+uint32_t bit_set(uint32_t v, unsigned n)    { return v | (1u << n); }
+uint32_t bit_clear(uint32_t v, unsigned n)  { return v & ~(1u << n); }
+uint32_t bit_toggle(uint32_t v, unsigned n) { return v ^ (1u << n); }
+bool     bit_test(uint32_t v, unsigned n)   { return (v >> n) & 1u; }
+```
+## Explanation
+Using `1u` makes the shift unsigned. With a plain `1`, `1 << 31` shifts into the sign bit of a signed `int`, which is undefined behaviour before C23. Shifting by 32 or more is undefined for any type, so production code often adds `n &= 31` or an assertion.
+
+**Follow-ups:** How would you do this on a real register shared with an ISR? (Critical section, or atomic set/reset registers like STM32 `BSRR`.) What about a multi-bit field? See *Extract and Insert a Register Field*.
+
+@@@ count-set-bits
+title: Count the Set Bits
+difficulty: E
+category: Bit Manipulation
+order: 2
+## Problem
+Implement `popcount(uint32_t x)` that returns the number of 1 bits in `x`. Your loop should run once per **set** bit, not once per bit.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+unsigned popcount(uint32_t x)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    CHECK(popcount(0) == 0);
+    CHECK(popcount(1) == 1);
+    CHECK(popcount(0xFFu) == 8);
+    CHECK(popcount(0x80000001u) == 2);
+    CHECK(popcount(0xFFFFFFFFu) == 32);
+    CHECK(popcount(0xA5A5A5A5u) == 16);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+What does `x & (x - 1)` do to the lowest set bit?
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+unsigned popcount(uint32_t x)
+{
+    unsigned n = 0;
+    while (x) {
+        x &= x - 1;   /* clear lowest set bit */
+        n++;
+    }
+    return n;
+}
+```
+## Explanation
+Subtracting 1 flips the lowest set bit to 0 and all bits below it to 1; ANDing with the original clears exactly that bit. The loop runs once per set bit (Brian Kernighan's algorithm), so it is fast for sparse values.
+
+For constant time, use the SWAR (parallel bit count) method, or a 16-entry nibble lookup table. In real code, `__builtin_popcount` lets the compiler pick the best instruction sequence for the target.
+
+@@@ reverse-bits-byte
+title: Reverse the Bits of a Byte
+difficulty: E
+category: Bit Manipulation
+order: 3
+## Problem
+Write `uint8_t reverse8(uint8_t b)` that mirrors the bit order: bit 0 becomes bit 7, bit 1 becomes bit 6, and so on. For example `0x01` becomes `0x80` and `0xB0` becomes `0x0D`.
+
+This comes up when a peripheral sends LSB-first data but your protocol expects MSB-first.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+uint8_t reverse8(uint8_t b)
+{
+    return b;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    CHECK(reverse8(0x01) == 0x80);
+    CHECK(reverse8(0x80) == 0x01);
+    CHECK(reverse8(0xB0) == 0x0D);
+    CHECK(reverse8(0xFF) == 0xFF);
+    CHECK(reverse8(0x00) == 0x00);
+    for (unsigned i = 0; i < 256; i++) CHECK(reverse8(reverse8((uint8_t)i)) == i);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Swap the two nibbles, then swap pairs of bits within each nibble, then swap adjacent bits.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+uint8_t reverse8(uint8_t b)
+{
+    b = (uint8_t)((b & 0xF0u) >> 4 | (b & 0x0Fu) << 4);
+    b = (uint8_t)((b & 0xCCu) >> 2 | (b & 0x33u) << 2);
+    b = (uint8_t)((b & 0xAAu) >> 1 | (b & 0x55u) << 1);
+    return b;
+}
+```
+## Explanation
+Three swap stages of width 4, 2 and 1 reverse 8 bits in constant time with no loop. The masks select the upper and lower half of each group. The casts back to `uint8_t` matter because of integer promotion: the expressions are computed as `int`.
+
+Alternatives: a loop that shifts bits out of `b` and into the result (8 iterations), or a 256-byte lookup table in flash for the fastest speed. On ARMv7-M, `__RBIT(x) >> 24` does it in one instruction.
+
+@@@ swap-nibbles-endian
+title: Swap Byte Order of a 32-bit Value
+difficulty: E
+category: Bit Manipulation
+order: 4
+## Problem
+Write `uint32_t bswap32(uint32_t x)` that reverses the byte order (`0x11223344` becomes `0x44332211`), and `uint32_t load_be32(const uint8_t *p)` that reads a big-endian 32-bit value from a byte buffer, correctly on any host and at any alignment.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+uint32_t bswap32(uint32_t x) { return x; }
+uint32_t load_be32(const uint8_t *p) { return 0; }
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    CHECK(bswap32(0x11223344u) == 0x44332211u);
+    CHECK(bswap32(0x000000FFu) == 0xFF000000u);
+    CHECK(bswap32(bswap32(0xDEADBEEFu)) == 0xDEADBEEFu);
+    uint8_t buf[] = { 0x00, 0xDE, 0xAD, 0xBE, 0xEF };
+    CHECK(load_be32(buf + 1) == 0xDEADBEEFu);   /* unaligned */
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Move each byte to its new position with shifts and masks. For `load_be32`, build the value byte by byte instead of casting the pointer.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+uint32_t bswap32(uint32_t x)
+{
+    return  (x >> 24) |
+           ((x >> 8) & 0x0000FF00u) |
+           ((x << 8) & 0x00FF0000u) |
+            (x << 24);
+}
+
+uint32_t load_be32(const uint8_t *p)
+{
+    return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 |
+           (uint32_t)p[2] << 8  | (uint32_t)p[3];
+}
+```
+## Explanation
+Casting `buf + 1` to `uint32_t *` would be both an unaligned access (HardFault on Cortex-M0) and a strict-aliasing violation, and it would still give the wrong answer on a little-endian host. Assembling from bytes is portable and the compiler turns it into `LDR` + `REV` where the hardware allows.
+
+Note the casts to `uint32_t` before shifting: `p[0]` promotes to `int`, and `0xDE << 24` overflows a signed int.
+
+@@@ register-field
+title: Extract and Insert a Register Field
+difficulty: M
+category: Bit Manipulation
+order: 5
+## Problem
+Hardware registers pack several fields into one word. Write:
+
+- `field_get(reg, shift, width)`: returns the `width`-bit field starting at bit `shift`.
+- `field_set(reg, shift, width, val)`: returns `reg` with that field replaced by `val`, leaving every other bit unchanged. Bits of `val` that do not fit in the field must be ignored.
+
+Both must work for `width == 32`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+uint32_t field_get(uint32_t reg, unsigned shift, unsigned width)
+{
+    return 0;
+}
+
+uint32_t field_set(uint32_t reg, unsigned shift, unsigned width, uint32_t val)
+{
+    return reg;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    CHECK(field_get(0x0000AB00u, 8, 8) == 0xABu);
+    CHECK(field_get(0xF0000000u, 28, 4) == 0xFu);
+    CHECK(field_get(0x12345678u, 0, 32) == 0x12345678u);
+    CHECK(field_set(0xFFFFFFFFu, 4, 4, 0x0u) == 0xFFFFFF0Fu);
+    CHECK(field_set(0x00000000u, 4, 4, 0x1Fu) == 0x000000F0u);   /* extra bits dropped */
+    CHECK(field_set(0xDEADBEEFu, 0, 32, 0x1u) == 0x1u);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Build the mask without ever computing `1u << 32`. `0xFFFFFFFFu >> (32 - width)` gives `width` ones, as long as `width` is at least 1.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+static inline uint32_t ones(unsigned width)
+{
+    return width ? (0xFFFFFFFFu >> (32u - width)) : 0u;
+}
+
+uint32_t field_get(uint32_t reg, unsigned shift, unsigned width)
+{
+    return (reg >> shift) & ones(width);
+}
+
+uint32_t field_set(uint32_t reg, unsigned shift, unsigned width, uint32_t val)
+{
+    uint32_t mask = ones(width) << shift;
+    return (reg & ~mask) | ((val << shift) & mask);
+}
+```
+## Explanation
+The textbook `(1u << width) - 1` breaks for `width == 32` because shifting by the full type width is undefined. Shifting the all-ones value right avoids that.
+
+When applied to a real register this is a read-modify-write. If an ISR or another core can modify the same register, protect it with a critical section, or use hardware set/clear registers. In the Linux kernel, the same job is done by `FIELD_GET()` and `FIELD_PREP()` with `GENMASK()`.
+
+@@@ safe-string-copy
+title: Safe String Copy (strlcpy)
+difficulty: E
+category: Pointers & Strings
+order: 6
+## Problem
+Implement `size_t my_strlcpy(char *dst, const char *src, size_t size)`:
+
+- Copy at most `size - 1` characters and **always** NUL-terminate `dst` when `size > 0`.
+- Return the length of `src` (so the caller can detect truncation when the return value is `>= size`).
+- Do not use any library string functions.
+## Starter code
+```c
+#include <stdio.h>
+#include <string.h>
+#include <stddef.h>
+
+size_t my_strlcpy(char *dst, const char *src, size_t size)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    char b[8];
+    CHECK(my_strlcpy(b, "hi", sizeof b) == 2 && strcmp(b, "hi") == 0);
+    CHECK(my_strlcpy(b, "overflowing", sizeof b) == 11 && strcmp(b, "overflo") == 0);
+    CHECK(my_strlcpy(b, "", sizeof b) == 0 && b[0] == '\0');
+    b[0] = 'X';
+    CHECK(my_strlcpy(b, "abc", 0) == 3 && b[0] == 'X');   /* size 0: write nothing */
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Copy while there is room, then keep counting the rest of `src` without copying to compute the return value.
+## Solution
+```c
+#include <stdio.h>
+#include <string.h>
+#include <stddef.h>
+
+size_t my_strlcpy(char *dst, const char *src, size_t size)
+{
+    const char *s = src;
+    if (size) {
+        while (--size && *s)
+            *dst++ = *s++;
+        *dst = '\0';
+    }
+    while (*s) s++;            /* count the remainder */
+    return (size_t)(s - src);
+}
+```
+## Explanation
+`strncpy` is not a safe replacement for `strcpy`: it does not terminate the destination when the source is too long, and it zero-pads the whole buffer, which wastes time. `strlcpy` semantics (BSD, and now in glibc 2.38 and POSIX 2024) fix both. Returning the full source length lets callers write `if (my_strlcpy(d, s, n) >= n) /* truncated */`.
+
+Edge cases interviewers check: `size == 0`, empty source, and exact-fit strings.
+
+@@@ implement-memmove
+title: Implement memmove
+difficulty: M
+category: Pointers & Strings
+order: 7
+## Problem
+Implement `void *my_memmove(void *dst, const void *src, size_t n)` that copies `n` bytes correctly even when the source and destination regions overlap.
+## Starter code
+```c
+#include <stdio.h>
+#include <string.h>
+#include <stddef.h>
+
+void *my_memmove(void *dst, const void *src, size_t n)
+{
+    return dst;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    char a[] = "123456789";
+    my_memmove(a + 2, a, 5);                 /* overlap, dst after src */
+    CHECK(memcmp(a, "121234589", 9) == 0);
+    char b[] = "123456789";
+    my_memmove(b, b + 2, 5);                 /* overlap, dst before src */
+    CHECK(memcmp(b, "345676789", 9) == 0);
+    char c[4] = "abc", d[4] = { 0 };
+    CHECK(my_memmove(d, c, 4) == d && strcmp(d, "abc") == 0);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+If the destination starts after the source and they overlap, copying forwards overwrites source bytes before you read them. Copy backwards in that case.
+## Solution
+```c
+#include <stdio.h>
+#include <string.h>
+#include <stddef.h>
+#include <stdint.h>
+
+void *my_memmove(void *dst, const void *src, size_t n)
+{
+    unsigned char *d = dst;
+    const unsigned char *s = src;
+
+    if (d == s || n == 0)
+        return dst;
+    if ((uintptr_t)d < (uintptr_t)s || (uintptr_t)d >= (uintptr_t)s + n) {
+        while (n--) *d++ = *s++;            /* forward copy is safe */
+    } else {
+        d += n; s += n;
+        while (n--) *--d = *--s;            /* copy backwards */
+    }
+    return dst;
+}
+```
+## Explanation
+Comparing unrelated pointers with `<` is technically unspecified in C, which is why the comparison is done on `uintptr_t`. Real library versions copy word by word once both pointers are aligned, which is much faster for large buffers.
+
+**Follow-up:** why is `memcpy` allowed to be faster? Because its `restrict` parameters let it assume no overlap and copy in any order, including with SIMD or DMA.
+
+@@@ atoi-overflow
+title: String to Integer with Error Checking
+difficulty: M
+category: Pointers & Strings
+order: 8
+## Problem
+Write `bool parse_int32(const char *s, int32_t *out)` that converts a decimal string to an `int32_t`.
+
+- Accept an optional leading `+` or `-`.
+- Reject empty strings, strings with any non-digit characters, and values outside `INT32_MIN..INT32_MAX`.
+- On success write the value to `*out` and return `true`; on failure return `false` and leave `*out` unchanged.
+
+You would use something like this to parse commands from a UART console.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stdbool.h>
+
+bool parse_int32(const char *s, int32_t *out)
+{
+    return false;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    int32_t v = 7;
+    CHECK(parse_int32("123", &v) && v == 123);
+    CHECK(parse_int32("-42", &v) && v == -42);
+    CHECK(parse_int32("+5", &v) && v == 5);
+    CHECK(parse_int32("2147483647", &v) && v == INT32_MAX);
+    CHECK(parse_int32("-2147483648", &v) && v == INT32_MIN);
+    v = 7;
+    CHECK(!parse_int32("2147483648", &v) && v == 7);
+    CHECK(!parse_int32("", &v));
+    CHECK(!parse_int32("-", &v));
+    CHECK(!parse_int32("12a", &v));
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Accumulate the magnitude as an unsigned 32-bit (or 64-bit) value and check the limit **before** each multiply-and-add. The negative limit is one larger than the positive one.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stdbool.h>
+
+bool parse_int32(const char *s, int32_t *out)
+{
+    bool neg = false;
+    uint32_t mag = 0;
+
+    if (*s == '+' || *s == '-') neg = (*s++ == '-');
+    if (*s == '\0') return false;
+
+    const uint32_t limit = neg ? 2147483648u : 2147483647u;
+    for (; *s; s++) {
+        if (*s < '0' || *s > '9') return false;
+        uint32_t d = (uint32_t)(*s - '0');
+        if (mag > (limit - d) / 10u) return false;   /* mag*10 + d > limit */
+        mag = mag * 10u + d;
+    }
+    *out = neg ? (int32_t)(0u - mag) : (int32_t)mag;
+    return true;
+}
+```
+## Explanation
+`atoi` cannot report errors at all, and signed overflow during accumulation is undefined behaviour, so the magnitude is kept unsigned. The overflow test is rearranged so it never overflows itself. Converting `0u - mag` back to `int32_t` for `INT32_MIN` relies on two's complement conversion, which is guaranteed in C23 and is how every real compiler behaves.
+
+The standard-library alternative is `strtol` with `errno` and `endptr` checks.
+
+@@@ reverse-linked-list
+title: Reverse a Singly Linked List
+difficulty: E
+category: Data Structures
+order: 9
+## Problem
+Given the head of a singly linked list, reverse it in place and return the new head. Use O(1) extra memory and no recursion.
+## Starter code
+```c
+#include <stdio.h>
+#include <stddef.h>
+
+struct node { int val; struct node *next; };
+
+struct node *reverse(struct node *head)
+{
+    return head;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    struct node n[5];
+    for (int i = 0; i < 5; i++) { n[i].val = i; n[i].next = (i < 4) ? &n[i + 1] : NULL; }
+    struct node *h = reverse(&n[0]);
+    int expect = 4, count = 0;
+    for (struct node *p = h; p; p = p->next, expect--, count++) CHECK(p->val == expect);
+    CHECK(count == 5);
+    CHECK(reverse(NULL) == NULL);
+    struct node one = { 9, NULL };
+    CHECK(reverse(&one) == &one && one.next == NULL);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Keep three pointers: the previous node, the current node and the next node (saved before you overwrite `current->next`).
+## Solution
+```c
+#include <stdio.h>
+#include <stddef.h>
+
+struct node { int val; struct node *next; };
+
+struct node *reverse(struct node *head)
+{
+    struct node *prev = NULL;
+    while (head) {
+        struct node *next = head->next;
+        head->next = prev;
+        prev = head;
+        head = next;
+    }
+    return prev;
+}
+```
+## Explanation
+Each step detaches the current node and pushes it onto the front of the reversed list held in `prev`. O(n) time, O(1) space. A recursive solution is shorter but uses O(n) stack, which is unacceptable on a small MCU stack for long lists.
+
+**Follow-ups:** reverse in groups of k; reverse a doubly linked list (swap `next` and `prev` in each node); detect a cycle first.
+
+@@@ ring-buffer
+title: Lock-Free Ring Buffer (SPSC)
+difficulty: M
+category: Data Structures
+order: 10
+## Problem
+Implement a byte FIFO for a UART receive path where the ISR is the only producer and the main loop is the only consumer.
+
+- Capacity is `RB_SIZE` (a power of two) and **all** `RB_SIZE` slots must be usable.
+- `rb_put` returns `false` when full; `rb_get` returns `false` when empty.
+- `rb_count` returns the number of stored bytes.
+- No locks and no disabling interrupts.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stdbool.h>
+
+#define RB_SIZE 8u   /* must be a power of two */
+
+typedef struct {
+    uint8_t buf[RB_SIZE];
+    volatile uint32_t head;   /* written only by producer */
+    volatile uint32_t tail;   /* written only by consumer */
+} ring_t;
+
+void     rb_init(ring_t *r)               { (void)r; }
+bool     rb_put(ring_t *r, uint8_t b)     { return false; }
+bool     rb_get(ring_t *r, uint8_t *b)    { return false; }
+uint32_t rb_count(const ring_t *r)        { return 0; }
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    ring_t r; uint8_t b;
+    rb_init(&r);
+    CHECK(rb_count(&r) == 0 && !rb_get(&r, &b));
+    for (unsigned i = 0; i < RB_SIZE; i++) CHECK(rb_put(&r, (uint8_t)i));
+    CHECK(!rb_put(&r, 99) && rb_count(&r) == RB_SIZE);
+    CHECK(rb_get(&r, &b) && b == 0);
+    CHECK(rb_put(&r, 100));
+    for (unsigned i = 1; i < RB_SIZE; i++) CHECK(rb_get(&r, &b) && b == i);
+    CHECK(rb_get(&r, &b) && b == 100 && rb_count(&r) == 0);
+    /* wrap-around of the free-running counters */
+    r.head = r.tail = 0xFFFFFFFEu;
+    for (unsigned i = 0; i < 5; i++) CHECK(rb_put(&r, (uint8_t)i));
+    for (unsigned i = 0; i < 5; i++) CHECK(rb_get(&r, &b) && b == i);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Let `head` and `tail` count up forever instead of wrapping them at `RB_SIZE`. Then `head - tail` (unsigned) is always the fill level, and you index the array with `index & (RB_SIZE - 1)`.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stdbool.h>
+
+#define RB_SIZE 8u
+
+typedef struct {
+    uint8_t buf[RB_SIZE];
+    volatile uint32_t head;
+    volatile uint32_t tail;
+} ring_t;
+
+#define COMPILER_BARRIER() __asm__ volatile("" ::: "memory")
+
+void rb_init(ring_t *r) { r->head = r->tail = 0; }
+
+uint32_t rb_count(const ring_t *r) { return r->head - r->tail; }
+
+bool rb_put(ring_t *r, uint8_t b)
+{
+    uint32_t h = r->head;
+    if (h - r->tail == RB_SIZE) return false;   /* full */
+    r->buf[h & (RB_SIZE - 1u)] = b;
+    COMPILER_BARRIER();                         /* data before index */
+    r->head = h + 1u;
+    return true;
+}
+
+bool rb_get(ring_t *r, uint8_t *b)
+{
+    uint32_t t = r->tail;
+    if (r->head == t) return false;             /* empty */
+    *b = r->buf[t & (RB_SIZE - 1u)];
+    COMPILER_BARRIER();                         /* read data before freeing slot */
+    r->tail = t + 1u;
+    return true;
+}
+```
+## Explanation
+Each index has exactly one writer, and each update is a single aligned 32-bit store, which is atomic on a 32-bit MCU. The producer stores the byte before publishing the new `head`, and the consumer reads it before publishing the new `tail`, so neither side sees a half-finished slot.
+
+Free-running counters solve the classic full-versus-empty ambiguity without wasting a slot, and unsigned subtraction stays correct when the counters wrap past `0xFFFFFFFF` (the test checks this).
+
+On a multi-core or out-of-order CPU, replace the compiler barrier with real ordering: C11 `atomic_store_explicit(&head, h + 1, memory_order_release)` in the producer and an acquire load in the consumer.
+
+@@@ memory-pool
+title: Fixed-Block Memory Pool
+difficulty: M
+category: Data Structures
+order: 11
+## Problem
+Many firmware projects forbid `malloc`. Implement a pool of `POOL_BLOCKS` blocks of `BLOCK_SIZE` bytes from a static array:
+
+- `pool_init()` prepares the pool.
+- `pool_alloc()` returns a free block in O(1), or `NULL` if none remain.
+- `pool_free(p)` returns a block in O(1).
+
+Use no memory beyond the static array itself (no separate bitmap).
+## Starter code
+```c
+#include <stdio.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#define BLOCK_SIZE  32u
+#define POOL_BLOCKS 4u
+
+void  pool_init(void)    { }
+void *pool_alloc(void)   { return NULL; }
+void  pool_free(void *p) { (void)p; }
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    pool_init();
+    void *b[POOL_BLOCKS];
+    for (unsigned i = 0; i < POOL_BLOCKS; i++) { b[i] = pool_alloc(); CHECK(b[i] != NULL); }
+    CHECK(pool_alloc() == NULL);
+    for (unsigned i = 0; i < POOL_BLOCKS; i++)
+        for (unsigned j = i + 1; j < POOL_BLOCKS; j++) CHECK(b[i] != b[j]);
+    CHECK(((uintptr_t)b[0] % sizeof(void *)) == 0);
+    pool_free(b[2]);
+    CHECK(pool_alloc() == b[2]);
+    pool_free(b[0]); pool_free(b[1]);
+    CHECK(pool_alloc() != NULL && pool_alloc() != NULL && pool_alloc() == NULL);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+A free block is not in use, so you can store a "next free block" pointer inside it. Chain all free blocks into a singly linked free list.
+## Solution
+```c
+#include <stdio.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#define BLOCK_SIZE  32u
+#define POOL_BLOCKS 4u
+
+typedef union block {
+    union block *next;                 /* valid while free */
+    unsigned char data[BLOCK_SIZE];    /* valid while allocated */
+} block_t;
+
+static block_t  pool[POOL_BLOCKS];
+static block_t *free_list;
+
+void pool_init(void)
+{
+    for (unsigned i = 0; i < POOL_BLOCKS - 1u; i++)
+        pool[i].next = &pool[i + 1];
+    pool[POOL_BLOCKS - 1u].next = NULL;
+    free_list = &pool[0];
+}
+
+void *pool_alloc(void)
+{
+    block_t *b = free_list;
+    if (b) free_list = b->next;
+    return b;
+}
+
+void pool_free(void *p)
+{
+    if (!p) return;
+    block_t *b = p;
+    b->next = free_list;
+    free_list = b;
+}
+```
+## Explanation
+The union guarantees each block is large enough and aligned for a pointer. Allocation pops the head of the free list and freeing pushes onto it, both O(1) and deterministic, with no fragmentation because every block is the same size. This is the idea behind RTOS memory pools (ThreadX block pools, Zephyr `k_mem_slab`).
+
+For use from both tasks and ISRs, wrap `alloc` and `free` in a critical section. Debug builds often add a magic value or a range check in `pool_free` to catch double frees and foreign pointers.
+
+@@@ moving-average
+title: Moving Average Filter
+difficulty: E
+category: Signal Processing
+order: 12
+## Problem
+Implement a moving average over the last `N` ADC samples (12-bit values in a `uint16_t`). `ma_add(x)` adds a sample and returns the current average. Until `N` samples have arrived, average over the samples received so far. Each call must be O(1).
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+#define N 4u
+
+uint16_t ma_add(uint16_t x)
+{
+    return x;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    CHECK(ma_add(100) == 100);
+    CHECK(ma_add(200) == 150);
+    CHECK(ma_add(300) == 200);
+    CHECK(ma_add(400) == 250);
+    CHECK(ma_add(500) == 350);     /* window is 200..500 */
+    CHECK(ma_add(4095) == 1323);   /* (300+400+500+4095)/4 = 1323 */
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Keep a running sum. On each new sample subtract the value leaving the window and add the new one.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+#define N 4u
+
+uint16_t ma_add(uint16_t x)
+{
+    static uint16_t win[N];
+    static uint32_t sum;
+    static uint32_t idx, count;
+
+    sum -= win[idx];       /* zero until the window fills */
+    sum += x;
+    win[idx] = x;
+    idx = (idx + 1u) % N;
+    if (count < N) count++;
+    return (uint16_t)(sum / count);
+}
+```
+## Explanation
+The running sum makes each update O(1) regardless of window size. A `uint32_t` sum cannot overflow for 12-bit samples unless N exceeds about one million. If N is a power of two, the division becomes a shift once the window is full.
+
+Alternatives: an exponential moving average `avg += (x - avg) >> k` uses no buffer, which is popular on small MCUs; a median filter rejects spikes better than an average.
+
+@@@ debounce-button
+title: Debounce a Push Button
+difficulty: M
+category: Drivers & Peripherals
+order: 13
+## Problem
+A button is sampled every 1 ms by a timer ISR that calls `debounce(raw)`, where `raw` is the current pin level (1 = pressed). The function should return:
+
+- `1` exactly once when the button becomes **stably pressed** (raw is 1 for 5 consecutive samples),
+- `-1` exactly once when it becomes stably released (5 consecutive 0s),
+- `0` otherwise.
+
+Bounces shorter than 5 samples must be ignored. The initial state is released.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+int debounce(int raw)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+static int feed(const char *s)   /* returns sum of events, counts presses*10 */
+{
+    int presses = 0, releases = 0;
+    for (; *s; s++) { int e = debounce(*s == '1'); if (e == 1) presses++; if (e == -1) releases++; }
+    return presses * 10 + releases;
+}
+int main(void)
+{
+    CHECK(feed("0000") == 0);
+    CHECK(feed("1010110") == 0);            /* bouncing, no event */
+    CHECK(feed("11111") == 10);             /* one press */
+    CHECK(feed("1111111111") == 0);         /* held: no repeat */
+    CHECK(feed("0100100") == 0);            /* short glitches while held */
+    CHECK(feed("00000") == 1);              /* release */
+    CHECK(feed("1111100000") == 11);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Keep the current stable state and a counter. Count samples that differ from the stable state; reset the counter whenever a sample agrees with it.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+#define STABLE_SAMPLES 5u
+
+int debounce(int raw)
+{
+    static int stable;        /* 0 = released, 1 = pressed */
+    static unsigned cnt;
+
+    if (raw == stable) {
+        cnt = 0;              /* agrees with current state */
+        return 0;
+    }
+    if (++cnt >= STABLE_SAMPLES) {
+        stable = raw;
+        cnt = 0;
+        return stable ? 1 : -1;
+    }
+    return 0;
+}
+```
+## Explanation
+This is a two-state machine with a counter. Any sample matching the stable state resets the count, so a glitch has to last the full 5 ms to register. Events are edge-triggered, which is what application code usually wants ("button pressed" rather than "button is down").
+
+A compact alternative keeps an 8-bit shift-register history and checks for `0x1F`/`0xE0` patterns. Avoid debouncing with edge interrupts alone: a bouncing contact can fire dozens of interrupts. Five milliseconds suits most tactile switches; check the switch datasheet.
+
+@@@ wrap-safe-timeout
+title: Wrap-Safe Timeout Check
+difficulty: E
+category: Drivers & Peripherals
+order: 14
+## Problem
+A 32-bit millisecond tick counter overflows every 49.7 days. Write `bool timeout_expired(uint32_t now, uint32_t start, uint32_t timeout_ms)` that returns `true` once at least `timeout_ms` have passed since `start`, and stays correct across the counter wrapping from `0xFFFFFFFF` to `0`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stdbool.h>
+
+bool timeout_expired(uint32_t now, uint32_t start, uint32_t timeout_ms)
+{
+    return now >= start + timeout_ms;   /* buggy! */
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    CHECK(!timeout_expired(1000, 900, 200));
+    CHECK(timeout_expired(1100, 900, 200));
+    CHECK(!timeout_expired(0xFFFFFFF0u, 0xFFFFFF00u, 0x200u));
+    CHECK(!timeout_expired(0x00000050u, 0xFFFFFF00u, 0x200u));   /* wrapped, 0x150 elapsed */
+    CHECK(timeout_expired(0x00000100u, 0xFFFFFF00u, 0x200u));    /* wrapped, 0x200 elapsed */
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Compute the elapsed time first, using unsigned subtraction.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stdbool.h>
+
+bool timeout_expired(uint32_t now, uint32_t start, uint32_t timeout_ms)
+{
+    return (uint32_t)(now - start) >= timeout_ms;
+}
+```
+## Explanation
+Unsigned arithmetic is modulo 2³², so `now - start` is the true elapsed time even if `now` has wrapped past zero, provided the real interval is shorter than 2³² ms. The buggy version fails because `start + timeout_ms` itself overflows to a small number, making the timeout expire immediately (or never).
+
+The `(uint32_t)` cast matters on 8- and 16-bit targets where narrower types would be promoted to signed `int`. Linux uses `time_after(a, b)` macros on `jiffies` for exactly this reason.
+
+@@@ crc16-ccitt
+title: CRC-16/CCITT-FALSE
+difficulty: M
+category: Protocols & Parsing
+order: 15
+## Problem
+Implement `uint16_t crc16_ccitt(const uint8_t *data, size_t len)` using polynomial `0x1021`, initial value `0xFFFF`, no input/output reflection and no final XOR (the "CCITT-FALSE" variant). The standard check value for the ASCII string `"123456789"` is `0x29B1`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+uint16_t crc16_ccitt(const uint8_t *data, size_t len)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    const char *s = "123456789";
+    CHECK(crc16_ccitt((const uint8_t *)s, strlen(s)) == 0x29B1);
+    CHECK(crc16_ccitt(NULL, 0) == 0xFFFF);
+    const uint8_t a = 'A';
+    CHECK(crc16_ccitt(&a, 1) == 0xB915);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+XOR each byte into the **top** 8 bits of the CRC, then shift left 8 times; whenever the bit shifted out was 1, XOR in the polynomial.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+uint16_t crc16_ccitt(const uint8_t *data, size_t len)
+{
+    uint16_t crc = 0xFFFFu;
+    while (len--) {
+        crc ^= (uint16_t)(*data++) << 8;
+        for (int i = 0; i < 8; i++)
+            crc = (crc & 0x8000u) ? (uint16_t)((crc << 1) ^ 0x1021u) : (uint16_t)(crc << 1);
+    }
+    return crc;
+}
+```
+## Explanation
+This is polynomial long division in GF(2), processed MSB first. It costs 8 iterations per byte. A 256-entry `uint16_t` table (512 bytes of flash) processes a byte in one lookup: `crc = (crc << 8) ^ table[(crc >> 8) ^ byte]`. Many MCUs (STM32, nRF) include a hardware CRC unit.
+
+There are dozens of "CRC-16" variants differing in polynomial, initial value, reflection and final XOR. Always confirm the parameters against a check value like the one in the test.
+
+@@@ frame-parser
+title: UART Packet Parser State Machine
+difficulty: H
+category: Protocols & Parsing
+order: 16
+## Problem
+A sensor sends packets over UART in this format:
+
+| Field | Size | Value |
+|---|---|---|
+| Start | 1 | `0xAA` |
+| Length | 1 | payload length, 1–16 |
+| Payload | Length | data |
+| Checksum | 1 | XOR of Length and every payload byte |
+
+Write `int parser_feed(uint8_t byte)`, called once per received byte. It returns the payload length when a valid packet completes (copying the payload into the global `rx_payload`), and 0 otherwise. Bad lengths and checksum errors must be dropped silently, and the parser must resynchronise on the next `0xAA`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <string.h>
+
+uint8_t rx_payload[16];
+
+int parser_feed(uint8_t byte)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+static int feed_all(const uint8_t *b, size_t n)
+{
+    int last = 0;
+    for (size_t i = 0; i < n; i++) { int r = parser_feed(b[i]); if (r) last = r; }
+    return last;
+}
+int main(void)
+{
+    const uint8_t ok[]   = { 0xAA, 3, 0x10, 0x20, 0x30, 3 ^ 0x10 ^ 0x20 ^ 0x30 };
+    CHECK(feed_all(ok, sizeof ok) == 3 && memcmp(rx_payload, ok + 2, 3) == 0);
+    const uint8_t bad[]  = { 0xAA, 2, 0x01, 0x02, 0x00 };                     /* wrong checksum */
+    CHECK(feed_all(bad, sizeof bad) == 0);
+    const uint8_t junk[] = { 0x00, 0x55, 0xAA, 0x40, 0xAA, 1, 0x7E, 1 ^ 0x7E }; /* bad len, then resync */
+    CHECK(feed_all(junk, sizeof junk) == 1 && rx_payload[0] == 0x7E);
+    const uint8_t aa_in_payload[] = { 0xAA, 2, 0xAA, 0xAA, 2 };
+    CHECK(feed_all(aa_in_payload, sizeof aa_in_payload) == 2);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Use an `enum` of states: waiting for start, waiting for length, receiving payload, waiting for checksum. Keep the running XOR and the index as static variables.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <string.h>
+
+uint8_t rx_payload[16];
+
+typedef enum { ST_START, ST_LEN, ST_DATA, ST_CSUM } pstate_t;
+
+int parser_feed(uint8_t byte)
+{
+    static pstate_t st = ST_START;
+    static uint8_t len, idx, csum;
+
+    switch (st) {
+    case ST_START:
+        if (byte == 0xAA) st = ST_LEN;
+        break;
+    case ST_LEN:
+        if (byte >= 1 && byte <= sizeof rx_payload) {
+            len = byte; idx = 0; csum = byte;
+            st = ST_DATA;
+        } else {
+            st = (byte == 0xAA) ? ST_LEN : ST_START;   /* resync */
+        }
+        break;
+    case ST_DATA:
+        rx_payload[idx++] = byte;
+        csum ^= byte;
+        if (idx == len) st = ST_CSUM;
+        break;
+    case ST_CSUM:
+        st = ST_START;
+        if (byte == csum) return len;
+        break;
+    }
+    return 0;
+}
+```
+## Explanation
+A byte-at-a-time state machine never blocks, works directly from a UART ISR or ring buffer, and handles packets split across reads. Validating the length before storing anything prevents a buffer overflow from a corrupted length byte, which is a classic security bug.
+
+Improvements for production: copy the payload to the application only after the checksum passes (here a failing packet partially overwrites `rx_payload`), add an inter-byte timeout to reset the state, and use a CRC instead of XOR. Because `0xAA` can appear in the payload, real protocols often use **byte stuffing** (SLIP, COBS, HDLC) so the start marker is unique.
+
+@@@ nmea-checksum
+title: Validate an NMEA Sentence
+difficulty: M
+category: Protocols & Parsing
+order: 17
+## Problem
+GPS modules output NMEA 0183 sentences like:
+
+```
+$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47
+```
+
+The checksum is the XOR of every character between `$` and `*` (exclusive), written as two hex digits after `*`. Write `bool nmea_valid(const char *s)` that returns `true` only if the sentence starts with `$`, contains `*` followed by exactly two hex digits (upper or lower case) and an optional `\r\n`, and the checksum matches.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdbool.h>
+#include <stdint.h>
+
+bool nmea_valid(const char *s)
+{
+    return false;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    CHECK(nmea_valid("$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47"));
+    CHECK(nmea_valid("$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47\r\n"));
+    CHECK(!nmea_valid("$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*48"));
+    CHECK(nmea_valid("$A*41"));
+    CHECK(nmea_valid("$a*61"));
+    CHECK(!nmea_valid("GPGGA*00"));
+    CHECK(!nmea_valid("$A*4"));
+    CHECK(!nmea_valid("$A41"));
+    CHECK(!nmea_valid("$A*4G"));
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Write a small helper that converts one hex character to its value or returns -1.
+## Solution
+```c
+#include <stdio.h>
+#include <stdbool.h>
+#include <stdint.h>
+
+static int hexval(char c)
+{
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    return -1;
+}
+
+bool nmea_valid(const char *s)
+{
+    if (*s++ != '$') return false;
+
+    uint8_t sum = 0;
+    while (*s && *s != '*') sum ^= (uint8_t)*s++;
+    if (*s++ != '*') return false;
+
+    int hi = hexval(s[0]);
+    if (hi < 0) return false;
+    int lo = hexval(s[1]);
+    if (lo < 0) return false;
+    s += 2;
+
+    if (s[0] == '\r' && s[1] == '\n') s += 2;
+    if (*s != '\0') return false;
+    return sum == (uint8_t)(hi << 4 | lo);
+}
+```
+## Explanation
+The checks are ordered so the code never reads past the terminator: `s[1]` is only examined after `s[0]` was a valid hex digit, which means it was not `'\0'`. Parsing defensively matters because GPS data arrives over a noisy link and often starts mid-sentence.
+
+In a real receiver you would accumulate characters from the UART ring buffer into a line buffer of bounded size (NMEA allows 82 characters), validate, and then split fields on commas.
+
+@@@ bitbang-spi
+title: Bit-Banged SPI Transfer (Mode 0)
+difficulty: M
+category: Drivers & Peripherals
+order: 18
+## Problem
+Implement `uint8_t spi_xfer(uint8_t out)` that sends and receives one byte, MSB first, in **SPI mode 0** (CPOL = 0, CPHA = 0) using three GPIO helper functions: `sck(int level)`, `mosi(int level)` and `miso()`. The clock idles low. The test harness simulates a peripheral that samples MOSI on the rising edge and changes MISO on the falling edge.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+/* ---- simulated hardware (do not modify) ---- */
+static int pin_sck, pin_mosi;
+static uint8_t dev_rx, dev_tx = 0x3C;
+static int dev_bit = 7;
+static void sck(int level)
+{
+    if (!pin_sck && level) dev_rx = (uint8_t)(dev_rx << 1 | pin_mosi);   /* rising: sample */
+    if (pin_sck && !level && dev_bit > 0) dev_bit--;                      /* falling: next bit */
+    pin_sck = level;
+}
+static void mosi(int level) { pin_mosi = level ? 1 : 0; }
+static int  miso(void)      { return (dev_tx >> dev_bit) & 1; }
+/* --------------------------------------------- */
+
+uint8_t spi_xfer(uint8_t out)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    uint8_t in = spi_xfer(0xA5);
+    CHECK(dev_rx == 0xA5);
+    CHECK(in == 0x3C);
+    CHECK(pin_sck == 0);       /* clock idles low */
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+In mode 0, data must be valid **before** the rising edge. So for each bit: set MOSI, raise SCK, read MISO, lower SCK.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+static int pin_sck, pin_mosi;
+static uint8_t dev_rx, dev_tx = 0x3C;
+static int dev_bit = 7;
+static void sck(int level)
+{
+    if (!pin_sck && level) dev_rx = (uint8_t)(dev_rx << 1 | pin_mosi);
+    if (pin_sck && !level && dev_bit > 0) dev_bit--;
+    pin_sck = level;
+}
+static void mosi(int level) { pin_mosi = level ? 1 : 0; }
+static int  miso(void)      { return (dev_tx >> dev_bit) & 1; }
+
+uint8_t spi_xfer(uint8_t out)
+{
+    uint8_t in = 0;
+    for (int i = 7; i >= 0; i--) {
+        mosi((out >> i) & 1);      /* set data while SCK is low */
+        sck(1);                    /* rising edge: both sides sample */
+        in = (uint8_t)(in << 1 | miso());
+        sck(0);                    /* falling edge: both sides shift */
+    }
+    return in;
+}
+```
+## Explanation
+SPI is just two shift registers connected in a loop: each clock pulse sends one bit and receives one bit, so a transfer is always full duplex. In mode 0 both sides sample on the rising edge and change data on the falling edge; the first bit must therefore be on MOSI before the first rising edge.
+
+On real hardware add delays to meet the device's maximum clock and setup/hold times, and toggle chip select around the transfer. For mode 1 you would shift on the rising edge and sample on the falling edge instead. Bit-banging is useful when you run out of hardware SPI blocks or need an odd frame length.
+
+@@@ reset-handler
+title: Write the Reset Handler
+difficulty: M
+category: Startup & Boot
+order: 19
+## Problem
+Before `main()` runs, start-up code must copy the `.data` section's initial values from flash to RAM and zero `.bss`. Implement `reset_init()` using the linker-provided symbols. In this simulation the "flash" and "RAM" are arrays, and the symbols are pointers into them.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <string.h>
+
+/* ---- simulated linker symbols ---- */
+static const uint32_t flash_image[3] = { 0x11111111u, 0x22222222u, 0x33333333u };
+static uint32_t ram[8] = { 0xDEAD, 0xDEAD, 0xDEAD, 0xDEAD, 0xDEAD, 0xDEAD, 0xDEAD, 0xDEAD };
+static const uint32_t *_sidata = flash_image;   /* load address of .data (flash) */
+static uint32_t *_sdata = &ram[0], *_edata = &ram[3];   /* .data in RAM */
+static uint32_t *_sbss  = &ram[3], *_ebss  = &ram[7];   /* .bss in RAM  */
+/* ---------------------------------- */
+
+void reset_init(void)
+{
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    reset_init();
+    CHECK(ram[0] == 0x11111111u && ram[1] == 0x22222222u && ram[2] == 0x33333333u);
+    CHECK(ram[3] == 0 && ram[4] == 0 && ram[5] == 0 && ram[6] == 0);
+    CHECK(ram[7] == 0xDEAD);   /* must not touch memory past _ebss */
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Two loops over word pointers: copy from `_sidata` to `_sdata` until `_edata`, then write zero from `_sbss` until `_ebss`.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <string.h>
+
+static const uint32_t flash_image[3] = { 0x11111111u, 0x22222222u, 0x33333333u };
+static uint32_t ram[8] = { 0xDEAD, 0xDEAD, 0xDEAD, 0xDEAD, 0xDEAD, 0xDEAD, 0xDEAD, 0xDEAD };
+static const uint32_t *_sidata = flash_image;
+static uint32_t *_sdata = &ram[0], *_edata = &ram[3];
+static uint32_t *_sbss  = &ram[3], *_ebss  = &ram[7];
+
+void reset_init(void)
+{
+    const uint32_t *src = _sidata;
+    for (uint32_t *dst = _sdata; dst < _edata; )
+        *dst++ = *src++;
+    for (uint32_t *dst = _sbss; dst < _ebss; )
+        *dst++ = 0;
+}
+```
+## Explanation
+On real hardware the symbols come from the linker script, declared as `extern uint32_t _sdata, _edata, ...;` and used by address (`&_sdata`). The linker script aligns the sections to 4 bytes so word copies are safe.
+
+A real reset handler then calls `SystemInit()` (clocks, FPU enable), `__libc_init_array()` for C++ constructors, and finally `main()`. It must not rely on any initialised global data before these loops run, and it must be careful not to let the compiler turn the loops into calls to `memcpy`/`memset` that themselves depend on initialised data (`-ffreestanding` or `-fno-builtin` help). Some projects write this in assembly for that reason.
+
+@@@ hardfault-handler
+title: HardFault Handler that Captures the Stack Frame
+difficulty: H
+category: Startup & Boot
+order: 20
+## Problem
+When a Cortex-M HardFault occurs, the hardware has pushed `R0, R1, R2, R3, R12, LR, PC, xPSR` (in that order) onto whichever stack was in use. Bit 2 of the `EXC_RETURN` value in `LR` tells you which: 0 means MSP, 1 means PSP.
+
+Write the C part of the handler, `void fault_decode(uint32_t exc_return, uint32_t *msp, uint32_t *psp, fault_info_t *out)`, that selects the right stack and copies the stacked `pc`, `lr` and `xpsr` into `out`. Then sketch the naked assembly entry that would call it.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+typedef struct { uint32_t pc, lr, xpsr, r0; } fault_info_t;
+
+void fault_decode(uint32_t exc_return, uint32_t *msp, uint32_t *psp, fault_info_t *out)
+{
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    uint32_t main_stack[8]    = { 1, 2, 3, 4, 12, 0x08000101u, 0x08000200u, 0x01000000u };
+    uint32_t process_stack[8] = { 9, 0, 0, 0, 0,  0x08000301u, 0x08000400u, 0x21000000u };
+    fault_info_t f;
+    fault_decode(0xFFFFFFF9u, main_stack, process_stack, &f);       /* thread mode, MSP */
+    CHECK(f.pc == 0x08000200u && f.lr == 0x08000101u && f.r0 == 1);
+    fault_decode(0xFFFFFFFDu, main_stack, process_stack, &f);       /* thread mode, PSP */
+    CHECK(f.pc == 0x08000400u && f.xpsr == 0x21000000u && f.r0 == 9);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+`exc_return & 4` selects the stack. In the frame, `PC` is at index 6, `LR` at 5 and `xPSR` at 7.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+typedef struct { uint32_t pc, lr, xpsr, r0; } fault_info_t;
+
+enum { F_R0, F_R1, F_R2, F_R3, F_R12, F_LR, F_PC, F_XPSR };
+
+void fault_decode(uint32_t exc_return, uint32_t *msp, uint32_t *psp, fault_info_t *out)
+{
+    const uint32_t *frame = (exc_return & 4u) ? psp : msp;
+    out->r0   = frame[F_R0];
+    out->lr   = frame[F_LR];
+    out->pc   = frame[F_PC];
+    out->xpsr = frame[F_XPSR];
+}
+
+/*
+ * On target, the entry point is a naked function so the compiler
+ * does not push anything before we read the stack pointers:
+ *
+ * __attribute__((naked)) void HardFault_Handler(void)
+ * {
+ *     __asm volatile(
+ *         "mov   r0, lr      \n"   // EXC_RETURN
+ *         "mrs   r1, msp     \n"
+ *         "mrs   r2, psp     \n"
+ *         "ldr   r3, =g_fault\n"
+ *         "b     fault_decode_and_halt \n");
+ * }
+ */
+```
+## Explanation
+The stacked PC is the address of the faulting instruction (for precise faults), so `addr2line -e firmware.elf 0x08000200` points straight at the line of code. The stacked LR shows the caller. Together with `SCB->CFSR`, `HFSR`, `MMFAR` and `BFAR`, this usually identifies the bug without a debugger attached.
+
+Production handlers save this data to a no-init RAM region, trigger a reset, and report it on the next boot. If the FPU was active, bit 4 of `EXC_RETURN` is 0 and the frame is 26 words long, but the first 8 words are laid out the same way.
+
+@@@ aligned-malloc
+title: Aligned Allocation
+difficulty: H
+category: Pointers & Strings
+order: 21
+## Problem
+DMA engines and caches often need buffers aligned to 32 or 64 bytes. Using only `malloc` and `free`, write:
+
+- `void *aligned_alloc_x(size_t align, size_t size)`: returns memory aligned to `align` (a power of two), or `NULL`.
+- `void aligned_free_x(void *p)`: frees memory from `aligned_alloc_x`, and accepts `NULL`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
+
+void *aligned_alloc_x(size_t align, size_t size) { return NULL; }
+void  aligned_free_x(void *p) { (void)p; }
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    size_t aligns[] = { 8, 16, 32, 64, 256, 4096 };
+    for (size_t i = 0; i < sizeof aligns / sizeof aligns[0]; i++) {
+        uint8_t *p = aligned_alloc_x(aligns[i], 100);
+        CHECK(p != NULL);
+        CHECK(((uintptr_t)p & (aligns[i] - 1)) == 0);
+        memset(p, 0xAB, 100);       /* must own all 100 bytes */
+        aligned_free_x(p);
+    }
+    CHECK(aligned_alloc_x(24, 10) == NULL);   /* not a power of two */
+    aligned_free_x(NULL);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Over-allocate by `align - 1` bytes plus room for one pointer. Round the address up, and store the original `malloc` pointer just before the aligned block so `free` can find it.
+## Solution
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
+
+void *aligned_alloc_x(size_t align, size_t size)
+{
+    if (align == 0 || (align & (align - 1)) != 0) return NULL;
+    if (align < sizeof(void *)) align = sizeof(void *);
+
+    size_t extra = align - 1 + sizeof(void *);
+    if (size > SIZE_MAX - extra) return NULL;
+
+    void *raw = malloc(size + extra);
+    if (!raw) return NULL;
+
+    uintptr_t p = ((uintptr_t)raw + sizeof(void *) + align - 1) & ~(uintptr_t)(align - 1);
+    ((void **)p)[-1] = raw;           /* remember the original pointer */
+    return (void *)p;
+}
+
+void aligned_free_x(void *p)
+{
+    if (p) free(((void **)p)[-1]);
+}
+```
+## Explanation
+Reserving `sizeof(void *)` bytes before rounding up guarantees there is always room for the hidden pointer, and since the alignment is at least pointer size, the hidden pointer slot is itself aligned. The size check prevents integer overflow in `size + extra`, a common security bug.
+
+C11 provides `aligned_alloc(align, size)` (size must be a multiple of align) and POSIX provides `posix_memalign`; the Linux kernel's `kmalloc` gives natural alignment for power-of-two sizes. For DMA buffers on cached cores, also round the **size** up to a cache-line multiple so invalidation does not destroy neighbouring data.
+
+@@@ q15-saturating-multiply
+title: Q15 Fixed-Point Multiply with Saturation
+difficulty: H
+category: Signal Processing
+order: 22
+## Problem
+Many MCUs lack an FPU, so DSP code uses **Q15** fixed point: an `int16_t` represents a value in [-1, 1) as `value × 32768`. Write:
+
+- `int16_t q15_mul(int16_t a, int16_t b)`: the product, rounded to nearest, saturated to the Q15 range.
+- `int16_t q15_add(int16_t a, int16_t b)`: the sum, saturated instead of wrapping.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+int16_t q15_mul(int16_t a, int16_t b) { return 0; }
+int16_t q15_add(int16_t a, int16_t b) { return 0; }
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+#define Q15(x) ((int16_t)((x) * 32768.0))
+int main(void)
+{
+    CHECK(q15_mul(Q15(0.5), Q15(0.5)) == Q15(0.25));
+    CHECK(q15_mul(Q15(-0.5), Q15(0.5)) == Q15(-0.25));
+    CHECK(q15_mul(INT16_MIN, INT16_MIN) == INT16_MAX);   /* -1 * -1 saturates */
+    CHECK(q15_mul(INT16_MIN, INT16_MAX) == -32767);
+    CHECK(q15_add(Q15(0.75), Q15(0.5)) == INT16_MAX);
+    CHECK(q15_add(Q15(-0.75), Q15(-0.5)) == INT16_MIN);
+    CHECK(q15_add(100, -50) == 50);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Multiply in 32 bits: the product of two Q15 numbers is Q30. Add half an LSB (`1 << 14`) for rounding, shift right by 15, then clamp to `INT16_MIN..INT16_MAX`.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+static inline int16_t sat16(int32_t x)
+{
+    if (x > INT16_MAX) return INT16_MAX;
+    if (x < INT16_MIN) return INT16_MIN;
+    return (int16_t)x;
+}
+
+int16_t q15_mul(int16_t a, int16_t b)
+{
+    int32_t p = (int32_t)a * b;          /* Q30 */
+    p += 1 << 14;                         /* round to nearest */
+    return sat16(p >> 15);                /* back to Q15 */
+}
+
+int16_t q15_add(int16_t a, int16_t b)
+{
+    return sat16((int32_t)a + b);
+}
+```
+## Explanation
+The only product that overflows Q15 is −1 × −1 = +1, which cannot be represented, so it saturates to 0x7FFF. Saturation is preferred over wrap-around in signal processing because wrapping turns a slightly too-loud sample into a huge negative spike, which is audible and can destabilise control loops.
+
+`p >> 15` on a negative value relies on arithmetic right shift (implementation-defined but universal on GCC/Clang/Arm compilers). Cortex-M4 and later provide `QADD`, `SSAT` and `SMULBB` instructions (exposed through CMSIS intrinsics and CMSIS-DSP's `arm_mult_q15`) that do this in a cycle or two.
+
+@@@ lookup-interpolation
+title: Calibration Table Interpolation
+difficulty: M
+category: Signal Processing
+order: 23
+## Problem
+A thermistor is calibrated with a table of (ADC reading, temperature in 0.1 °C) points, sorted by ADC value. Write `int16_t adc_to_temp(uint16_t adc)` that:
+
+- finds the two table entries surrounding `adc` with a **binary search**,
+- linearly interpolates between them using integer arithmetic only,
+- clamps to the first or last temperature when `adc` is outside the table.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+typedef struct { uint16_t adc; int16_t temp; } cal_t;
+static const cal_t table[] = {
+    {  500,  850 }, { 1000,  600 }, { 1800,  350 }, { 2600,  150 }, { 3400, -100 },
+};
+#define TABLE_LEN (sizeof table / sizeof table[0])
+
+int16_t adc_to_temp(uint16_t adc)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    CHECK(adc_to_temp(100) == 850);       /* below table */
+    CHECK(adc_to_temp(500) == 850);
+    CHECK(adc_to_temp(750) == 725);       /* halfway 850..600 */
+    CHECK(adc_to_temp(1800) == 350);
+    CHECK(adc_to_temp(2200) == 250);
+    CHECK(adc_to_temp(3000) == 25);       /* 150 + (-250 * 400 / 800) */
+    CHECK(adc_to_temp(4095) == -100);     /* above table */
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Binary-search for the first entry whose `adc` is ≥ the input. Then interpolate with `t0 + (t1 - t0) * (x - x0) / (x1 - x0)` using 32-bit signed math.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+typedef struct { uint16_t adc; int16_t temp; } cal_t;
+static const cal_t table[] = {
+    {  500,  850 }, { 1000,  600 }, { 1800,  350 }, { 2600,  150 }, { 3400, -100 },
+};
+#define TABLE_LEN (sizeof table / sizeof table[0])
+
+int16_t adc_to_temp(uint16_t adc)
+{
+    if (adc <= table[0].adc) return table[0].temp;
+    if (adc >= table[TABLE_LEN - 1].adc) return table[TABLE_LEN - 1].temp;
+
+    size_t lo = 1, hi = TABLE_LEN - 1;          /* first index with table[i].adc >= adc */
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (table[mid].adc < adc) lo = mid + 1;
+        else hi = mid;
+    }
+    const cal_t *a = &table[lo - 1], *b = &table[lo];
+    int32_t dt = (int32_t)b->temp - a->temp;
+    int32_t dx = (int32_t)b->adc - a->adc;
+    return (int16_t)(a->temp + dt * (int32_t)(adc - a->adc) / dx);
+}
+```
+## Explanation
+A piecewise-linear table in flash is how most firmware linearises non-linear sensors (thermistors, flow sensors, battery discharge curves), because it is far cheaper than evaluating the Steinhart-Hart equation with floating point. Binary search keeps lookup O(log n), which matters for large tables; for evenly spaced ADC points you can compute the index directly.
+
+Watch for overflow in `dt * (adc - a->adc)` when tables have large ranges, and note that integer division truncates towards zero. Add `dx / 2` with the right sign for rounding if needed.
+
+@@@ run-length-encoding
+title: Run-Length Encoding
+difficulty: M
+category: Algorithms
+order: 24
+## Problem
+Implement `size_t rle_encode(const uint8_t *in, size_t n, uint8_t *out, size_t cap)` that writes pairs of (count, value) bytes. Runs longer than 255 are split. Return the number of bytes written, or 0 if `out` is too small (never write past `cap`).
+
+RLE is used to compress display bitmaps, fonts and log data on small devices.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <string.h>
+
+size_t rle_encode(const uint8_t *in, size_t n, uint8_t *out, size_t cap)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    uint8_t out[16];
+    const uint8_t a[] = { 7, 7, 7, 1, 2, 2 };
+    const uint8_t ea[] = { 3, 7, 1, 1, 2, 2 };
+    CHECK(rle_encode(a, sizeof a, out, sizeof out) == 6 && memcmp(out, ea, 6) == 0);
+    uint8_t big[300]; memset(big, 0x55, sizeof big);
+    const uint8_t eb[] = { 255, 0x55, 45, 0x55 };
+    CHECK(rle_encode(big, sizeof big, out, sizeof out) == 4 && memcmp(out, eb, 4) == 0);
+    CHECK(rle_encode(a, sizeof a, out, 5) == 0);        /* too small */
+    CHECK(rle_encode(a, 0, out, sizeof out) == 0);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Walk the input with an index `i`. Count how many bytes starting at `i` equal `in[i]`, stopping at 255. Emit the pair, then advance `i` by the count.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <string.h>
+
+size_t rle_encode(const uint8_t *in, size_t n, uint8_t *out, size_t cap)
+{
+    size_t i = 0, o = 0;
+    while (i < n) {
+        uint8_t v = in[i];
+        size_t run = 1;
+        while (i + run < n && in[i + run] == v && run < 255) run++;
+        if (o + 2 > cap) return 0;
+        out[o++] = (uint8_t)run;
+        out[o++] = v;
+        i += run;
+    }
+    return o;
+}
+```
+## Explanation
+Plain RLE can double the size of data with no repeats, so real formats use a flag bit to mix literal runs and repeated runs (PackBits, the TGA format). The bounds check before each write is the important part: compression code that trusts its output buffer size is a common source of overflows.
+
+**Follow-up:** write the decoder, checking that the expanded output fits its buffer before writing each run.
