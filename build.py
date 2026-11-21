@@ -298,6 +298,7 @@ def topic_card(t, root):
 
 def build_question_bank(topics):
     rows = []
+    total = sum(len(t["qs"]) for t in topics)
     for t in topics:
         for q in t["qs"]:
             rows.append(f'<tr data-d="{q["d"]}" data-t="{t["slug"]}" data-id="{t["slug"]}/{q["slug"]}"><td class="st"></td>'
@@ -305,13 +306,13 @@ def build_question_bank(topics):
                         f'<td class="tt">{html.escape(t["title"])}</td><td>{badge(q["d"])}</td></tr>')
     opts = "".join(f'<option value="{t["slug"]}">{html.escape(t["title"])}</option>' for t in topics)
     body = f"""
-<section class="wrap pagehead"><h1>Question Bank</h1><p class="lead">Every question on the site in one table. Filter by topic and difficulty and track what you have finished.</p>
+<section class="wrap pagehead"><h1>All Embedded Interview Questions</h1><p class="lead">All {total} embedded interview questions and answers on one page: Embedded C, pointers, bit manipulation, ARM Cortex-M, RTOS, I2C/SPI/UART/CAN and Linux device drivers. Filter by topic and difficulty and track what you have finished.</p>
 <div class="filters bank"><input id="bankQ" type="search" placeholder="Filter questions…"><select id="bankT"><option value="">All topics</option>{opts}</select>
 <select id="bankD"><option value="">All levels</option><option value="E">Easy</option><option value="M">Medium</option><option value="H">Hard</option></select>
 <label class="chk"><input type="checkbox" id="bankTodo"> Hide done</label><span class="count" id="bankCount"></span></div></section>
 <section class="wrap"><table class="tbl" id="bank"><thead><tr><th></th><th>Question</th><th>Topic</th><th>Level</th></tr></thead><tbody>{''.join(rows)}</tbody></table></section>"""
-    write("questions/index.html", page("questions/index.html", "Embedded Interview Question Bank", body,
-          "Searchable bank of embedded systems interview questions with answers, filterable by topic and difficulty.", "questions/"))
+    write("questions/index.html", page("questions/index.html", f"{total} Embedded Interview Questions and Answers (Embedded C, RTOS, Linux)", body,
+          f"All {total} embedded interview questions and answers in one list: Embedded C, pointers, bit manipulation, ARM Cortex-M, RTOS, I2C, SPI, UART, CAN and Linux device drivers. Filter by topic and difficulty.", "questions/"))
 
 
 def section_body(body):
@@ -433,12 +434,16 @@ def build_home(topics, problems, articles, nquiz):
     prob = "".join(f'<a class="row" href="{url("problems/" + p["slug"] + "/")}"><span>{html.escape(p["title"])}</span><span class="tt">{html.escape(p["category"])}</span>{badge(p["difficulty"])}</a>' for p in featured)
     arts = "".join(f'<a class="row" href="{url("articles/" + a["slug"] + "/")}"><span>{html.escape(a["title"])}</span><span class="tt">{html.escape(a.get("tag",""))}</span></a>' for a in articles[:6])
     body = f"""
-<section class="wrap home-top"><div class="sechead"><h1>Learn by topic</h1><a href="{url('topics/')}">All topics →</a></div><div class="grid cards">{cards}</div></section>
+<section class="wrap home-top"><div class="sechead"><h1>Embedded interview questions by topic</h1><a href="{url('topics/')}">All topics →</a></div><div class="grid cards">{cards}</div></section>
 <section class="wrap two">
 <div class="panel"><div class="sechead"><h2>Practice problems</h2><a href="{url('problems/')}">See all →</a></div>{prob}</div>
 <div class="panel"><div class="sechead"><h2>Latest articles</h2><a href="{url('articles/')}">See all →</a></div>{arts}</div>
 </section>
 <section class="wrap"><div class="banner"><div><h2>Test yourself in 5 minutes</h2><p>10 random MCQs with explanations. Track your best score.</p></div><a class="btn big" href="{url('quiz/')}">Take the quiz</a></div></section>
+<section class="wrap about-home"><h2>Embedded interview questions and answers</h2>
+<p>EmbeddedInterview has {total} embedded interview questions with detailed answers, written the way you would answer in a real interview: the short answer first, then the detail, the common mistakes and the follow-up questions interviewers ask next. The questions cover what firmware, embedded software, BSP and Linux driver interviews actually test: <a href="{url('topics/c-programming/')}">C programming</a>, <a href="{url('topics/pointers-memory/')}">pointers and memory</a>, <a href="{url('topics/embedded-c/')}">Embedded C</a> (volatile, interrupts, linker scripts), <a href="{url('topics/bit-manipulation/')}">bit manipulation</a>, <a href="{url('topics/microcontrollers-arm/')}">ARM Cortex-M microcontrollers</a>, <a href="{url('topics/rtos/')}">RTOS</a>, <a href="{url('topics/communication-protocols/')}">I2C, SPI, UART and CAN</a>, and <a href="{url('topics/linux-device-drivers/')}">Linux kernel and device drivers</a>.</p>
+<p>Use the <a href="{url('questions/')}">full list of embedded interview questions</a> to filter by topic and difficulty, practise the {len(problems)} <a href="{url('problems/')}">embedded C coding interview questions</a> with hidden tests, or follow the <a href="{url('roadmap/')}">preparation roadmap</a> from fresher to senior level.</p>
+</section>
 <section class="wrap how"><h2>How to use this site</h2><div class="grid three">
 <div><b>1. Read</b><p>Work through a topic. Each answer is written the way you would say it in an interview: the short version first, then the detail.</p></div>
 <div><b>2. Code</b><p>Solve the practice problems in the built-in editor. Press Run and hidden tests check your code instantly; then compare with the reference solution.</p></div>

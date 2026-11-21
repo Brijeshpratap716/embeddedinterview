@@ -2136,3 +2136,715 @@ size_t rle_decode(const uint8_t *in, size_t n, uint8_t *out, size_t cap)
 
 **Complexity:** O(n) time, O(1) extra memory — suitable for MCUs that decompress images straight into a display buffer.
 
+
+@@@ two-sum-sorted-array
+title: Two Sum in a Sorted Array (Two Pointers)
+difficulty: E
+category: Arrays & Searching
+order: 25
+## Problem
+Given an array sorted in ascending order and a `target`, find two **different** elements whose sum equals `target`.
+
+Implement `bool two_sum_sorted(const int *a, size_t n, int target, size_t *i, size_t *j)`. On success write the two indexes (`*i < *j`) and return `true`; return `false` if no pair exists. Use O(1) extra memory and a single pass.
+
+Example: `{1, 2, 3, 4, 5, 6}`, target `8` → indexes `1` and `5` (values 2 + 6). Any valid pair is accepted.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdbool.h>
+#include <stddef.h>
+
+bool two_sum_sorted(const int *a, size_t n, int target, size_t *i, size_t *j)
+{
+    return false;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+static int ok(const int *a, size_t n, int t)
+{
+    size_t i = 99, j = 99;
+    if (!two_sum_sorted(a, n, t, &i, &j)) return 0;
+    return i < j && j < n && a[i] + a[j] == t;
+}
+int main(void)
+{
+    const int a[] = { 1, 2, 3, 4, 5, 6 };
+    CHECK(ok(a, 6, 8));
+    CHECK(ok(a, 6, 3));                       /* 1 + 2 */
+    CHECK(ok(a, 6, 11));                      /* 5 + 6 */
+    size_t i, j;
+    CHECK(!two_sum_sorted(a, 6, 100, &i, &j));
+    CHECK(!two_sum_sorted(a, 6, 2, &i, &j));  /* 1 + 1 not allowed: same element */
+    const int d[] = { -5, -1, 0, 3, 3, 9 };
+    CHECK(ok(d, 6, 6));                       /* 3 + 3, two different elements */
+    CHECK(ok(d, 6, -6));
+    CHECK(!two_sum_sorted(a, 0, 0, &i, &j));
+    CHECK(!two_sum_sorted(a, 1, 2, &i, &j));
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Start one pointer at each end. If the sum is too small, the only way to grow it is to move the **left** pointer right; if it is too large, move the **right** pointer left.
+## Solution
+```c
+#include <stdio.h>
+#include <stdbool.h>
+#include <stddef.h>
+
+bool two_sum_sorted(const int *a, size_t n, int target, size_t *i, size_t *j)
+{
+    if (n < 2) return false;
+    size_t left = 0, right = n - 1;
+
+    while (left < right) {
+        long sum = (long)a[left] + a[right];   /* avoid int overflow */
+        if (sum == target) {
+            *i = left;
+            *j = right;
+            return true;
+        }
+        if (sum < target)
+            left++;            /* need a bigger sum */
+        else
+            right--;           /* need a smaller sum */
+    }
+    return false;
+}
+```
+## Explanation
+Because the array is sorted, each comparison throws away one candidate for good:
+
+- If `a[left] + a[right] < target`, then `a[left]` plus *any* element is too small (`a[right]` is already the largest left), so `left` can never be part of the answer.
+- If the sum is too large, `a[right]` plus any element is too large, so drop `right`.
+
+Each step moves one pointer, so it is **O(n) time, O(1) memory**, versus O(n²) for checking every pair.
+
+**Walk-through: `{1, 2, 3, 4, 5, 6}`, target 8**
+
+| left | right | a[left] + a[right] | action |
+|---|---|---|---|
+| 0 | 5 | 1 + 6 = 7 | too small → left++ |
+| 1 | 5 | 2 + 6 = 8 | found |
+
+**Edge cases interviewers check:** fewer than 2 elements; no pair; the same element must not be used twice (`left < right` guarantees that); duplicates (`3 + 3`); negative numbers; overflow of `a[left] + a[right]` for large values, which is why the sum is computed as `long`.
+
+**Follow-ups:** for an **unsorted** array, use a hash set for O(n) time and O(n) memory, or sort first for O(n log n). The same two-pointer idea solves three-sum (fix one element, two-pointer the rest) and "pair with the closest sum".
+
+@@@ remove-duplicates-sorted
+title: Remove Duplicates from a Sorted Array (In Place)
+difficulty: E
+category: Arrays & Searching
+order: 26
+## Problem
+Given an array sorted in ascending order, remove the duplicates **in place** so each value appears once, keeping the original order. Return the new length. Elements beyond the new length don't matter. Use O(1) extra memory.
+
+Example: `{1, 3, 3, 5, 5, 6, 9}` → length `5`, array starts `{1, 3, 5, 6, 9}`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stddef.h>
+#include <string.h>
+
+size_t remove_duplicates_sorted(int *a, size_t n)
+{
+    return n;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    int a[] = { 1, 3, 3, 5, 5, 6, 9 };
+    const int ea[] = { 1, 3, 5, 6, 9 };
+    CHECK(remove_duplicates_sorted(a, 7) == 5 && memcmp(a, ea, sizeof ea) == 0);
+    int b[] = { 2, 2, 2, 2 };
+    CHECK(remove_duplicates_sorted(b, 4) == 1 && b[0] == 2);
+    int c[] = { 1, 2, 3 };
+    CHECK(remove_duplicates_sorted(c, 3) == 3 && c[2] == 3);
+    int d[] = { -3, -3, 0, 0, 0, 7 };
+    const int ed[] = { -3, 0, 7 };
+    CHECK(remove_duplicates_sorted(d, 6) == 3 && memcmp(d, ed, sizeof ed) == 0);
+    CHECK(remove_duplicates_sorted(NULL, 0) == 0);
+    int e[] = { 42 };
+    CHECK(remove_duplicates_sorted(e, 1) == 1);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Duplicates are always next to each other in a sorted array. Keep a "write" index for the last unique value, and copy an element forward only when it differs from that value.
+## Solution
+```c
+#include <stdio.h>
+#include <stddef.h>
+#include <string.h>
+
+size_t remove_duplicates_sorted(int *a, size_t n)
+{
+    if (n == 0) return 0;
+
+    size_t w = 0;                    /* index of the last unique value */
+    for (size_t r = 1; r < n; r++) {
+        if (a[r] != a[w])
+            a[++w] = a[r];           /* new value: keep it */
+    }
+    return w + 1;
+}
+```
+## Explanation
+This is the **read/write two-pointer** pattern: `r` scans every element, `w` marks the end of the unique prefix. Since equal values are adjacent, comparing with `a[w]` alone is enough. **O(n) time, O(1) memory**, one pass, and the relative order is preserved.
+
+**Walk-through: `{1, 3, 3, 5, 5, 6, 9}`**
+
+| r | a[r] | a[w] | action | unique prefix |
+|---|---|---|---|---|
+| 1 | 3 | 1 | copy to a[1] | 1 3 |
+| 2 | 3 | 3 | skip | 1 3 |
+| 3 | 5 | 3 | copy to a[2] | 1 3 5 |
+| 4 | 5 | 5 | skip | 1 3 5 |
+| 5 | 6 | 5 | copy to a[3] | 1 3 5 6 |
+| 6 | 9 | 6 | copy to a[4] | 1 3 5 6 9 |
+
+Return `w + 1 = 5`.
+
+**Edge cases:** empty array (the classic bug is `n - 1` underflowing when `n` is unsigned), one element, all equal, no duplicates.
+
+**Follow-ups:** allow each value at most twice (compare with `a[w - 1]`); remove all copies of a given value; for an **unsorted** array, see *Remove Duplicates Using a Hash Table*.
+
+@@@ remove-duplicates-hash
+title: Remove Duplicates from an Unsorted Array (Hash Table)
+difficulty: M
+category: Arrays & Searching
+order: 27
+## Problem
+Remove duplicates from an **unsorted** array in place, keeping the **first** occurrence of each value and the original order. Return the new length, or `-1` if memory allocation fails.
+
+Use a hash table so the whole operation runs in O(n) average time. Values can be any `int`, including negative numbers.
+
+Example: `{5, 3, 1, 3, 9, 5, 6}` → length `5`, array starts `{5, 3, 1, 9, 6}`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+int remove_duplicates_hash(int *a, int n)
+{
+    return n;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    int a[] = { 5, 3, 1, 3, 9, 5, 6 };
+    const int ea[] = { 5, 3, 1, 9, 6 };
+    CHECK(remove_duplicates_hash(a, 7) == 5 && memcmp(a, ea, sizeof ea) == 0);
+    int b[] = { -1, 7, -1, -8, 7, 0, -8 };
+    const int eb[] = { -1, 7, -8, 0 };
+    CHECK(remove_duplicates_hash(b, 7) == 4 && memcmp(b, eb, sizeof eb) == 0);
+    int c[] = { 4, 4, 4 };
+    CHECK(remove_duplicates_hash(c, 3) == 1 && c[0] == 4);
+    int d[] = { -2147483647 - 1, 2147483647, -2147483647 - 1, 0 };
+    CHECK(remove_duplicates_hash(d, 4) == 3);
+    CHECK(remove_duplicates_hash(NULL, 0) == 0);
+    int big[1000];
+    for (int i = 0; i < 1000; i++) big[i] = (i * 7919) % 100;   /* only 100 distinct values */
+    CHECK(remove_duplicates_hash(big, 1000) == 100 && big[0] == 0 && big[1] == 19);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Allocate an open-addressing table with about twice as many slots as elements, each slot holding a value and a "used" flag. For each element, hash it, then probe linearly until you find either the same value (a duplicate: skip it) or an empty slot (new: insert it and keep the element).
+## Solution
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+typedef struct {
+    int value;
+    unsigned char used;
+} slot_t;
+
+int remove_duplicates_hash(int *a, int n)
+{
+    if (n <= 0) return 0;
+
+    size_t cap = 2 * (size_t)n + 1;              /* load factor < 0.5 */
+    slot_t *tab = calloc(cap, sizeof *tab);
+    if (!tab) return -1;
+
+    int w = 0;
+    for (int r = 0; r < n; r++) {
+        size_t k = (unsigned int)a[r] % cap;     /* negatives handled by the cast */
+        while (tab[k].used && tab[k].value != a[r])
+            k = (k + 1) % cap;                   /* linear probing */
+
+        if (!tab[k].used) {                      /* first time we see this value */
+            tab[k].used = 1;
+            tab[k].value = a[r];
+            a[w++] = a[r];
+        }
+    }
+    free(tab);
+    return w;
+}
+```
+## Explanation
+The sorted-array trick does not work here because duplicates can be anywhere. A hash table remembers every value seen so far, so each lookup is O(1) on average and the whole pass is **O(n) average time, O(n) memory**. Writing kept elements through `w` preserves the order of first occurrence.
+
+Design choices worth explaining in the interview:
+
+- **Open addressing with linear probing:** one `calloc`, no per-node allocation, cache friendly.
+- **Capacity `2n + 1`:** keeps the load factor below 50%, so probe sequences stay short and an empty slot always exists (the probe loop always terminates).
+- **`(unsigned int)a[r] % cap`:** `%` on a negative `int` gives a negative result in C, which would index outside the table. Casting to unsigned first maps every value to a valid slot.
+- **The `used` flag:** you cannot use 0 as "empty", because 0 is a valid value.
+- **Check `calloc`** and free the table on every path.
+
+**Walk-through: `{5, 3, 1, 3, 9, 5, 6}`, cap = 15**
+
+| r | value | slot | result |
+|---|---|---|---|
+| 0 | 5 | 5 empty | keep → `5` |
+| 1 | 3 | 3 empty | keep → `5 3` |
+| 2 | 1 | 1 empty | keep → `5 3 1` |
+| 3 | 3 | 3 holds 3 | duplicate, skip |
+| 4 | 9 | 9 empty | keep → `5 3 1 9` |
+| 5 | 5 | 5 holds 5 | duplicate, skip |
+| 6 | 6 | 6 empty | keep → `5 3 1 9 6` |
+
+**Trade-offs:** if you may reorder, sorting then using the sorted-array method is O(n log n) with O(1) extra memory, which is often preferred on a microcontroller with no heap. If the value range is small and known (e.g. 8-bit sensor readings), a 256-bit bitmap replaces the hash table entirely.
+
+@@@ sliding-window-max-sum
+title: Maximum Sum of k Consecutive Elements (Sliding Window)
+difficulty: E
+category: Arrays & Searching
+order: 28
+## Problem
+Implement `bool max_window_sum(const int *a, size_t n, size_t k, long *out)` that finds the largest sum of any `k` **consecutive** elements and writes it to `*out`. Return `false` if `k` is 0 or larger than `n`. Run in O(n) time.
+
+Example: `{2, 1, 5, 1, 3, 2}`, `k = 3` → `9` (5 + 1 + 3).
+
+This is the same idea as a moving-average filter on sensor samples.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdbool.h>
+#include <stddef.h>
+
+bool max_window_sum(const int *a, size_t n, size_t k, long *out)
+{
+    return false;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    long s = 0;
+    const int a[] = { 2, 1, 5, 1, 3, 2 };
+    CHECK(max_window_sum(a, 6, 3, &s) && s == 9);
+    CHECK(max_window_sum(a, 6, 1, &s) && s == 5);
+    CHECK(max_window_sum(a, 6, 6, &s) && s == 14);
+    const int neg[] = { -4, -2, -7, -1 };
+    CHECK(max_window_sum(neg, 4, 2, &s) && s == -6);      /* all negative */
+    const int big[] = { 2000000000, 2000000000, 1 };
+    CHECK(max_window_sum(big, 3, 2, &s) && s == 4000000000L);
+    CHECK(!max_window_sum(a, 6, 0, &s));
+    CHECK(!max_window_sum(a, 6, 7, &s));
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Compute the sum of the first `k` elements once. Each time the window moves right by one, **add** the element entering and **subtract** the element leaving. Do not start `max` at 0: the array may be all negative.
+## Solution
+```c
+#include <stdio.h>
+#include <stdbool.h>
+#include <stddef.h>
+
+bool max_window_sum(const int *a, size_t n, size_t k, long *out)
+{
+    if (k == 0 || k > n) return false;
+
+    long long sum = 0;
+    for (size_t i = 0; i < k; i++)        /* first window */
+        sum += a[i];
+
+    long long best = sum;
+    for (size_t i = k; i < n; i++) {
+        sum += a[i] - (long long)a[i - k];  /* slide: add new, drop old */
+        if (sum > best) best = sum;
+    }
+    *out = (long)best;
+    return true;
+}
+```
+## Explanation
+Re-adding all `k` elements for every window costs **O(n·k)**. The sliding window reuses the previous sum, so each step is two additions: **O(n) time, O(1) memory**.
+
+**Walk-through: `{2, 1, 5, 1, 3, 2}`, k = 3**
+
+| window | operation | sum | best |
+|---|---|---|---|
+| [2 1 5] | initial | 8 | 8 |
+| [1 5 1] | +1 −2 | 7 | 8 |
+| [5 1 3] | +3 −1 | 9 | 9 |
+| [1 3 2] | +2 −5 | 6 | 9 |
+
+**Edge cases:** `k == 0` or `k > n` (the original version silently returned 0, which is also a valid sum, so a separate status is clearer); all-negative input (initialise `best` from the first window, never 0); overflow (two large `int`s overflow `int`, so accumulate in a 64-bit type).
+
+**Follow-ups:** the **variable-size** window (shortest subarray with sum ≥ S, longest substring without repeating characters) grows the right edge and shrinks the left edge; the **maximum of each window** uses a deque for O(n). In firmware the same structure is a moving-average filter over a ring buffer.
+
+@@@ binary-search
+title: Binary Search in a Sorted Array
+difficulty: E
+category: Arrays & Searching
+order: 29
+## Problem
+Implement `int binary_search(const int *a, int n, int target)` that returns the index of `target` in an array sorted ascending, or `-1` if it is not present. Use O(log n) comparisons and no recursion.
+
+Example: `{2, 4, 6, 8, 10, 12, 14}`, target `12` → `5`.
+## Starter code
+```c
+#include <stdio.h>
+
+int binary_search(const int *a, int n, int target)
+{
+    return -1;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    const int a[] = { 2, 4, 6, 8, 10, 12, 14 };
+    CHECK(binary_search(a, 7, 12) == 5);
+    CHECK(binary_search(a, 7, 2) == 0);           /* first */
+    CHECK(binary_search(a, 7, 14) == 6);          /* last */
+    CHECK(binary_search(a, 7, 1) == -1);          /* below range */
+    CHECK(binary_search(a, 7, 15) == -1);         /* above range */
+    CHECK(binary_search(a, 7, 7) == -1);          /* gap */
+    CHECK(binary_search(a, 0, 2) == -1);          /* empty */
+    const int one[] = { 5 };
+    CHECK(binary_search(one, 1, 5) == 0);
+    for (int i = 0; i < 7; i++) CHECK(binary_search(a, 7, a[i]) == i);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Keep an inclusive range `[low, high]`. Compare the target with the middle element and discard the half that cannot contain it. Compute the middle without overflowing.
+## Solution
+```c
+#include <stdio.h>
+
+int binary_search(const int *a, int n, int target)
+{
+    int low = 0, high = n - 1;              /* inclusive range */
+
+    while (low <= high) {
+        int mid = low + (high - low) / 2;   /* no overflow */
+        if (a[mid] == target)
+            return mid;
+        if (target < a[mid])
+            high = mid - 1;                 /* search left half */
+        else
+            low = mid + 1;                  /* search right half */
+    }
+    return -1;
+}
+```
+## Explanation
+Each comparison halves the search range, so at most ⌈log₂(n+1)⌉ comparisons are needed: 20 for a million elements. **O(log n) time, O(1) memory.** The array **must** be sorted.
+
+**Walk-through: `{2, 4, 6, 8, 10, 12, 14}`, target 12**
+
+| low | high | mid | a[mid] | action |
+|---|---|---|---|---|
+| 0 | 6 | 3 | 8 | 12 > 8 → low = 4 |
+| 4 | 6 | 5 | 12 | found at 5 |
+
+**The bugs interviewers look for:**
+
+- `mid = (low + high) / 2` can overflow when indexes are large; `low + (high - low) / 2` cannot.
+- Mixing inclusive and exclusive bounds: with `high = n - 1` the loop is `low <= high` and the update is `high = mid - 1`. With `high = n` it is `low < high` and `high = mid`. Mixing them causes infinite loops or missed elements.
+- Hard-coding the size (`high = 6`) instead of using `n`.
+
+**Follow-ups:** find the **first or last** occurrence of a duplicated value (keep searching after a match); the **insertion point** (lower bound); search a **rotated** sorted array; binary search on the answer (e.g. the smallest baud-rate divisor that meets an error limit). In firmware, binary search is used on calibration and lookup tables in flash; see *Calibration Table Interpolation*.
+
+@@@ kadane-max-subarray
+title: Maximum Subarray Sum (Kadane's Algorithm)
+difficulty: M
+category: Arrays & Searching
+order: 30
+## Problem
+Implement `long max_subarray_sum(const int *a, size_t n)` that returns the largest sum of any **non-empty contiguous** subarray. Run in O(n) time and O(1) memory. Assume `n >= 1`.
+
+Example: `{-2, 1, -3, 4, -1, 2, 1, -5, 4}` → `6` (subarray `4, -1, 2, 1`).
+## Starter code
+```c
+#include <stdio.h>
+#include <stddef.h>
+
+long max_subarray_sum(const int *a, size_t n)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    const int a[] = { -2, 1, -3, 4, -1, 2, 1, -5, 4 };
+    CHECK(max_subarray_sum(a, 9) == 6);
+    const int neg[] = { -8, -3, -6, -2, -5 };
+    CHECK(max_subarray_sum(neg, 5) == -2);          /* all negative: best single element */
+    const int pos[] = { 1, 2, 3 };
+    CHECK(max_subarray_sum(pos, 3) == 6);           /* whole array */
+    const int one[] = { -7 };
+    CHECK(max_subarray_sum(one, 1) == -7);
+    const int mix[] = { 5, -9, 6, -2, 3 };
+    CHECK(max_subarray_sum(mix, 5) == 7);           /* 6 - 2 + 3 */
+    const int big[] = { 2000000000, 2000000000 };
+    CHECK(max_subarray_sum(big, 2) == 4000000000L);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+For each position, the best subarray **ending here** either extends the best one ending at the previous position, or starts fresh at this element, whichever is larger. Track the overall best as you go.
+## Solution
+```c
+#include <stdio.h>
+#include <stddef.h>
+
+long max_subarray_sum(const int *a, size_t n)
+{
+    long long cur = a[0];     /* best sum of a subarray ending at i */
+    long long best = a[0];    /* best sum seen anywhere */
+
+    for (size_t i = 1; i < n; i++) {
+        long long extend = cur + a[i];
+        cur = (extend > a[i]) ? extend : a[i];   /* extend or restart */
+        if (cur > best) best = cur;
+    }
+    return (long)best;
+}
+```
+## Explanation
+Kadane's algorithm is dynamic programming with one variable of state. If the running sum `cur` becomes negative, carrying it forward can only make later sums smaller, so starting fresh at `a[i]` is better. That single decision per element gives **O(n) time, O(1) memory**, versus O(n²) for checking every subarray.
+
+**Walk-through: `{-2, 1, -3, 4, -1, 2, 1, -5, 4}`**
+
+| i | a[i] | cur = max(cur + a[i], a[i]) | best |
+|---|---|---|---|
+| 0 | −2 | −2 | −2 |
+| 1 | 1 | max(−1, 1) = 1 | 1 |
+| 2 | −3 | max(−2, −3) = −2 | 1 |
+| 3 | 4 | max(2, 4) = 4 | 4 |
+| 4 | −1 | 3 | 4 |
+| 5 | 2 | 5 | 5 |
+| 6 | 1 | 6 | **6** |
+| 7 | −5 | 1 | 6 |
+| 8 | 4 | 5 | 6 |
+
+**Edge cases:** an all-negative array must return the largest single element, not 0, which is why both variables start at `a[0]` instead of 0; overflow, handled with a 64-bit accumulator.
+
+**Follow-ups:** return the start and end indexes (record `i` when restarting and when `best` improves); maximum **circular** subarray (max of Kadane and total − minimum subarray); maximum **product** subarray (track both max and min because a negative flips them).
+
+@@@ dutch-national-flag
+title: Sort 0s, 1s and 2s in One Pass (Dutch National Flag)
+difficulty: M
+category: Arrays & Searching
+order: 31
+## Problem
+An array contains only the values `0`, `1` and `2`. Sort it **in place in a single pass** with O(1) extra memory and without counting.
+
+Implement `void sort_012(int *a, size_t n)`.
+
+Example: `{2, 0, 2, 1, 1, 0}` → `{0, 0, 1, 1, 2, 2}`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stddef.h>
+#include <string.h>
+
+void sort_012(int *a, size_t n)
+{
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    int a[] = { 2, 0, 2, 1, 1, 0 };
+    const int ea[] = { 0, 0, 1, 1, 2, 2 };
+    sort_012(a, 6); CHECK(memcmp(a, ea, sizeof ea) == 0);
+    int b[] = { 2, 2, 2 };
+    sort_012(b, 3); CHECK(b[0] == 2 && b[2] == 2);
+    int c[] = { 2, 1, 0 };
+    const int ec[] = { 0, 1, 2 };
+    sort_012(c, 3); CHECK(memcmp(c, ec, sizeof ec) == 0);
+    int d[] = { 0 };
+    sort_012(d, 1); CHECK(d[0] == 0);
+    sort_012(NULL, 0);
+    int e[] = { 1, 2, 0, 2, 0, 1, 1, 0, 2, 0 };
+    const int ee[] = { 0, 0, 0, 0, 1, 1, 1, 2, 2, 2 };
+    sort_012(e, 10); CHECK(memcmp(e, ee, sizeof ee) == 0);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Use three indexes: everything before `low` is 0, everything after `high` is 2, and `mid` scans the unknown middle. A 0 is swapped to `low`, a 2 is swapped to `high`, a 1 stays. After swapping with `high`, do **not** advance `mid`: the value you swapped in is still unchecked.
+## Solution
+```c
+#include <stdio.h>
+#include <stddef.h>
+#include <string.h>
+
+static void swap(int *x, int *y) { int t = *x; *x = *y; *y = t; }
+
+void sort_012(int *a, size_t n)
+{
+    if (n == 0) return;
+    size_t low = 0, mid = 0, high = n - 1;
+
+    while (mid <= high) {
+        if (a[mid] == 0) {
+            swap(&a[low++], &a[mid++]);
+        } else if (a[mid] == 1) {
+            mid++;
+        } else {                       /* a[mid] == 2 */
+            swap(&a[mid], &a[high]);
+            if (high == 0) break;      /* avoid size_t underflow */
+            high--;                    /* mid stays: new a[mid] is unchecked */
+        }
+    }
+}
+```
+## Explanation
+Dijkstra's Dutch National Flag algorithm keeps four regions at all times:
+
+```
+[0 .. low-1]   all 0s
+[low .. mid-1] all 1s
+[mid .. high]  not yet examined
+[high+1 .. n-1] all 2s
+```
+
+Each step shrinks the unknown region by one, so it is **one pass, O(n) time, O(1) memory**.
+
+**Walk-through: `{2, 0, 2, 1, 1, 0}`**
+
+| low | mid | high | a[mid] | action | array |
+|---|---|---|---|---|---|
+| 0 | 0 | 5 | 2 | swap mid↔high, high-- | 0 0 2 1 1 2 |
+| 0 | 0 | 4 | 0 | swap low↔mid, low++, mid++ | 0 0 2 1 1 2 |
+| 1 | 1 | 4 | 0 | swap low↔mid, low++, mid++ | 0 0 2 1 1 2 |
+| 2 | 2 | 4 | 2 | swap mid↔high, high-- | 0 0 1 1 2 2 |
+| 2 | 2 | 3 | 1 | mid++ | 0 0 1 1 2 2 |
+| 2 | 3 | 3 | 1 | mid++ → done | 0 0 1 1 2 2 |
+
+**Why `mid` does not move after the 2-swap:** the element brought in from `high` has not been examined yet; it could be a 0 that must still go left. After a 0-swap, the element coming from `low` is already known to be a 1 (or it is the same element), so `mid` can advance.
+
+**Watch out in C:** with unsigned `size_t` indexes, `high--` when `high == 0` wraps to a huge number, so the solution stops explicitly. The original `int` version avoids this but cannot handle arrays larger than `INT_MAX`.
+
+**Follow-ups:** counting sort (two passes) is simpler if a single pass is not required; the same partitioning is the core of three-way quicksort, which handles many duplicate keys efficiently; "move all zeros to the end" and "segregate even/odd" are two-region versions.
+
+@@@ single-number-xor
+title: Find the Element That Appears Once (XOR)
+difficulty: E
+category: Bit Manipulation
+order: 32
+## Problem
+Every element of an array appears **exactly twice**, except one element that appears once. Find that element in O(n) time and O(1) extra memory, without sorting.
+
+Implement `int single_number(const int *a, size_t n)`.
+
+Example: `{4, 1, 2, 1, 2}` → `4`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stddef.h>
+
+int single_number(const int *a, size_t n)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    const int a[] = { 4, 1, 2, 1, 2 };
+    CHECK(single_number(a, 5) == 4);
+    const int b[] = { 7 };
+    CHECK(single_number(b, 1) == 7);
+    const int c[] = { -3, 9, 9, 0, 0 };
+    CHECK(single_number(c, 5) == -3);
+    const int d[] = { 2, 2, 0 };
+    CHECK(single_number(d, 3) == 0);
+    const int e[] = { 2147483647, 5, -2147483647 - 1, 5, 2147483647 };
+    CHECK(single_number(e, 5) == -2147483647 - 1);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+What is `x ^ x`? What is `x ^ 0`? XOR is also commutative and associative, so the order of the elements doesn't matter.
+## Solution
+```c
+#include <stdio.h>
+#include <stddef.h>
+
+int single_number(const int *a, size_t n)
+{
+    unsigned int r = 0;
+    for (size_t i = 0; i < n; i++)
+        r ^= (unsigned int)a[i];     /* pairs cancel out */
+    return (int)r;
+}
+```
+## Explanation
+Three properties of XOR do all the work:
+
+- `x ^ x = 0`: every value that appears twice cancels itself.
+- `x ^ 0 = x`: the value that appears once survives.
+- XOR is commutative and associative: the pairs don't need to be next to each other.
+
+So XOR-ing the whole array leaves exactly the unpaired element. **O(n) time, O(1) memory**, no sorting and no hash table.
+
+**Walk-through: `{4, 1, 2, 1, 2}`** (binary)
+
+| step | value | r |
+|---|---|---|
+| start | | 000 |
+| ^ 4 | 100 | 100 |
+| ^ 1 | 001 | 101 |
+| ^ 2 | 010 | 111 |
+| ^ 1 | 001 | 110 |
+| ^ 2 | 010 | 100 = **4** |
+
+Doing the XOR on `unsigned int` keeps every bit pattern well defined, including negative numbers.
+
+**Follow-ups interviewers ask next:**
+
+- **Two** elements appear once: XOR everything to get `x ^ y`, take any set bit (`v & -v`) to split the array into two groups, and XOR each group.
+- Every other element appears **three** times: count each bit position modulo 3.
+- Find the **missing number** in `0..n`: XOR all indexes and all values together.
+- Same trick in firmware: XOR checksums in serial protocols (see *UART Packet Parser*) and RAID-style parity.
