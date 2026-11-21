@@ -112,7 +112,10 @@ def page(path, title, body, desc="", active="", schema=None):
 <meta property="og:image" content="{SITE_URL}/static/og.png">
 <meta property="og:site_name" content="{SITE_NAME}">
 <meta name="twitter:card" content="summary_large_image">
-<link rel="icon" href="{root}static/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/static/favicon-96.png" type="image/png" sizes="96x96">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{root}static/style.css">
@@ -470,6 +473,7 @@ def build_sitemap():
     write("sitemap.xml", '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + "\n".join(sorted(urls)) + "\n</urlset>\n")
     write("robots.txt", f"User-agent: *\nAllow: /\nSitemap: {SITE_URL}/sitemap.xml\n")
     write("CNAME", "embeddedinterview.com\n")
+    shutil.copy(os.path.join(BASE, "static", "favicon.ico"), os.path.join(OUT, "favicon.ico"))
     write(".nojekyll", "")
     return len(urls)
 
