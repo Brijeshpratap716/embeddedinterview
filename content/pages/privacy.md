@@ -2,9 +2,11 @@
 title: Privacy Policy
 desc: Privacy policy for EmbeddedInterview.com.
 ---
-*Last updated: 20 November 2026*
+*Last updated: 21 November 2026*
 
 **No accounts, no tracking cookies.** EmbeddedInterview.com does not require registration and does not set advertising or tracking cookies.
+
+**Visitor statistics.** We use [GoatCounter](https://www.goatcounter.com), a privacy-friendly analytics service, to count page views. It records the page visited, the referring site, browser and screen size, and an approximate country, without cookies and without storing your IP address or building a profile of you. We use these totals only to see which pages are useful.
 
 **Data stored in your browser.** Your progress (questions marked done, quiz best score, code you type in the practice editor) and your theme choice are saved in your browser's local storage. This data never leaves your device, and you can delete it at any time by clearing your browser's site data.
 

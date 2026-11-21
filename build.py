@@ -152,6 +152,7 @@ def page(path, title, body, desc="", active="", schema=None):
   <div class="wrap copy">© {datetime.date.today().year} EmbeddedInterview.com · Made for engineers who work close to the metal.</div>
 </footer>
 <script src="{root}static/app.js"></script>
+<script data-goatcounter="https://embeddedinterview.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>"""
 
