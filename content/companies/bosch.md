@@ -38,6 +38,24 @@ Candidates in India describe a technical phone round of about an hour focused on
 - Polymorphism and OOP examples in C++.
 - Why do you want to work at Bosch?
 
+## Practice questions
+
+These are the questions Bosch candidates most often report, or close variants of them. Each links to a full answer or a coding problem with tests on this site.
+
+1. [How does a CAN frame look?](../../topics/communication-protocols/how-does-a-can-frame-look/)
+2. [How does CAN arbitration work?](../../topics/communication-protocols/how-does-can-arbitration-work/)
+3. [How does CAN handle errors?](../../topics/communication-protocols/how-does-can-handle-errors/)
+4. [Why does a CAN bus need 120 Ω termination?](../../topics/communication-protocols/why-does-a-can-bus-need-120-termination/)
+5. [What is AUTOSAR and what are its main layers?](../../topics/embedded-c/what-is-autosar-and-what-are-its-main-layers/)
+6. [What is MISRA C?](../../topics/embedded-c/what-is-misra-c/)
+7. [What is the difference between a mutex and a binary semaphore?](../../topics/rtos/what-is-the-difference-between-a-mutex-and-a-binary-semaphore/)
+8. [Write I2C register read and write functions.](../../topics/coding-embedded-drivers/write-i2c-register-read-and-write-functions/)
+9. [How do virtual functions work? What is a vtable?](../../topics/cpp-embedded/how-do-virtual-functions-work-what-is-a-vtable/)
+10. [How do you reverse a singly linked list?](../../topics/data-structures/how-do-you-reverse-a-singly-linked-list/)
+11. [UART Packet Parser State Machine](../../problems/frame-parser/) *(coding)*
+12. [CRC-16/CCITT-FALSE](../../problems/crc16-ccitt/) *(coding)*
+13. [Moving Average Filter](../../problems/moving-average/) *(coding)*
+
 ## How to prepare
 
 1. Know CAN thoroughly: arbitration, bit stuffing, error counters, bus-off, CAN FD.

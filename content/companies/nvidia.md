@@ -38,6 +38,28 @@ Candidates usually describe a first phone screen of about an hour. One report sp
 - Hardware vs software breakpoints.
 - Given a stream of (start, end) intervals, find the busiest hour.
 
+## Practice questions
+
+These are the questions NVIDIA candidates most often report, or close variants of them. Each links to a full answer or a coding problem with tests on this site.
+
+1. [What does a typical SoC look like inside?](../../topics/embedded-c/what-does-a-typical-soc-look-like-inside/)
+2. [How does the kernel boot on an ARM64 system?](../../topics/linux-device-drivers/how-does-the-kernel-boot-on-an-arm64-system/)
+3. [Walk through the complete boot process of an embedded Linux system, from power-on to the login prompt.](../../topics/embedded-linux/walk-through-the-complete-boot-process-of-an-embedded-linux-system-fro/)
+4. [What is the difference between a process and a thread?](../../topics/operating-systems/what-is-the-difference-between-a-process-and-a-thread/)
+5. [What is virtual memory and why is it used?](../../topics/operating-systems/what-is-virtual-memory-and-why-is-it-used/)
+6. [What is a semaphore, and how does it differ from a mutex in POSIX? How are semaphores used for mutual exclusion and for synchronisation?](../../topics/operating-systems/what-is-a-semaphore-and-how-does-it-differ-from-a-mutex-in-posix-how-a/)
+7. [What is the difference between kmalloc, vmalloc and kzalloc?](../../topics/linux-device-drivers/what-is-the-difference-between-kmalloc-vmalloc-and-kzalloc/)
+8. [What are top halves and bottom halves?](../../topics/linux-device-drivers/what-are-top-halves-and-bottom-halves/)
+9. [What is the difference between a spinlock and a mutex in the kernel?](../../topics/linux-device-drivers/what-is-the-difference-between-a-spinlock-and-a-mutex-in-the-kernel/)
+10. [What is the difference between a breakpoint and a watchpoint?](../../topics/debugging-testing/what-is-the-difference-between-a-breakpoint-and-a-watchpoint/)
+11. [What is the volatile keyword?](../../topics/c-programming/what-is-the-volatile-keyword/)
+12. [What does the static keyword do in different contexts?](../../topics/c-programming/what-does-the-static-keyword-do-in-different-contexts/)
+13. [What is a system call and how does it work?](../../topics/operating-systems/what-is-a-system-call-and-how-does-it-work/)
+14. [What is the difference between a structure and a union?](../../topics/c-programming/what-is-the-difference-between-a-structure-and-a-union/)
+15. [Implement aligned_malloc() and aligned_free().](../../topics/coding-memory-strings/implement-aligned-malloc-and-aligned-free/)
+16. [Merge overlapping intervals.](../../topics/coding-sorting-arrays/merge-overlapping-intervals/)
+17. [Aligned Allocation](../../problems/aligned-malloc/) *(coding)*
+
 ## How to prepare
 
 1. Go deep on the Linux kernel: memory allocators, locking, interrupts, deferred work and the driver model.
@@ -52,3 +74,4 @@ Candidates usually describe a first phone screen of about an hour. One report sp
 - [Glassdoor: NVIDIA Embedded Software Engineer onsite loop](https://www.glassdoor.co.in/Interview/NVIDIA-Interview-RVW23935689.htm)
 - [Glassdoor: NVIDIA questions on SoC architecture and boot](https://www.glassdoor.com/Interview/NVIDIA-Interview-RVW89804534.htm)
 - [Glassdoor: NVIDIA Systems Software interview (kernel memory, aligned malloc)](https://www.glassdoor.ie/Interview/NVIDIA-Interview-E7633-RVW17445377.htm)
+- [GeeksforGeeks: NVIDIA interview experiences](https://www.geeksforgeeks.org/companies/nvidia/articles/)

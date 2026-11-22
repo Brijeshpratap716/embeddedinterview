@@ -39,6 +39,28 @@ Campus and fresher hiring often starts with an online test covering data structu
 - Difference between hardware and software debugging; how JTAG is used.
 - Pointer arithmetic puzzles; implement a small program under unusual constraints (one senior candidate was asked to build a calculator without `if`, `switch` or loops).
 
+## Practice questions
+
+These are the questions Qualcomm candidates most often report, or close variants of them. Each links to a full answer or a coding problem with tests on this site.
+
+1. [What are the storage classes in C?](../../topics/c-programming/what-are-the-storage-classes-in-c/)
+2. [What is the use of the extern keyword?](../../topics/c-programming/what-is-the-use-of-the-extern-keyword/)
+3. [What is volatile and when must you use it?](../../topics/embedded-c/what-is-volatile-and-when-must-you-use-it/)
+4. [What is endianness and how do you check it in code?](../../topics/pointers-memory/what-is-endianness-and-how-do-you-check-it-in-code/)
+5. [How do you swap the two nibbles of a byte?](../../topics/bit-manipulation/how-do-you-swap-the-two-nibbles-of-a-byte/)
+6. [How do you count the set bits in an integer?](../../topics/bit-manipulation/how-do-you-count-the-set-bits-in-an-integer/)
+7. [What is a watchdog timer and how should you use it?](../../topics/embedded-c/what-is-a-watchdog-timer-and-how-should-you-use-it/)
+8. [What is an ISR and what are the rules for writing one?](../../topics/embedded-c/what-is-an-isr-and-what-are-the-rules-for-writing-one/)
+9. [What is time slicing / round-robin scheduling?](../../topics/rtos/what-is-time-slicing-round-robin-scheduling/)
+10. [What is the difference between a mutex and a binary semaphore?](../../topics/rtos/what-is-the-difference-between-a-mutex-and-a-binary-semaphore/)
+11. [What is the difference between a process and a thread?](../../topics/operating-systems/what-is-the-difference-between-a-process-and-a-thread/)
+12. [What is JTAG and SWD?](../../topics/microcontrollers-arm/what-is-jtag-and-swd/)
+13. [What is the difference between a breakpoint and a watchpoint?](../../topics/debugging-testing/what-is-the-difference-between-a-breakpoint-and-a-watchpoint/)
+14. [Compare UART, SPI and I2C.](../../topics/communication-protocols/compare-uart-spi-and-i2c/)
+15. [What are binary search trees, and why use a balanced tree?](../../topics/data-structures/what-are-binary-search-trees-and-why-use-a-balanced-tree/)
+16. [Reverse a Singly Linked List](../../problems/reverse-linked-list/) *(coding)*
+17. [Lock-Free Ring Buffer (SPSC)](../../problems/ring-buffer/) *(coding)*
+
 ## How to prepare
 
 1. Be ready to explain **every project on your resume** in depth: several candidates say this decided their rounds.
@@ -54,3 +76,5 @@ Campus and fresher hiring often starts with an online test covering data structu
 - [Glassdoor: Qualcomm Embedded Software Engineer interviews (storage classes, bit manipulation)](https://www.glassdoor.ca/Interview/Qualcomm-Interview-E640-RVW25643814.htm)
 - [Glassdoor: Qualcomm Technologies interview (UART, SPI, I2C, RTOS)](https://www.glassdoor.com/Interview/Qualcomm-Technologies-Interview-E4454797-RVW103728182.htm)
 - [LeetCode Discuss: Interview Experience at Qualcomm – Embedded Software Engineer](https://leetcode.com/discuss/post/6831002/interview-experience-at-qualcomm-embedde-m37q/)
+- [GeeksforGeeks: Qualcomm interview experiences](https://www.geeksforgeeks.org/companies/qualcomm/articles/)
+- [GeeksforGeeks: Qualcomm off-campus experience (5 rounds: endianness, threads, BST, nibble swap)](https://www.geeksforgeeks.org/qualcomm-interview-experience-off-campus-4/)

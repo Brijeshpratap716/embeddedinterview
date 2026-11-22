@@ -1208,3 +1208,59 @@ static void jump_to_app(void)
 **Tools:** PC-lint Plus, Polyspace, Coverity, Parasoft C/C++test, Helix QAC, LDRA, Klocwork, cppcheck's MISRA addon (partial), and compiler-integrated checkers (IAR C-STAT, Arm, Green Hills).
 
 **How it is used in practice:** projects agree a "compliance plan" (which rules apply), integrate the checker into CI, document deviations with justifications, and record compliance evidence for standards such as **ISO 26262** (automotive), **IEC 61508** (industrial), **IEC 62304** (medical) and **DO-178C** (avionics). Related standards: **CERT C** (security-focused) and **AUTOSAR C++14** guidelines.
+
+### What are a HAL and a BSP, and how do they differ? {M}
+Both are layers that keep application code independent of the hardware, but at different levels.
+
+- A **HAL (hardware abstraction layer)** gives a uniform API for a *type* of peripheral (`uart_write()`, `gpio_set()`, `spi_transfer()`), hiding the registers of one chip family. Vendor examples are STM32 HAL/LL, NXP MCUXpresso SDK drivers and TI DriverLib; CMSIS-Driver standardises the API across vendors.
+- A **BSP (board support package)** adapts software to a *specific board*: which pins connect to which device, clock and memory setup, external chips (PMIC, flash, sensors), and the start-up code. In embedded Linux, the BSP is the bootloader, kernel configuration and device tree for that board.
+
+| | HAL | BSP |
+|---|---|---|
+| Abstracts | A peripheral or chip family | A whole board |
+| Changes when | You switch MCU family | You change the board design |
+| Example | `uart_init(&cfg)` | "Debug UART is USART2 on PA2/PA3; sensor on I2C1 at 0x48" |
+
+A good layering is: application → services/middleware → BSP → HAL → registers. Interviewers often follow up with how you would port firmware to a new MCU: you rewrite or replace the HAL and update the BSP, and the application should not change.
+
+### What is AUTOSAR and what are its main layers? {M}
+AUTOSAR (AUTomotive Open System ARchitecture) is a standard software architecture for automotive ECUs, so software components can be reused across suppliers and hardware. **Classic Platform** targets deeply embedded ECUs on microcontrollers with static configuration; **Adaptive Platform** targets high-performance ECUs running POSIX operating systems with service-oriented communication.
+
+The Classic Platform layers, from top to bottom:
+
+1. **Application layer:** software components (SWCs) containing the vehicle functions, with ports for data and services.
+2. **RTE (Runtime Environment):** generated middleware that connects SWCs to each other and to the basic software, so components never call hardware directly.
+3. **BSW (Basic Software):**
+   - **Services layer:** OS (OSEK-based AUTOSAR OS), communication stack (COM, PduR, CanIf), diagnostics (DCM, DEM), memory services (NvM), watchdog manager.
+   - **ECU abstraction layer:** makes on-board devices accessible regardless of how they connect to the MCU.
+   - **MCAL (Microcontroller Abstraction Layer):** drivers for on-chip peripherals: CAN, ADC, DIO, PWM, SPI, flash, GPT.
+   - **Complex device drivers:** an escape path for timing-critical hardware access that doesn't fit the layers.
+
+Everything is configured with tools (ARXML files) and code is largely generated. Interview follow-ups usually cover how a CAN signal travels from the bus to an application SWC (CAN driver → CanIf → PduR → COM → RTE → SWC) and how diagnostics (UDS over DCM) work.
+
+### What does a typical SoC look like inside? {M}
+A system-on-chip puts a complete computer on one die. A typical application-processor SoC (phone, automotive, IoT gateway) contains:
+
+- **CPU cluster(s):** several Arm Cortex-A cores, often in big.LITTLE groups, with private L1 caches and a shared L2/L3.
+- **Accelerators:** GPU, DSP, NPU for machine learning, video encoder and decoder, ISP for cameras, display controller.
+- **Microcontroller cores:** Cortex-M or Cortex-R cores for power management, security, sensors or real-time control.
+- **Memory system:** DDR/LPDDR controller, on-chip SRAM, boot ROM, and an MMU/SMMU (IOMMU) so devices can use virtual addresses.
+- **Interconnect:** a bus fabric (AMBA AXI/ACE/CHI, with AHB/APB for slow peripherals) linking everything, with cache coherency between CPUs and some devices.
+- **Peripherals:** UART, SPI, I2C, GPIO, timers, USB, PCIe, Ethernet, SD/eMMC/UFS, MIPI DSI and CSI.
+- **System control:** clock and reset controllers, power domains, PMIC interface, interrupt controller (GIC), watchdog, thermal sensors.
+- **Security:** crypto engines, true random number generator, secure enclave or TrustZone, eFuses for keys and secure boot.
+
+Interviewers usually ask you to draw this and then trace one flow, for example how a camera frame reaches the display, or what happens from power-on to the kernel running.
+
+### Which compiler optimisations can change how your C code behaves? {H}
+An optimiser may transform code in any way that keeps the *observable behaviour* defined by the C standard. Code that relies on undefined behaviour, or that forgets to tell the compiler about hardware, can change behaviour between `-O0` and `-O2`. The common ones:
+
+- **Caching values in registers / removing loads:** a polled flag or register read once and never again. Fix with `volatile`.
+- **Dead-store elimination:** writes the compiler thinks nobody reads are removed, such as clearing a key buffer before `free` or writing a register twice. Fix with `volatile` or `explicit_bzero`/`memset_s`.
+- **Reordering:** independent loads and stores may be moved, including across a write to a "data ready" flag. Fix with barriers or atomics.
+- **Assuming no undefined behaviour:** signed overflow cannot happen (so `x + 1 > x` becomes `true`), a dereferenced pointer cannot be NULL (so a later NULL check is deleted), shifts are smaller than the type width.
+- **Strict aliasing:** the compiler assumes an `int *` and a `float *` never point to the same memory, so type-punning through pointer casts can read stale values.
+- **Loop transformations:** empty delay loops are removed entirely; loops become `memcpy`/`memset` calls (a problem inside your own `memcpy` or before `.data` is initialised).
+- **Inlining and constant folding:** can change timing and stack usage, and hide functions from the debugger.
+
+The interview point is that the optimiser is not buggy; the code relied on something the language does not promise. Use `volatile` for hardware, atomics and barriers for concurrency, `memcpy` for type punning, and compiler warnings and sanitizers (`-Wall -Wextra`, UBSan) to find undefined behaviour.

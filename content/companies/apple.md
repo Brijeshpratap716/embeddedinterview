@@ -38,6 +38,27 @@ Candidates commonly describe a 30-minute recruiter call, then about an hour with
 - Sort an array of objects by a three-value colour field; find the element that appears once.
 - Why do you want to work at Apple, beyond the reputation and pay?
 
+## Practice questions
+
+These are the questions Apple candidates most often report, or close variants of them. Each links to a full answer or a coding problem with tests on this site.
+
+1. [How would you implement a simple malloc() and free()?](../../topics/pointers-memory/how-would-you-implement-a-simple-malloc-and-free/)
+2. [Implement aligned_malloc() and aligned_free().](../../topics/coding-memory-strings/implement-aligned-malloc-and-aligned-free/)
+3. [How do you extract or insert a bit field?](../../topics/bit-manipulation/how-do-you-extract-or-insert-a-bit-field/)
+4. [What is the difference between a mutex and a binary semaphore?](../../topics/rtos/what-is-the-difference-between-a-mutex-and-a-binary-semaphore/)
+5. [What is a condition variable, and how do you build a thread-safe queue with one?](../../topics/operating-systems/what-is-a-condition-variable-and-how-do-you-build-a-thread-safe-queue/)
+6. [What does a UART frame look like?](../../topics/communication-protocols/what-does-a-uart-frame-look-like/)
+7. [Walk through the complete boot process of an embedded Linux system, from power-on to the login prompt.](../../topics/embedded-linux/walk-through-the-complete-boot-process-of-an-embedded-linux-system-fro/)
+8. [Implement merge sort.](../../topics/coding-sorting-arrays/implement-merge-sort/)
+9. [Merge two sorted linked lists.](../../topics/coding-lists-stacks-queues/merge-two-sorted-linked-lists/)
+10. [Sort an array of 0s, 1s and 2s (Dutch national flag).](../../topics/coding-sorting-arrays/sort-an-array-of-0s-1s-and-2s-dutch-national-flag/)
+11. [How do you find the single number that appears once when all others appear twice?](../../topics/bit-manipulation/how-do-you-find-the-single-number-that-appears-once-when-all-others-ap/)
+12. [Implement a blocking producer-consumer ring buffer (mutex + condition variable).](../../topics/coding-embedded-drivers/implement-a-blocking-producer-consumer-ring-buffer-mutex-condition-var/)
+13. [Aligned Allocation](../../problems/aligned-malloc/) *(coding)*
+14. [Sort 0s, 1s and 2s in One Pass (Dutch National Flag)](../../problems/dutch-national-flag/) *(coding)*
+15. [Find the Element That Appears Once (XOR)](../../problems/single-number-xor/) *(coding)*
+16. [Bit-Banged SPI Transfer (Mode 0)](../../problems/bitbang-spi/) *(coding)*
+
 ## How to prepare
 
 1. Practise low-level C on realistic data layouts: [Aligned Allocation](../../problems/aligned-malloc/), [Dutch National Flag](../../problems/dutch-national-flag/), [Single Number](../../problems/single-number-xor/), [Bit-Banged SPI](../../problems/bitbang-spi/).

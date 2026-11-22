@@ -37,6 +37,26 @@ Reports vary by site and level. Some candidates had a take-home coding test foll
 - Find a substring in a string efficiently (KMP was mentioned).
 - Write an efficient routine to reach a specific memory location.
 
+## Practice questions
+
+These are the questions Intel candidates most often report, or close variants of them. Each links to a full answer or a coding problem with tests on this site.
+
+1. [How would you implement a simple malloc() and free()?](../../topics/pointers-memory/how-would-you-implement-a-simple-malloc-and-free/)
+2. [How do you implement atoi() and itoa() in C?](../../topics/arrays-strings/how-do-you-implement-atoi-and-itoa-in-c/)
+3. [How do you swap two numbers without a temporary variable?](../../topics/bit-manipulation/how-do-you-swap-two-numbers-without-a-temporary-variable/)
+4. [How do you search for a pattern in a string (naive and KMP)?](../../topics/arrays-strings/how-do-you-search-for-a-pattern-in-a-string-naive-and-kmp/)
+5. [What is a bootloader and why does an embedded Linux system need one?](../../topics/embedded-linux/what-is-a-bootloader-and-why-does-an-embedded-linux-system-need-one/)
+6. [What happens before main() runs on a microcontroller?](../../topics/embedded-c/what-happens-before-main-runs-on-a-microcontroller/)
+7. [What is secure boot and a chain of trust?](../../topics/embedded-linux/what-is-secure-boot-and-a-chain-of-trust/)
+8. [What is a spinlock, and what are its advantages and disadvantages?](../../topics/operating-systems/what-is-a-spinlock-and-what-are-its-advantages-and-disadvantages/)
+9. [What is the difference between a mutex and a binary semaphore?](../../topics/rtos/what-is-the-difference-between-a-mutex-and-a-binary-semaphore/)
+10. [What are the cache coherency problems with DMA?](../../topics/embedded-c/what-are-the-cache-coherency-problems-with-dma/)
+11. [What is a TLB, and how do you calculate the effective memory access time?](../../topics/operating-systems/what-is-a-tlb-and-how-do-you-calculate-the-effective-memory-access-tim/)
+12. [How do you count the set bits in an integer?](../../topics/bit-manipulation/how-do-you-count-the-set-bits-in-an-integer/)
+13. [String to Integer with Error Checking](../../problems/atoi-overflow/) *(coding)*
+14. [Fixed-Block Memory Pool](../../problems/memory-pool/) *(coding)*
+15. [Implement memcpy](../../problems/implement-memcpy/) *(coding)*
+
 ## How to prepare
 
 1. Practise writing standard library functions from scratch: [String to Integer](../../problems/atoi-overflow/), [Implement memcpy](../../problems/implement-memcpy/), [Fixed-Block Memory Pool](../../problems/memory-pool/).

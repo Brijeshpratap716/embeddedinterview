@@ -36,6 +36,25 @@ Campus candidates in India describe an online assessment, often around an hour o
 - Linked-list and array coding problems.
 - How would you program this microcontroller? (project-based)
 
+## Practice questions
+
+These are the questions NXP Semiconductors candidates most often report, or close variants of them. Each links to a full answer or a coding problem with tests on this site.
+
+1. [What is the memory layout of a C program?](../../topics/pointers-memory/what-is-the-memory-layout-of-a-c-program/)
+2. [What are the storage classes in C?](../../topics/c-programming/what-are-the-storage-classes-in-c/)
+3. [What happens when you compare signed and unsigned integers?](../../topics/c-programming/what-happens-when-you-compare-signed-and-unsigned-integers/)
+4. [How do you swap the two nibbles of a byte?](../../topics/bit-manipulation/how-do-you-swap-the-two-nibbles-of-a-byte/)
+5. [How do you check if a number is a power of two?](../../topics/bit-manipulation/how-do-you-check-if-a-number-is-a-power-of-two/)
+6. [What are binary search trees, and why use a balanced tree?](../../topics/data-structures/what-are-binary-search-trees-and-why-use-a-balanced-tree/)
+7. [How do you reverse a singly linked list?](../../topics/data-structures/how-do-you-reverse-a-singly-linked-list/)
+8. [Implement a doubly linked list with insert and delete.](../../topics/coding-lists-stacks-queues/implement-a-doubly-linked-list-with-insert-and-delete/)
+9. [What happens before main() runs on a microcontroller?](../../topics/embedded-c/what-happens-before-main-runs-on-a-microcontroller/)
+10. [What is a linker script and what does it contain?](../../topics/embedded-c/what-is-a-linker-script-and-what-does-it-contain/)
+11. [How does a CAN frame look?](../../topics/communication-protocols/how-does-a-can-frame-look/)
+12. [Reverse a Singly Linked List](../../problems/reverse-linked-list/) *(coding)*
+13. [Implement strcpy](../../problems/implement-strcpy/) *(coding)*
+14. [Implement strcmp](../../problems/implement-strcmp/) *(coding)*
+
 ## How to prepare
 
 1. Practise C output questions until you can trace pointer arithmetic and integer promotion reliably.

@@ -36,6 +36,23 @@ Much of TI's embedded hiring in India is through campus recruiting. Candidates d
 - Which protocol did you use to connect your development board to the motor driver, and why?
 - Why an embedded role rather than a general software role?
 
+## Practice questions
+
+These are the questions Texas Instruments candidates most often report, or close variants of them. Each links to a full answer or a coding problem with tests on this site.
+
+1. [What is the memory layout of a C program?](../../topics/pointers-memory/what-is-the-memory-layout-of-a-c-program/)
+2. [What is the difference between malloc, calloc, realloc and free?](../../topics/c-programming/what-is-the-difference-between-malloc-calloc-realloc-and-free/)
+3. [What is an ISR and what are the rules for writing one?](../../topics/embedded-c/what-is-an-isr-and-what-are-the-rules-for-writing-one/)
+4. [What is interrupt latency and how do you reduce it?](../../topics/embedded-c/what-is-interrupt-latency-and-how-do-you-reduce-it/)
+5. [What is polling versus interrupts versus DMA?](../../topics/embedded-c/what-is-polling-versus-interrupts-versus-dma/)
+6. [What is DMA and how is it configured?](../../topics/microcontrollers-arm/what-is-dma-and-how-is-it-configured/)
+7. [How do you count the set bits in an integer?](../../topics/bit-manipulation/how-do-you-count-the-set-bits-in-an-integer/)
+8. [How do you choose between UART, SPI and I2C for a project?](../../topics/communication-protocols/how-do-you-choose-between-uart-spi-and-i2c-for-a-project/)
+9. [How does bubble sort work, and how is it different from binary search?](../../topics/arrays-strings/how-does-bubble-sort-work-and-how-is-it-different-from-binary-search/)
+10. [Set, Clear, Toggle and Test a Bit](../../problems/set-clear-toggle-bits/) *(coding)*
+11. [Bit-Banged SPI Transfer (Mode 0)](../../problems/bitbang-spi/) *(coding)*
+12. [Debounce a Push Button](../../problems/debounce-button/) *(coding)*
+
 ## How to prepare
 
 1. Know your own projects deeply, down to the peripherals, protocols and registers; TI interviewers dig into them.

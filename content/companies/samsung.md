@@ -34,6 +34,24 @@ Samsung hires embedded engineers through several entities, and the process diffe
 - Linked-list manipulation and OS concept questions.
 - For hardware roles: flip-flops, AMBA protocol basics, predicting the output of a small digital design.
 
+## Practice questions
+
+These are the questions Samsung candidates most often report, or close variants of them. Each links to a full answer or a coding problem with tests on this site.
+
+1. [What is the difference between a process and a thread?](../../topics/operating-systems/what-is-the-difference-between-a-process-and-a-thread/)
+2. [What is virtual memory and why is it used?](../../topics/operating-systems/what-is-virtual-memory-and-why-is-it-used/)
+3. [What is a race condition, and what is a critical section?](../../topics/operating-systems/what-is-a-race-condition-and-what-is-a-critical-section/)
+4. [How do virtual functions work? What is a vtable?](../../topics/cpp-embedded/how-do-virtual-functions-work-what-is-a-vtable/)
+5. [What is the difference between new/delete and malloc/free?](../../topics/cpp-embedded/what-is-the-difference-between-new-delete-and-malloc-free/)
+6. [How do you reverse a singly linked list?](../../topics/data-structures/how-do-you-reverse-a-singly-linked-list/)
+7. [How do you detect a loop in a linked list?](../../topics/data-structures/how-do-you-detect-a-loop-in-a-linked-list/)
+8. [How does binary search work and what is the common bug?](../../topics/data-structures/how-does-binary-search-work-and-what-is-the-common-bug/)
+9. [Merge two sorted linked lists.](../../topics/coding-lists-stacks-queues/merge-two-sorted-linked-lists/)
+10. [What is an ISR and what are the rules for writing one?](../../topics/embedded-c/what-is-an-isr-and-what-are-the-rules-for-writing-one/)
+11. [What is the difference between a breakpoint and a watchpoint?](../../topics/debugging-testing/what-is-the-difference-between-a-breakpoint-and-a-watchpoint/)
+12. [Reverse a Singly Linked List](../../problems/reverse-linked-list/) *(coding)*
+13. [Binary Search in a Sorted Array](../../problems/binary-search/) *(coding)*
+
 ## How to prepare
 
 1. Practise timed coding: 2–3 medium problems in 90 minutes, in C or C++.
@@ -49,3 +67,4 @@ Samsung hires embedded engineers through several entities, and the process diffe
 - [Glassdoor: Samsung Electronics Embedded Software Engineer interview questions](https://www.glassdoor.co.in/Interview/Samsung-Electronics-Embedded-Software-Engineer-Interview-Questions-EI_IE3363.0,19_KO20,46.htm)
 - [Glassdoor: Samsung Senior Embedded Software Engineer – C++ internals](https://www.glassdoor.com/Interview/Samsung-Electronics-Interview-E3363-RVW49703113.htm)
 - [Glassdoor: Samsung Semiconductor India Research interviews](https://www.glassdoor.sg/Interview/Samsung-Semiconductor-India-Research-SSIR-Interview-E7110428-RVW82673804.htm)
+- [GeeksforGeeks: Samsung Electronics interview experiences](https://www.geeksforgeeks.org/companies/samsung-electronics/articles/)

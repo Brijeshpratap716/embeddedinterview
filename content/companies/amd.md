@@ -37,6 +37,26 @@ Several candidates describe a hiring-manager round focused on resume and project
 - Difference between RISC and CISC.
 - Parallel processing and semaphores (for a GPU-adjacent firmware role).
 
+## Practice questions
+
+These are the questions AMD candidates most often report, or close variants of them. Each links to a full answer or a coding problem with tests on this site.
+
+1. [How do you count the set bits in an integer?](../../topics/bit-manipulation/how-do-you-count-the-set-bits-in-an-integer/)
+2. [How do you extract or insert a bit field?](../../topics/bit-manipulation/how-do-you-extract-or-insert-a-bit-field/)
+3. [What is endianness and how do you check it in code?](../../topics/pointers-memory/what-is-endianness-and-how-do-you-check-it-in-code/)
+4. [How do you swap the endianness of a 32-bit value?](../../topics/pointers-memory/how-do-you-swap-the-endianness-of-a-32-bit-value/)
+5. [What is structure padding and how do you avoid it?](../../topics/c-programming/what-is-structure-padding-and-how-do-you-avoid-it/)
+6. [What is volatile and when must you use it?](../../topics/embedded-c/what-is-volatile-and-when-must-you-use-it/)
+7. [What is an ISR and what are the rules for writing one?](../../topics/embedded-c/what-is-an-isr-and-what-are-the-rules-for-writing-one/)
+8. [What is the memory layout of a C program?](../../topics/pointers-memory/what-is-the-memory-layout-of-a-c-program/)
+9. [What is RISC, how does it differ from CISC, and why did Arm succeed?](../../topics/microcontrollers-arm/what-is-risc-how-does-it-differ-from-cisc-and-why-did-arm-succeed/)
+10. [What is the difference between an array and a linked list?](../../topics/data-structures/what-is-the-difference-between-an-array-and-a-linked-list/)
+11. [How do you write an I2C (or SPI) client driver?](../../topics/linux-device-drivers/how-do-you-write-an-i2c-or-spi-client-driver/)
+12. [Set, Clear, Toggle and Test a Bit](../../problems/set-clear-toggle-bits/) *(coding)*
+13. [Count the Set Bits](../../problems/count-set-bits/) *(coding)*
+14. [Extract and Insert a Register Field](../../problems/register-field/) *(coding)*
+15. [Swap Byte Order of a 32-bit Value](../../problems/swap-nibbles-endian/) *(coding)*
+
 ## How to prepare
 
 1. Drill bit manipulation until it is automatic: [Set, Clear, Toggle](../../problems/set-clear-toggle-bits/), [Register Field](../../problems/register-field/), [Swap Byte Order](../../problems/swap-nibbles-endian/), [Count Set Bits](../../problems/count-set-bits/).

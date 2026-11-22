@@ -36,6 +36,22 @@ Because much of Boeing's work is safety-critical avionics, expect interest in pr
 - What would you do when you have to work with a technology you don't know?
 - Have you done hardware/software co-design?
 
+## Practice questions
+
+These are the questions Boeing candidates most often report, or close variants of them. Each links to a full answer or a coding problem with tests on this site.
+
+1. [What is an RTOS and how is it different from a general-purpose OS?](../../topics/rtos/what-is-an-rtos-and-how-is-it-different-from-a-general-purpose-os/)
+2. [What is priority inversion?](../../topics/rtos/what-is-priority-inversion/)
+3. [What is a deadlock and how do you prevent it?](../../topics/rtos/what-is-a-deadlock-and-how-do-you-prevent-it/)
+4. [What is MISRA C?](../../topics/embedded-c/what-is-misra-c/)
+5. [What is a watchdog timer and how should you use it?](../../topics/embedded-c/what-is-a-watchdog-timer-and-how-should-you-use-it/)
+6. [What are a HAL and a BSP, and how do they differ?](../../topics/embedded-c/what-are-a-hal-and-a-bsp-and-how-do-they-differ/)
+7. [Compare UART, SPI and I2C.](../../topics/communication-protocols/compare-uart-spi-and-i2c/)
+8. [How do you reverse the order of words in a string?](../../topics/arrays-strings/how-do-you-reverse-the-order-of-words-in-a-string/)
+9. [UART Packet Parser State Machine](../../problems/frame-parser/) *(coding)*
+10. [Validate an NMEA Sentence](../../problems/nmea-checksum/) *(coding)*
+11. [CRC-16/CCITT-FALSE](../../problems/crc16-ccitt/) *(coding)*
+
 ## How to prepare
 
 1. Prepare 5–6 STAR stories (conflict, failure, learning fast, ownership, a technical challenge) and practise recording yourself, since HireVue has no live interviewer.

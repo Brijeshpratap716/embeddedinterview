@@ -35,6 +35,24 @@ One candidate who accepted an offer described four rounds: a phone or video scre
 - Describe a memory leak you tracked down and how you found it.
 - A palindrome problem; completing partially written code.
 
+## Practice questions
+
+These are the questions Microsoft candidates most often report, or close variants of them. Each links to a full answer or a coding problem with tests on this site.
+
+1. [What are a HAL and a BSP, and how do they differ?](../../topics/embedded-c/what-are-a-hal-and-a-bsp-and-how-do-they-differ/)
+2. [What is the volatile keyword?](../../topics/c-programming/what-is-the-volatile-keyword/)
+3. [What does the static keyword do in different contexts?](../../topics/c-programming/what-does-the-static-keyword-do-in-different-contexts/)
+4. [Walk through the complete boot process of an embedded Linux system, from power-on to the login prompt.](../../topics/embedded-linux/walk-through-the-complete-boot-process-of-an-embedded-linux-system-fro/)
+5. [What happens inside U-Boot from reset until it boots the kernel?](../../topics/embedded-linux/what-happens-inside-u-boot-from-reset-until-it-boots-the-kernel/)
+6. [What is secure boot and a chain of trust?](../../topics/embedded-linux/what-is-secure-boot-and-a-chain-of-trust/)
+7. [What is an RTOS and how is it different from a general-purpose OS?](../../topics/rtos/what-is-an-rtos-and-how-is-it-different-from-a-general-purpose-os/)
+8. [What is the difference between a breakpoint and a watchpoint?](../../topics/debugging-testing/what-is-the-difference-between-a-breakpoint-and-a-watchpoint/)
+9. [What are ITM, SWO, ETM and RTT, and when do you use trace?](../../topics/debugging-testing/what-are-itm-swo-etm-and-rtt-and-when-do-you-use-trace/)
+10. [Check whether a linked list is a palindrome.](../../topics/coding-lists-stacks-queues/check-whether-a-linked-list-is-a-palindrome/)
+11. [Find the longest palindromic substring.](../../topics/coding-memory-strings/find-the-longest-palindromic-substring/)
+12. [HardFault Handler that Captures the Stack Frame](../../problems/hardfault-handler/) *(coding)*
+13. [Fixed-Block Memory Pool](../../problems/memory-pool/) *(coding)*
+
 ## How to prepare
 
 1. Have one or two detailed debugging stories ready, with the tools you used and what you measured.

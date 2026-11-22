@@ -879,3 +879,18 @@ A UART set to 8E1 sends 8 data bits, an even-parity bit and 1 stop bit. The rece
 **What parity can and cannot do:** it detects any **odd** number of flipped bits but misses every even number (two flipped bits cancel). For better detection use a CRC; for correction use Hamming or ECC codes, which are built from several overlapping parity bits.
 
 **Faster on a microcontroller:** a 16-entry nibble table, or `__builtin_parity`, which GCC lowers to an efficient sequence.
+
+### How do you swap the two nibbles of a byte? {E}
+A byte has two 4-bit nibbles. Shift the low nibble up, shift the high nibble down, and combine:
+
+```c
+uint8_t swap_nibbles(uint8_t x)
+{
+    return (uint8_t)((x << 4) | (x >> 4));
+}
+/* 0x5A -> 0xA5, 0x12 -> 0x21 */
+```
+
+Because `x` is promoted to `int` before shifting, `x << 4` can be up to 12 bits wide; the cast back to `uint8_t` discards the extra bits. The equivalent with explicit masks is `((x & 0x0F) << 4) | ((x & 0xF0) >> 4)`.
+
+Uses: converting between packed BCD digit orders, some display and LCD controllers that expect nibble-swapped data, and as the first stage of reversing bits. Interviewers often extend it to swapping adjacent bits (masks `0x55`/`0xAA`) or reversing all bits of a byte.
