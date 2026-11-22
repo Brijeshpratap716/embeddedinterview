@@ -304,3 +304,8 @@ html.dark .qa summary:hover .qt{color:var(--accent)}
 .ccta p{margin:4px 0 0;color:var(--muted)}
 .card .fchips{margin:0 0 12px}
 .prose thead:has(th:empty){display:none}
+.votes.src b{font-size:16px;color:var(--accent-ink)}
+.fmeta .cur{font-weight:600;color:var(--ink)}
+.src-badge{font-weight:600}
+.votes.src span{font-size:10px}
+.tactions{display:flex;flex-wrap:wrap;gap:14px;align-items:center}

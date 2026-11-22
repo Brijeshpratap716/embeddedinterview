@@ -43,7 +43,9 @@ def md(text):
 
 def plain(text, n=155):
     t = re.sub(r"```.*?```", " ", text, flags=re.S)
-    t = re.sub(r"[`*_#>|\-]", "", t)
+    t = re.sub(r"^\s*[-*+]\s+", " ", t, flags=re.M)      # list bullets
+    t = re.sub(r"^\s*\|?\s*-{3,}.*$", " ", t, flags=re.M)  # table rules
+    t = re.sub(r"[`*_#>|]", "", t)
     t = re.sub(r"\s+", " ", t).strip()
     return (t[: n - 1] + "…") if len(t) > n else t
 
@@ -545,6 +547,34 @@ def build_forum():
 <div class="fmeta"><span>{html.escape((d.get('author') or {}).get('login', 'ghost'))}</span>{when(d['createdAt'])}<span>💬 {ncom}</span><span class="cat">{html.escape(d['category']['name'])}</span></div></div></a>""")
         build_thread(d, f, ncom)
 
+    curated = json.load(open(os.path.join(CONTENT, "curated.json"), encoding="utf-8")) if os.path.exists(os.path.join(CONTENT, "curated.json")) else []
+    by_co = {}
+    for c in curated:
+        by_co.setdefault(c["company"], []).append(c)
+    mixed = []
+    while any(by_co.values()):
+        for co in list(by_co):
+            if by_co[co]:
+                mixed.append(by_co[co].pop(0))
+    curated = mixed
+    for c in curated:
+        companies.add(c["company"])
+        chips = f'<span class="fchip co">{html.escape(c["company"])}</span><span class="fchip">{html.escape(c["role"])}</span>'
+        if c.get("outcome"):
+            chips += f'<span class="fchip fo-{OUTCOME_CLS.get(c["outcome"], "wait")}">{html.escape(c["outcome"])}</span>'
+        if c.get("difficulty") in ("Easy", "Medium", "Hard"):
+            chips += badge(c["difficulty"][0])
+        place = f' · {html.escape(c["location"])}' if c.get("location") else ""
+        when_txt = f'<span>{html.escape(c["when"])}</span>' if c.get("when") else ""
+        title = f'{c["company"]} {c["role"]}{" (" + c["location"] + ")" if c.get("location") else ""}: interview experience'
+        rows.append(f"""<a class="fpost curated" href="{url('c-' + c['id'] + '/')}" data-cat="interview-experience" data-co="{html.escape(c['company'])}" data-out="{html.escape(c.get('outcome',''))}" data-votes="0" data-time="0000">
+<div class="votes src"><b>↗</b><span>{html.escape(c['source'].split()[0])}</span></div>
+<div class="fbody"><h3>{html.escape(title)}</h3><div class="fchips">{chips}</div>
+<p>{html.escape(plain(c['summary'], 180))}</p>
+<div class="fmeta"><span class="cur">Curated from {html.escape(c['source'])}</span>{when_txt}<span class="cat">Interview Experience</span></div></div></a>""")
+        build_curated(c, title)
+    posts_total = len(posts) + len(curated)
+
     cats = [("all", "All")] + [(c["slug"], c["name"]) for c in data.get("categories", []) if c["slug"] != "polls"]
     if len(cats) == 1:
         cats += [("interview-experience", "Interview Experience"), ("q-a", "Q&A"), ("general", "General")]
@@ -561,12 +591,33 @@ def build_forum():
 <div class="filters ftabs">{tabs}</div>
 <div class="filters bank"><input id="fq" type="search" placeholder="Search posts…"><select id="fco"><option value="">All companies</option>{co_opts}</select>
 <select id="fout"><option value="">Any outcome</option><option>Offer</option><option>Rejected</option><option>Pending</option><option>Withdrew</option></select>
-<select id="fsort"><option value="new">Newest</option><option value="top">Top voted</option></select><span class="count" id="fcount">{len(posts)} discussions</span></div>
+<select id="fsort"><option value="new">Newest</option><option value="top">Top voted</option></select><span class="count" id="fcount">{posts_total} discussions</span></div>
 </section>
 <section class="wrap"><div id="flist" class="flist">{''.join(rows) if rows else empty}</div>
 <p class="fnote">Posts are hosted on <a href="{GH_DISC}">GitHub Discussions</a> and appear here a few minutes after posting. Please keep it respectful and don't share confidential or NDA-protected material.</p></section>"""
     write("forum/index.html", page("forum/index.html", "Embedded Interview Experiences & Community Forum", body,
           "Real embedded interview experiences and discussions: firmware, embedded C and Linux driver interviews at Qualcomm, NXP, Bosch, TI and more.", "forum/"))
+
+
+def build_curated(c, title):
+    meta = "".join(f'<div><dt>{k}</dt><dd>{html.escape(c[v])}</dd></div>' for k, v in
+                   [("Company", "company"), ("Role", "role"), ("Location", "location"), ("When", "when"), ("Outcome", "outcome"), ("Difficulty", "difficulty")] if c.get(v))
+    qs = "".join(f"<li>{inline(q)}</li>" for q in c.get("questions", []))
+    guide = slugify(c["company"]) if c["company"] != "NXP" else "nxp"
+    guide_link = f'<a href="../../companies/{url(guide + "/")}">{html.escape(c["company"])} interview guide</a>' if os.path.exists(os.path.join(CONTENT, "companies", guide + ".md")) else ""
+    body = f"""
+<article class="wrap narrow single thread">
+<div class="crumbs"><a href="../{url('')}">Forum</a> / Interview Experience</div>
+<h1>{html.escape(title)}</h1>
+<div class="meta"><span class="fchip src-badge">Curated from {html.escape(c['source'])}</span></div>
+<dl class="finfo">{meta}</dl>
+<div class="cnote"><b>Summarised from a public report.</b> This experience was shared by a candidate on {html.escape(c['source'])}. We have summarised it in our own words and linked the original below; it was not posted on this site by the candidate.</div>
+<div class="prose"><h3>What happened</h3><p>{inline(c['summary'])}</p>
+{f'<h3>Questions reported</h3><ul>{qs}</ul>' if qs else ''}</div>
+<div class="tactions"><a class="btn" rel="nofollow noopener" href="{html.escape(c['url'])}">Read the original on {html.escape(c['source'])} ↗</a> {guide_link}</div>
+<div class="ccta"><div><b>Interviewed at {html.escape(c['company'])} recently?</b><p>Share your own experience and help the next candidate.</p></div><a class="btn ghost" href="{GH_DISC}/new?category=interview-experience">Share your experience</a></div>
+</article>"""
+    write(f"forum/c-{c['id']}/index.html", page(f"forum/c-{c['id']}/index.html", title, body, plain(c["summary"], 155), "forum/"))
 
 
 def build_thread(d, f, ncom):

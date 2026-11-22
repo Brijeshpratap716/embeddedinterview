@@ -1,0 +1,524 @@
+[
+{
+"id": "qualcomm-hyderabad-4-rounds",
+"company": "Qualcomm",
+"role": "Embedded Engineer",
+"location": "Hyderabad",
+"when": "Dec 2021",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.com/Interview/Qualcomm-Interview-E640-RVW97571085.htm",
+"difficulty": "Medium",
+"outcome": "",
+"summary": "The candidate was referred by an employee and had four rounds. Round 1 covered C basics, electronics and resume projects. Round 2 went into C memory management, Python basics and wireless/cellular communication fundamentals. Round 3 was about certifications and previous jobs, and round 4 was a managerial round. Their tip: if a role matches your profile, you can also send your resume directly to Qualcomm recruiters on LinkedIn.",
+"questions": [
+"C basics and electronics questions based on resume projects",
+"Memory management in C",
+"Python basics",
+"Wireless and cellular communication basics"
+]
+},
+{
+"id": "qualcomm-phone-screen-jtag-rtos",
+"company": "Qualcomm",
+"role": "Embedded Engineer",
+"location": "",
+"when": "",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.com/Interview/Qualcomm-Interview-E640-RVW31575543.htm",
+"difficulty": "",
+"outcome": "",
+"summary": "Applied through a recruitment agency and had a phone screen with a senior embedded engineer. The discussion focused on debugging with JTAG, interrupts, the difference between hardware and software debugging, and `volatile`. Basic C and RTOS questions followed, including how to implement a round-robin scheduler.",
+"questions": [
+"How do you debug with JTAG?",
+"Hardware vs software debugging",
+"Why is volatile important, and what does extern do?",
+"How would you implement a round-robin scheduler?"
+]
+},
+{
+"id": "qualcomm-san-diego-virtual-panel",
+"company": "Qualcomm",
+"role": "Embedded Software Engineer",
+"location": "San Diego, CA",
+"when": "Sep 2026",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.co.in/Interview/Qualcomm-Interview-E640-RVW8569051.htm",
+"difficulty": "Medium",
+"outcome": "Offer",
+"summary": "A virtual panel with four interviewers, 60 minutes each. Questions centred on multithreading, queues and stacks, bit manipulation and C programming basics. The candidate received an offer and declined it.",
+"questions": [
+"Multithreading questions",
+"Implement or reason about a queue and a stack",
+"Bit manipulation",
+"C programming basics"
+]
+},
+{
+"id": "qualcomm-sr-embedded-3-rounds",
+"company": "Qualcomm",
+"role": "Sr Embedded Software Engineer",
+"location": "",
+"when": "",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.co.in/Interview/Qualcomm-Sr-Embedded-Software-Engineer-Interview-Questions-EI_IE640.0,8_KO9,38.htm",
+"difficulty": "Medium",
+"outcome": "",
+"summary": "Reports on this page describe three one-hour rounds: a principal engineer mixing phone-screen questions with easy C questions, a senior engineer walking through the resume and then two coding questions, and another senior engineer round. Pointer arithmetic came up early. One recruiter-sourced candidate advises knowing every project on your resume well and expecting behavioural questions.",
+"questions": [
+"Pointer-level questions and pointer arithmetic",
+"Implement a calculator without if/else, switch or loops",
+"Two coding questions after a resume walkthrough"
+]
+},
+{
+"id": "nvidia-phone-screen-kernel",
+"company": "NVIDIA",
+"role": "System Software Engineer",
+"location": "",
+"when": "",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.ie/Interview/NVIDIA-Interview-E7633-RVW9978856.htm",
+"difficulty": "",
+"outcome": "",
+"summary": "A first-round phone screen of about 50 minutes: roughly 10 minutes on the resume, 30 minutes of Linux kernel questions and 10 minutes of C. Most questions were short yes/no style but tricky, so precise understanding mattered more than long explanations.",
+"questions": [
+"Kernel memory allocation and management",
+"Creating and using threads",
+"Hardware vs software breakpoints",
+"Top half vs bottom half of an ISR",
+"volatile and static in C"
+]
+},
+{
+"id": "nvidia-embedded-onsite-loop",
+"company": "NVIDIA",
+"role": "Embedded Software Engineer",
+"location": "Santa Clara, CA",
+"when": "",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.co.in/Interview/NVIDIA-Interview-RVW23935689.htm",
+"difficulty": "Hard",
+"outcome": "",
+"summary": "Two phone interviews with coding challenges, computer architecture, Linux and protocol questions. The candidate was then invited onsite for a full loop of 6–7 interviews from 9:30am to 4pm, some focused purely on coding skills.",
+"questions": [
+"Coding challenges",
+"Computer architecture",
+"Linux questions",
+"Communication protocol questions"
+]
+},
+{
+"id": "nvidia-sse-pune-os",
+"company": "NVIDIA",
+"role": "System Software Engineer",
+"location": "Pune",
+"when": "Jun 2026",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.co.uk/Interview/NVIDIA-Interview-E7633-RVW81115733.htm",
+"difficulty": "Medium",
+"outcome": "Rejected",
+"summary": "The interview opened with a detailed project discussion, then moved to core OS questions and a C++ coding problem, followed by Linux and system-call questions.",
+"questions": [
+"Explain your project in detail",
+"Process vs thread",
+"How does virtual memory work?",
+"Mutex vs semaphore",
+"Linux and system calls",
+"A C++ coding problem"
+]
+},
+{
+"id": "nvidia-systems-aligned-malloc",
+"company": "NVIDIA",
+"role": "Systems Software Engineer",
+"location": "",
+"when": "",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.ie/Interview/NVIDIA-Interview-E7633-RVW17445377.htm",
+"difficulty": "",
+"outcome": "",
+"summary": "Many technical questions: short programs and algorithms, some maths, Linux kernel internals and basic hardware debugging. Another report on the same page describes an interval problem.",
+"questions": [
+"Calculate the angle between clock hands",
+"Linux kernel memory allocation techniques",
+"Implement aligned malloc and aligned free",
+"Given (start, end) intervals, find the busiest hour"
+]
+},
+{
+"id": "intel-firmware-take-home",
+"company": "Intel",
+"role": "Firmware Engineer",
+"location": "",
+"when": "2014",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.com/Interview/Intel-Corporation-Interview-E1519-RVW3998388.htm",
+"difficulty": "Easy",
+"outcome": "Offer",
+"summary": "Applied online. The process was a take-home coding test followed by four onsite rounds focused on embedded programming. The candidate accepted the offer.",
+"questions": [
+"Take-home embedded coding test",
+"Embedded programming questions onsite"
+]
+},
+{
+"id": "intel-bengaluru-bios-rtos",
+"company": "Intel",
+"role": "Firmware Engineer",
+"location": "Bengaluru",
+"when": "Apr 2021",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.sg/Interview/Intel-Corporation-Interview-E1519-RVW45658282.htm",
+"difficulty": "Hard",
+"outcome": "Offer",
+"summary": "Technical rounds covered operating systems, RTOS, data structures, multithreading, bit manipulation, BIOS and bootloaders, plus coding rounds on strings and bits. Hiring manager and HR rounds followed before the offer.",
+"questions": [
+"OS and RTOS concepts",
+"Multithreading",
+"Bit manipulation",
+"BIOS and bootloader questions",
+"String and bit coding problems"
+]
+},
+{
+"id": "intel-israel-board-coding",
+"company": "Intel",
+"role": "Firmware Engineer Intern",
+"location": "Israel",
+"when": "",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.ca/Interview/Intel-Corporation-Interview-E1519-RVW81921112.htm",
+"difficulty": "Medium",
+"outcome": "",
+"summary": "A phone interview on C and firmware knowledge, followed by two on-site technical interviews of about two hours each, solving three LeetCode-style problems on a whiteboard. A Bengaluru intern report on the same page mentions cache coherence and memory hierarchy questions.",
+"questions": [
+"C and firmware fundamentals (phone)",
+"Three LeetCode-style problems on a board",
+"Cache coherence and memory hierarchy"
+]
+},
+{
+"id": "amd-intern-coderpad",
+"company": "AMD",
+"role": "Firmware Intern",
+"location": "Austin, TX",
+"when": "Jun 2025",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.co.in/Interview/AMD-Interview-E15-RVW101245307.htm",
+"difficulty": "Easy",
+"outcome": "Rejected",
+"summary": "One hour: about 15 minutes on the resume and projects, then three coding questions on CoderPad, one of them counting the set bits in a number. A separate intern report on the same page lists structure padding, volatile and interrupt questions, and advises expecting bit manipulation, pointers and memory, and linked lists.",
+"questions": [
+"Count the set bits in a number",
+"Two more short coding questions on CoderPad",
+"Resume and project discussion"
+]
+},
+{
+"id": "amd-live-coding-rounds",
+"company": "AMD",
+"role": "Firmware Engineer",
+"location": "",
+"when": "",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.com/Interview/AMD-Interview-E15-RVW103894912.htm",
+"difficulty": "",
+"outcome": "",
+"summary": "Two technical interviews of one hour each, split into 30 minutes of questions and 30 minutes of live coding. Many questions covered embedded systems basics, intermediate C and the candidate's project experience.",
+"questions": [
+"Embedded systems basics",
+"Intermediate C programming",
+"Live coding",
+"Project experience"
+]
+},
+{
+"id": "amd-embedded-kernel-driver",
+"company": "AMD",
+"role": "Embedded Software Engineer",
+"location": "",
+"when": "",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.co.in/Interview/AMD-Interview-E15-RVW88491756.htm",
+"difficulty": "",
+"outcome": "Offer",
+"summary": "Two levels. The first covered C programming, project basics and Linux fundamentals; the second went into Linux kernel driver programming and previous experience. The candidate was selected.",
+"questions": [
+"C programming questions",
+"Linux basics",
+"Kernel driver programming",
+"Previous projects"
+]
+},
+{
+"id": "apple-packed-12bit",
+"company": "Apple",
+"role": "Firmware Engineer",
+"location": "",
+"when": "Jan 2026",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.co.in/Interview/Apple-Interview-E1138-RVW25287385.htm",
+"difficulty": "Hard",
+"outcome": "Rejected",
+"summary": "The role description was broad (years of C++, embedded background, strong debugging). The live coding question was very practical: unpacking raw sensor-style data stored as packed 12-bit values in padded rows. The candidate found the overall process frustrating.",
+"questions": [
+"Move packed 12-bit integers stored in 64-byte padded rows into an NxM matrix of 16-bit values",
+"What is a mutex? (from another report on the page)"
+]
+},
+{
+"id": "apple-herzliya-sort-colors",
+"company": "Apple",
+"role": "Embedded Firmware Engineer",
+"location": "Israel",
+"when": "Oct 2023",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.com/Interview/Apple-Interview-E1138-RVW103837595.htm",
+"difficulty": "Medium",
+"outcome": "Rejected",
+"summary": "A sequence of classic coding problems adapted to firmware style, ending with a concurrency question.",
+"questions": [
+"Write merge sort",
+"Merge two sorted linked lists",
+"Sort colours where elements are objects with a colour field",
+"Producer-consumer problem"
+]
+},
+{
+"id": "apple-take-home",
+"company": "Apple",
+"role": "Firmware Engineer",
+"location": "",
+"when": "",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.ca/Interview/Apple-Interview-E1138-RVW42124198.htm",
+"difficulty": "Medium",
+"outcome": "",
+"summary": "A 30-minute recruiter screen about the resume, then a one-hour technical interview with the hiring manager on the resume, C basics and debugging techniques, followed by a take-home with two coding questions.",
+"questions": [
+"C basics",
+"Debugging techniques",
+"Dynamic programming",
+"Queue and stack problems"
+]
+},
+{
+"id": "microsoft-hyderabad-hal-bsp",
+"company": "Microsoft",
+"role": "Firmware Engineer",
+"location": "Hyderabad",
+"when": "Sep 2025",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.co.uk/Interview/Microsoft-Interview-E1651-RVW100005836.htm",
+"difficulty": "Hard",
+"outcome": "Offer",
+"summary": "Questions on embedded software basics, HAL and BSP design and expert-level C, mostly built around the candidate's own projects and experience. The candidate found the questions very relevant to real firmware work and accepted the offer.",
+"questions": [
+"HAL and BSP design",
+"Expert-level C questions",
+"How a Linux system boots"
+]
+},
+{
+"id": "microsoft-embedded-4-rounds",
+"company": "Microsoft",
+"role": "Embedded Firmware Engineer",
+"location": "",
+"when": "Jan 2026",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.com.au/Interview/Microsoft-Interview-E1651-RVW103685699.htm",
+"difficulty": "Hard",
+"outcome": "Offer",
+"summary": "Referred by an employee; the process took about three weeks. Four rounds in total: one phone/video call and three technical rounds of coding and embedded-systems questions.",
+"questions": [
+"Coding problems",
+"Embedded systems questions"
+]
+},
+{
+"id": "boeing-hirevue",
+"company": "Boeing",
+"role": "Embedded Software Engineer",
+"location": "",
+"when": "May 2026",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.co.uk/Interview/Boeing-Interview-E102-RVW103357468.htm",
+"difficulty": "Medium",
+"outcome": "",
+"summary": "The first round was a recorded HireVue interview: two behavioural STAR questions and a coding challenge that the candidate recognised as an old programming-competition problem about decoding messages.",
+"questions": [
+"Introduce yourself and explain why Boeing",
+"Two STAR behavioural questions",
+"Message-decoding coding challenge"
+]
+},
+{
+"id": "boeing-hazelwood-rtos",
+"company": "Boeing",
+"role": "Embedded Software Engineer",
+"location": "Hazelwood, MO",
+"when": "",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.co.uk/Interview/Boeing-Interview-E102-RVW104324582.htm",
+"difficulty": "Easy",
+"outcome": "",
+"summary": "Mostly STAR-based behavioural questions and questions taken from the resume, with a single technical question.",
+"questions": [
+"Explain an RTOS in detail and its use cases"
+]
+},
+{
+"id": "bosch-coimbatore-can",
+"company": "Bosch",
+"role": "Software Engineer",
+"location": "Coimbatore",
+"when": "",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.com.au/Interview/Robert-Bosch-Interview-E3353-RVW8430885.htm",
+"difficulty": "",
+"outcome": "",
+"summary": "A telephone round of about an hour focused on CAN and Embedded C, then a face-to-face round on current work, CAN, Embedded C, C++ and automotive technology, followed by a senior manager and HR. The candidate found everyone friendly.",
+"questions": [
+"CAN frames and error management",
+"CAN voltage levels",
+"Arrays and pointers",
+"C++ friend functions"
+]
+},
+{
+"id": "bosch-bengaluru-sensor-rtos",
+"company": "Bosch",
+"role": "Embedded Engineer",
+"location": "Bengaluru",
+"when": "Dec 2023",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.ca/Interview/Robert-Bosch-Interview-E3353-RVW82453143.htm",
+"difficulty": "",
+"outcome": "",
+"summary": "A design-style technical round on integrating a temperature sensor and building the RTOS application, C questions, and some AUTOSAR background expected. The managerial round covered past work, challenges and how they were overcome.",
+"questions": [
+"How would you integrate a temperature sensor and develop the RTOS application?",
+"C programming questions",
+"AUTOSAR familiarity"
+]
+},
+{
+"id": "ti-bengaluru-campus",
+"company": "Texas Instruments",
+"role": "Embedded Software Engineer",
+"location": "Bengaluru",
+"when": "Aug 2025",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.co.in/Interview/Texas-Instruments-Interview-E651-RVW99476836.htm",
+"difficulty": "Medium",
+"outcome": "Rejected",
+"summary": "Campus process with a single online interview round and two interviewers. Questions were based on projects, microcontrollers and C; embedded projects on the resume drew detailed questions.",
+"questions": [
+"Pointers",
+"Dynamic memory allocation",
+"Predict the output of C snippets",
+"Microcontroller questions from projects"
+]
+},
+{
+"id": "ti-oa-why-embedded",
+"company": "Texas Instruments",
+"role": "Embedded Software Engineer",
+"location": "India",
+"when": "",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.com/Interview/Texas-Instruments-Interview-E651-RVW99918358.htm",
+"difficulty": "",
+"outcome": "",
+"summary": "An online assessment with C questions, then a technical interview on embedded systems, projects, C and computer architecture, and an HR round asking why the candidate wanted an embedded role rather than a general software one.",
+"questions": [
+"C questions (a must)",
+"Embedded and computer architecture",
+"Why embedded instead of SDE?"
+]
+},
+{
+"id": "nxp-bengaluru-fresher-offer",
+"company": "NXP",
+"role": "Software Engineer I (Embedded)",
+"location": "Bengaluru",
+"when": "Sep 2024",
+"source": "LeetCode Discuss",
+"url": "https://leetcode.com/discuss/interview-question/5905862/NXP-Semiconductors-or-Intern-+-Full-Time(-PBC)-or-Bengaluru-(India)-or-sept-2024-Offer/",
+"difficulty": "Medium",
+"outcome": "Offer",
+"summary": "Campus hiring for an internship plus full-time role. The online assessment was one hour of MCQs on C and OS with a strong focus on pointer arithmetic and negative marking. The first interview was an elimination round on the resume and core subjects, even though the candidate's background was mostly general software.",
+"questions": [
+"Output-based C and OS MCQs",
+"Pointer arithmetic",
+"Rate yourself in C, C++ and Python",
+"Core subject questions"
+]
+},
+{
+"id": "nxp-bucharest-c-cpp",
+"company": "NXP",
+"role": "Software Engineer",
+"location": "Bucharest",
+"when": "Feb 2018",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.co.uk/Interview/NXP-Semiconductors-Interview-E13528-RVW19102976.htm",
+"difficulty": "Medium",
+"outcome": "",
+"summary": "Applied online; the process took about three days. Questions covered C/C++, memory management, algorithms and data structures, bitwise operators, preprocessor directives and optimisation, plus background and experience.",
+"questions": [
+"Where in memory are the variables in this code stored?",
+"Bitwise operators",
+"Preprocessor directives",
+"Optimisation"
+]
+},
+{
+"id": "samsung-ssir-coding-round",
+"company": "Samsung",
+"role": "Software Engineer",
+"location": "Bengaluru",
+"when": "",
+"source": "LeetCode Discuss",
+"url": "https://leetcode.com/discuss/interview-experience/3045312/",
+"difficulty": "Medium",
+"outcome": "",
+"summary": "The first round at Samsung Semiconductor India Research was three coding questions in 90 minutes, ranging from easy to medium. Later rounds followed for shortlisted candidates.",
+"questions": [
+"Three coding questions in 90 minutes"
+]
+},
+{
+"id": "arm-compiler-optimisations",
+"company": "Arm",
+"role": "Software Engineer",
+"location": "",
+"when": "Apr 2024",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.co.uk/Interview/Arm-Interview-E7834-RVW88739914.htm",
+"difficulty": "Medium",
+"outcome": "Rejected",
+"summary": "Applied online; the process took about three months. One memorable question gave five or six short C functions and asked which compiler optimisations could or could not be applied to each.",
+"questions": [
+"Explain which compiler optimisations are legal for each of several short C functions"
+]
+},
+{
+"id": "arm-firmware-intern-austin",
+"company": "Arm",
+"role": "Firmware Engineer Intern",
+"location": "Austin, TX",
+"when": "Oct 2023",
+"source": "Glassdoor",
+"url": "https://www.glassdoor.co.in/Interview/Arm-Interview-E7834-RVW83628137.htm",
+"difficulty": "Medium",
+"outcome": "",
+"summary": "Core OS and architecture questions for a firmware internship.",
+"questions": [
+"Binary semaphore vs mutex",
+"What is cache coherency?",
+"What is a TLB?",
+"Why does volatile matter?"
+]
+}
+]
