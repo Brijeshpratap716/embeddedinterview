@@ -568,10 +568,10 @@ def build_forum():
         when_txt = f'<span>{html.escape(c["when"])}</span>' if c.get("when") else ""
         title = f'{c["company"]} {c["role"]}{" (" + c["location"] + ")" if c.get("location") else ""}: interview experience'
         rows.append(f"""<a class="fpost curated" href="{url('c-' + c['id'] + '/')}" data-cat="interview-experience" data-co="{html.escape(c['company'])}" data-out="{html.escape(c.get('outcome',''))}" data-votes="0" data-time="0000">
-<div class="votes src"><b>↗</b><span>{html.escape(c['source'].split()[0])}</span></div>
+<div class="votes src"><b>★</b><span>Curated</span></div>
 <div class="fbody"><h3>{html.escape(title)}</h3><div class="fchips">{chips}</div>
 <p>{html.escape(plain(c['summary'], 180))}</p>
-<div class="fmeta"><span class="cur">Curated from {html.escape(c['source'])}</span>{when_txt}<span class="cat">Interview Experience</span></div></div></a>""")
+<div class="fmeta"><span class="cur">Curated</span>{when_txt}<span class="cat">Interview Experience</span></div></div></a>""")
         build_curated(c, title)
     posts_total = len(posts) + len(curated)
 
@@ -609,13 +609,13 @@ def build_curated(c, title):
 <article class="wrap narrow single thread">
 <div class="crumbs"><a href="../{url('')}">Forum</a> / Interview Experience</div>
 <h1>{html.escape(title)}</h1>
-<div class="meta"><span class="fchip src-badge">Curated from {html.escape(c['source'])}</span></div>
+<div class="meta"><span class="fchip src-badge">Curated</span></div>
 <dl class="finfo">{meta}</dl>
-<div class="cnote"><b>Summarised from a public report.</b> This experience was shared by a candidate on {html.escape(c['source'])}. We have summarised it in our own words and linked the original below; it was not posted on this site by the candidate.</div>
 <div class="prose"><h3>What happened</h3><p>{inline(c['summary'])}</p>
 {f'<h3>Questions reported</h3><ul>{qs}</ul>' if qs else ''}</div>
-<div class="tactions"><a class="btn" rel="nofollow noopener" href="{html.escape(c['url'])}">Read the original on {html.escape(c['source'])} ↗</a> {guide_link}</div>
+{f'<div class="tactions">See also: {guide_link}</div>' if guide_link else ''}
 <div class="ccta"><div><b>Interviewed at {html.escape(c['company'])} recently?</b><p>Share your own experience and help the next candidate.</p></div><a class="btn ghost" href="{GH_DISC}/new?category=interview-experience">Share your experience</a></div>
+<p class="srcline">Source: summarised from a candidate's public report on <a rel="nofollow noopener" href="{html.escape(c['url'])}">{html.escape(c['source'])}</a>.</p>
 </article>"""
     write(f"forum/c-{c['id']}/index.html", page(f"forum/c-{c['id']}/index.html", title, body, plain(c["summary"], 155), "forum/"))
 
