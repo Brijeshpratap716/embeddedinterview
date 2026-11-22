@@ -316,5 +316,61 @@
     [q, co, out, sort].forEach(function (el) { el.addEventListener("input", apply); el.addEventListener("change", apply); });
   })();
 
+  /* ---------- forum: on-site anonymous posting ---------- */
+  (function () {
+    var cfgEl = $("#forumCfg");
+    if (!cfgEl) return;
+    var api = (cfgEl.dataset.api || "").replace(/\/$/, "");
+
+    function openDlg(id, cat) {
+      var d = document.getElementById(id);
+      if (!d) return;
+      if (cat) { var sel = $("select[name=category]", d); if (sel) sel.value = cat; }
+      if (d.showModal) d.showModal(); else d.setAttribute("open", "");
+      var first = $("input, textarea, select", d); if (first) first.focus();
+    }
+    $$("[data-open]").forEach(function (b) {
+      b.addEventListener("click", function () { openDlg("dlg-" + b.dataset.open, b.dataset.cat); });
+    });
+    $$(".fclose").forEach(function (b) {
+      b.addEventListener("click", function () { b.closest("dialog").close(); });
+    });
+    $$(".fdialog").forEach(function (d) {
+      d.addEventListener("click", function (e) { if (e.target === d) d.close(); });
+    });
+    if (location.hash === "#share") openDlg("dlg-exp");
+
+    $$(".fform").forEach(function (form) {
+      var msg = $(".fmsg", form), btn = $("button[type=submit]", form);
+      function say(text, ok) { msg.textContent = text; msg.className = "fmsg " + (ok ? "ok" : "bad"); }
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        if (!api) { say("Posting opens very soon. Please check back shortly.", false); return; }
+        var fd = new FormData(form), data = {};
+        fd.forEach(function (v, k) { data[k] = typeof v === "string" ? v.trim() : v; });
+        var kind = form.dataset.kind, path = "/api/post";
+        if (kind === "exp") { data.category = "interview-experience"; data.nda = !!form.querySelector("[name=nda]").checked; }
+        if (kind === "reply") { path = "/api/reply"; data.number = form.dataset.number; }
+        data.turnstile = data["cf-turnstile-response"] || "";
+        delete data["cf-turnstile-response"];
+        if (!data.turnstile) { say("Please complete the human check above.", false); return; }
+        btn.disabled = true; say("Posting…", true);
+        fetch(api + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) })
+          .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+          .then(function (res) {
+            if (!res.ok || !res.j.ok) throw new Error(res.j.error || "Something went wrong.");
+            form.reset();
+            form.innerHTML = '<div class="fdone"><h2>Thank you! 🎉</h2><p>Your ' + (kind === "reply" ? "reply" : "post") +
+              ' was submitted anonymously. It will appear here in about a minute.</p><p><button class="btn" type="button" onclick="location.reload()">Refresh page</button></p></div>';
+          })
+          .catch(function (err) {
+            say(err.message || "Could not post. Please try again.", false);
+            btn.disabled = false;
+            if (window.turnstile) try { window.turnstile.reset(); } catch (x) {}
+          });
+      });
+    });
+  })();
+
   refresh();
 })();

@@ -498,16 +498,15 @@ def parse_form(body):
     """GitHub discussion forms render as '### Label\n\nvalue' blocks."""
     fields = {}
     for m in re.finditer(r"^### (.+?)\s*\n+(.*?)(?=^### |\Z)", body or "", re.S | re.M):
-        v = m.group(2).strip()
+        v = re.sub(r"<!--.*?-->", "", m.group(2), flags=re.S).strip()
         if v and v != "_No response_":
             fields[m.group(1).strip()] = v
     return fields
 
 
-def avatar(a):
-    a = a or {"login": "ghost", "avatarUrl": "", "url": "https://github.com/ghost"}
-    img = f'<img src="{html.escape(a["avatarUrl"])}&s=48" alt="" width="24" height="24" loading="lazy">' if a.get("avatarUrl") else ""
-    return f'<a class="who" href="{html.escape(a["url"])}" rel="nofollow ugc">{img}{html.escape(a["login"])}</a>'
+def avatar(a=None):
+    """Every forum author is shown as Anonymous."""
+    return '<span class="who"><span class="anon" aria-hidden="true">?</span>Anonymous</span>'
 
 
 def when(iso):
@@ -518,9 +517,9 @@ def build_forum():
     path = os.path.join(CONTENT, "forum.json")
     data = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {"discussions": [], "categories": []}
     posts = data.get("discussions", [])
-    new_btns = (f'<a class="btn" href="{GH_DISC}/new?category=interview-experience">+ Share interview experience</a>'
-                f'<a class="btn ghost" href="{GH_DISC}/new?category=q-a">Ask a question</a>'
-                f'<a class="btn ghost" href="{GH_DISC}/new?category=general">Start a discussion</a>')
+    new_btns = ('<button class="btn" data-open="exp">+ Share interview experience</button>'
+                '<button class="btn ghost" data-open="ask" data-cat="q-a">Ask a question</button>'
+                '<button class="btn ghost" data-open="ask" data-cat="general">Start a discussion</button>')
     rows, companies = [], set()
     for d in posts:
         f = parse_form(d.get("body", ""))
@@ -540,11 +539,11 @@ def build_forum():
         if f.get("Difficulty") in ("Easy", "Medium", "Hard"):
             chips += badge(f["Difficulty"][0])
         ncom = d["comments"]["totalCount"] + sum(len(c["replies"]["nodes"]) for c in d["comments"]["nodes"])
-        rows.append(f"""<a class="fpost" href="{url(slug + '/')}" data-cat="{html.escape(d['category']['slug'])}" data-co="{html.escape(comp)}" data-out="{html.escape(f.get('Outcome',''))}" data-votes="{d['upvoteCount']}" data-time="{html.escape(d['createdAt'])}">
-<div class="votes"><b>{d['upvoteCount']}</b><span>votes</span></div>
+        rows.append(f"""<a class="fpost" href="{url(slug + '/')}" data-cat="{html.escape(d['category']['slug'])}" data-co="{html.escape(comp)}" data-out="{html.escape(f.get('Outcome',''))}" data-votes="{ncom}" data-time="{html.escape(d['createdAt'])}">
+<div class="votes"><b>{ncom}</b><span>{'reply' if ncom == 1 else 'replies'}</span></div>
 <div class="fbody"><h3>{html.escape(d['title'])}</h3><div class="fchips">{chips}</div>
 <p>{html.escape(plain(preview, 180))}</p>
-<div class="fmeta"><span>{html.escape((d.get('author') or {}).get('login', 'ghost'))}</span>{when(d['createdAt'])}<span>💬 {ncom}</span><span class="cat">{html.escape(d['category']['name'])}</span></div></div></a>""")
+<div class="fmeta"><span>Anonymous</span>{when(d['createdAt'])}<span class="cat">{html.escape(d['category']['name'])}</span></div></div></a>""")
         build_thread(d, f, ncom)
 
     curated = json.load(open(os.path.join(CONTENT, "curated.json"), encoding="utf-8")) if os.path.exists(os.path.join(CONTENT, "curated.json")) else []
@@ -575,7 +574,9 @@ def build_forum():
         build_curated(c, title)
     posts_total = len(posts) + len(curated)
 
-    cats = [("all", "All")] + [(c["slug"], c["name"]) for c in data.get("categories", []) if c["slug"] != "polls"]
+    keep = {"interview-experience": "Interview Experience", "q-a": "Q&A", "general": "General", "announcements": "Announcements"}
+    have = {c["slug"] for c in data.get("categories", [])}
+    cats = [("all", "All")] + [(k, v) for k, v in keep.items() if k in have and (k != "announcements" or any(d["category"]["slug"] == k for d in posts))]
     if len(cats) == 1:
         cats += [("interview-experience", "Interview Experience"), ("q-a", "Q&A"), ("general", "General")]
     tabs = "".join(f'<button class="f{" on" if s == "all" else ""}" data-cat="{html.escape(s)}">{html.escape(n)}</button>' for s, n in cats)
@@ -585,16 +586,17 @@ def build_forum():
 <div class="cta">{new_btns}</div></div>"""
     body = f"""
 <section class="wrap pagehead"><h1>Community Forum</h1>
-<p class="lead">Real embedded interview experiences, questions and discussions from engineers preparing for firmware, embedded software and Linux driver roles. Sign in with your GitHub account to post, reply and upvote.</p>
+<p class="lead">Real embedded interview experiences, questions and discussions from engineers preparing for firmware, embedded software and Linux driver roles. Post anonymously, no account needed.</p>
 <div class="cta fnew">{new_btns}</div>
 <p class="fnote" style="margin:4px 0 0">Preparing for a specific company? Read the <a href="{url('../companies/')}">company interview guides</a>.</p>
 <div class="filters ftabs">{tabs}</div>
 <div class="filters bank"><input id="fq" type="search" placeholder="Search posts…"><select id="fco"><option value="">All companies</option>{co_opts}</select>
 <select id="fout"><option value="">Any outcome</option><option>Offer</option><option>Rejected</option><option>Pending</option><option>Withdrew</option></select>
-<select id="fsort"><option value="new">Newest</option><option value="top">Top voted</option></select><span class="count" id="fcount">{posts_total} discussions</span></div>
+<select id="fsort"><option value="new">Newest</option><option value="top">Most replies</option></select><span class="count" id="fcount">{posts_total} {"discussion" if posts_total == 1 else "discussions"}</span></div>
 </section>
 <section class="wrap"><div id="flist" class="flist">{''.join(rows) if rows else empty}</div>
-<p class="fnote">Posts are hosted on <a href="{GH_DISC}">GitHub Discussions</a> and appear here a few minutes after posting. Please keep it respectful and don't share confidential or NDA-protected material.</p></section>"""
+<p class="fnote">All posts are anonymous and appear here about a minute after you submit. Please keep it respectful and don't share confidential or NDA-protected material.</p></section>
+{forum_forms()}"""
     write("forum/index.html", page("forum/index.html", "Embedded Interview Experiences & Community Forum", body,
           "Real embedded interview experiences and discussions: firmware, embedded C and Linux driver interviews at Qualcomm, NXP, Bosch, TI and more.", "forum/"))
 
@@ -614,10 +616,68 @@ def build_curated(c, title):
 <div class="prose"><h3>What happened</h3><p>{inline(c['summary'])}</p>
 {f'<h3>Questions reported</h3><ul>{qs}</ul>' if qs else ''}</div>
 {f'<div class="tactions">See also: {guide_link}</div>' if guide_link else ''}
-<div class="ccta"><div><b>Interviewed at {html.escape(c['company'])} recently?</b><p>Share your own experience and help the next candidate.</p></div><a class="btn ghost" href="{GH_DISC}/new?category=interview-experience">Share your experience</a></div>
+<div class="ccta"><div><b>Interviewed at {html.escape(c['company'])} recently?</b><p>Share your own experience and help the next candidate.</p></div><a class="btn ghost" href="../../forum/#share">Share your experience</a></div>
 <p class="srcline">Source: summarised from a candidate's public report on <a rel="nofollow noopener" href="{html.escape(c['url'])}">{html.escape(c['source'])}</a>.</p>
 </article>"""
     write(f"forum/c-{c['id']}/index.html", page(f"forum/c-{c['id']}/index.html", title, body, plain(c["summary"], 155), "forum/"))
+
+
+def forum_config():
+    p = os.path.join(CONTENT, "forum-config.json")
+    return json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {"api": "", "turnstile_sitekey": ""}
+
+
+def forum_scripts():
+    cfg = forum_config()
+    ts = '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>' if cfg.get("turnstile_sitekey") else ""
+    return f'<div id="forumCfg" data-api="{html.escape(cfg.get("api", ""))}" data-sitekey="{html.escape(cfg.get("turnstile_sitekey", ""))}" hidden></div>{ts}'
+
+
+def human_check():
+    key = forum_config().get("turnstile_sitekey", "")
+    return f'<div class="cf-turnstile" data-sitekey="{html.escape(key)}" data-theme="auto"></div>' if key else ""
+
+
+def reply_form(number):
+    return f"""<form class="fform reply-form" data-kind="reply" data-number="{number}">
+<h3>Write a reply</h3>
+<textarea name="body" rows="5" maxlength="4000" required placeholder="Share an answer, a follow-up question or what helped you…"></textarea>
+{human_check()}
+<div class="frow"><button class="btn" type="submit">Post reply</button><span class="fmsg" role="status"></span></div>
+<p class="fhint">Replies are anonymous and appear here about a minute after posting.</p>
+</form>"""
+
+
+def forum_forms():
+    lv = "".join(f"<option>{x}</option>" for x in ["Intern / Fresher", "1-3 years", "3-6 years", "6-10 years", "10+ years"])
+    return f"""
+<dialog class="fdialog" id="dlg-exp"><form class="fform" data-kind="exp">
+<div class="fhead"><h2>Share your interview experience</h2><button type="button" class="ghost fclose" aria-label="Close">✕</button></div>
+<p class="fhint">Your post is anonymous. Please don't share confidential or NDA-protected material, such as exact take-home tasks.</p>
+<div class="fgrid">
+<label>Company *<input name="company" required maxlength="120" placeholder="e.g. Qualcomm"></label>
+<label>Role *<input name="role" required maxlength="120" placeholder="e.g. Embedded Software Engineer"></label>
+<label>Location<input name="location" maxlength="120" placeholder="e.g. Bengaluru"></label>
+<label>Experience level *<select name="experience" required><option value="">Choose…</option>{lv}</select></label>
+<label>Outcome *<select name="outcome" required><option value="">Choose…</option><option>Offer</option><option>Rejected</option><option>Pending</option><option>Withdrew</option></select></label>
+<label>Difficulty *<select name="difficulty" required><option value="">Choose…</option><option>Easy</option><option>Medium</option><option>Hard</option></select></label>
+</div>
+<label>Rounds and questions *<textarea name="rounds" required rows="7" maxlength="8000" placeholder="Round 1 (online test): C output questions, bit manipulation…&#10;Round 2 (technical): volatile, ISR rules, write a ring buffer…"></textarea></label>
+<label>Tips for others<textarea name="tips" rows="3" maxlength="8000" placeholder="What would you prepare differently?"></textarea></label>
+<label class="chk"><input type="checkbox" name="nda" required> This post contains no confidential or NDA-protected information.</label>
+{human_check()}
+<div class="frow"><button class="btn" type="submit">Post anonymously</button><span class="fmsg" role="status"></span></div>
+</form></dialog>
+<dialog class="fdialog" id="dlg-ask"><form class="fform" data-kind="ask">
+<div class="fhead"><h2>Start a discussion</h2><button type="button" class="ghost fclose" aria-label="Close">✕</button></div>
+<label>Category<select name="category"><option value="q-a">Q&amp;A: ask a question</option><option value="general">General discussion</option></select></label>
+<label>Title *<input name="title" required minlength="5" maxlength="140" placeholder="e.g. How should I prepare for a Linux driver interview in 3 weeks?"></label>
+<label>Details *<textarea name="body" required rows="8" maxlength="8000"></textarea></label>
+{human_check()}
+<div class="frow"><button class="btn" type="submit">Post anonymously</button><span class="fmsg" role="status"></span></div>
+<p class="fhint">Your post is anonymous and appears on the forum about a minute after posting.</p>
+</form></dialog>
+{forum_scripts()}"""
 
 
 def build_thread(d, f, ncom):
@@ -630,23 +690,23 @@ def build_thread(d, f, ncom):
     for c in d["comments"]["nodes"]:
         reps = "".join(f'<div class="reply"><div class="chead">{avatar(r.get("author"))}{when(r["createdAt"])}</div><div class="prose cbody">{r["bodyHTML"]}</div></div>' for r in c["replies"]["nodes"])
         ans = '<span class="fchip fo-ok">✓ Answer</span>' if c.get("isAnswer") else ""
-        comments.append(f'<div class="comment"><div class="chead">{avatar(c.get("author"))}{when(c["createdAt"])}<span class="cv">▲ {c["upvoteCount"]}</span>{ans}</div><div class="prose cbody">{c["bodyHTML"]}</div>{reps}</div>')
+        comments.append(f'<div class="comment"><div class="chead">{avatar(c.get("author"))}{when(c["createdAt"])}{ans}</div><div class="prose cbody">{c["bodyHTML"]}</div>{reps}</div>')
     schema = {"@context": "https://schema.org", "@type": "DiscussionForumPosting", "headline": d["title"],
               "url": f'{SITE_URL}/forum/{d["_slug"]}/', "datePublished": d["createdAt"],
-              "author": {"@type": "Person", "name": (d.get("author") or {}).get("login", "ghost")},
-              "interactionStatistic": [{"@type": "InteractionCounter", "interactionType": "https://schema.org/CommentAction", "userInteractionCount": ncom},
-                                       {"@type": "InteractionCounter", "interactionType": "https://schema.org/LikeAction", "userInteractionCount": d["upvoteCount"]}]}
+              "author": {"@type": "Person", "name": "Anonymous"},
+              "interactionStatistic": [{"@type": "InteractionCounter", "interactionType": "https://schema.org/CommentAction", "userInteractionCount": ncom}]}
     body = f"""
 <article class="wrap narrow single thread">
 <div class="crumbs"><a href="../{url('')}">Forum</a> / {html.escape(d['category']['name'])}</div>
 <h1>{html.escape(d['title'])}</h1>
-<div class="meta">{avatar(d.get('author'))}{when(d['createdAt'])}<span>▲ {d['upvoteCount']} votes</span><span>💬 {ncom} replies</span></div>
+<div class="meta">{avatar()}{when(d['createdAt'])}<span>💬 {ncom} {'reply' if ncom == 1 else 'replies'}</span></div>
 {f'<dl class="finfo">{meta}</dl>' if meta else ''}
 <div class="prose">{body_html}</div>
-<div class="tactions"><a class="btn" href="{html.escape(d['url'])}">Reply or upvote on GitHub ↗</a></div>
 <h2 class="sec">{ncom} {'reply' if ncom == 1 else 'replies'}</h2>
 {''.join(comments) or '<p class="muted">No replies yet. Be the first to answer.</p>'}
-</article>"""
+{'' if d.get('locked') else reply_form(d['number'])}
+</article>
+{forum_scripts()}"""
     desc = plain(f.get("Rounds and questions") or d.get("body", ""), 155)
     write(f"forum/{d['_slug']}/index.html", page(f"forum/{d['_slug']}/index.html", d["title"], body, desc, "forum/", schema))
 
@@ -669,7 +729,7 @@ def build_companies():
         names = ", ".join(dict.fromkeys(n for n, _ in srcs))
         srcline = f'<p class="srcline">Sources: summarised from candidates\' public interview reports on {html.escape(names)} {nums}</p>' if srcs else ""
         meta = f"""<dl class="finfo"><div><dt>Roles</dt><dd>{html.escape(c.get('roles',''))}</dd></div><div><dt>Hiring hubs</dt><dd>{html.escape(c.get('hubs',''))}</dd></div><div><dt>Focus</dt><dd>{html.escape(c.get('focus',''))}</dd></div></dl>"""
-        cta = f"""<div class="ccta"><div><b>Interviewed at {html.escape(c['title'])}?</b><p>Share your experience on the forum and help the next candidate.</p></div><a class="btn" href="{GH_DISC}/new?category=interview-experience">Share your experience</a></div>"""
+        cta = f"""<div class="ccta"><div><b>Interviewed at {html.escape(c['title'])}?</b><p>Share your experience on the forum and help the next candidate.</p></div><a class="btn" href="../../forum/#share">Share your experience</a></div>"""
         body_html = md(c["body"]).replace('<a href="http', '<a rel="nofollow noopener" href="http')
         schema = {"@context": "https://schema.org", "@type": "Article", "headline": f"{c['title']} Embedded Interview Guide",
                   "description": c.get("desc", ""), "dateModified": TODAY, "author": {"@type": "Organization", "name": SITE_NAME}}

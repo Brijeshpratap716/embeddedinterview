@@ -8,7 +8,7 @@ desc: Privacy policy for EmbeddedInterview.com.
 
 **Visitor statistics.** We use [GoatCounter](https://www.goatcounter.com), a privacy-friendly analytics service, to count page views. It records the page visited, the referring site, browser and screen size, and an approximate country, without cookies and without storing your IP address or building a profile of you. We use these totals only to see which pages are useful.
 
-**Community forum.** Forum posts and replies are made on [GitHub Discussions](https://github.com/Brijeshpratap716/embeddedinterview/discussions) and are public. When you post, GitHub's privacy policy applies, and your GitHub username, avatar and post are shown on embeddedinterview.com/forum. Edit or delete a post on GitHub and the change appears here within a few minutes.
+**Community forum.** Forum posts and replies are anonymous: we do not ask for your name, email or any account, and the site shows every author as "Anonymous". To block spam, the posting form uses Cloudflare Turnstile, which checks that you are human and may process your IP address and browser signals under Cloudflare's privacy policy. Posts are public and are stored in the site's GitHub Discussions. Don't include personal details you don't want published. To ask for a post to be removed, use the contact page.
 
 **Data stored in your browser.** Your progress (questions marked done, quiz best score, code you type in the practice editor) and your theme choice are saved in your browser's local storage. This data never leaves your device, and you can delete it at any time by clearing your browser's site data.
 

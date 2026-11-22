@@ -311,3 +311,23 @@ html.dark .qa summary:hover .qt{color:var(--accent)}
 .tactions{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
 .srcline{font-size:12.5px;color:var(--muted);margin:8px 0 0}
 .cnote2{font-size:13.5px;margin:6px 0 0}
+
+/* forum forms */
+.anon{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--line);color:var(--muted);font-size:12px;font-weight:700}
+.fdialog{border:0;border-radius:16px;padding:0;width:min(720px,94vw);max-height:92vh;background:var(--surface);color:var(--ink);box-shadow:0 24px 70px rgba(0,0,0,.35)}
+.fdialog::backdrop{background:rgba(5,10,16,.55)}
+.fform{display:flex;flex-direction:column;gap:12px;padding:22px 24px}
+.fhead{display:flex;justify-content:space-between;align-items:center}
+.fhead h2{margin:0;font-size:21px}
+.fform label{display:flex;flex-direction:column;gap:5px;font-size:14px;font-weight:600}
+.fform label.chk{flex-direction:row;align-items:flex-start;gap:8px;font-weight:500}
+.fform input:not([type=checkbox]),.fform select,.fform textarea{font:inherit;font-size:15px;font-weight:400;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:10px 12px;width:100%}
+.fform textarea{resize:vertical}
+.fform input:focus,.fform select:focus,.fform textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
+.fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.frow{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.fhint{color:var(--muted);font-size:13.5px;margin:0}
+.fmsg{font-size:14px}.fmsg.ok{color:var(--muted)}.fmsg.bad{color:var(--h)}
+.fdone{text-align:center;padding:20px 0}
+.reply-form{padding:18px 20px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);margin:20px 0}
+.reply-form h3{margin:0}
