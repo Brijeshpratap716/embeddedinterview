@@ -190,7 +190,10 @@
     function show(state, msg, text) {
       out.className = "out " + state; outStatus.textContent = msg; outText.textContent = text || "";
     }
-    function texts(a) { return (a || []).map(function (x) { return x.text; }).join("\n"); }
+    function texts(a) {
+      /* strip ANSI colour codes (ESC[01m, ESC[K ...) that GCC adds to diagnostics */
+      return (a || []).map(function (x) { return x.text; }).join("\n").replace(/\x1b?\[[0-9;]*[mK]/g, "");
+    }
     var running = false;
     function run() {
       if (running) return;
@@ -204,7 +207,7 @@
         body: JSON.stringify({
           source: src, lang: "c", allowStoreCodeDebug: false,
           options: {
-            userArguments: "-O1 -std=gnu11 -Wall",
+            userArguments: "-O1 -std=gnu11 -Wall -fdiagnostics-color=never",
             executeParameters: { args: [], stdin: "" },
             compilerOptions: { executorRequest: true },
             filters: { execute: true }, tools: [], libraries: []
