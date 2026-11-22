@@ -5,6 +5,7 @@ roles: Firmware Engineer, Senior Firmware Engineer, Firmware Intern
 hubs: Bengaluru, Folsom, Hillsboro, Haifa, Jerusalem
 focus: C, BIOS/bootloader, OS/RTOS, bit manipulation, computer architecture
 order: 3
+sources: Glassdoor|https://www.glassdoor.com/Interview/Intel-Corporation-Interview-E1519-RVW3998388.htm ; Glassdoor|https://www.glassdoor.com/Interview/Intel-Corporation-Interview-E1519-RVW7170079.htm ; Glassdoor|https://www.glassdoor.sg/Interview/Intel-Corporation-Interview-E1519-RVW45658282.htm ; Glassdoor|https://www.glassdoor.ca/Interview/Intel-Corporation-Interview-E1519-RVW81921112.htm ; Glassdoor|https://www.glassdoor.com/Interview/Intel-Corporation-Interview-E1519-RVW90206162.htm
 ---
 ## At a glance
 
@@ -63,11 +64,3 @@ These are the questions Intel candidates most often report, or close variants of
 2. Revise x86/UEFI boot flow if the team works on BIOS or platform firmware.
 3. Know your locking primitives and when each is used.
 4. Expect to explain your projects in detail and to write code without an IDE.
-
-## Read real experiences
-
-- [Glassdoor: Intel Firmware Engineer – take-home test and 4 onsite rounds](https://www.glassdoor.com/Interview/Intel-Corporation-Interview-E1519-RVW3998388.htm)
-- [Glassdoor: Intel Firmware Engineer – implement malloc and atoi](https://www.glassdoor.com/Interview/Intel-Corporation-Interview-E1519-RVW7170079.htm)
-- [Glassdoor: Intel Firmware Engineer (Bengaluru) – BIOS, bootloader, RTOS topics](https://www.glassdoor.sg/Interview/Intel-Corporation-Interview-E1519-RVW45658282.htm)
-- [Glassdoor: Intel Firmware Engineer Intern – cache coherence, memory hierarchy](https://www.glassdoor.ca/Interview/Intel-Corporation-Interview-E1519-RVW81921112.htm)
-- [Glassdoor: Intel Senior Firmware Engineer – locks in OS/RTOS](https://www.glassdoor.com/Interview/Intel-Corporation-Interview-E1519-RVW90206162.htm)

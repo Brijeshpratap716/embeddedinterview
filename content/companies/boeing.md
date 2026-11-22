@@ -5,6 +5,7 @@ roles: Embedded Software Engineer, Software Engineer
 hubs: Seattle/Everett, Hazelwood (St. Louis), Huntington Beach, Bengaluru
 focus: Behavioural (STAR), coding challenge, RTOS, resume deep-dive
 order: 9
+sources: Glassdoor|https://www.glassdoor.co.uk/Interview/Boeing-Interview-E102-RVW103357468.htm ; Glassdoor|https://www.glassdoor.com/Interview/Boeing-Interview-E102-RVW103967925.htm ; Glassdoor|https://www.glassdoor.co.uk/Interview/Boeing-Interview-E102-RVW104324582.htm ; Glassdoor|https://www.glassdoor.co.uk/Interview/Boeing-Interview-E102-RVW80307774.htm ; Glassdoor|https://www.glassdoor.co.uk/Interview/Boeing-Interview-E102-RVW99415559.htm
 ---
 ## At a glance
 
@@ -57,11 +58,3 @@ These are the questions Boeing candidates most often report, or close variants o
 1. Prepare 5–6 STAR stories (conflict, failure, learning fast, ownership, a technical challenge) and practise recording yourself, since HireVue has no live interviewer.
 2. Practise string-parsing problems under time pressure: [UART Packet Parser](../../problems/frame-parser/), [NMEA Checksum](../../problems/nmea-checksum/).
 3. Revise RTOS fundamentals and be ready to discuss safety-critical practices (MISRA C, DO-178C awareness for avionics roles).
-
-## Read real experiences
-
-- [Glassdoor: Boeing Embedded Software Engineer – HireVue and message decoding](https://www.glassdoor.co.uk/Interview/Boeing-Interview-E102-RVW103357468.htm)
-- [Glassdoor: Boeing Embedded Software Engineer interviews](https://www.glassdoor.com/Interview/Boeing-Interview-E102-RVW103967925.htm)
-- [Glassdoor: Boeing (Hazelwood) – STAR questions and RTOS](https://www.glassdoor.co.uk/Interview/Boeing-Interview-E102-RVW104324582.htm)
-- [Glassdoor: Boeing (Everett) – phone, video and in-person rounds](https://www.glassdoor.co.uk/Interview/Boeing-Interview-E102-RVW80307774.htm)
-- [Glassdoor: Boeing – hardware/software co-design question](https://www.glassdoor.co.uk/Interview/Boeing-Interview-E102-RVW99415559.htm)

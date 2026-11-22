@@ -5,6 +5,7 @@ roles: Embedded Software Engineer, Software Engineer (Embedded), Applications En
 hubs: Bengaluru, Dallas, Richardson, Freising
 focus: C, interrupts, microcontrollers, bit manipulation, projects
 order: 11
+sources: Glassdoor|https://www.glassdoor.com/Interview/Texas-Instruments-Interview-E651-RVW99918358.htm ; Glassdoor|https://www.glassdoor.co.in/Interview/Texas-Instruments-Software-Engineer-embeded-Interview-Questions-EI_IE651.0,17_KO18,43.htm ; Glassdoor|https://www.glassdoor.co.in/Interview/Texas-Instruments-Interview-E651-RVW99476836.htm ; Glassdoor|https://www.glassdoor.co.uk/Interview/Texas-Instruments-Interview-E651-RVW90192019.htm ; Glassdoor|https://www.glassdoor.co.uk/Interview/Texas-Instruments-Interview-E651-RVW75241672.htm
 ---
 ## At a glance
 
@@ -58,11 +59,3 @@ These are the questions Texas Instruments candidates most often report, or close
 1. Know your own projects deeply, down to the peripherals, protocols and registers; TI interviewers dig into them.
 2. Practise C output questions and pointer tracing.
 3. Revise interrupt handling and microcontroller basics (timers, ADC, GPIO), ideally on an MSP430 or another TI LaunchPad if you have one.
-
-## Read real experiences
-
-- [Glassdoor: TI Embedded Software Engineer – OA, technical and HR rounds](https://www.glassdoor.com/Interview/Texas-Instruments-Interview-E651-RVW99918358.htm)
-- [Glassdoor: TI Software Engineer (embedded) interview questions](https://www.glassdoor.co.in/Interview/Texas-Instruments-Software-Engineer-embeded-Interview-Questions-EI_IE651.0,17_KO18,43.htm)
-- [Glassdoor: TI (Bengaluru) – pointers, dynamic memory, guess the output](https://www.glassdoor.co.in/Interview/Texas-Instruments-Interview-E651-RVW99476836.htm)
-- [Glassdoor: TI – buses, caching and bit manipulation](https://www.glassdoor.co.uk/Interview/Texas-Instruments-Interview-E651-RVW90192019.htm)
-- [Glassdoor: TI (Dallas) – project-based technical questions](https://www.glassdoor.co.uk/Interview/Texas-Instruments-Interview-E651-RVW75241672.htm)

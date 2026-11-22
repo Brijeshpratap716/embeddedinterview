@@ -5,6 +5,7 @@ roles: Software Engineer, Firmware Engineer, Embedded Software Engineer, Graduat
 hubs: Cambridge, Manchester, Bengaluru, Austin, Sophia Antipolis
 focus: C, compilers and optimisation, memory systems, synchronisation
 order: 6
+sources: Glassdoor|https://www.glassdoor.co.uk/Interview/Arm-Interview-E7834-RVW88739914.htm ; Glassdoor|https://www.glassdoor.co.in/Interview/Arm-Interview-E7834-RVW83628137.htm ; Glassdoor|https://www.glassdoor.com/Interview/Arm-Interview-E7834-RVW80120109.htm ; Glassdoor|https://www.glassdoor.co.uk/Interview/Arm-Interview-E7834-RVW92184506.htm ; Glassdoor|https://www.glassdoor.co.uk/Interview/Arm-Interview-E7834-RVW1995294.htm
 ---
 ## At a glance
 
@@ -57,11 +58,3 @@ These are the questions Arm candidates most often report, or close variants of t
 1. Understand what the compiler may assume: strict aliasing, undefined behaviour, `restrict`, `volatile` and side effects.
 2. Revise caches, TLBs and memory ordering, ideally in the context of the Arm architecture (Cortex-A vs Cortex-M).
 3. Practise writing clean C under exam-like conditions; one candidate notes that thinking before writing on paper helped.
-
-## Read real experiences
-
-- [Glassdoor: Arm interview – explain possible compiler optimisations](https://www.glassdoor.co.uk/Interview/Arm-Interview-E7834-RVW88739914.htm)
-- [Glassdoor: Arm Firmware Engineer Intern – mutex, cache coherency, TLB, volatile](https://www.glassdoor.co.in/Interview/Arm-Interview-E7834-RVW83628137.htm)
-- [Glassdoor: Arm Software Engineer interviews (Bengaluru)](https://www.glassdoor.com/Interview/Arm-Interview-E7834-RVW80120109.htm)
-- [Glassdoor: Arm Software Engineer – system design for embedded](https://www.glassdoor.co.uk/Interview/Arm-Interview-E7834-RVW92184506.htm)
-- [Glassdoor: Arm Software Engineer interview stages](https://www.glassdoor.co.uk/Interview/Arm-Interview-E7834-RVW1995294.htm)

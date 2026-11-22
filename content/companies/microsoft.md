@@ -5,6 +5,7 @@ roles: Firmware Engineer, Embedded Firmware Engineer, Senior Firmware Engineer
 hubs: Redmond, Hyderabad, Bengaluru, Noida, Taipei
 focus: C, RTOS, HAL/BSP, BIOS/UEFI, boot, debugging
 order: 8
+sources: Glassdoor|https://www.glassdoor.co.uk/Interview/Microsoft-Interview-E1651-RVW100005836.htm ; Glassdoor|https://clear.glassdoor.nl/Interview/Microsoft-Interview-E1651-RVW33908451.htm ; Glassdoor|https://www.glassdoor.com.au/Interview/Microsoft-Interview-E1651-RVW103685699.htm ; Glassdoor|https://www.glassdoor.com.au/Interview/Microsoft-Interview-E1651-RVW100005836.htm ; Glassdoor|https://www.glassdoor.co.uk/Interview/Microsoft-Interview-E1651-RVW2363400.htm
 ---
 ## At a glance
 
@@ -59,11 +60,3 @@ These are the questions Microsoft candidates most often report, or close variant
 2. Revise the boot chain end to end: ROM, bootloader or UEFI, kernel, init.
 3. Practise standard coding questions in C, since rounds often mix coding and embedded topics.
 4. Be ready to explain how you structured a HAL or BSP on a past project.
-
-## Read real experiences
-
-- [Glassdoor: Microsoft Firmware Engineer (Hyderabad) – HAL, BSP, Linux boot](https://www.glassdoor.co.uk/Interview/Microsoft-Interview-E1651-RVW100005836.htm)
-- [Glassdoor: Microsoft Firmware Engineer – C, RTOS, debugging deep dive](https://clear.glassdoor.nl/Interview/Microsoft-Interview-E1651-RVW33908451.htm)
-- [Glassdoor: Microsoft Embedded Firmware Engineer – 4 rounds](https://www.glassdoor.com.au/Interview/Microsoft-Interview-E1651-RVW103685699.htm)
-- [Glassdoor: Microsoft Firmware Engineer – volatile and static](https://www.glassdoor.com.au/Interview/Microsoft-Interview-E1651-RVW100005836.htm)
-- [Glassdoor: Microsoft hardware/firmware campus interview (Xbox, Surface)](https://www.glassdoor.co.uk/Interview/Microsoft-Interview-E1651-RVW2363400.htm)

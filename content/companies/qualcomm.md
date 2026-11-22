@@ -5,6 +5,7 @@ roles: Embedded Software Engineer, Firmware Engineer, Systems Engineer
 hubs: San Diego, Hyderabad, Bengaluru, Austin, Cork
 focus: C, bit manipulation, RTOS, interrupts, UART/SPI/I2C
 order: 1
+sources: Glassdoor|https://www.glassdoor.com/Interview/Qualcomm-Interview-E640-RVW97571085.htm ; Glassdoor|https://www.glassdoor.com/Interview/Qualcomm-Interview-E640-RVW31575543.htm ; Glassdoor|https://www.glassdoor.co.in/Interview/Qualcomm-Sr-Embedded-Software-Engineer-Interview-Questions-EI_IE640.0,8_KO9,38.htm ; Glassdoor|https://www.glassdoor.ca/Interview/Qualcomm-Interview-E640-RVW25643814.htm ; Glassdoor|https://www.glassdoor.com/Interview/Qualcomm-Technologies-Interview-E4454797-RVW103728182.htm ; LeetCode Discuss|https://leetcode.com/discuss/post/6831002/interview-experience-at-qualcomm-embedde-m37q/ ; GeeksforGeeks|https://www.geeksforgeeks.org/companies/qualcomm/articles/ ; GeeksforGeeks|https://www.geeksforgeeks.org/qualcomm-interview-experience-off-campus-4/
 ---
 ## At a glance
 
@@ -67,14 +68,3 @@ These are the questions Qualcomm candidates most often report, or close variants
 2. Practise writing C on paper or a plain editor: [Set, Clear, Toggle a Bit](../../problems/set-clear-toggle-bits/), [Count Set Bits](../../problems/count-set-bits/), [Ring Buffer](../../problems/ring-buffer/), [Reverse a Linked List](../../problems/reverse-linked-list/).
 3. Revise interrupts, RTOS scheduling and synchronisation (mutex vs semaphore, priority inversion).
 4. For modem, multimedia or display teams, refresh the domain basics in the job description.
-
-## Read real experiences
-
-- [Glassdoor: Qualcomm Embedded Engineer interview, 4 rounds (Hyderabad)](https://www.glassdoor.com/Interview/Qualcomm-Interview-E640-RVW97571085.htm)
-- [Glassdoor: Qualcomm interview on JTAG, interrupts, volatile and RTOS](https://www.glassdoor.com/Interview/Qualcomm-Interview-E640-RVW31575543.htm)
-- [Glassdoor: Qualcomm Sr Embedded Software Engineer interview questions](https://www.glassdoor.co.in/Interview/Qualcomm-Sr-Embedded-Software-Engineer-Interview-Questions-EI_IE640.0,8_KO9,38.htm)
-- [Glassdoor: Qualcomm Embedded Software Engineer interviews (storage classes, bit manipulation)](https://www.glassdoor.ca/Interview/Qualcomm-Interview-E640-RVW25643814.htm)
-- [Glassdoor: Qualcomm Technologies interview (UART, SPI, I2C, RTOS)](https://www.glassdoor.com/Interview/Qualcomm-Technologies-Interview-E4454797-RVW103728182.htm)
-- [LeetCode Discuss: Interview Experience at Qualcomm – Embedded Software Engineer](https://leetcode.com/discuss/post/6831002/interview-experience-at-qualcomm-embedde-m37q/)
-- [GeeksforGeeks: Qualcomm interview experiences](https://www.geeksforgeeks.org/companies/qualcomm/articles/)
-- [GeeksforGeeks: Qualcomm off-campus experience (5 rounds: endianness, threads, BST, nibble swap)](https://www.geeksforgeeks.org/qualcomm-interview-experience-off-campus-4/)

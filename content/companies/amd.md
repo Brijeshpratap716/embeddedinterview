@@ -5,6 +5,7 @@ roles: Firmware Engineer, Embedded Software Engineer, Firmware Intern
 hubs: Austin, Santa Clara, Markham, Hyderabad, Bengaluru
 focus: Embedded C, bit manipulation, pointers, interrupts, Linux drivers
 order: 5
+sources: Glassdoor|https://www.glassdoor.co.in/Interview/AMD-Interview-E15-RVW101245307.htm ; Glassdoor|https://www.glassdoor.com/Interview/AMD-Interview-E15-RVW103894912.htm ; Glassdoor|https://www.glassdoor.com/Interview/AMD-Interview-E15-RVW39576196.htm ; Glassdoor|https://www.glassdoor.co.in/Interview/AMD-Interview-E15-RVW88491756.htm ; Glassdoor|https://www.glassdoor.ca/Interview/AMD-Interview-E15-RVW100081675.htm
 ---
 ## At a glance
 
@@ -62,11 +63,3 @@ These are the questions AMD candidates most often report, or close variants of t
 1. Drill bit manipulation until it is automatic: [Set, Clear, Toggle](../../problems/set-clear-toggle-bits/), [Register Field](../../problems/register-field/), [Swap Byte Order](../../problems/swap-nibbles-endian/), [Count Set Bits](../../problems/count-set-bits/).
 2. Practise reading C snippets for undefined behaviour, padding and pointer mistakes.
 3. For driver teams, revise kernel module structure, interrupts and locking.
-
-## Read real experiences
-
-- [Glassdoor: AMD Firmware Intern – bit manipulation, padding, volatile, interrupts](https://www.glassdoor.co.in/Interview/AMD-Interview-E15-RVW101245307.htm)
-- [Glassdoor: AMD interview – technical questions plus live coding](https://www.glassdoor.com/Interview/AMD-Interview-E15-RVW103894912.htm)
-- [Glassdoor: AMD Firmware Engineer (Austin) – bit masking, pointers, endianness](https://www.glassdoor.com/Interview/AMD-Interview-E15-RVW39576196.htm)
-- [Glassdoor: AMD Embedded Software Engineer – C, Linux and kernel drivers](https://www.glassdoor.co.in/Interview/AMD-Interview-E15-RVW88491756.htm)
-- [Glassdoor: AMD Firmware Engineer Intern – "what's wrong with this code" questions](https://www.glassdoor.ca/Interview/AMD-Interview-E15-RVW100081675.htm)

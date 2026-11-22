@@ -5,6 +5,7 @@ roles: System Software Engineer, Embedded Software Engineer, Firmware Engineer
 hubs: Santa Clara, Pune, Bengaluru, Hyderabad, Durham, Taipei
 focus: Linux kernel, OS internals, C/C++, computer architecture
 order: 2
+sources: Glassdoor|https://www.glassdoor.ie/Interview/NVIDIA-Interview-E7633-RVW9978856.htm ; Glassdoor|https://www.glassdoor.co.uk/Interview/NVIDIA-Interview-E7633-RVW81115733.htm ; Glassdoor|https://www.glassdoor.co.in/Interview/NVIDIA-Interview-RVW23935689.htm ; Glassdoor|https://www.glassdoor.com/Interview/NVIDIA-Interview-RVW89804534.htm ; Glassdoor|https://www.glassdoor.ie/Interview/NVIDIA-Interview-E7633-RVW17445377.htm ; GeeksforGeeks|https://www.geeksforgeeks.org/companies/nvidia/articles/
 ---
 ## At a glance
 
@@ -66,12 +67,3 @@ These are the questions NVIDIA candidates most often report, or close variants o
 2. Practise [Aligned Allocation](../../problems/aligned-malloc/), [Implement memmove](../../problems/implement-memmove/) and a few medium array/interval problems under time pressure.
 3. Be able to draw an SoC block diagram and explain the boot flow from ROM to the kernel.
 4. For GPU or Tegra/automotive teams, read up on the specific domain (display, camera, power, CUDA basics).
-
-## Read real experiences
-
-- [Glassdoor: NVIDIA phone screen on Linux kernel and C questions](https://www.glassdoor.ie/Interview/NVIDIA-Interview-E7633-RVW9978856.htm)
-- [Glassdoor: NVIDIA System Software Engineer interviews (Pune)](https://www.glassdoor.co.uk/Interview/NVIDIA-Interview-E7633-RVW81115733.htm)
-- [Glassdoor: NVIDIA Embedded Software Engineer onsite loop](https://www.glassdoor.co.in/Interview/NVIDIA-Interview-RVW23935689.htm)
-- [Glassdoor: NVIDIA questions on SoC architecture and boot](https://www.glassdoor.com/Interview/NVIDIA-Interview-RVW89804534.htm)
-- [Glassdoor: NVIDIA Systems Software interview (kernel memory, aligned malloc)](https://www.glassdoor.ie/Interview/NVIDIA-Interview-E7633-RVW17445377.htm)
-- [GeeksforGeeks: NVIDIA interview experiences](https://www.geeksforgeeks.org/companies/nvidia/articles/)

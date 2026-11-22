@@ -5,6 +5,7 @@ roles: Embedded Software Engineer, Software Engineer (Embedded), Intern
 hubs: Bengaluru, Noida, Eindhoven, Bucharest, Austin, Kuala Lumpur
 focus: C (pointers, memory layout), OS, microcontrollers, data structures
 order: 10
+sources: LeetCode Discuss|https://leetcode.com/discuss/interview-question/5905862/NXP-Semiconductors-or-Intern-+-Full-Time(-PBC ; Glassdoor|https://www.glassdoor.co.uk/Interview/NXP-Semiconductors-Interview-E13528-RVW19102976.htm ; Glassdoor|https://www.glassdoor.sg/Interview/NXP-Semiconductors-Interview-E13528-RVW70763876.htm ; Glassdoor|https://www.glassdoor.ca/Interview/NXP-Semiconductors-Interview-E13528-RVW63338732.htm ; Taro|https://www.jointaro.com/interviews/companies/nxp-semiconductors/experiences/embedded-software-engineer-new-delhi-delhi-october-1-2020-no-offer-positive-a3323f58/
 ---
 ## At a glance
 
@@ -60,11 +61,3 @@ These are the questions NXP Semiconductors candidates most often report, or clos
 1. Practise C output questions until you can trace pointer arithmetic and integer promotion reliably.
 2. Know the memory layout of a C program and the compilation pipeline thoroughly; see the article [Memory Layout of a C Program on a Microcontroller](../../articles/memory-layout-mcu/).
 3. For automotive teams, revise CAN and safety basics; for security teams, crypto and secure boot basics.
-
-## Read real experiences
-
-- [LeetCode Discuss: NXP Semiconductors Intern + Full Time, Bengaluru (Offer)](https://leetcode.com/discuss/interview-question/5905862/NXP-Semiconductors-or-Intern-+-Full-Time(-PBC)-or-Bengaluru-(India)-or-sept-2024-Offer/)
-- [Glassdoor: NXP (Bucharest) – C/C++, memory, bitwise, preprocessor](https://www.glassdoor.co.uk/Interview/NXP-Semiconductors-Interview-E13528-RVW19102976.htm)
-- [Glassdoor: NXP campus – C and OOP, compilation steps](https://www.glassdoor.sg/Interview/NXP-Semiconductors-Interview-E13528-RVW70763876.htm)
-- [Glassdoor: NXP – online test then technical interview](https://www.glassdoor.ca/Interview/NXP-Semiconductors-Interview-E13528-RVW63338732.htm)
-- [Taro: NXP Embedded Software Engineer interview, New Delhi](https://www.jointaro.com/interviews/companies/nxp-semiconductors/experiences/embedded-software-engineer-new-delhi-delhi-october-1-2020-no-offer-positive-a3323f58/)

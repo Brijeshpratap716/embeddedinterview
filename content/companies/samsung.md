@@ -5,6 +5,7 @@ roles: Embedded Software Engineer, Software Engineer, Senior Embedded Software E
 hubs: Bengaluru, Noida, Suwon, San Jose
 focus: Coding test, C/C++, OS concepts, debugging, hardware interfacing
 order: 4
+sources: LeetCode Discuss|https://leetcode.com/discuss/interview-experience/3045312/ ; GeeksforGeeks|https://www.geeksforgeeks.org/?p=1083005 ; Glassdoor|https://www.glassdoor.ca/Interview/Samsung-Electronics-Interview-E3363-RVW98238270.htm ; Glassdoor|https://www.glassdoor.co.in/Interview/Samsung-Electronics-Embedded-Software-Engineer-Interview-Questions-EI_IE3363.0,19_KO20,46.htm ; Glassdoor|https://www.glassdoor.com/Interview/Samsung-Electronics-Interview-E3363-RVW49703113.htm ; Glassdoor|https://www.glassdoor.sg/Interview/Samsung-Semiconductor-India-Research-SSIR-Interview-E7110428-RVW82673804.htm ; GeeksforGeeks|https://www.geeksforgeeks.org/companies/samsung-electronics/articles/
 ---
 ## At a glance
 
@@ -58,13 +59,3 @@ These are the questions Samsung candidates most often report, or close variants 
 2. Revise C++ object model basics (vtables, constructors and destructors) for senior roles.
 3. Prepare clear explanations of your projects and the debugging you did on them.
 4. Check which Samsung entity and track (software or hardware) you are interviewing for; the topics differ.
-
-## Read real experiences
-
-- [LeetCode Discuss: Samsung Semiconductor Research India interview](https://leetcode.com/discuss/interview-experience/3045312/)
-- [GeeksforGeeks: SSIR Interview Experience for Software Engineer](https://www.geeksforgeeks.org/?p=1083005)
-- [Glassdoor: Samsung Electronics Embedded Software Developer interview](https://www.glassdoor.ca/Interview/Samsung-Electronics-Interview-E3363-RVW98238270.htm)
-- [Glassdoor: Samsung Electronics Embedded Software Engineer interview questions](https://www.glassdoor.co.in/Interview/Samsung-Electronics-Embedded-Software-Engineer-Interview-Questions-EI_IE3363.0,19_KO20,46.htm)
-- [Glassdoor: Samsung Senior Embedded Software Engineer – C++ internals](https://www.glassdoor.com/Interview/Samsung-Electronics-Interview-E3363-RVW49703113.htm)
-- [Glassdoor: Samsung Semiconductor India Research interviews](https://www.glassdoor.sg/Interview/Samsung-Semiconductor-India-Research-SSIR-Interview-E7110428-RVW82673804.htm)
-- [GeeksforGeeks: Samsung Electronics interview experiences](https://www.geeksforgeeks.org/companies/samsung-electronics/articles/)

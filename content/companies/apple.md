@@ -5,6 +5,7 @@ roles: Firmware Engineer, Embedded Firmware Engineer, Embedded Software Engineer
 hubs: Cupertino, Sunnyvale, San Diego, Herzliya, Hyderabad
 focus: C, memory, concurrency, boot, low-level coding
 order: 7
+sources: Glassdoor|https://www.glassdoor.co.in/Interview/Apple-Interview-E1138-RVW25287385.htm ; Glassdoor|https://www.glassdoor.co.in/Interview/Apple-Interview-E1138-RVW2286457.htm ; Glassdoor|https://www.glassdoor.com/Interview/Apple-Interview-E1138-RVW103837595.htm ; Glassdoor|https://www.glassdoor.co.in/Interview/Apple-Interview-E1138-RVW103257032.htm ; Glassdoor|https://www.glassdoor.ca/Interview/Apple-Interview-E1138-RVW42124198.htm ; Glassdoor|https://www.glassdoor.com/Interview/Apple-Interview-RVW87767506.htm
 ---
 ## At a glance
 
@@ -64,12 +65,3 @@ These are the questions Apple candidates most often report, or close variants of
 1. Practise low-level C on realistic data layouts: [Aligned Allocation](../../problems/aligned-malloc/), [Dutch National Flag](../../problems/dutch-national-flag/), [Single Number](../../problems/single-number-xor/), [Bit-Banged SPI](../../problems/bitbang-spi/).
 2. Prepare stories about a hard bug you fixed, with technical depth; managers ask about it.
 3. Have a genuine, specific answer to "why Apple" and "why this team".
-
-## Read real experiences
-
-- [Glassdoor: Apple Firmware Engineer – packed 12-bit data coding question](https://www.glassdoor.co.in/Interview/Apple-Interview-E1138-RVW25287385.htm)
-- [Glassdoor: Apple Firmware Engineer – RS-232 and UART over GPIO](https://www.glassdoor.co.in/Interview/Apple-Interview-E1138-RVW2286457.htm)
-- [Glassdoor: Apple Embedded Firmware Engineer – merge sort, sort colors, producer-consumer](https://www.glassdoor.com/Interview/Apple-Interview-E1138-RVW103837595.htm)
-- [Glassdoor: Apple Firmware Engineer – aligned malloc, pointers, bit manipulation](https://www.glassdoor.co.in/Interview/Apple-Interview-E1138-RVW103257032.htm)
-- [Glassdoor: Apple Firmware Engineer – recruiter, manager and take-home](https://www.glassdoor.ca/Interview/Apple-Interview-E1138-RVW42124198.htm)
-- [Glassdoor: Apple Embedded Software Engineer – boot process](https://www.glassdoor.com/Interview/Apple-Interview-RVW87767506.htm)

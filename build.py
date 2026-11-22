@@ -663,7 +663,11 @@ def build_companies():
         cards.append(f"""<a class="card" href="{url(c['slug'] + '/')}"><h3>{html.escape(c['title'])}</h3>
 <p>{html.escape(c.get('roles',''))}</p><div class="fchips">{focus}</div>
 <div class="cardfoot"><span>{html.escape(c.get('hubs',''))}</span></div></a>""")
-        intro = f"""<div class="cnote"><b>How this guide was made.</b> We summarised interview reports that candidates have shared publicly on Glassdoor, LeetCode Discuss, GeeksforGeeks and similar sites, rewritten in our own words. Processes differ by team, level and country, so treat this as a typical picture, not a guarantee. The original experiences are linked at the bottom. Last researched: {RESEARCHED}.</div>"""
+        intro = f"""<p class="muted cnote2">Processes differ by team, level and country, so treat this as a typical picture, not a guarantee. Last updated: {RESEARCHED}.</p>"""
+        srcs = [x.split("|", 1) for x in c.get("sources", "").split(" ; ") if "|" in x]
+        nums = " ".join(f'<a rel="nofollow noopener" href="{html.escape(u)}">[{i}]</a>' for i, (_, u) in enumerate(srcs, 1))
+        names = ", ".join(dict.fromkeys(n for n, _ in srcs))
+        srcline = f'<p class="srcline">Sources: summarised from candidates\' public interview reports on {html.escape(names)} {nums}</p>' if srcs else ""
         meta = f"""<dl class="finfo"><div><dt>Roles</dt><dd>{html.escape(c.get('roles',''))}</dd></div><div><dt>Hiring hubs</dt><dd>{html.escape(c.get('hubs',''))}</dd></div><div><dt>Focus</dt><dd>{html.escape(c.get('focus',''))}</dd></div></dl>"""
         cta = f"""<div class="ccta"><div><b>Interviewed at {html.escape(c['title'])}?</b><p>Share your experience on the forum and help the next candidate.</p></div><a class="btn" href="{GH_DISC}/new?category=interview-experience">Share your experience</a></div>"""
         body_html = md(c["body"]).replace('<a href="http', '<a rel="nofollow noopener" href="http')
@@ -676,12 +680,13 @@ def build_companies():
 {meta}{intro}
 <div class="prose">{body_html}</div>
 {cta}
+{srcline}
 </article>"""
         write(f"companies/{c['slug']}/index.html", page(f"companies/{c['slug']}/index.html",
               f"{c['title']} Embedded Software Interview Questions & Process", body, c.get("desc", ""), "companies/", schema))
     body = f"""
 <section class="wrap pagehead"><h1>Company Interview Guides</h1>
-<p class="lead">How embedded, firmware and Linux driver interviews usually run at {len(items)} top semiconductor and tech companies: the rounds, the topics that come up most, example questions candidates reported, and how to prepare. Each guide links to the real interview experiences it summarises.</p></section>
+<p class="lead">How embedded, firmware and Linux driver interviews usually run at {len(items)} top semiconductor and tech companies: the rounds, the topics that come up most, example questions candidates reported, practice questions and how to prepare.</p></section>
 <section class="wrap grid cards">{''.join(cards)}</section>
 <section class="wrap"><div class="ccta"><div><b>Don't see your company?</b><p>Share your interview experience on the forum. Popular companies get their own guide.</p></div><a class="btn" href="{url('../forum/')}">Go to the forum</a></div></section>"""
     write("companies/index.html", page("companies/index.html", "Embedded Interview Guides by Company: Qualcomm, NVIDIA, Intel and more", body,

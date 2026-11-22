@@ -310,3 +310,4 @@ html.dark .qa summary:hover .qt{color:var(--accent)}
 .votes.src span{font-size:10px}
 .tactions{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
 .srcline{font-size:12.5px;color:var(--muted);margin:8px 0 0}
+.cnote2{font-size:13.5px;margin:6px 0 0}
