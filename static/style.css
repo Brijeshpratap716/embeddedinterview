@@ -299,3 +299,8 @@ html.dark .qa summary:hover .qt{color:var(--accent)}
 .cbody{font-size:15.5px}
 .thread .prose img{max-width:100%}
 @media (max-width:600px){.fpost{gap:10px;padding:14px}.votes{width:42px}.fmeta .cat{margin-left:0}}
+.cnote{background:color-mix(in srgb,var(--hl) 10%,var(--surface));border:1px solid color-mix(in srgb,var(--hl) 35%,var(--line));border-radius:var(--radius);padding:12px 16px;font-size:14.5px;color:var(--ink);margin:12px 0 6px}
+.ccta{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;margin:28px 0;box-shadow:var(--shadow)}
+.ccta p{margin:4px 0 0;color:var(--muted)}
+.card .fchips{margin:0 0 12px}
+.prose thead:has(th:empty){display:none}

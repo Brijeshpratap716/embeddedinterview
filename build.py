@@ -81,7 +81,7 @@ def write(path, content):
 
 # ---------------------------------------------------------------- layout
 NAV = [("Topics", "topics/"), ("Questions", "questions/"), ("Practice", "problems/"),
-       ("Quiz", "quiz/"), ("Articles", "articles/"), ("Forum", "forum/"), ("Roadmap", "roadmap/")]
+       ("Quiz", "quiz/"), ("Articles", "articles/"), ("Companies", "companies/"), ("Forum", "forum/"), ("Roadmap", "roadmap/")]
 
 
 AUTHOR = {"@type": "Person", "name": "Brijesh Pratap Singh", "url": "https://embeddedinterview.com/about/",
@@ -149,7 +149,7 @@ def page(path, title, body, desc="", active="", schema=None):
     <div><a class="brand" href="{root}{url('')}"><span class="chip">&lt;/&gt;</span>Embedded<b>Interview</b></a>
       <p class="muted">Free interview preparation for embedded software, firmware and Linux kernel engineers.</p></div>
     <div><h4>Learn</h4><a href="{root}{url('topics/')}">All topics</a><a href="{root}{url('questions/')}">Question bank</a><a href="{root}{url('roadmap/')}">Roadmap</a></div>
-    <div><h4>Practice</h4><a href="{root}{url('problems/')}">Coding problems</a><a href="{root}{url('quiz/')}">MCQ quiz</a><a href="{root}{url('articles/')}">Articles</a></div>
+    <div><h4>Practice</h4><a href="{root}{url('problems/')}">Coding problems</a><a href="{root}{url('quiz/')}">MCQ quiz</a><a href="{root}{url('articles/')}">Articles</a><a href="{root}{url('companies/')}">Company guides</a><a href="{root}{url('forum/')}">Forum</a></div>
     <div><h4>Site</h4><a href="{root}{url('about/')}">About</a><a href="{root}{url('contact/')}">Contact</a><a href="{root}{url('privacy/')}">Privacy</a><a href="{root}{url('terms/')}">Terms</a></div>
   </div>
   <div class="wrap copy">© {datetime.date.today().year} EmbeddedInterview.com · Made for engineers who work close to the metal.</div>
@@ -455,8 +455,10 @@ def build_home(topics, problems, articles, nquiz):
     write("index.html", page("index.html", SITE_NAME, body, f"{total} embedded interview questions and answers with detailed explanations: Embedded C, RTOS, ARM Cortex-M, I2C, SPI, UART, CAN, Linux device drivers, plus coding practice and quizzes.", "", schema))
 
 
-def build_search(topics, problems, articles):
+def build_search(topics, problems, articles, companies=()):
     idx = []
+    for c in companies:
+        idx.append({"t": f"{c['title']} embedded interview guide", "s": "Company guide", "u": url(f"companies/{c['slug']}/"), "x": c.get("desc", "")})
     for t in topics:
         for q in t["qs"]:
             idx.append({"t": q["q"], "s": t["title"], "u": url(f"topics/{t['slug']}/{q['slug']}/"), "x": plain(q["md"], 300)})
@@ -555,6 +557,7 @@ def build_forum():
 <section class="wrap pagehead"><h1>Community Forum</h1>
 <p class="lead">Real embedded interview experiences, questions and discussions from engineers preparing for firmware, embedded software and Linux driver roles. Sign in with your GitHub account to post, reply and upvote.</p>
 <div class="cta fnew">{new_btns}</div>
+<p class="fnote" style="margin:4px 0 0">Preparing for a specific company? Read the <a href="{url('../companies/')}">company interview guides</a>.</p>
 <div class="filters ftabs">{tabs}</div>
 <div class="filters bank"><input id="fq" type="search" placeholder="Search posts…"><select id="fco"><option value="">All companies</option>{co_opts}</select>
 <select id="fout"><option value="">Any outcome</option><option>Offer</option><option>Rejected</option><option>Pending</option><option>Withdrew</option></select>
@@ -597,6 +600,44 @@ def build_thread(d, f, ncom):
     write(f"forum/{d['_slug']}/index.html", page(f"forum/{d['_slug']}/index.html", d["title"], body, desc, "forum/", schema))
 
 
+# ---------------------------------------------------------------- company interview guides
+RESEARCHED = "November 2026"
+
+
+def build_companies():
+    items = load_dir("companies")
+    cards = []
+    for c in items:
+        focus = "".join(f'<span class="fchip">{html.escape(x.strip())}</span>' for x in c.get("focus", "").split(","))
+        cards.append(f"""<a class="card" href="{url(c['slug'] + '/')}"><h3>{html.escape(c['title'])}</h3>
+<p>{html.escape(c.get('roles',''))}</p><div class="fchips">{focus}</div>
+<div class="cardfoot"><span>{html.escape(c.get('hubs',''))}</span></div></a>""")
+        intro = f"""<div class="cnote"><b>How this guide was made.</b> We summarised interview reports that candidates have shared publicly on Glassdoor, LeetCode Discuss, GeeksforGeeks and similar sites, rewritten in our own words. Processes differ by team, level and country, so treat this as a typical picture, not a guarantee. The original experiences are linked at the bottom. Last researched: {RESEARCHED}.</div>"""
+        meta = f"""<dl class="finfo"><div><dt>Roles</dt><dd>{html.escape(c.get('roles',''))}</dd></div><div><dt>Hiring hubs</dt><dd>{html.escape(c.get('hubs',''))}</dd></div><div><dt>Focus</dt><dd>{html.escape(c.get('focus',''))}</dd></div></dl>"""
+        cta = f"""<div class="ccta"><div><b>Interviewed at {html.escape(c['title'])}?</b><p>Share your experience on the forum and help the next candidate.</p></div><a class="btn" href="{GH_DISC}/new?category=interview-experience">Share your experience</a></div>"""
+        body_html = md(c["body"]).replace('<a href="http', '<a rel="nofollow noopener" href="http')
+        schema = {"@context": "https://schema.org", "@type": "Article", "headline": f"{c['title']} Embedded Interview Guide",
+                  "description": c.get("desc", ""), "dateModified": TODAY, "author": {"@type": "Organization", "name": SITE_NAME}}
+        body = f"""
+<article class="wrap narrow single">
+<div class="crumbs"><a href="../{url('')}">Company guides</a> / {html.escape(c['title'])}</div>
+<h1>{html.escape(c['title'])} Embedded Interview Guide</h1>
+{meta}{intro}
+<div class="prose">{body_html}</div>
+{cta}
+</article>"""
+        write(f"companies/{c['slug']}/index.html", page(f"companies/{c['slug']}/index.html",
+              f"{c['title']} Embedded Software Interview Questions & Process", body, c.get("desc", ""), "companies/", schema))
+    body = f"""
+<section class="wrap pagehead"><h1>Company Interview Guides</h1>
+<p class="lead">How embedded, firmware and Linux driver interviews usually run at {len(items)} top semiconductor and tech companies: the rounds, the topics that come up most, example questions candidates reported, and how to prepare. Each guide links to the real interview experiences it summarises.</p></section>
+<section class="wrap grid cards">{''.join(cards)}</section>
+<section class="wrap"><div class="ccta"><div><b>Don't see your company?</b><p>Share your interview experience on the forum. Popular companies get their own guide.</p></div><a class="btn" href="{url('../forum/')}">Go to the forum</a></div></section>"""
+    write("companies/index.html", page("companies/index.html", "Embedded Interview Guides by Company: Qualcomm, NVIDIA, Intel and more", body,
+          "Embedded and firmware interview process and questions at Qualcomm, NVIDIA, Intel, Samsung, AMD, Arm, Apple, Microsoft, Boeing, NXP, TI and Bosch.", "companies/"))
+    return items
+
+
 def main():
     if os.path.exists(OUT):
         shutil.rmtree(OUT)
@@ -613,11 +654,12 @@ def main():
     nquiz = build_quiz()
     build_home(topics, problems, articles, nquiz)
     build_forum()
+    companies = build_companies()
     for name in ["roadmap", "about", "contact", "privacy", "terms"]:
         meta, body = front_matter(open(os.path.join(CONTENT, "pages", name + ".md"), encoding="utf-8").read())
         simple_page(f"{name}/index.html", meta.get("title", name.title()), body, meta.get("desc", ""), f"{name}/" if name == "roadmap" else "")
     write("404.html", page("404.html", "Page not found", '<section class="wrap narrow single"><h1>404: segmentation fault</h1><p class="lead">This address does not map to any page. <a href="/">Go home</a> or use search.</p></section>'))
-    build_search(topics, problems, articles)
+    build_search(topics, problems, articles, companies)
     n = build_sitemap()
     print(f"Built {n} pages: {len(topics)} topics, {sum(len(t['qs']) for t in topics)} questions, "
           f"{len(problems)} problems, {len(articles)} articles, {nquiz} MCQs -> {OUT}")
