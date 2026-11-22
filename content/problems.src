@@ -2848,3 +2848,696 @@ Doing the XOR on `unsigned int` keeps every bit pattern well defined, including 
 - Every other element appears **three** times: count each bit position modulo 3.
 - Find the **missing number** in `0..n`: XOR all indexes and all values together.
 - Same trick in firmware: XOR checksums in serial protocols (see *UART Packet Parser*) and RAID-style parity.
+
+@@@ implement-memcpy
+title: Implement memcpy
+difficulty: E
+category: Pointers & Strings
+order: 33
+## Problem
+Implement `void *my_memcpy(void *dst, const void *src, size_t n)` that copies exactly `n` bytes from `src` to `dst` and returns `dst`. The regions do not overlap. Do not use any library function.
+
+This is one of the most common embedded C interview questions. Be ready to explain why the pointers are cast to `unsigned char *` and how it differs from `memmove`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stddef.h>
+#include <string.h>
+
+void *my_memcpy(void *dst, const void *src, size_t n)
+{
+    return dst;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    char src[] = "embedded";
+    char dst[16] = { 0 };
+    CHECK(my_memcpy(dst, src, 9) == dst && strcmp(dst, "embedded") == 0);
+
+    unsigned char raw[5] = { 0x00, 0xFF, 0x80, 0x7F, 0x00 };   /* zeros inside: not a string */
+    unsigned char out[5] = { 1, 1, 1, 1, 1 };
+    my_memcpy(out, raw, 5);
+    CHECK(memcmp(out, raw, 5) == 0);
+
+    int a[4] = { 1, -2, 300000, -400000 }, b[4] = { 0 };
+    my_memcpy(b, a, sizeof a);
+    CHECK(memcmp(a, b, sizeof a) == 0);
+
+    char g[4] = { 'x', 'x', 'x', 'x' };
+    CHECK(my_memcpy(g, "ab", 0) == g && g[0] == 'x');            /* n = 0 copies nothing */
+    my_memcpy(g + 1, "ab", 2);
+    CHECK(g[0] == 'x' && g[1] == 'a' && g[2] == 'b' && g[3] == 'x'); /* no overrun */
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+`void *` cannot be dereferenced or incremented in standard C. Convert both pointers to byte pointers (`unsigned char *`), copy one byte per iteration, and remember to return the **original** `dst`.
+## Solution
+```c
+#include <stdio.h>
+#include <stddef.h>
+#include <string.h>
+
+void *my_memcpy(void *dst, const void *src, size_t n)
+{
+    unsigned char *d = dst;            /* void * converts implicitly in C */
+    const unsigned char *s = src;
+
+    while (n--)
+        *d++ = *s++;
+
+    return dst;                        /* original pointer, not d */
+}
+```
+## Explanation
+Your version is correct. The casts `(unsigned char *)dst` are optional in C, because `void *` converts to any object pointer implicitly (they are required in C++). `while (n--)` is the same loop written shorter.
+
+**Why `unsigned char`?** The standard guarantees that any object can be accessed byte by byte through a character type, which is exempt from strict aliasing. `unsigned char` has no sign or padding problems, so every bit pattern copies exactly.
+
+**Walk-through: copy 3 bytes `"abc"`**
+
+| n before | copy | d moves to |
+|---|---|---|
+| 3 | `d[0] = 'a'` | d + 1 |
+| 2 | `d[1] = 'b'` | d + 2 |
+| 1 | `d[2] = 'c'` | d + 3 |
+| 0 | loop ends, return original `dst` | |
+
+**memcpy vs memmove:** `memcpy` assumes the buffers do **not** overlap; its parameters are declared `restrict`, and overlapping calls are undefined behaviour. `memmove` handles overlap by copying backwards when needed (see *Implement memmove*).
+
+**Follow-ups interviewers ask:**
+- *How would you make it faster?* Copy bytes until `dst` is word-aligned, then copy 4 or 8 bytes at a time, then the remaining tail. Only do word copies if `src` is aligned too, or the CPU supports unaligned access (Cortex-M0 faults on it). Real libraries also use SIMD or DMA.
+- *Can the compiler replace your loop?* Yes, GCC may turn the loop into a call to `memcpy` itself, which recurses forever if you are *writing* `memcpy`. Build library code with `-fno-builtin` or `-ffreestanding`.
+- *What about `volatile` memory such as device registers or DMA buffers?* `memcpy` may merge or reorder accesses, so copy register blocks with an explicit loop over `volatile` pointers.
+
+@@@ implement-strlen
+title: Implement strlen
+difficulty: E
+category: Pointers & Strings
+order: 34
+## Problem
+Implement `size_t my_strlen(const char *s)` that returns the number of characters before the terminating `'\0'`, without using the standard library.
+
+Example: `my_strlen("hello")` → `5`, `my_strlen("")` → `0`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stddef.h>
+
+size_t my_strlen(const char *s)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    CHECK(my_strlen("hello") == 5);
+    CHECK(my_strlen("") == 0);
+    CHECK(my_strlen("a") == 1);
+    CHECK(my_strlen("embedded interview") == 18);
+    char buf[] = { 'a', 'b', '\0', 'c', '\0' };
+    CHECK(my_strlen(buf) == 2);                 /* stops at the first NUL */
+    const char *s = "\xFF\x80 high bytes";
+    CHECK(my_strlen(s) == 13);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Walk the string until you reach `'\0'`. Count with a `size_t`, not an `int`. You can count with an index or by subtracting two pointers.
+## Solution
+```c
+#include <stdio.h>
+#include <stddef.h>
+
+size_t my_strlen(const char *s)
+{
+    const char *p = s;
+    while (*p)
+        p++;
+    return (size_t)(p - s);      /* distance from start to the '\0' */
+}
+```
+## Explanation
+Your index version (`while (s[len] != '\0') len++;`) is correct. The pointer version above does the same thing: advance to the terminator and subtract the start address.
+
+**Walk-through: `"abc"`**
+
+| p points at | `*p` | action |
+|---|---|---|
+| s + 0 | 'a' | p++ |
+| s + 1 | 'b' | p++ |
+| s + 2 | 'c' | p++ |
+| s + 3 | '\0' | stop, return 3 |
+
+**Points interviewers check:**
+- **Return type `size_t`**: lengths are never negative and can exceed `INT_MAX`. A common follow-up bug is `for (int i = 0; i < strlen(s) - 1; i++)`: for an empty string, `strlen(s) - 1` is a huge unsigned number.
+- **O(n) every call**: calling `strlen` in a loop condition makes the loop O(n²). Compute it once.
+- **`NULL`**: the standard `strlen(NULL)` is undefined; don't hide bugs by returning 0 silently.
+- **No terminator**: on a buffer filled from a UART or network packet there may be no `'\0'`, and `strlen` reads past the end. Use a bounded version (`strnlen(s, maxlen)`) for untrusted data.
+
+**Faster versions** check one word at a time once the pointer is aligned, using the zero-byte trick `(v - 0x01010101) & ~v & 0x80808080` from the Bit Manipulation topic.
+
+@@@ implement-strcpy
+title: Implement strcpy
+difficulty: E
+category: Pointers & Strings
+order: 35
+## Problem
+Implement `char *my_strcpy(char *dst, const char *src)` that copies the string `src`, **including** the terminating `'\0'`, into `dst` and returns `dst`. Assume `dst` is large enough.
+
+Then be ready to explain why `strcpy` is considered dangerous and what to use instead.
+## Starter code
+```c
+#include <stdio.h>
+#include <string.h>
+
+char *my_strcpy(char *dst, const char *src)
+{
+    return dst;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    char d[32];
+    memset(d, 'X', sizeof d);
+    CHECK(my_strcpy(d, "firmware") == d && strcmp(d, "firmware") == 0);
+    CHECK(d[8] == '\0' && d[9] == 'X');           /* terminator copied, nothing after it */
+    CHECK(my_strcpy(d, "") == d && d[0] == '\0');
+    char e[8];
+    CHECK(strcmp(my_strcpy(e, "abc"), "abc") == 0);   /* return value is usable */
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Copy one character at a time and stop **after** you have copied the `'\0'`. Save the original `dst` first, because you will move the pointer.
+## Solution
+```c
+#include <stdio.h>
+#include <string.h>
+
+char *my_strcpy(char *dst, const char *src)
+{
+    char *ret = dst;
+    while ((*dst++ = *src++) != '\0')
+        ;                          /* copy includes the '\0' */
+    return ret;
+}
+```
+## Explanation
+Your version is correct: the assignment inside the condition copies the character first, then tests it, so the terminator is copied before the loop stops. The shorter form above is the classic K&R idiom.
+
+**Walk-through: `"hi"`**
+
+| step | copied | value tested | continue? |
+|---|---|---|---|
+| 1 | dst[0] = 'h' | 'h' | yes |
+| 2 | dst[1] = 'i' | 'i' | yes |
+| 3 | dst[2] = '\0' | '\0' | no → return original dst |
+
+**Why `strcpy` is dangerous:** it has no idea how big `dst` is. If `src` is longer, it writes past the end of the buffer, a **buffer overflow** that corrupts the stack or heap and is a classic security hole. MISRA C and CERT C forbid it with untrusted input.
+
+**Safer alternatives:**
+- `snprintf(dst, size, "%s", src)`: always terminates, returns the length it wanted to write.
+- `strlcpy` (BSD, glibc 2.38+, POSIX 2024): always terminates, reports truncation (see *Safe String Copy*).
+- **Not** `strncpy`: it does not terminate `dst` when `src` is too long, and it pads the rest with zeros.
+
+**Other follow-ups:** overlapping `src` and `dst` are undefined behaviour; `strcpy` returns `dst` so calls can be chained, but that means you cannot easily get the end position (POSIX `stpcpy` returns a pointer to the new terminator, useful for appending).
+
+@@@ implement-strcmp
+title: Implement strcmp
+difficulty: E
+category: Pointers & Strings
+order: 36
+## Problem
+Implement `int my_strcmp(const char *s1, const char *s2)` that returns a negative value if `s1` sorts before `s2`, zero if they are equal, and a positive value if `s1` sorts after `s2`. Characters must be compared as **unsigned char**, like the standard function.
+## Starter code
+```c
+#include <stdio.h>
+
+int my_strcmp(const char *s1, const char *s2)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    CHECK(my_strcmp("abc", "abc") == 0);
+    CHECK(my_strcmp("abc", "abd") < 0);
+    CHECK(my_strcmp("abd", "abc") > 0);
+    CHECK(my_strcmp("ab", "abc") < 0);             /* prefix sorts first */
+    CHECK(my_strcmp("abc", "ab") > 0);
+    CHECK(my_strcmp("", "") == 0);
+    CHECK(my_strcmp("", "a") < 0);
+    CHECK(my_strcmp("\xE9", "a") > 0);             /* 0xE9 > 'a' when unsigned */
+    CHECK(my_strcmp("A", "a") < 0);                /* case-sensitive: 'A' = 65 */
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Advance while both characters are equal and not the terminator. Then return the difference of the first characters that differ, converted to `unsigned char`.
+## Solution
+```c
+#include <stdio.h>
+
+int my_strcmp(const char *s1, const char *s2)
+{
+    const unsigned char *a = (const unsigned char *)s1;
+    const unsigned char *b = (const unsigned char *)s2;
+
+    while (*a && *a == *b) {
+        a++;
+        b++;
+    }
+    return *a - *b;          /* both promote to int: no overflow */
+}
+```
+## Explanation
+Your version is correct, including the important `(unsigned char)` casts. Converting the pointers once, as above, is equivalent.
+
+The loop stops at the first difference **or** at the end of `s1`. You don't need to check `*b` separately: if `s2` ended first, `*b` is `'\0'` and differs from `*a`, so the loop already stopped.
+
+**Walk-through: `"ab"` vs `"abc"`**
+
+| a | b | equal? | action |
+|---|---|---|---|
+| 'a' | 'a' | yes | advance |
+| 'b' | 'b' | yes | advance |
+| '\0' | 'c' | stop (end of s1) | return 0 − 99 = −99 (< 0) |
+
+**Why the unsigned cast matters:** `char` is signed on x86 and on Arm with some compilers. Without the cast, a byte like `0xE9` ('é' in Latin-1) is −23 and would wrongly sort **before** 'a'. The C standard says `strcmp` compares as `unsigned char`.
+
+**Points to mention:**
+- Only the **sign** of the result is defined. Never write `if (strcmp(a, b) == -1)`.
+- `a - b` cannot overflow, because both values are 0–255 promoted to `int`.
+- Follow-ups: `strncmp` (stop after n characters, used for protocol prefixes like `"AT+"`), case-insensitive compare, and constant-time compare for passwords or MACs so the timing doesn't leak how many characters matched.
+
+@@@ reverse-bits-32
+title: Reverse the Bits of a 32-bit Integer
+difficulty: E
+category: Bit Manipulation
+order: 37
+## Problem
+Implement `uint32_t reverse_bits(uint32_t n)` that mirrors all 32 bits: bit 0 becomes bit 31, bit 1 becomes bit 30, and so on.
+
+Example: `0x0000000F` → `0xF0000000`; `0x00000001` → `0x80000000`.
+
+Write the simple loop first, then the constant-time version interviewers ask for next.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+uint32_t reverse_bits(uint32_t n)
+{
+    return n;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    CHECK(reverse_bits(0x0000000Fu) == 0xF0000000u);
+    CHECK(reverse_bits(0x00000001u) == 0x80000000u);
+    CHECK(reverse_bits(0x80000000u) == 0x00000001u);
+    CHECK(reverse_bits(0x00000000u) == 0x00000000u);
+    CHECK(reverse_bits(0xFFFFFFFFu) == 0xFFFFFFFFu);
+    CHECK(reverse_bits(0x12345678u) == 0x1E6A2C48u);
+    CHECK(reverse_bits(reverse_bits(0xDEADBEEFu)) == 0xDEADBEEFu);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Loop 32 times: shift the result left to make room, copy the lowest bit of `n` into it, then shift `n` right.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+/* Simple version: 32 iterations */
+uint32_t reverse_bits(uint32_t n)
+{
+    uint32_t rev = 0;
+    for (int i = 0; i < 32; i++) {
+        rev = (rev << 1) | (n & 1u);   /* append lowest bit of n */
+        n >>= 1;
+    }
+    return rev;
+}
+
+/* Constant-time version: swap ever-larger groups (also correct) */
+uint32_t reverse_bits_fast(uint32_t n)
+{
+    n = ((n & 0x55555555u) << 1) | ((n >> 1) & 0x55555555u);  /* swap single bits */
+    n = ((n & 0x33333333u) << 2) | ((n >> 2) & 0x33333333u);  /* swap pairs       */
+    n = ((n & 0x0F0F0F0Fu) << 4) | ((n >> 4) & 0x0F0F0F0Fu);  /* swap nibbles     */
+    n = ((n & 0x00FF00FFu) << 8) | ((n >> 8) & 0x00FF00FFu);  /* swap bytes       */
+    return (n << 16) | (n >> 16);                              /* swap halves      */
+}
+```
+## Explanation
+Both of your versions are correct.
+
+**Loop version:** each iteration takes the lowest bit off `n` and pushes it onto the right of `rev`. After 32 steps, the bit that started at position 0 has been shifted left 31 times, so it ends at position 31. It must run all 32 iterations even when `n` becomes 0 early, otherwise leading bits are lost.
+
+**Walk-through on 4 bits, n = 0b0011**
+
+| i | n & 1 | rev | n after |
+|---|---|---|---|
+| 0 | 1 | 0001 | 0001 |
+| 1 | 1 | 0011 | 0000 |
+| 2 | 0 | 0110 | 0000 |
+| 3 | 0 | 1100 | 0000 |
+
+**Fast version:** five swap stages of width 1, 2, 4, 8 and 16 bits. Each stage uses a mask to select one half of every group, moves it by the group width and merges. That is about 15 operations with no loop or branch, which is O(log w) for a w-bit word.
+
+**On real hardware:** Armv7-M and later have a single instruction, `RBIT` (`__RBIT()` in CMSIS); Clang also provides `__builtin_bitreverse32`. A 256-entry byte table is another fast option when flash is available.
+
+**Small fixes worth mentioning:** use `1u` and `u`-suffixed masks so all arithmetic is unsigned, and print a `uint32_t` with `"%08" PRIX32` from `<inttypes.h>` rather than `%08X`, which assumes `unsigned int` is 32 bits.
+
+**Where it is used:** LSB-first vs MSB-first peripherals, CRC implementations with reflected polynomials, and FFT bit-reversed addressing.
+
+@@@ first-set-bit
+title: Position of the First (Lowest) Set Bit
+difficulty: E
+category: Bit Manipulation
+order: 38
+## Problem
+Implement `int first_set_bit(uint32_t n)` that returns the **1-based** position of the lowest set bit, or `0` if no bit is set. This matches the POSIX `ffs()` function.
+
+Example: `18` (binary `10010`) → `2`; `1` → `1`; `0x80000000` → `32`; `0` → `0`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+int first_set_bit(uint32_t n)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    CHECK(first_set_bit(18) == 2);
+    CHECK(first_set_bit(1) == 1);
+    CHECK(first_set_bit(0) == 0);
+    CHECK(first_set_bit(0x80000000u) == 32);
+    CHECK(first_set_bit(0xFFFFFFFFu) == 1);
+    CHECK(first_set_bit(0x00010000u) == 17);
+    CHECK(first_set_bit(12) == 3);              /* 1100 */
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Handle `0` first, or the loop never ends. Then shift right until the lowest bit is 1, counting the shifts. For a faster version, `n & -n` isolates the lowest set bit.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+int first_set_bit(uint32_t n)
+{
+    if (n == 0)
+        return 0;              /* no set bit: also prevents an endless loop */
+
+    int pos = 1;
+    while ((n & 1u) == 0) {
+        n >>= 1;
+        pos++;
+    }
+    return pos;
+}
+```
+## Explanation
+Your version is correct, and the `n == 0` check is essential: without it the loop shifts zeros forever.
+
+**Walk-through: n = 18 = 0b10010**
+
+| n | n & 1 | pos |
+|---|---|---|
+| 10010 | 0 | 1 → shift |
+| 01001 | 1 | 2 → stop |
+
+Result: 2.
+
+**Faster ways (what interviewers ask next):**
+- `n & -n` (or `n & (~n + 1)`) keeps only the lowest set bit: 18 → `00010`. Its position is then a single count.
+- Built-ins: `__builtin_ctz(n) + 1` (count trailing zeros, undefined for 0) or `__builtin_ffs(n)`, which compile to one or two instructions. On Arm, `ctz` is `RBIT` followed by `CLZ`.
+- Highest set bit instead: `32 - __builtin_clz(n)` gives the 1-based position (this is ⌊log₂ n⌋ + 1).
+
+**Where it is used in firmware:** finding the highest-priority pending interrupt or ready task from a bitmap (RTOS schedulers such as FreeRTOS's optimised port and Zephyr do this with `CLZ`), allocating the first free slot from a bitmap, and decoding which flag in a status register fired.
+
+**Note the convention:** this question uses 1-based positions with 0 meaning "none". If an interviewer asks for 0-based positions, you need another way to signal "no bit set", such as returning −1.
+
+@@@ check-endianness
+title: Detect the CPU's Endianness
+difficulty: E
+category: Bit Manipulation
+order: 39
+## Problem
+Write `int is_little_endian(void)` that returns `1` if the CPU stores multi-byte values little-endian and `0` if big-endian, by inspecting how a known value is laid out in memory.
+
+The online compiler runs on x86-64, which is little-endian, so the test expects `1`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+int is_little_endian(void)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    CHECK(is_little_endian() == 1);   /* x86-64 and almost all Arm systems */
+    CHECK(is_little_endian() == is_little_endian());
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Store a value whose bytes are all different, such as `0x12345678`, then look at the byte at the lowest address through an `unsigned char` pointer.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+int is_little_endian(void)
+{
+    uint32_t x = 0x12345678u;
+    const unsigned char *p = (const unsigned char *)&x;
+    return p[0] == 0x78;          /* lowest address holds the least significant byte */
+}
+```
+## Explanation
+Your program is correct. Accessing an object through `unsigned char *` is always allowed in C, so this is portable and has no strict-aliasing problem.
+
+**How `0x12345678` is laid out**
+
+| address | little-endian | big-endian |
+|---|---|---|
+| p[0] | 0x78 | 0x12 |
+| p[1] | 0x56 | 0x34 |
+| p[2] | 0x34 | 0x56 |
+| p[3] | 0x12 | 0x78 |
+
+**Other ways to answer:**
+- A union: `union { uint32_t u; uint8_t b[4]; } v = { 0x01 }; return v.b[0];` (fine in C, not in C++).
+- At compile time with GCC/Clang: `#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__`. This is better in real firmware because it costs nothing at run time.
+
+**The point interviewers want you to make:** you rarely need to *detect* endianness. When you parse a protocol or file format, build values from bytes with shifts, for example `(uint32_t)b[0] << 24 | b[1] << 16 | b[2] << 8 | b[3]` for big-endian data. That works on any CPU without checking anything (see *Swap Byte Order of a 32-bit Value*).
+
+**Where it matters:** network byte order is big-endian (`htonl`/`ntohl`); CAN signals, Modbus registers and many sensors use big-endian fields; x86, RISC-V and almost all Arm systems run little-endian; some PowerPC and older networking chips are big-endian.
+
+@@@ swap-odd-even-bits
+title: Swap Odd and Even Bits
+difficulty: E
+category: Bit Manipulation
+order: 40
+## Problem
+Implement `uint32_t swap_odd_even_bits(uint32_t n)` that swaps every pair of adjacent bits: bit 0 with bit 1, bit 2 with bit 3, and so on.
+
+Example: `23` (binary `0001 0111`) → `43` (binary `0010 1011`).
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+uint32_t swap_odd_even_bits(uint32_t n)
+{
+    return n;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    CHECK(swap_odd_even_bits(23) == 43);
+    CHECK(swap_odd_even_bits(1) == 2);
+    CHECK(swap_odd_even_bits(2) == 1);
+    CHECK(swap_odd_even_bits(0xAAAAAAAAu) == 0x55555555u);
+    CHECK(swap_odd_even_bits(0x55555555u) == 0xAAAAAAAAu);
+    CHECK(swap_odd_even_bits(0x80000000u) == 0x40000000u);
+    CHECK(swap_odd_even_bits(0xFFFFFFFFu) == 0xFFFFFFFFu);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+`0x55555555` has a 1 in every **even** position (0, 2, 4…) and `0xAAAAAAAA` in every **odd** position. Pick out each set, move it one place towards the other, and combine.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+uint32_t swap_odd_even_bits(uint32_t n)
+{
+    uint32_t even = n & 0x55555555u;   /* bits 0, 2, 4, ... */
+    uint32_t odd  = n & 0xAAAAAAAAu;   /* bits 1, 3, 5, ... */
+    return (even << 1) | (odd >> 1);
+}
+```
+## Explanation
+Your version is correct. Each even bit moves up one position into the odd slot next to it, and each odd bit moves down. Because the two masks never overlap, OR-ing the shifted halves cannot collide. It runs in a fixed handful of instructions, with no loop.
+
+**Walk-through: n = 23 = 0b0001 0111**
+
+| step | binary | value |
+|---|---|---|
+| n | 0001 0111 | 23 |
+| even = n & 0x55 | 0001 0101 | 21 |
+| odd = n & 0xAA | 0000 0010 | 2 |
+| even << 1 | 0010 1010 | 42 |
+| odd >> 1 | 0000 0001 | 1 |
+| result | 0010 1011 | **43** |
+
+**Why `0x55` and `0xAA`:** `0x5` is `0101` and `0xA` is `1010`, so repeating them gives the even-bit and odd-bit masks for any width.
+
+**Points to mention:**
+- Use **unsigned** types: with a signed `int`, `0xAAAAAAAA` does not fit and `>>` of a negative value is implementation-defined.
+- This is exactly the **first stage** of the fast bit-reversal (see *Reverse the Bits of a 32-bit Integer*). Swapping pairs with `0x33333333`, nibbles with `0x0F0F0F0F` and bytes with `0x00FF00FF` are the other stages.
+- **Follow-up:** swap nibbles in a byte, `(b << 4) | (b >> 4)`, which is used to convert BCD and some LCD controller data.
+
+@@@ container-of
+title: Implement container_of
+difficulty: M
+category: Pointers & Strings
+order: 41
+## Problem
+Linux and most RTOS kernels embed list nodes **inside** the structures they link. Given a pointer to the embedded member, you need the address of the structure that contains it.
+
+1. Implement the macro `container_of(ptr, type, member)`.
+2. Use it in `struct sensor *sensor_from_node(struct list_node *n)`.
+
+```c
+struct list_node { struct list_node *next; };
+struct sensor { int id; char name[12]; struct list_node node; float value; };
+```
+## Starter code
+```c
+#include <stdio.h>
+#include <stddef.h>
+
+#define container_of(ptr, type, member) ((type *)0)
+
+struct list_node { struct list_node *next; };
+struct sensor { int id; char name[12]; struct list_node node; float value; };
+
+struct sensor *sensor_from_node(struct list_node *n)
+{
+    return NULL;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+struct pair { char tag; double d; int first; };
+int main(void)
+{
+    struct sensor s[2] = { { 1, "temp", { NULL }, 21.5f }, { 2, "humidity", { NULL }, 40.0f } };
+    s[0].node.next = &s[1].node;
+
+    CHECK(sensor_from_node(&s[0].node) == &s[0]);
+    CHECK(sensor_from_node(s[0].node.next) == &s[1]);
+    CHECK(sensor_from_node(s[0].node.next)->id == 2);
+
+    int sum = 0;                                    /* walk the list */
+    for (struct list_node *p = &s[0].node; p; p = p->next)
+        sum += sensor_from_node(p)->id;
+    CHECK(sum == 3);
+
+    struct pair pr;
+    CHECK(container_of(&pr.first, struct pair, first) == &pr);  /* member not first, padding */
+    CHECK(container_of(&pr.tag, struct pair, tag) == &pr);      /* member at offset 0 */
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+`offsetof(type, member)` from `<stddef.h>` gives the member's byte offset inside the structure. Convert the member pointer to `char *` so the subtraction is in bytes, subtract the offset, and cast to `type *`.
+## Solution
+```c
+#include <stdio.h>
+#include <stddef.h>
+
+#define container_of(ptr, type, member) \
+    ((type *)((char *)(ptr) - offsetof(type, member)))
+
+struct list_node { struct list_node *next; };
+struct sensor { int id; char name[12]; struct list_node node; float value; };
+
+struct sensor *sensor_from_node(struct list_node *n)
+{
+    return n ? container_of(n, struct sensor, node) : NULL;
+}
+```
+## Explanation
+Your macro is correct and identical to the classic definition. It needs `#include <stddef.h>` for `offsetof`.
+
+**How it works:** a member lives at a fixed byte offset from the start of its structure. If `&s.node` is address `A` and `offsetof(struct sensor, node)` is 16, the structure starts at `A − 16`.
+
+**Example layout on a 64-bit machine**
+
+| member | offset | size |
+|---|---|---|
+| `id` | 0 | 4 |
+| `name[12]` | 4 | 12 |
+| `node` | 16 | 8 |
+| `value` | 24 | 4 |
+
+Given `ptr = 0x1010` for `node`, the macro computes `0x1010 − 16 = 0x1000`, the address of the `struct sensor`.
+
+**Why the `(char *)` cast is essential:** pointer arithmetic is scaled by the pointed-to type. `ptr - 16` on a `struct list_node *` would move back 16 × 8 bytes. Casting to `char *` makes the subtraction count single bytes.
+
+**Why kernels use it:** the list code works only with `struct list_node`, so one generic list implementation serves every structure, nodes need no separate allocation, and one object can sit on several lists through several embedded nodes. Linux's `list_head`, `rb_node`, kobjects and almost every driver's private data (`container_of(inode->i_cdev, struct my_dev, cdev)`) rely on it.
+
+**The Linux version adds type checking:** it rejects a `ptr` whose type does not match `member`, using `static_assert` with `__same_type()` (older kernels used a GCC statement expression with `typeof`). The plain version above silently accepts a wrong pointer and returns garbage.
+
+**Follow-up:** the classic way to implement `offsetof` itself is `((size_t)&((type *)0)->member)`. Technically it is undefined behaviour, because it dereferences a null pointer, which is why compilers provide `__builtin_offsetof` and you should use the standard macro.
