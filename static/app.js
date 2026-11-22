@@ -279,5 +279,42 @@
     box.innerHTML = '<div class="qcard score"><p>Press <b>Start quiz</b> to get 10 random questions.</p></div>';
   }
 
+  /* ---------- forum: relative times + filters ---------- */
+  (function () {
+    var units = [["year", 31536e6], ["month", 2592e6], ["week", 6048e5], ["day", 864e5], ["hour", 36e5], ["minute", 6e4]];
+    $$("time[data-t]").forEach(function (t) {
+      var ms = Date.now() - Date.parse(t.dataset.t);
+      if (isNaN(ms)) return;
+      for (var i = 0; i < units.length; i++) {
+        var n = Math.floor(ms / units[i][1]);
+        if (n >= 1) { t.textContent = n + " " + units[i][0] + (n > 1 ? "s" : "") + " ago"; return; }
+      }
+      t.textContent = "just now";
+    });
+    var list = $("#flist");
+    if (!list || !$(".fpost")) return;
+    var cat = "all", q = $("#fq"), co = $("#fco"), out = $("#fout"), sort = $("#fsort");
+    function apply() {
+      var posts = $$(".fpost", list), n = 0, text = q.value.toLowerCase();
+      posts.sort(function (a, b) {
+        return sort.value === "top" ? (+b.dataset.votes - +a.dataset.votes) || (b.dataset.time > a.dataset.time ? 1 : -1)
+                                    : (b.dataset.time > a.dataset.time ? 1 : -1);
+      }).forEach(function (p) {
+        var ok = (cat === "all" || p.dataset.cat === cat) && (!co.value || p.dataset.co === co.value) &&
+                 (!out.value || p.dataset.out === out.value) && (!text || p.textContent.toLowerCase().indexOf(text) >= 0);
+        p.classList.toggle("hidden", !ok); if (ok) n++;
+        list.appendChild(p);
+      });
+      $("#fcount").textContent = n + (n === 1 ? " discussion" : " discussions");
+    }
+    $$(".ftabs .f").forEach(function (b) {
+      b.addEventListener("click", function () {
+        $$(".ftabs .f").forEach(function (x) { x.classList.remove("on"); });
+        b.classList.add("on"); cat = b.dataset.cat; apply();
+      });
+    });
+    [q, co, out, sort].forEach(function (el) { el.addEventListener("input", apply); el.addEventListener("change", apply); });
+  })();
+
   refresh();
 })();

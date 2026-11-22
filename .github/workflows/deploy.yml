@@ -4,9 +4,16 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  discussion:
+    types: [created, edited, deleted, category_changed, answered, unanswered, locked, unlocked, labeled, unlabeled]
+  discussion_comment:
+    types: [created, edited, deleted]
+  schedule:
+    - cron: "17 */6 * * *"   # refresh vote counts every 6 hours
 
 permissions:
   contents: read
+  discussions: read
   pages: write
   id-token: write
 
@@ -23,6 +30,10 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install markdown pygments
+      - name: Fetch forum posts from GitHub Discussions
+        run: python3 scripts/fetch_forum.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: python3 build.py
       - uses: actions/upload-pages-artifact@v3
         with:

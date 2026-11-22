@@ -81,7 +81,7 @@ def write(path, content):
 
 # ---------------------------------------------------------------- layout
 NAV = [("Topics", "topics/"), ("Questions", "questions/"), ("Practice", "problems/"),
-       ("Quiz", "quiz/"), ("Articles", "articles/"), ("Roadmap", "roadmap/")]
+       ("Quiz", "quiz/"), ("Articles", "articles/"), ("Forum", "forum/"), ("Roadmap", "roadmap/")]
 
 
 AUTHOR = {"@type": "Person", "name": "Brijesh Pratap Singh", "url": "https://embeddedinterview.com/about/",
@@ -483,6 +483,120 @@ def build_sitemap():
     return len(urls)
 
 
+# ---------------------------------------------------------------- forum (GitHub Discussions)
+GH_REPO = "Brijeshpratap716/embeddedinterview"
+GH_DISC = f"https://github.com/{GH_REPO}/discussions"
+FORM_FIELDS = ["Company", "Role", "Location", "Experience level", "Outcome", "Difficulty"]
+OUTCOME_CLS = {"Offer": "ok", "Rejected": "no", "Pending": "wait", "Withdrew": "wait"}
+
+
+def parse_form(body):
+    """GitHub discussion forms render as '### Label\n\nvalue' blocks."""
+    fields = {}
+    for m in re.finditer(r"^### (.+?)\s*\n+(.*?)(?=^### |\Z)", body or "", re.S | re.M):
+        v = m.group(2).strip()
+        if v and v != "_No response_":
+            fields[m.group(1).strip()] = v
+    return fields
+
+
+def avatar(a):
+    a = a or {"login": "ghost", "avatarUrl": "", "url": "https://github.com/ghost"}
+    img = f'<img src="{html.escape(a["avatarUrl"])}&s=48" alt="" width="24" height="24" loading="lazy">' if a.get("avatarUrl") else ""
+    return f'<a class="who" href="{html.escape(a["url"])}" rel="nofollow ugc">{img}{html.escape(a["login"])}</a>'
+
+
+def when(iso):
+    return f'<time data-t="{html.escape(iso)}" datetime="{html.escape(iso)}">{iso[:10]}</time>'
+
+
+def build_forum():
+    path = os.path.join(CONTENT, "forum.json")
+    data = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {"discussions": [], "categories": []}
+    posts = data.get("discussions", [])
+    new_btns = (f'<a class="btn" href="{GH_DISC}/new?category=interview-experience">+ Share interview experience</a>'
+                f'<a class="btn ghost" href="{GH_DISC}/new?category=q-a">Ask a question</a>'
+                f'<a class="btn ghost" href="{GH_DISC}/new?category=general">Start a discussion</a>')
+    rows, companies = [], set()
+    for d in posts:
+        f = parse_form(d.get("body", ""))
+        comp = f.get("Company", "")
+        if comp:
+            companies.add(comp)
+        slug = f'{d["number"]}-{slugify(d["title"], 60)}'
+        d["_slug"], d["_fields"] = slug, f
+        preview = f.get("Rounds and questions") or re.sub(r"^### .*$", "", d.get("body", ""), flags=re.M)
+        chips = ""
+        if comp:
+            chips += f'<span class="fchip co">{html.escape(comp)}</span>'
+        if f.get("Role"):
+            chips += f'<span class="fchip">{html.escape(f["Role"])}</span>'
+        if f.get("Outcome"):
+            chips += f'<span class="fchip fo-{OUTCOME_CLS.get(f["Outcome"], "wait")}">{html.escape(f["Outcome"])}</span>'
+        if f.get("Difficulty") in ("Easy", "Medium", "Hard"):
+            chips += badge(f["Difficulty"][0])
+        ncom = d["comments"]["totalCount"] + sum(len(c["replies"]["nodes"]) for c in d["comments"]["nodes"])
+        rows.append(f"""<a class="fpost" href="{url(slug + '/')}" data-cat="{html.escape(d['category']['slug'])}" data-co="{html.escape(comp)}" data-out="{html.escape(f.get('Outcome',''))}" data-votes="{d['upvoteCount']}" data-time="{html.escape(d['createdAt'])}">
+<div class="votes"><b>{d['upvoteCount']}</b><span>votes</span></div>
+<div class="fbody"><h3>{html.escape(d['title'])}</h3><div class="fchips">{chips}</div>
+<p>{html.escape(plain(preview, 180))}</p>
+<div class="fmeta"><span>{html.escape((d.get('author') or {}).get('login', 'ghost'))}</span>{when(d['createdAt'])}<span>💬 {ncom}</span><span class="cat">{html.escape(d['category']['name'])}</span></div></div></a>""")
+        build_thread(d, f, ncom)
+
+    cats = [("all", "All")] + [(c["slug"], c["name"]) for c in data.get("categories", []) if c["slug"] != "polls"]
+    if len(cats) == 1:
+        cats += [("interview-experience", "Interview Experience"), ("q-a", "Q&A"), ("general", "General")]
+    tabs = "".join(f'<button class="f{" on" if s == "all" else ""}" data-cat="{html.escape(s)}">{html.escape(n)}</button>' for s, n in cats)
+    co_opts = "".join(f'<option>{html.escape(c)}</option>' for c in sorted(companies, key=str.lower))
+    empty = f"""<div class="fempty"><h2>No posts yet. Be the first!</h2>
+<p>Share how your last embedded interview went: the company, the rounds, the questions they asked, and what you would prepare differently. It helps everyone preparing for the same roles.</p>
+<div class="cta">{new_btns}</div></div>"""
+    body = f"""
+<section class="wrap pagehead"><h1>Community Forum</h1>
+<p class="lead">Real embedded interview experiences, questions and discussions from engineers preparing for firmware, embedded software and Linux driver roles. Sign in with your GitHub account to post, reply and upvote.</p>
+<div class="cta fnew">{new_btns}</div>
+<div class="filters ftabs">{tabs}</div>
+<div class="filters bank"><input id="fq" type="search" placeholder="Search posts…"><select id="fco"><option value="">All companies</option>{co_opts}</select>
+<select id="fout"><option value="">Any outcome</option><option>Offer</option><option>Rejected</option><option>Pending</option><option>Withdrew</option></select>
+<select id="fsort"><option value="new">Newest</option><option value="top">Top voted</option></select><span class="count" id="fcount">{len(posts)} discussions</span></div>
+</section>
+<section class="wrap"><div id="flist" class="flist">{''.join(rows) if rows else empty}</div>
+<p class="fnote">Posts are hosted on <a href="{GH_DISC}">GitHub Discussions</a> and appear here a few minutes after posting. Please keep it respectful and don't share confidential or NDA-protected material.</p></section>"""
+    write("forum/index.html", page("forum/index.html", "Embedded Interview Experiences & Community Forum", body,
+          "Real embedded interview experiences and discussions: firmware, embedded C and Linux driver interviews at Qualcomm, NXP, Bosch, TI and more.", "forum/"))
+
+
+def build_thread(d, f, ncom):
+    meta = "".join(f'<div><dt>{html.escape(k)}</dt><dd>{html.escape(f[k])}</dd></div>' for k in FORM_FIELDS if f.get(k))
+    body_html = d.get("bodyHTML", "")
+    if meta:  # drop the field blocks GitHub rendered, they are shown in the info box
+        for k in FORM_FIELDS + ["Confirmation"]:
+            body_html = re.sub(r"<h3[^>]*>\s*" + re.escape(html.escape(k, quote=False)) + r"\s*</h3>\s*(<p[^>]*>.*?</p>|<ul.*?</ul>)", "", body_html, flags=re.S)
+    comments = []
+    for c in d["comments"]["nodes"]:
+        reps = "".join(f'<div class="reply"><div class="chead">{avatar(r.get("author"))}{when(r["createdAt"])}</div><div class="prose cbody">{r["bodyHTML"]}</div></div>' for r in c["replies"]["nodes"])
+        ans = '<span class="fchip fo-ok">✓ Answer</span>' if c.get("isAnswer") else ""
+        comments.append(f'<div class="comment"><div class="chead">{avatar(c.get("author"))}{when(c["createdAt"])}<span class="cv">▲ {c["upvoteCount"]}</span>{ans}</div><div class="prose cbody">{c["bodyHTML"]}</div>{reps}</div>')
+    schema = {"@context": "https://schema.org", "@type": "DiscussionForumPosting", "headline": d["title"],
+              "url": f'{SITE_URL}/forum/{d["_slug"]}/', "datePublished": d["createdAt"],
+              "author": {"@type": "Person", "name": (d.get("author") or {}).get("login", "ghost")},
+              "interactionStatistic": [{"@type": "InteractionCounter", "interactionType": "https://schema.org/CommentAction", "userInteractionCount": ncom},
+                                       {"@type": "InteractionCounter", "interactionType": "https://schema.org/LikeAction", "userInteractionCount": d["upvoteCount"]}]}
+    body = f"""
+<article class="wrap narrow single thread">
+<div class="crumbs"><a href="../{url('')}">Forum</a> / {html.escape(d['category']['name'])}</div>
+<h1>{html.escape(d['title'])}</h1>
+<div class="meta">{avatar(d.get('author'))}{when(d['createdAt'])}<span>▲ {d['upvoteCount']} votes</span><span>💬 {ncom} replies</span></div>
+{f'<dl class="finfo">{meta}</dl>' if meta else ''}
+<div class="prose">{body_html}</div>
+<div class="tactions"><a class="btn" href="{html.escape(d['url'])}">Reply or upvote on GitHub ↗</a></div>
+<h2 class="sec">{ncom} {'reply' if ncom == 1 else 'replies'}</h2>
+{''.join(comments) or '<p class="muted">No replies yet. Be the first to answer.</p>'}
+</article>"""
+    desc = plain(f.get("Rounds and questions") or d.get("body", ""), 155)
+    write(f"forum/{d['_slug']}/index.html", page(f"forum/{d['_slug']}/index.html", d["title"], body, desc, "forum/", schema))
+
+
 def main():
     if os.path.exists(OUT):
         shutil.rmtree(OUT)
@@ -498,6 +612,7 @@ def main():
     build_articles(articles)
     nquiz = build_quiz()
     build_home(topics, problems, articles, nquiz)
+    build_forum()
     for name in ["roadmap", "about", "contact", "privacy", "terms"]:
         meta, body = front_matter(open(os.path.join(CONTENT, "pages", name + ".md"), encoding="utf-8").read())
         simple_page(f"{name}/index.html", meta.get("title", name.title()), body, meta.get("desc", ""), f"{name}/" if name == "roadmap" else "")
