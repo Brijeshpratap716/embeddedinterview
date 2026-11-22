@@ -22,6 +22,10 @@ SITE_URL = "https://embeddedinterview.com"
 SITE_NAME = "EmbeddedInterview"
 PREVIEW = "--preview" in sys.argv
 TODAY = datetime.date.today().isoformat()
+import hashlib
+# version tag for static files, so browsers fetch fresh copies after every change
+ASSET_V = hashlib.sha1(b"".join(open(os.path.join(BASE, "static", f), "rb").read()
+                                for f in ("app.js", "style.css"))).hexdigest()[:10]
 DIFF = {"E": "Easy", "M": "Medium", "H": "Hard"}
 
 
@@ -120,8 +124,8 @@ def page(path, title, body, desc="", active="", schema=None):
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{root}static/style.css">
-<link rel="stylesheet" href="{root}static/code.css">
+<link rel="stylesheet" href="{root}static/style.css?v={ASSET_V}">
+<link rel="stylesheet" href="{root}static/code.css?v={ASSET_V}">
 <script>try{{if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark')}}catch(e){{}}</script>
 {ld}
 </head>
@@ -156,7 +160,7 @@ def page(path, title, body, desc="", active="", schema=None):
   </div>
   <div class="wrap copy">© {datetime.date.today().year} EmbeddedInterview.com · Made for engineers who work close to the metal.</div>
 </footer>
-<script src="{root}static/app.js"></script>
+<script src="{root}static/app.js?v={ASSET_V}"></script>
 <script data-goatcounter="https://embeddedinterview.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>"""
