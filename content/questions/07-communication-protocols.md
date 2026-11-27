@@ -517,25 +517,34 @@ MIPI I3C is a newer two-wire interface designed for higher throughput and additi
 **Interview takeaway:** Do not treat SMBus, I2C and I3C as identical. Match the controller, target, electrical requirements and transaction type.
 
 ### What is I2S, and how is it different from I2C? {E}
-**Short answer:** I2S (Inter-IC Sound) is a synchronous serial bus for **digital audio** between processors, codecs, DACs, ADCs and digital microphones. Despite the similar name, it has nothing to do with I2C: it has a bit clock (**BCLK/SCK**), a word-select or frame clock (**LRCLK/WS**, which selects left or right channel and runs at the sample rate), and one or more data lines (**SD**), plus often a master clock (**MCLK**) for the codec. It streams audio continuously at a fixed sample rate.
+I2S (Inter-IC Sound) is a serial interface for digital audio samples. I2C is an addressed control/data bus; the similar names do not imply compatible protocols.
 
-**Clock relationships**
+#### 1. Common I2S signals
 
+- BCLK: serial bit clock.
+- WS/LRCLK: word-select or left/right channel clock.
+- SD: serial audio data.
+- MCLK: optional master clock depending on codec/system.
+
+In standard I2S format, the most significant data bit follows the word-select transition by one bit-clock period. Other audio serial formats use different alignment.
+
+#### 2. Clock example
+
+For 48 kHz stereo audio with 32-bit slots:
+
+```text
+BCLK = 48000 × 2 channels × 32 bits
+     = 3.072 MHz
+LRCLK = 48 kHz
 ```
-LRCLK (WS) = sample rate, e.g. 48 kHz
-BCLK = sample rate × channels × bits per slot, e.g. 48 kHz × 2 × 32 = 3.072 MHz
-MCLK often = 256 × sample rate = 12.288 MHz
-```
 
-**Formats:** standard I2S (data delayed by one BCLK after the LRCLK edge, MSB first), left-justified, right-justified, and **TDM** (more than two channels in one frame: multi-mic arrays, multi-channel codecs). PDM is a different 1-bit format used by many MEMS microphones.
+A sample may have fewer valid bits than its slot width.
 
-**Embedded implementation**
+#### 3. Embedded use
 
-- Use DMA with double (ping-pong) buffers: the I2S peripheral streams samples continuously, and the CPU processes one buffer while DMA fills or empties the other.
-- Underrun/overrun causes audible clicks: size buffers for worst-case processing latency.
-- Clock accuracy matters: 44.1 kHz and 48 kHz families need different PLL settings; small mismatches between devices cause drift over time (asynchronous sample-rate conversion or clock recovery for USB audio).
+An SoC may configure an audio codec through I2C, then transfer audio through I2S using DMA. Clock master/slave roles, sample format, bit width and channel ordering must agree.
 
-**Linux:** ALSA SoC (ASoC) with CPU DAI, codec and machine drivers described in the device tree.
+**Interview takeaway:** I2S streams time-synchronized audio; I2C configures addressed devices. They often coexist in the same audio design.
 
 ### How does a CAN frame look? {M}
 **Short answer:** A classic CAN (2.0A) data frame is: **SOF** (one dominant bit), the **arbitration field** (11-bit identifier + RTR bit; 29-bit identifier in 2.0B extended frames), the **control field** (IDE, reserved bit, 4-bit DLC giving 0–8 data bytes), the **data field** (0–8 bytes), a **15-bit CRC** + delimiter, the **ACK slot** + delimiter, and **EOF** (7 recessive bits), followed by a 3-bit intermission.
