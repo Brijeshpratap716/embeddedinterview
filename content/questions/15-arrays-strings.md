@@ -158,37 +158,27 @@ Right rotation by d is left rotation by (n−d%n)%n for nonempty input.
 **Complexity:** O(n) time, O(1) space.
 
 ### How do you find the leaders in an array? {E}
-**Short answer:** A leader is an element greater than every element to its right; the last element is always a leader. Scan from right to left, tracking the maximum seen so far, and print an element whenever it is greater than that maximum. O(n) time, O(1) space.
+A leader is an element greater than or equal to every element to its right (some formulations require strictly greater). Scan from right to left and maintain the suffix maximum.
 
 ```c
-#include <stdio.h>
-#include <stddef.h>
-
-void print_leaders(const int *arr, size_t n)
+void leaders(const int a[], size_t n)
 {
-    if (n == 0) return;
-    int max_right = arr[n - 1];
-    printf("%d ", max_right);                 /* last element is a leader */
-    for (size_t i = n - 1; i-- > 0; ) {       /* i = n-2 down to 0 */
-        if (arr[i] > max_right) {
-            max_right = arr[i];
-            printf("%d ", arr[i]);
+    if (!n) return;
+    int max = a[n-1];
+    printf("%d ",max);
+    for (size_t i = n-1; i > 0;) {
+        --i;
+        if (a[i] >= max) {
+            max = a[i];
+            printf("%d ",max);
         }
     }
-    printf("\n");
 }
-/* {7, 10, 4, 3, 6, 5, 2} -> prints 2 5 6 10 (right to left) */
 ```
 
-**Dry run for {7, 10, 4, 3, 6, 5, 2}:** start with 2 (leader). 5 > 2 → leader, max=5. 6 > 5 → leader, max=6. 3, 4 no. 10 > 6 → leader, max=10. 7 no. Leaders: 10, 6, 5, 2.
+[16, 17, 4, 3, 5, 2] has leaders 17, 5, 2. This prints them in reverse order; buffer and reverse if original order is needed.
 
-**Order of output.** Scanning from the right prints leaders in reverse. If the interviewer wants left-to-right order, store them in an array and print it backwards, or use a stack.
-
-**Strict or not:** with `>` an element equal to a later maximum is not a leader; with `>=` it is. Ask which definition they want; it changes the answer for arrays with repeated values.
-
-**The naive solution** checks every element against all elements to its right: O(n²). Mention it, then give the O(n) version.
-
-**Loop detail:** `for (size_t i = n - 1; i-- > 0; )` is a safe way to count down with an unsigned index. Writing `for (size_t i = n - 2; i >= 0; i--)` never ends because `i >= 0` is always true for `size_t`. With `int` indices you can write the obvious loop.
+**Complexity:** O(n) time, O(1) auxiliary space without output storage.
 
 ### How do you find the maximum difference arr[j] - arr[i] with j > i? {M}
 **Short answer:** Scan left to right, keeping the minimum value seen so far. At each element compute `arr[j] - min_so_far` and keep the largest. One pass, O(n) time, O(1) space. This is the same as "best time to buy and sell a stock once".
