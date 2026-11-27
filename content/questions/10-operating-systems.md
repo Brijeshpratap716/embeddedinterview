@@ -497,67 +497,53 @@ Initialize the semaphore to zero. A producer posts after producing an event; a c
 **Interview takeaway:** Use mutexes for ownership-based exclusion and semaphores for signaling/counting. Protect associated shared data and check API errors.
 
 ### What is a condition variable, and how do you build a thread-safe queue with one? {M}
-**Short answer:** A condition variable lets a thread sleep until some condition on shared data becomes true, without busy-waiting. It is always used together with a mutex that protects the data, and the wait is always inside a `while` loop that re-checks the condition, because wake-ups can be spurious and another thread may get there first.
+A condition variable allows a thread to sleep while waiting for a predicate protected by a mutex. Waiting atomically releases the mutex and reacquires it before returning.
+
+#### 1. Bounded thread-safe queue
 
 ```c
 #include <pthread.h>
-#include <stdbool.h>
+#define N 16
 
-#define QSIZE 16
+static int q[N];
+static unsigned head, tail, count;
+static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t not_empty = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t not_full  = PTHREAD_COND_INITIALIZER;
 
-typedef struct {
-    int buf[QSIZE];
-    unsigned head, tail, count;
-    pthread_mutex_t m;
-    pthread_cond_t not_empty, not_full;
-} queue_t;
-
-void q_init(queue_t *q)
+void push(int value)
 {
-    q->head = q->tail = q->count = 0;
-    pthread_mutex_init(&q->m, NULL);
-    pthread_cond_init(&q->not_empty, NULL);
-    pthread_cond_init(&q->not_full, NULL);
+    pthread_mutex_lock(&lock);
+    while (count == N)
+        pthread_cond_wait(&not_full, &lock);
+    q[tail] = value;
+    tail = (tail + 1) % N;
+    count++;
+    pthread_cond_signal(&not_empty);
+    pthread_mutex_unlock(&lock);
 }
 
-void q_put(queue_t *q, int v)
+int pop(void)
 {
-    pthread_mutex_lock(&q->m);
-    while (q->count == QSIZE)                       /* re-check after every wake-up */
-        pthread_cond_wait(&q->not_full, &q->m);     /* unlocks m, sleeps, re-locks m */
-    q->buf[q->tail] = v;
-    q->tail = (q->tail + 1) % QSIZE;
-    q->count++;
-    pthread_cond_signal(&q->not_empty);
-    pthread_mutex_unlock(&q->m);
-}
-
-int q_get(queue_t *q)
-{
-    pthread_mutex_lock(&q->m);
-    while (q->count == 0)
-        pthread_cond_wait(&q->not_empty, &q->m);
-    int v = q->buf[q->head];
-    q->head = (q->head + 1) % QSIZE;
-    q->count--;
-    pthread_cond_signal(&q->not_full);
-    pthread_mutex_unlock(&q->m);
-    return v;
+    pthread_mutex_lock(&lock);
+    while (count == 0)
+        pthread_cond_wait(&not_empty, &lock);
+    int value = q[head];
+    head = (head + 1) % N;
+    count--;
+    pthread_cond_signal(&not_full);
+    pthread_mutex_unlock(&lock);
+    return value;
 }
 ```
 
-**Why `pthread_cond_wait` takes the mutex:** it releases the mutex and goes to sleep **atomically**. If you unlocked first and then slept, the producer could add an item and signal in between, and the wake-up would be lost.
+This educational example assumes successful pthread calls and no cancellation/shutdown; production code needs error and lifetime handling.
 
-**Why a `while` and not an `if`:**
+#### 2. Why use while?
 
-- POSIX allows **spurious wake-ups**.
-- With several consumers, another consumer may take the item between the signal and this thread re-acquiring the mutex.
+A wakeup can be spurious, or another thread can consume the available item before the waiter reacquires the lock. Recheck the predicate under the mutex.
 
-**`signal` vs `broadcast`:** `pthread_cond_signal` wakes at least one waiter; `pthread_cond_broadcast` wakes all (use when the state change may let several waiters proceed, or when waiters wait for different conditions on the same variable).
-
-**Common mistakes:** changing the shared state without holding the mutex, waiting without a predicate (a signal sent before the wait is lost forever, since condition variables have no memory), and holding the mutex while doing slow work.
-
-**C11 / C++ equivalents:** `cnd_wait`/`mtx_t` in `<threads.h>`, `std::condition_variable` in C++. In an RTOS, the same producer/consumer is usually a **message queue**, which bundles the buffer, the lock and the blocking.
+**Interview takeaway:** The condition variable is a notification mechanism, not the condition itself. Protect queue state with the mutex and wait in a loop.
 
 ### Why does an OS need a scheduler, and what criteria are used to judge scheduling algorithms? {E}
 **Short answer:** There are usually more runnable tasks than CPUs, and tasks often wait for I/O. The scheduler decides which ready task runs on each CPU and for how long, so that the CPU is kept busy while some tasks wait, interactive tasks respond quickly, and real-time tasks meet their deadlines. Algorithms are judged on CPU utilisation, throughput, turnaround time, waiting time, response time, fairness and, for real-time systems, deadline misses and predictability.
