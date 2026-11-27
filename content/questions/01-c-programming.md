@@ -512,39 +512,136 @@ const volatile uint32_t *const status =
 **Interview takeaway:** If `const` appears before `*`, the pointed-to data is read-only through the pointer. If `const` appears after `*`, the pointer itself is constant. If it appears on both sides, both restrictions apply.
 
 ### What is the difference between a macro and an inline function? {M}
-**Short answer:** A macro is text substitution by the preprocessor: no type checking, arguments may be evaluated several times, and it is hard to debug. A `static inline` function is a real function that the compiler may expand in place: arguments are type-checked and evaluated exactly once, and it can be stepped through in a debugger. Prefer `static inline`; use macros only for what functions cannot do.
+A **macro** performs textual substitution during preprocessing, whereas an **inline function** is a normal function that the compiler may expand directly at the calling location to reduce function call overhead.
 
-| | Macro | `static inline` function |
-|---|---|---|
-| Processed by | preprocessor | compiler |
-| Type checking | none | full |
-| Argument evaluation | as many times as it appears | exactly once |
-| Scope | ignores scope | normal C scope |
-| Debugging | hard (expanded text) | normal (can set breakpoints when not inlined) |
-| Generic over types | yes | no (except via `_Generic`) |
-| Can use `#`, `##`, `__FILE__`, `__LINE__` of the caller | yes | no |
-| Can return a value from a statement block | only with GCC statement expressions | yes |
+#### 1. Macro
 
-**The classic macro bugs**
+A macro is defined using `#define`.
 
 ```c
 #define SQUARE(x) ((x) * (x))
-int y = SQUARE(i++);          /* i incremented twice: undefined behaviour */
-int z = SQUARE(read_adc());   /* the ADC is read twice, maybe giving different values */
 
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
-MAX(x++, y)                   /* x may be incremented twice */
+int main(void)
+{
+    int a = SQUARE(5);
+    return 0;
+}
 ```
+
+During preprocessing:
 
 ```c
-static inline int square(int x) { return x * x; }   /* no surprises */
+int a = ((5) * (5));
 ```
 
-**`inline` is only a hint.** The compiler decides whether to inline based on size and optimisation level; `__attribute__((always_inline))` forces it. A plain `inline` (without `static`) in C has awkward linkage rules (you need one external definition somewhere), which is why `static inline` in headers is the common idiom.
+The preprocessor replaces the macro with its corresponding expression.
 
-**When macros are the right tool:** compile-time constants used in `#if`, stringification (`#define STR(x) #x`) and token pasting, logging with the caller's `__FILE__`/`__LINE__`, `offsetof`/`container_of`-style tricks, and type-generic helpers (with `_Generic`, or C23 `typeof`).
+#### 2. Inline function
 
-**Code size:** inlining a large function at many call sites increases flash use; on small MCUs, check the map file and use `-Os`.
+An inline function is defined using the `inline` keyword.
+
+```c
+static inline int square(int x)
+{
+    return x * x;
+}
+
+int main(void)
+{
+    int a = square(5);
+    return 0;
+}
+```
+
+The compiler may replace the function call with its implementation, avoiding function call overhead.
+
+However, **the inline keyword does not guarantee inlining.**
+
+#### 3. How they work internally
+
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 254" width="100%" role="img" aria-label="Macro expansion by preprocessor compared with compiler function inlining"><text x="82.5" y="16" font-size="13" font-weight="600" fill="currentColor" text-anchor="middle">Macro</text><rect x="5" y="28" width="155" height="31" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="82.5" y="48" font-size="11" text-anchor="middle" fill="currentColor">SQUARE(5)</text><path d="M82.5 59 v15 m-4 -5 4 5 4 -5" stroke="currentColor" fill="none"/><rect x="5" y="74" width="155" height="31" rx="5" fill="#eab308" fill-opacity=".12" stroke="#ca8a04"/><text x="82.5" y="94" font-size="11" text-anchor="middle" fill="currentColor">Preprocessor</text><path d="M82.5 105 v15 m-4 -5 4 5 4 -5" stroke="currentColor" fill="none"/><rect x="5" y="120" width="155" height="31" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="82.5" y="140" font-size="11" text-anchor="middle" fill="currentColor">((5) * (5))</text><path d="M82.5 151 v15 m-4 -5 4 5 4 -5" stroke="currentColor" fill="none"/><rect x="5" y="166" width="155" height="31" rx="5" fill="#eab308" fill-opacity=".12" stroke="#ca8a04"/><text x="82.5" y="186" font-size="11" text-anchor="middle" fill="currentColor">Compiler</text><path d="M82.5 197 v15 m-4 -5 4 5 4 -5" stroke="currentColor" fill="none"/><rect x="5" y="212" width="155" height="31" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="82.5" y="232" font-size="11" text-anchor="middle" fill="currentColor">Machine code</text><text x="257.5" y="16" font-size="13" font-weight="600" fill="currentColor" text-anchor="middle">Inline function</text><rect x="180" y="28" width="155" height="31" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="257.5" y="48" font-size="11" text-anchor="middle" fill="currentColor">square(5)</text><path d="M257.5 59 v15 m-4 -5 4 5 4 -5" stroke="currentColor" fill="none"/><rect x="180" y="74" width="155" height="31" rx="5" fill="#eab308" fill-opacity=".12" stroke="#ca8a04"/><text x="257.5" y="94" font-size="11" text-anchor="middle" fill="currentColor">Preprocessor</text><path d="M257.5 105 v15 m-4 -5 4 5 4 -5" stroke="currentColor" fill="none"/><rect x="180" y="120" width="155" height="31" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="257.5" y="140" font-size="11" text-anchor="middle" fill="currentColor">square(5)</text><path d="M257.5 151 v15 m-4 -5 4 5 4 -5" stroke="currentColor" fill="none"/><rect x="180" y="166" width="155" height="31" rx="5" fill="#eab308" fill-opacity=".12" stroke="#ca8a04"/><text x="257.5" y="186" font-size="11" text-anchor="middle" fill="currentColor">Compiler</text><path d="M257.5 197 v15 m-4 -5 4 5 4 -5" stroke="currentColor" fill="none"/><rect x="180" y="212" width="155" height="31" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="257.5" y="232" font-size="11" text-anchor="middle" fill="currentColor">Machine code</text></svg></div>
+
+A macro is expanded by the preprocessor, while function inlining is performed by the compiler.
+
+#### 4. Problems with macros
+
+Consider the following example:
+
+```c
+#define SQUARE(x) ((x) * (x))
+
+int i = 5;
+int result = SQUARE(i++);
+```
+
+After macro expansion:
+
+```c
+int result = ((i++) * (i++));
+```
+
+This causes **undefined behaviour** because `i` is modified twice without sequencing.
+
+With an inline function:
+
+```c
+static inline int square(int x)
+{
+    return x * x;
+}
+
+int i = 5;
+int result = square(i++);
+```
+
+Result:
+
+```text
+result = 25
+i = 6
+```
+
+The argument is evaluated only once.
+
+#### 5. Comparison table
+
+| Feature | Macro | Inline function |
+|---|---|---|
+| Keyword | `#define` | `inline` |
+| Processed by | Preprocessor | Compiler |
+| Type checking | After expansion | Function type checking |
+| Argument evaluation | May occur multiple times | Once per argument |
+| Function call overhead | None | None if inlined |
+| Debugging | More difficult | Easier |
+| Code size | May increase | May increase if inlined |
+| Function address | Not available for macro itself | Can be obtained |
+| Scope | Preprocessor rules | C scope rules |
+
+#### 6. Use in embedded systems
+
+**Macro for register masks:**
+
+```c
+#define BIT(n) (1U << (n))
+
+#define UART_ENABLE BIT(3)
+```
+
+**Inline function for register operations:**
+
+```c
+static inline void set_bit(volatile uint32_t *reg,
+                           uint32_t mask)
+{
+    *reg |= mask;
+}
+```
+
+Inline functions are commonly used in firmware, HAL libraries and Linux kernel drivers for small, frequently executed operations.
+
+**Note:** This register operation is a read-modify-write and is not necessarily atomic or safe for every hardware register.
+
+**Interview takeaway:** Prefer inline functions for type safety and single argument evaluation. Use macros for compile-time constants, register masks, conditional compilation and operations requiring preprocessor substitution.
 
 ### Why should macro arguments and bodies be wrapped in parentheses? {E}
 **Short answer:** Macros substitute text, so operator precedence around and inside the macro can change the meaning. Put parentheses around **every use of each argument** and around the **whole body** so the macro behaves like a single value.
