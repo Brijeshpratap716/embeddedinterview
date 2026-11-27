@@ -1196,52 +1196,52 @@ Do not blindly perform read-modify-write on W1C, read-to-clear or concurrently u
 **Interview takeaway:** Use MMIO resource mappings and accessors, not arbitrary physical-address casts or ordinary memcpy. Width, byte order, ordering and side effects matter.
 
 ### How do drivers do DMA in Linux? {H}
-**Short answer:** Drivers use the **DMA API**, which hides IOMMUs, bus-address translation, bounce buffers and cache maintenance. **Coherent mappings** (`dma_alloc_coherent()`) give a buffer that CPU and device can both access at any time without explicit cache operations, used for descriptor rings and long-lived shared structures. **Streaming mappings** (`dma_map_single()`, `dma_map_sg()`) map an existing buffer for one transfer in one direction, with ownership handed between CPU and device by `dma_unmap_*` or `dma_sync_*_for_cpu/for_device`. The device is told the returned `dma_addr_t`, never the CPU virtual or physical address. Transfers through a separate DMA controller use the **dmaengine** API.
+Linux DMA APIs provide device-visible addresses, manage mapping constraints and handle cache synchronization appropriate to the platform.
 
-**Setup and coherent buffer**
-
-```c
-ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));   /* device can address 32 bits */
-if (ret) return ret;
-
-d->ring = dma_alloc_coherent(dev, RING_BYTES, &d->ring_dma, GFP_KERNEL);
-if (!d->ring) return -ENOMEM;
-writel(lower_32_bits(d->ring_dma), d->base + RING_BASE);  /* the device gets the DMA address */
-```
-
-**Streaming mapping for a transmit buffer**
+#### 1. Streaming transmit buffer
 
 ```c
-dma_addr_t a = dma_map_single(dev, skb_data, len, DMA_TO_DEVICE);   /* cleans caches */
-if (dma_mapping_error(dev, a)) return -ENOMEM;
-desc->addr = cpu_to_le64(a);
-desc->len  = cpu_to_le32(len);
-dma_wmb();                                   /* descriptor fields visible before ownership flag */
-desc->flags = cpu_to_le32(DESC_OWN_HW);
-writel(1, d->base + DOORBELL);
-/* in the completion handler: dma_unmap_single(dev, a, len, DMA_TO_DEVICE); */
+dma_addr_t addr = dma_map_single(dev, buf, len,
+                                 DMA_TO_DEVICE);
+if (dma_mapping_error(dev, addr))
+    return -EIO;
+
+/* Program the DMA address, start and wait for completion. */
+
+dma_unmap_single(dev, addr, len, DMA_TO_DEVICE);
 ```
 
-**dmaengine (memory ↔ peripheral via a system DMA controller)**
+Use DMA-mappable memory with a valid lifetime. If a transfer fails, stop or synchronize the device before unmapping.
+
+#### 2. Coherent allocation
 
 ```c
-/* Illustrative fragment: check IS_ERR(chan), configuration result,
- * descriptor allocation and dma_submit_error(cookie) in real code. */
-chan = dma_request_chan(dev, "rx");                       /* from DT dmas/dma-names */
-dmaengine_slave_config(chan, &cfg);                       /* FIFO address, width, burst */
-desc = dmaengine_prep_slave_single(chan, buf_dma, len, DMA_DEV_TO_MEM, DMA_PREP_INTERRUPT);
-desc->callback = rx_done; desc->callback_param = d;
-dmaengine_submit(desc);
-dma_async_issue_pending(chan);
+dma_addr_t dma;
+void *cpu = dma_alloc_coherent(dev, size, &dma, GFP_KERNEL);
+if (!cpu)
+    return -ENOMEM;
+
+/* Set up descriptors using cpu; hardware uses dma. */
+
+dma_free_coherent(dev, size, cpu, dma);
 ```
 
-**Rules**
+Release only after the device no longer accesses the allocation.
 
-- Do not pass stack or vmalloc addresses to dma_map_single(). For non-contiguous memory, use suitable page/scatter-gather mappings and respect the platform DMA API.
-- Do not touch a streaming buffer while the device owns it.
-- With non-coherent devices, the DMA API performs cache clean/invalidate; buffers should be cache-line aligned (kmalloc guarantees `ARCH_DMA_MINALIGN`).
-- **IOMMU** (Arm SMMU, Intel VT-d) translates device addresses, gives isolation and makes scattered pages look contiguous to the device.
-- **dma-buf** shares DMA buffers between drivers (camera → GPU → display) without copying.
+#### 3. DMA addresses and IOMMU
+
+```text
+CPU virtual buffer -- CPU MMU --> physical memory
+Device DMA address -- IOMMU (if present) --> physical memory
+```
+
+The DMA address can differ from both the CPU pointer and the physical address. Configure supported DMA masks and handle mapping failure.
+
+#### 4. Ownership and ordering
+
+Streaming mappings use appropriate direction and ownership synchronization, including dma_sync_single_for_cpu/device for persistent mappings. Coherent memory still needs ordering of descriptor fields and ownership flags.
+
+**Interview takeaway:** The DMA API abstracts translation, coherency and device constraints. Never substitute virt_to_phys for a portable DMA mapping.
 
 ### How does mmap work in a driver? {H}
 **Short answer:** Implementing `.mmap` lets user space map device memory or a driver buffer directly into its address space, avoiding copies. The driver checks the requested size and offset in the `vm_area_struct`, then maps the pages: `remap_pfn_range()` (or `io_remap_pfn_range` / `vm_iomap_memory()`) for device registers or reserved physical memory, `dma_mmap_coherent()` for DMA buffers, or `vm_insert_page`/`vm_map_pages` for normal kernel pages. Register mappings must be **uncached** (`pgprot_noncached` / `pgprot_device`).
