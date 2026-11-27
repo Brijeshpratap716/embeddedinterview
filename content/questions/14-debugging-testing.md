@@ -177,23 +177,19 @@ Provide timeouts, fixture health checks and exclusive board ownership. Separate 
 **Interview takeaway:** HIL verifies real integration and timing; keep tests repeatable and retain the exact binary and board revision.
 
 ### What is code coverage, and what coverage levels do safety standards require? {M}
-**Short answer:** Code coverage measures which parts of the code the tests executed. **Statement coverage** checks every line ran; **branch (decision) coverage** checks every `if`/`switch` took each outcome; **MC/DC** (Modified Condition/Decision Coverage) checks that each individual condition in a decision independently affects the outcome. Coverage shows what is **not** tested — it does not prove the tested code is correct. Safety standards require higher levels for more critical software: e.g. DO-178C requires MC/DC for Level A avionics software, and ISO 26262 recommends MC/DC for ASIL D.
+Code coverage measures what parts of a program were exercised by tests, not whether the tests were correct.
 
-**Example: why branch coverage is not enough**
+| Metric | Measures |
+|---|---|
+| Statement | Executed statements |
+| Branch/decision | Outcomes of decisions |
+| Condition | Individual Boolean conditions |
+| MC/DC | Each condition's independent effect on a decision |
 
-```c
-if (speed > LIMIT && !override) brake();
-```
+#### Safety context
+Requirements depend on the applicable standard, edition, assurance/integrity level and approved verification plan. For example, DO-178C uses structural coverage objectives of statement for Level C, decision for Level B and MC/DC for Level A. ISO 26262 has its own methods and ASIL-dependent recommendations.
 
-Two tests (true/false outcome) give branch coverage, but MC/DC needs tests showing that `speed > LIMIT` alone changes the outcome (with `override` fixed) and that `override` alone changes it: e.g. (T,F)→brake, (F,F)→no brake, (T,T)→no brake.
-
-**Measuring**
-
-- On the host: `gcc --coverage` / gcov + lcov/gcovr reports; LLVM source-based coverage.
-- On the target: instrumented builds that dump counters over a debug link (gcov with semihosting or custom dump), or non-intrusive ETM trace (no code changes).
-- Commercial tools: VectorCAST, LDRA, Testwell CTC++, Cantata (support MC/DC and certification evidence).
-
-**Practical targets:** for ordinary product firmware, aim for high statement and branch coverage on logic modules (parsers, state machines, safety checks) rather than a single number for the whole codebase; review untested code to decide whether it needs tests, is defensive code, or is dead code.
+**Interview takeaway:** Coverage is evidence of test completeness relative to code structure, not proof of correctness. Investigate uncovered code and trace tests to requirements.
 
 ### What is static analysis and which tools are used? {E}
 **Short answer:** Static analysis examines source code without running it to find bugs and rule violations: NULL dereferences, buffer overruns, uninitialised variables, integer overflow, resource leaks, dead code, concurrency issues and violations of coding standards such as MISRA C. It runs in CI on every change and catches issues that tests miss because they occur only on rare paths.
