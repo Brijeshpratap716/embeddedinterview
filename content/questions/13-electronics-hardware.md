@@ -283,17 +283,17 @@ For an I²C device, identify the actual SCL/SDA controller, pull-up voltage, add
 **Interview takeaway:** Correct driver code can still fail when the board uses a different bus, voltage domain, polarity or reset sequence.
 
 ### What tools do you use for board bring-up? {E}
-**Short answer:** A **multimeter** (rail voltages, continuity, current), a **bench power supply** with current limiting (catch shorts before they burn parts), an **oscilloscope** (analog behaviour: clocks, power ripple, edges, reset timing), a **logic analyser** (decoding SPI/I2C/UART/CAN over long captures), a **debug probe** (J-Link, ST-LINK, CMSIS-DAP via SWD/JTAG for flashing and debugging), a **USB-UART adapter** for the console, and sometimes a thermal camera (hot spots from shorts or wrong components).
+Bring-up proceeds from electrical verification to software verification.
 
-**Typical bring-up order**
+| Tool | Purpose |
+|---|---|
+| Current-limited supply / multimeter | Verify rails and current |
+| Oscilloscope | Observe analog levels, reset and clock |
+| Logic analyzer | Decode UART, SPI and I²C |
+| JTAG/SWD | Halt CPU and inspect registers |
+| UART console | Boot logs |
 
-1. Visual inspection (orientation, solder bridges), then check rails for shorts with power off (resistance to ground).
-2. Power up with current limiting; measure every rail and check current draw against expectations.
-3. Check the crystal/oscillator with a scope and reset lines (MCU out of reset?).
-4. Connect the debug probe: read the device ID (`JLinkExe`, `openocd`), erase and flash a minimal program.
-5. Blink an LED, then bring up the UART console for logging.
-6. Configure the clock tree to full speed and verify with MCO (clock output pin) on the scope.
-7. Bring up each peripheral one by one: external memory (run a memory test), I2C scan, SPI device ID reads, then higher-level functions.
-8. Measure power in each mode, then run stress and temperature tests.
+Verify power before running firmware. Confirm reset and clocks, establish console/debug access, run minimal code, then test one peripheral at a time.
 
-**Useful habits:** keep a bring-up log, compare against a known-good board or evaluation kit, write small test firmware for each interface, and verify assumptions with measurements rather than with the schematic alone.
+**Interview takeaway:** Record expected and observed values at each layer. A captured bus transaction is stronger evidence than a successful software return code.
+
