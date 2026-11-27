@@ -465,6 +465,10 @@ size_t merge_intervals(interval_t *v, size_t n)
 
 **Related problems:** insert a new interval into a sorted list; meeting rooms (can one person attend all? → check overlaps after sorting); minimum number of rooms (sort start and end times separately, sweep); free-list coalescing in a memory allocator (adjacent free blocks merged on `free`).
 
+#### Closed versus half-open intervals
+
+For closed ranges [1,3] and [3,5], the point 3 belongs to both, so merging is natural. For half-open ranges [1,3) and [3,5), they do not overlap, although adjacent ranges may be intentionally coalesced. Choose <= or < to match that policy. Validate start <= end before sorting. In a driver resource allocator, avoid end+1 arithmetic that can overflow and distinguish adjacency from actual address overlap.
+
 ### Find the maximum product of three numbers. {M}
 **Short answer:** The largest product of three numbers is either the product of the three largest values, or the product of the two smallest (most negative) values and the largest value, because two negatives multiply to a positive. Track the three largest and two smallest values in one pass and return the larger of the two candidate products, computed in 64 bits. O(n) time, O(1) space.
 
