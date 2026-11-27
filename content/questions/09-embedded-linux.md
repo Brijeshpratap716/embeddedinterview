@@ -514,26 +514,37 @@ Do not mark the new slot successful merely because the kernel started. Verify th
 **Interview takeaway:** A/B updates reduce downtime and failed-update risk, but only if slot selection, power-loss handling, verification and rollback are designed together.
 
 ### What is secure boot and a chain of trust? {H}
-**Short answer:** Secure boot means each boot stage cryptographically verifies the next stage before running it, starting from code that cannot be changed (the boot ROM) and a key that cannot be changed (a hash of the public key burned into one-time-programmable fuses). If any check fails, the boot stops. The chain of trust extends from the ROM through the bootloaders and kernel to the root filesystem.
+Secure boot verifies the authenticity and integrity of executable boot components before trusting them. A chain of trust starts from a trusted root and extends verification to later stages.
 
-**A typical ARM chain**
+#### 1. Typical chain
 
-1. **Boot ROM** (immutable) reads the public key hash from **OTP fuses** and verifies the signature on the first-stage loader (SPL / BL2).
-2. The first stage verifies **TF-A BL31**, **OP-TEE** and **U-Boot**.
-3. **U-Boot** verifies a signed **FIT image** containing the kernel, DTB and initramfs (`CONFIG_FIT_SIGNATURE`, key embedded in U-Boot's own DTB).
-4. The **kernel** verifies the root filesystem with **dm-verity** (a hash tree checked on every block read; the root hash is signed or embedded in the signed initramfs/command line), and signed **kernel modules**.
-5. Optionally **IMA/EVM** or signed application packages extend trust into user space.
+```text
+Immutable ROM / hardware root of trust
+        verifies
+First-stage firmware
+        verifies
+Bootloader
+        verifies
+Kernel, DTB, initramfs or signed boot bundle
+        verifies / enforces
+Protected root filesystem and other components
+```
 
-**Signing vs encryption:** secure boot is about **authenticity** (signatures). Encrypting images (for IP protection) is a separate feature that uses device-unique keys.
+The actual verified objects and trust boundaries depend on the platform.
 
-**Important practical points**
+#### 2. Digital signature versus hash
 
-- **Fuses are irreversible.** Burning the key hash and then the "secure boot closed" fuse makes the device reject unsigned images forever. Test on development parts, and follow a manufacturing procedure.
-- **Key protection:** the private signing keys live in an HSM or a secure signing server, never on a developer laptop or in the repository. Plan key revocation (most SoCs allow several key slots).
-- **Close the side doors:** disable or lock JTAG, the U-Boot console and environment (or make the environment read-only), USB recovery modes, and `init=`/`bootargs` changes. Otherwise an attacker bypasses the checks rather than breaking them.
-- **Anti-rollback:** version counters in fuses or eMMC RPMB stop signed but old, vulnerable images from being installed.
+A hash detects changes when compared with a trusted expected value. A digital signature authenticates data using a trusted public key and a corresponding private signing key. The device must protect the root key or key hash and enforce verification failures.
 
-**Related terms:** "verified boot" (Android, Chrome OS), "measured boot" (each stage is hashed into a TPM so a remote server can check what booted, without blocking boot), and UEFI Secure Boot on PCs and servers.
+#### 3. Anti-rollback
+
+A correctly signed but vulnerable older image may still be dangerous. A version policy using protected counters or equivalent mechanisms can prevent unauthorized rollback.
+
+#### 4. Secure boot versus measured boot
+
+Secure boot enforces a verification policy. Measured boot records measurements for later assessment; it does not necessarily block execution. Encryption protects confidentiality and is separate from signature verification.
+
+**Interview takeaway:** Secure boot is an enforced trust chain, not simply checking a checksum. Cover the complete boot path, key management, recovery and update policy.
 
 ### What is the difference between systemd, SysVinit and BusyBox init? {E}
 **Short answer:** All three are implementations of PID 1, the first user-space process that starts and supervises the rest of the system. **BusyBox init** is tiny and reads a simple `/etc/inittab`. **SysVinit** runs ordered shell scripts per runlevel. **systemd** starts services in parallel from a dependency graph and also supervises, logs and manages them, at the cost of size and complexity.
