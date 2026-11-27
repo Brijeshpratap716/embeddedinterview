@@ -619,3 +619,17 @@ Consumer: acquire-load ready reads 1
 
 This example assumes a single publisher, immutable data after publication and no concurrent reset. If the producer writes data again while a consumer is reading, the atomic flag alone does not prevent a C data race. For repeated messages, use a queue, mutex, or an ownership handshake with acknowledgment before reusing the payload. A relaxed flag does not establish the required happens-before relationship. On ARM64, acquire/release accesses commonly compile to LDAR/STLR or equivalent sequences.
 
+### How do you implement producer-consumer synchronization? {M}
+
+Use a bounded queue protected by a mutex and two condition variables for not-empty and not-full; wait in predicate loops.
+
+
+### How do you solve the dining philosophers problem? {M}
+
+Acquire forks in a consistent global order or limit simultaneous contenders to prevent circular wait.
+
+
+### How do you implement a lock-free stack? {M}
+
+Use atomic compare-and-swap on the head pointer with safe memory reclamation, such as hazard pointers, to prevent use-after-free and ABA hazards.
+
