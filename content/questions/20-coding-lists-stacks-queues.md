@@ -1067,6 +1067,10 @@ For a left-associative operator, pop while the stack top has precedence **≥**;
 
 **Error handling to mention:** mismatched parentheses (stack empty when `)` arrives, or `(` left at the end), unary minus (treat as a separate operator), and multi-digit numbers (tokenise first).
 
+#### Trace and validation
+
+For a+b*c, emit a, push +, emit b, push *, emit c, then pop * and + to obtain abc*+. Multiplication has greater precedence; operators of equal precedence in the example are left-associative. A robust parser must reject mismatched parentheses, invalid tokens, adjacent operands without an operator and missing operands, and check stack/output capacity before each write. The compact example assumes valid single-character expressions whose nesting fits its fixed stack; multi-digit numbers need tokenization.
+
 ### Evaluate a postfix expression. {E}
 **Short answer:** Read tokens left to right with a value stack: push each number; for an operator, pop the right operand first, then the left operand, apply the operator and push the result. At the end exactly one value must remain — that is the answer. O(n) time, O(n) stack space.
 
