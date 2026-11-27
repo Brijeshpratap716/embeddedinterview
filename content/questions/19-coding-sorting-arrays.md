@@ -298,6 +298,10 @@ void quick_sort(int *a, size_t lo, size_t hi)
 
 **Points to mention:** not stable; C's `qsort` is often (not necessarily) a quicksort/introsort; for hard real-time code prefer heap sort or merge sort for their guaranteed O(n log n).
 
+#### Partition invariant
+
+Before processing index j, elements in [lo,i) are less than pivot, [i,j) are greater than or equal to pivot, and [j,hi) are unexamined. After placing the pivot at i, its final position is established. For [4,1,3,2] with pivot 2, partition produces [1,2,3,4]. Median-of-three is a heuristic, not a worst-case guarantee. Equal-heavy data can cause quadratic comparisons; a three-way partition groups values less than, equal to and greater than pivot. Recursing on the smaller side bounds stack depth independently of bad pivot choices.
+
 ### Implement merge sort. {M}
 **Short answer:** Split the array into halves, sort each half, and merge the two sorted halves by repeatedly taking the smaller front element. It runs in O(n log n) in every case and is stable, but needs an O(n) scratch buffer for arrays. The bottom-up version merges runs of width 1, 2, 4 … without recursion.
 
