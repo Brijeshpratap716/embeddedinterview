@@ -54,29 +54,16 @@ Core-dump generation depends on limits and system policy.
 **Interview takeaway:** A page fault is not always a programming error; demand paging is normal. Do not attempt to blindly resume a faulting instruction from a signal handler.
 
 ### What is a fork bomb, and how do ulimit and cgroups protect against it? {M}
-**Short answer:** A fork bomb is a program that creates processes as fast as it can, each of which creates more (`:(){ :|:& };:` in bash). The process table, PIDs, memory and CPU are exhausted within seconds, so even administrators cannot start a shell to stop it. It is a denial-of-service attack on the OS. Limits on the number of processes per user (`ulimit -u` / `RLIMIT_NPROC`) or per group of processes (the cgroup `pids.max` controller) stop it, because further `fork()` calls fail with `EAGAIN`.
+A fork bomb is a process-creation denial of service: uncontrolled creation of child processes can exhaust task slots, memory and CPU resources.
 
-**Why the whole system becomes unusable**
+#### Protection
+- RLIMIT_NPROC limits process/thread creation for a real user ID, with privilege-related exceptions.
+- The cgroup v2 pids controller restricts the number of tasks in a workload hierarchy using pids.max.
+- Service managers can set TasksMax and memory/CPU limits.
 
-- Every process needs a PID, a `task_struct`, a kernel stack (16 KB on ARM64) and page tables. The PID space (`/proc/sys/kernel/pid_max`) and memory run out.
-- The scheduler has thousands of runnable tasks, so each gets a tiny share; even the shell you use to fight back barely runs.
-- New logins fail because they also need `fork()`.
+For example, a dedicated test service can have TasksMax=64 so a defective worker cannot create unlimited tasks. Monitor pids.current and pids.events. Creation beyond a task limit normally fails with EAGAIN.
 
-**Protections**
-
-```bash
-ulimit -u 500                     # max processes for this user (soft limit), in this shell and children
-cat /etc/security/limits.conf     # persistent per-user limits via PAM:  @students hard nproc 200
-echo 200 > /sys/fs/cgroup/myservice/pids.max     # cgroup v2: max tasks in this group
-```
-
-- `RLIMIT_NPROC` counts processes **per real user ID**; root is exempt (unless it drops `CAP_SYS_RESOURCE`/`CAP_SYS_ADMIN`).
-- systemd sets `TasksMax=` for every service and for user sessions (via the `pids` controller), so a fork bomb inside one service or login session cannot take down the whole system.
-- `kernel.threads-max` and `pid_max` are global ceilings.
-
-**Recovering from one:** if you still have a shell, `kill -STOP` all processes of that user first (stopped processes cannot fork), then `kill -KILL` them. Killing one by one does not work, because the survivors keep forking.
-
-**Embedded relevance:** a buggy service that forks in a loop (for example, retrying a helper program that crashes immediately) behaves like a fork bomb. Setting `TasksMax=` and restart limits (`StartLimitBurst=`) in the service units prevents it from taking down the device.
+**Interview takeaway:** Limit tasks at workload boundaries; user-level limits alone may be insufficient. Never test uncontrolled process creation on a shared or production system.
 
 ### How do you limit the CPU and memory used by processes on Linux? {M}
 **Short answer:** Use **nice/renice** and scheduling policies to change CPU priority, **`ulimit`/`setrlimit()`** for per-process limits (address space, open files, core size, CPU seconds), and **cgroups v2** for real resource control of groups of processes: `cpu.max` (hard CPU quota), `cpu.weight` (relative share), `cpuset.cpus` (which cores), `memory.max`/`memory.high` (memory limits), `pids.max`, and `io.max`. systemd exposes all of these as unit settings.
