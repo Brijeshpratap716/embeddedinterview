@@ -685,42 +685,49 @@ This is a demonstration of block reservation, not a conforming general-purpose m
 **Interview takeaway:** Allocation is not just returning a pointer. Correct metadata, alignment, overflow checks, splitting, coalescing and ownership management are the difficult parts.
 
 ### How do you detect a stack overflow on a microcontroller? {M}
-**Short answer:** Combine several techniques: **stack painting** (fill the stack with a known pattern at boot and check how much was overwritten), a **guard region** below the stack using the MPU, **hardware stack limit registers** on Armv8-M (`MSPLIM`/`PSPLIM`), the **RTOS's overflow checks**, and **static worst-case stack analysis** at build time.
+A stack overflow occurs when stack usage exceeds the memory reserved for a function context or RTOS task. On a microcontroller this may corrupt global data, another task's stack or control information.
 
-**1. Stack painting (high-water mark)**
+#### 1. Common causes
+
+- Deep recursion or call chains.
+- Large automatic arrays.
+- Nested interrupts or exception frames.
+- Incorrect RTOS task stack sizing.
+
+#### 2. Stack watermark technique
+
+Fill unused stack memory with a known pattern during safe initialization. As the stack is used, the pattern is overwritten. Scan the remaining pattern to estimate the maximum observed usage.
+
+<div style="max-width:600px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 178" width="100%" role="img" aria-label="Downward growing stack with used area, untouched pattern and overflow guard">
+<text x="70" y="17" font-size="10" fill="currentColor" text-anchor="end">High address</text>
+<rect x="80" y="5" width="160" height="65" fill="#3b82f6" fill-opacity=".16" stroke="#3b82f6"/><text x="160" y="30" text-anchor="middle" font-size="12" fill="currentColor">Used stack</text><text x="160" y="47" text-anchor="middle" font-size="10" fill="currentColor">Overwritten pattern</text>
+<rect x="80" y="70" width="160" height="73" fill="#16a34a" fill-opacity=".13" stroke="#16a34a"/><text x="160" y="100" text-anchor="middle" font-size="12" fill="currentColor">Untouched pattern</text><text x="160" y="116" text-anchor="middle" font-size="10" fill="currentColor">Remaining margin</text>
+<rect x="80" y="143" width="160" height="22" fill="#dc2626" fill-opacity=".18" stroke="#dc2626"/><text x="160" y="158" text-anchor="middle" font-size="11" fill="currentColor">Canary / MPU guard</text>
+<path d="M258 12 V133 m-4-5 4 5 4-5" stroke="currentColor" fill="none"/><text x="267" y="75" font-size="10" fill="currentColor">Growth</text><text x="70" y="161" font-size="10" fill="currentColor" text-anchor="end">Low address</text></svg></div>
+
+Do not overwrite the live stack when initializing a pattern.
+
+#### 3. RTOS example (FreeRTOS)
 
 ```c
-extern uint32_t _sstack, _estack;          /* from the linker script */
-#define STACK_FILL 0xDEADBEEFu
-
-void stack_paint(void)                     /* call very early, before the stack is deep */
-{
-    uint32_t *p = &_sstack;
-    uint32_t *sp = (uint32_t *)__get_MSP();
-    while (p < sp - 16) *p++ = STACK_FILL; /* leave a margin below the current SP */
-}
-
-size_t stack_unused_bytes(void)
-{
-    const uint32_t *p = &_sstack;
-    while (p < &_estack && *p == STACK_FILL) p++;
-    return (size_t)((const uint8_t *)p - (const uint8_t *)&_sstack);
-}
+UBaseType_t remaining =
+    uxTaskGetStackHighWaterMark(NULL);
 ```
 
-Report the minimum ever over long tests; keep a safety margin (e.g. 25%).
+This reports the minimum observed unused stack space, in stack units rather than necessarily bytes. Enable the relevant configuration and inspect task margins during stress testing.
 
-**2. MPU guard region:** configure a small no-access region just below each stack. An overflow triggers a MemManage fault immediately, at the instruction that overflowed, instead of corrupting other data. FreeRTOS-MPU and Zephyr (`CONFIG_MPU_STACK_GUARD`) do this per thread.
+#### 4. Other protection methods
 
-**3. Stack limit registers (Cortex-M23/M33/M55/M85):** set `MSPLIM` and `PSPLIM`; any instruction that moves SP below the limit raises a UsageFault (STKOF). No MPU region needed.
+| Method | Purpose |
+|---|---|
+| Stack canary | Detect overwritten boundary or protected frame |
+| MPU guard region | Generate a fault on forbidden access |
+| RTOS overflow hook | Detect supported overflow conditions |
+| Stack analysis | Estimate worst-case call depth and frame sizes |
 
-**4. RTOS checks:** FreeRTOS `configCHECK_FOR_STACK_OVERFLOW` = 1 checks the stack pointer at each context switch; = 2 also checks that the last 16 bytes of the stack still contain the fill pattern; `vApplicationStackOverflowHook()` is called on detection. `uxTaskGetStackHighWaterMark()` reports the minimum free stack per task.
+Inspect fault status registers and the saved exception frame when debugging Cortex-M faults, where available.
 
-**5. Static analysis:** compile with `-fstack-usage` (a `.su` file per source with each function's frame size) and combine with the call graph (`-fcallgraph-info`, puncover, StackAnalyzer) to compute the worst case. Recursion and function pointers break the analysis, which is one reason they are restricted in safety code.
-
-**6. Canaries:** `-fstack-protector-strong` puts a guard value between local buffers and the return address and checks it on return; this detects buffer overruns within a frame (a security feature, not a full overflow detector).
-
-**Symptoms of an undetected overflow:** random variable corruption, HardFaults with nonsense addresses, crashes that depend on interrupt timing, and bugs that disappear when you add a `printf` (which changes stack usage).
+**Interview takeaway:** High-water marks are observations, not proof of a safe worst-case stack size. Combine runtime checks, static analysis, interrupt nesting estimates and an adequate safety margin.
 
 ### What is alignment and what happens on an unaligned access? {M}
 **Short answer:** An object is **aligned** when its address is a multiple of its alignment requirement, which for basic types is usually their size (a `uint32_t` at an address divisible by 4). The compiler aligns variables and adds struct padding automatically. Unaligned accesses usually come from casting byte pointers; depending on the CPU they are slower, need extra instructions, or fault.
