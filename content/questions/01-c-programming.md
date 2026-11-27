@@ -1991,34 +1991,53 @@ Limited stack memory, worst-case execution-time analysis, and safety requirement
 **Interview takeaway:** Recursion is not inherently incorrect in firmware, but its maximum depth and timing must be bounded. Prefer iteration when it simplifies resource analysis.
 
 ### What are the stages of compilation in C? {E}
-**Short answer:** There are four stages. **Preprocessing** expands `#include`, macros and conditional compilation. **Compilation** translates the preprocessed C into assembly. **Assembly** turns that into a relocatable object file (`.o`). **Linking** combines object files and libraries, resolves symbols, and places code and data at addresses defined by the linker script, producing an executable (ELF).
+A typical C toolchain converts source files into an executable or firmware image in four stages: **preprocessing, compilation, assembly and linking**.
 
-```bash
-arm-none-eabi-gcc -E main.c -o main.i      # 1. preprocess
-arm-none-eabi-gcc -S main.i -o main.s      # 2. compile to assembly
-arm-none-eabi-gcc -c main.s -o main.o      # 3. assemble to object file
-arm-none-eabi-gcc main.o uart.o -T stm32.ld -o firmware.elf   # 4. link
-arm-none-eabi-objcopy -O binary firmware.elf firmware.bin     # for flashing
-arm-none-eabi-objcopy -O ihex   firmware.elf firmware.hex
+<div style="max-width:580px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 300" width="100%" role="img" aria-label="C compilation stages from source to ELF executable" font-family="system-ui,sans-serif"><rect x="25" y="5" width="290" height="43" rx="6" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="22" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Source code (.c)</text><text x="170" y="37" text-anchor="middle" font-size="10" fill="currentColor">C statements and preprocessor directives</text><path d="M170 48 v17 m-4-5 4 5 4-5" fill="none" stroke="currentColor"/><rect x="25" y="65" width="290" height="43" rx="6" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="82" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Preprocessor (.i)</text><text x="170" y="97" text-anchor="middle" font-size="10" fill="currentColor">Expands macros and includes headers</text><path d="M170 108 v17 m-4-5 4 5 4-5" fill="none" stroke="currentColor"/><rect x="25" y="125" width="290" height="43" rx="6" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="142" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Compiler (.s)</text><text x="170" y="157" text-anchor="middle" font-size="10" fill="currentColor">Checks C and generates assembly</text><path d="M170 168 v17 m-4-5 4 5 4-5" fill="none" stroke="currentColor"/><rect x="25" y="185" width="290" height="43" rx="6" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="202" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Assembler (.o)</text><text x="170" y="217" text-anchor="middle" font-size="10" fill="currentColor">Produces machine code and relocation information</text><path d="M170 228 v17 m-4-5 4 5 4-5" fill="none" stroke="currentColor"/><rect x="25" y="245" width="290" height="43" rx="6" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="262" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Linker (.elf)</text><text x="170" y="277" text-anchor="middle" font-size="10" fill="currentColor">Resolves symbols and places sections</text></svg></div>
+
+#### 1. Preprocessing
+
+```sh
+gcc -E main.c -o main.i
 ```
 
-**What each stage produces and checks**
+Processes #include, #define and conditional directives.
 
-| Stage | Output | Errors you see |
-|---|---|---|
-| Preprocessor | `.i` (pure C, no `#` lines except line markers) | missing header, bad macro |
-| Compiler | `.s` assembly | syntax and type errors, warnings |
-| Assembler | `.o` with sections (`.text`, `.data`, `.bss`, `.rodata`), a symbol table and relocations | rare (invalid inline assembly) |
-| Linker | `.elf` (plus a `.map` file with `-Wl,-Map=...`) | undefined reference, multiple definition, region `FLASH` overflowed |
+#### 2. Compilation
 
-**Useful inspection tools:** `nm` (symbols), `objdump -d` (disassembly), `readelf -S` (sections), `size` (text/data/bss sizes), and the **map file**, which shows where every function and variable ended up and how much flash and RAM is used.
+```sh
+gcc -S main.i -o main.s
+```
 
-**Embedded specifics**
+Parses and checks C code, optimizes it and generates target assembly.
 
-- The **linker script** (`.ld`) defines the memory regions (FLASH, RAM) and where each section goes.
-- The **start-up code** (often `startup_xxx.s`) is linked in and runs before `main`.
-- `-ffunction-sections -fdata-sections` plus `-Wl,--gc-sections` let the linker remove unused functions, which saves a lot of flash.
-- **LTO** (`-flto`) does optimisation across files at link time.
+#### 3. Assembly
+
+```sh
+gcc -c main.s -o main.o
+```
+
+Converts assembly to an object file containing machine instructions, sections, symbols and relocation records.
+
+#### 4. Linking
+
+```sh
+gcc main.o -o main
+```
+
+Combines object files and libraries, resolves external references and produces an executable.
+
+#### 5. Embedded firmware example
+
+For an appropriate ARM bare-metal target, a typical build uses arm-none-eabi-gcc, a linker script, startup objects and target-specific flags. An ELF image can subsequently be converted into a raw binary:
+
+```sh
+arm-none-eabi-objcopy -O binary firmware.elf firmware.bin
+```
+
+The linker script determines addresses for sections such as .text, .data and .bss. Startup code prepares RAM before calling main.
+
+**Interview takeaway:** The preprocessor expands source, compiler generates assembly, assembler generates objects and linker resolves symbols. Actual toolchains may combine stages or use link-time optimization.
 
 ### What is the difference between a .bss and a .data section? {E}
 **Short answer:** `.data` holds global and static variables with **non-zero initial values**; the values are stored in flash and copied into RAM by the start-up code. `.bss` holds global and static variables that are **zero or uninitialised**; only its size is stored, and the start-up code fills that RAM with zeros. `.rodata` holds constants (in flash), and `.text` holds code.
