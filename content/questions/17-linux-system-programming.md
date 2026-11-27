@@ -82,42 +82,27 @@ A service can use CPUQuota=50% and MemoryMax=256M with systemd resource controls
 **Interview takeaway:** RLIMIT_AS is not the same as resident memory; nice affects relative scheduling weight rather than imposing a hard CPU cap. Prefer cgroups for a complete process tree.
 
 ### When should you call pthread_exit() instead of exit()? {M}
-**Short answer:** `exit()` ends the **whole process**: all threads stop, `atexit()` handlers run, stdio buffers are flushed. `pthread_exit()` ends only the **calling thread**, letting the other threads keep running. Call `pthread_exit()` when a thread is done but the process should continue, and in particular in `main()` if you want the worker threads to finish their work instead of being killed when `main` returns.
+pthread_exit() terminates only the calling thread. exit() terminates the whole process, including its other threads.
 
 ```c
-#include <pthread.h>
-#include <stdio.h>
-#include <unistd.h>
-
-static void *worker(void *arg)
+void *worker(void *arg)
 {
-    sleep(1);
-    printf("worker %ld done\n", (long)arg);
-    return NULL;                 /* same as pthread_exit(NULL) in a thread function */
+    (void)arg;
+    return NULL; /* equivalent to pthread_exit(NULL) */
 }
-
 int main(void)
 {
-    pthread_t t[3];
-    for (long i = 0; i < 3; i++)
-        pthread_create(&t[i], NULL, worker, (void *)i);
-
-    pthread_exit(NULL);          /* main thread ends; workers keep running;
-                                    the process exits when the last thread ends */
-    /* "return 0;" here instead would call exit() and kill the workers immediately */
+    pthread_t t;
+    if (pthread_create(&t,NULL,worker,NULL)!=0)
+        return 1;
+    pthread_join(t,NULL);
+    return 0;
 }
 ```
 
-**Key points**
+Returning from main is equivalent to exit, so other threads terminate. If the initial thread calls pthread_exit(NULL), other threads may continue until they terminate. A joinable thread's resources are reclaimed with pthread_join; detached threads are reclaimed automatically.
 
-- **Returning from `main()` is the same as calling `exit()`.** Any threads still running are terminated, possibly in the middle of their work.
-- **Returning from a thread's start function** is the same as `pthread_exit()` with that return value.
-- The value passed to `pthread_exit(retval)` can be collected by another thread with `pthread_join()`. Do not return a pointer to the thread's own stack variables; they no longer exist.
-- `pthread_exit()` runs thread cleanup handlers (`pthread_cleanup_push`) and thread-specific data destructors; it does **not** release mutexes the thread holds or close files (files belong to the process).
-- **Any thread calling `exit()`** ends the whole process; a library should never call `exit()` on an error in a worker thread.
-- `_exit()` / `_Exit()` end the process immediately without running `atexit` handlers or flushing stdio; use them in a child after a failed `exec()`.
-
-**Better practice than `pthread_exit` in `main`:** `pthread_join()` each worker before returning from `main`. Then you know when work is complete and can collect results and report errors.
+**Interview takeaway:** Do not return pointers to a terminating thread's stack. Prefer explicit joins and orderly shutdown over leaving background threads unmanaged.
 
 ### What are /proc, /sys and /dev used for? {E}
 **Short answer:** They are virtual (in-memory) file systems that the kernel uses to talk to user space. **`/proc`** shows information about processes (`/proc/<pid>/...`) and many kernel statistics and settings (`/proc/meminfo`, `/proc/interrupts`, `/proc/sys/...`). **`/sys`** (sysfs) shows the device model: every bus, device, driver and class, with one value per file. **`/dev`** contains device nodes (character and block devices) that programs open to talk to drivers.
