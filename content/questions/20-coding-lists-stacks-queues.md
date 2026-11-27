@@ -511,6 +511,10 @@ void remove_loop(node_t *head)
 
 **Other methods:** a hash set of visited nodes (O(n) memory; the first repeated node is the loop start), or marking nodes with a visited flag (needs a spare field).
 
+#### Alternative cycle removal
+
+After Floyd's meeting, move slow to head and advance both pointers one node at a time until equal. This finds the cycle entry. Starting at that entry, walk until a node's next points back to the entry, then set that next to NULL. This handles a self-loop, a cycle beginning at head, and a cycle beginning midway. No node should be freed by cycle removal: all distinct nodes remain reachable from head.
+
 ### Implement a doubly linked list with insert and delete. {E}
 **Short answer:** Each node has `prev` and `next` pointers, so you can walk in both directions and delete a node in O(1) when you have a pointer to it. Insertion and deletion must update up to four pointers (the node's own two and the neighbours' links), and must update the head (and tail) when the node is at an end.
 
