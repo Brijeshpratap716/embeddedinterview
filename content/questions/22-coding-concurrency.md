@@ -265,6 +265,12 @@ void csem_post(csem_t *s)                 /* V / up */
 
 **Real APIs:** POSIX `sem_init/sem_wait/sem_post` (`sem_post` is async-signal-safe, unlike this version), FreeRTOS `xSemaphoreCreateCounting`, Zephyr `k_sem`, Linux kernel `struct semaphore` (mostly replaced by mutexes and completions).
 
+#### Count is the predicate, not the notification
+
+If three posts happen before any waiter arrives, count becomes three. Three subsequent waits consume tokens without sleeping; the fourth waits. Unlike a bare condition-variable signal, the count remembers available resources. All accesses to count must occur under the mutex.
+
+Use a maximum count and reject post at that maximum to avoid unsigned wrap. Check initialization, lock and wait errors in production, and arrange cleanup on cancellation. For shutdown, add a closed flag and broadcast under the same mutex. Destroy the mutex and condition variable only when there are no active users.
+
 ### Implement a reader-writer lock. {H}
 **Short answer:** Track the number of active readers, whether a writer is active, and (for writer preference) the number of waiting writers, all protected by one mutex with two condition variables. A reader may enter when no writer is active or waiting; a writer may enter only when there are no readers and no active writer. Leaving readers wake a writer when the count reaches zero; a leaving writer wakes everyone.
 
