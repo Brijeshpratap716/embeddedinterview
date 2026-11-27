@@ -974,26 +974,37 @@ Measure actual coverage and energy per useful message, including connection/retr
 **Interview takeaway:** Do not choose solely by advertised range or bit rate. Evaluate the end-to-end link budget, duty cycle, application payload, availability and lifecycle requirements.
 
 ### How would you design a protocol gateway, for example Modbus RTU to MQTT? {H}
-**Short answer:** Split it into layers connected by queues: a **southbound** driver (RS-485 Modbus RTU client polling devices on a schedule), a **data model** that maps device registers to named, scaled values with timestamps and quality flags, and a **northbound** client (MQTT over TLS publishing values and receiving commands), plus configuration, buffering for offline periods, diagnostics and secure updates. Each side runs independently so a slow cloud connection never stalls field-bus polling.
+A protocol gateway translates between different communication systems. A Modbus RTU-to-MQTT gateway typically polls industrial devices over a serial bus and publishes interpreted data to a broker.
 
-**Architecture**
+#### 1. Architecture
 
+```text
+Modbus RTU devices
+       |
+RS-485 / UART driver
+       |
+Transaction scheduler + response/CRC validation
+       |
+Register mapping, scaling and timestamps
+       |
+Bounded message queue
+       |
+MQTT client over authenticated TLS
+       |
+Broker / application
 ```
-[Modbus devices] --RS-485--> [Modbus RTU poller] --queue--> [Data model / mapping] --queue--> [MQTT client] --TLS--> [Broker]
-                                   ^                                  |                              |
-                           [Config: register map, poll rates]   [Store-and-forward buffer]   [Command handler → write queue]
-```
 
-**Design points to discuss**
+#### 2. Design steps
 
-1. **Configuration-driven mapping:** a table per device: address, function code, register, data type (int16/uint32/float, word order), scale, units, poll period, MQTT topic. No code changes for a new device type.
-2. **Scheduling:** poll fast-changing values often and others rarely; respect inter-frame delays and timeouts; one outstanding request at a time per RS-485 bus.
-3. **Error handling:** retries with limits, mark values as stale/bad quality after timeouts, per-device health statistics, bus recovery.
-4. **Buffering:** store-and-forward in RAM/flash when the uplink is down, with a bounded size and a drop policy (oldest first) and timestamps from an RTC/NTP.
-5. **Commands (writes):** validate topic, range and permissions before writing to devices; send acknowledgements back over MQTT.
-6. **Publishing efficiency:** publish on change or with deadband, batch values into one JSON/CBOR/Protobuf message, use QoS 1 for important data.
-7. **Security:** TLS with per-device certificates, minimum broker permissions, signed firmware updates, no default passwords on a local web UI.
-8. **Observability:** logs, counters (polls, timeouts, CRC errors, publish failures), a status topic and a last-will message.
-9. **Platform:** an MCU with an RTOS for simple gateways, or embedded Linux (more protocols, containers, easier TLS and storage) for larger ones.
+Configure each device address, register range, type and polling interval. Serialize RTU transactions, enforce deadlines and validate response address, function, length and CRC. Convert raw registers into typed application data, including quality/status and timestamp.
 
-**Interviewers are looking for:** decoupling with queues, explicit handling of failure and backlog, configuration over hard-coding, and security from the start.
+#### 3. Reliability example
+
+If one target times out, mark its measurements stale or unavailable and continue serving other devices. Buffer a bounded number of outgoing messages during broker loss, with a documented drop/coalescing policy and reconnect backoff.
+
+#### 4. Control and security
+
+If remote writes are supported, authenticate and authorize commands, validate ranges and distinguish acknowledgment from actual device state. Use restricted MQTT topics and avoid exposing raw industrial write access to untrusted clients.
+
+**Interview takeaway:** A gateway is more than format conversion. It must manage timing, buffering, error isolation, data quality, security and ownership across two independent communication systems.
+
