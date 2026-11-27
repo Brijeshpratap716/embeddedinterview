@@ -831,6 +831,21 @@ SMC #0 // monitor call, where permitted
 
 **Interview takeaway:** TrustZone is hardware-assisted isolation, not automatic security for every application; secure firmware and platform configuration matter.
 
+#### Example: trusted service from a normal-world application
+
+```text
+Normal-world application
+    -> kernel TEE driver
+    -> SMC / platform call
+    -> secure monitor
+    -> trusted OS / trusted application
+    -> validated result returned to normal world
+```
+
+For example, a normal-world client requests a cryptographic operation using a protected key. The trusted service performs the operation without exposing that key to the caller. Shared-memory arguments must be checked for valid address ranges, size, permissions and lifetime. The normal-world kernel may be untrusted by the secure service's threat model.
+
+TrustZone requires the SoC's memory and peripheral security controllers to enforce the intended resource attribution. The secure monitor, trusted OS, secure boot chain and trusted applications must also be correctly implemented. TrustZone does not itself encrypt all memory or prove the correctness of trusted code. On Cortex-M, TrustZone uses a different exception and gateway model from the Cortex-A SMC/EL3 architecture. Newer Arm systems can provide additional security states and isolation facilities, so consult the implemented architecture.
+
 ### What is ARM virtualization at EL2? {H}
 **Short answer:** EL2 lets a hypervisor control guest execution and traps. Stage-1 translation maps guest VA to IPA; stage-2 maps IPA to host PA.
 
