@@ -427,36 +427,68 @@ RTOS tasks commonly have separate bounded stacks. Large local buffers or deep ca
 **Interview takeaway:** Never return the address of an automatic local variable. Heap objects may outlive a function, but ownership and cleanup must be explicit.
 
 ### What is a memory leak? {E}
-**Short answer:** A memory leak is memory that has been allocated but can no longer be freed because the program has lost every pointer to it (or never frees memory it no longer needs). Each leak permanently reduces available memory; in a device that runs for months, even a few bytes per event eventually exhausts the heap and causes allocation failures or a crash.
+A memory leak occurs when allocated storage is not released after it is no longer required. Repeated leaks reduce available memory and may eventually cause allocation failure.
+
+#### 1. Example of a leak
 
 ```c
-void handle_msg(const uint8_t *data, size_t len)
+void fun(void)
 {
-    uint8_t *copy = malloc(len);
-    if (copy == NULL) return;
-    memcpy(copy, data, len);
-    if (!valid(copy, len))
-        return;                  /* LEAK: early return without free(copy) */
-    process(copy, len);
-    free(copy);
+    int *p = malloc(100 * sizeof *p);
+
+    if (p == NULL)
+        return;
+
+    p[0] = 10;
+    // Missing free(p)
 }
 ```
 
-**Typical causes**
+The local pointer disappears when fun returns, but the allocation remains reserved. If no other pointer owns it, the program can no longer release it.
 
-- Early returns and error paths that skip `free` (use a single exit path with cleanup, a `goto out;` pattern, or design ownership clearly).
-- Overwriting the only pointer: `p = malloc(...)` twice, or `p = realloc(p, n)` when `realloc` fails.
-- Unclear ownership: neither caller nor callee frees.
-- Lost references in data structures (removing a list node without freeing it).
-- Resources other than memory leak too: file descriptors, sockets, RTOS objects (queues, timers), DMA descriptors.
+#### 2. Correct implementation
 
-**Finding leaks**
+```c
+void fun(void)
+{
+    int *p = malloc(100 * sizeof *p);
+    if (!p)
+        return;
 
-- On Linux and in host-based unit tests: **Valgrind** (`valgrind --leak-check=full`), **AddressSanitizer/LeakSanitizer** (`-fsanitize=address`), heaptrack.
-- On an MCU: track heap statistics over time, e.g. FreeRTOS `xPortGetFreeHeapSize()` and `xPortGetMinimumEverFreeHeapSize()`; wrap `malloc`/`free` to count allocations by call site; run long soak tests and watch the trend.
-- In code review: every allocation must have a clear owner and a clear free.
+    p[0] = 10;
+    free(p);
+}
+```
 
-**Prevention in embedded systems:** avoid run-time allocation (static allocation or pools), allocate once at start-up, and design APIs so ownership is obvious ("caller provides the buffer").
+A common leak occurs on an error path:
+
+```c
+int ret = -1;
+char *buf = malloc(256);
+
+if (!buf)
+    return -1;
+
+if (read_packet(buf, 256) < 0)
+    goto out;
+
+ret = 0;
+out:
+    free(buf);
+    return ret;
+```
+
+The shared cleanup path releases the allocation on success and failure.
+
+#### 3. How to detect leaks
+
+- Linux userspace: Valgrind or AddressSanitizer/LeakSanitizer where supported.
+- Bare metal and RTOS: track allocation/free counts, outstanding bytes and heap statistics.
+- Linux kernel: use kmemleak or relevant tracing/debugging facilities when configured.
+
+A growing heap alone is not proof of a leak; an allocator may retain freed storage for reuse.
+
+**Interview takeaway:** Every successful allocation needs a clear owner and a matching release when no longer needed. A long-running embedded system may fail after hours or days because of a small repeated leak.
 
 ### What is heap fragmentation and why does it matter in embedded systems? {M}
 **Short answer:** After many allocations and frees of different sizes, free memory is split into many small, non-adjacent holes. An allocation can then fail even though the **total** free memory is large enough, because no **single** hole is big enough. Devices that must run for years without rebooting can fail this way after days or months, which makes the bug very hard to reproduce.
