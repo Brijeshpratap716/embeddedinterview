@@ -1648,38 +1648,65 @@ Use named states to make control flow easier to understand. C does not automatic
 **Interview takeaway:** An enum is useful for states, errors and configuration choices. Do not assume its memory size is four bytes or directly serialize its representation into a fixed-width protocol.
 
 ### What is the difference between malloc, calloc, realloc and free? {E}
-**Short answer:** `malloc(n)` allocates `n` bytes with **uninitialised** contents. `calloc(count, size)` allocates `count * size` bytes, **zeroed**, and checks the multiplication for overflow. `realloc(p, n)` resizes a block, possibly moving it to a new address. `free(p)` releases a block; `free(NULL)` does nothing.
+These four functions from `<stdlib.h>` manage dynamically allocated memory.
+
+#### 1. malloc()
+
+Allocates the requested number of bytes. The initial contents are indeterminate.
 
 ```c
-int *a = malloc(10 * sizeof *a);          /* garbage values */
-int *b = calloc(10, sizeof *b);           /* all zero */
-if (a == NULL || b == NULL) { /* handle failure */ }
-
-int *tmp = realloc(a, 20 * sizeof *a);    /* keep the old pointer until success */
-if (tmp == NULL) { free(a); /* error */ }
-else a = tmp;
-
-free(a);
-free(b);
-a = b = NULL;                              /* avoid dangling pointers */
+int *p = malloc(5 * sizeof *p);
+if (p == NULL)
+    return;
+p[0] = 10;
 ```
 
-**Details worth mentioning**
+#### 2. calloc()
 
-- `realloc` may move the block: any other pointers into the old block are now invalid.
-- `p = realloc(p, n);` is a classic leak: if `realloc` fails, it returns `NULL` and the original block is lost.
-- `realloc(NULL, n)` behaves like `malloc(n)`. `realloc(p, 0)` is implementation-defined (and deprecated in C23), so do not rely on it to free.
-- `malloc(0)` may return NULL or a unique pointer; do not dereference it.
-- Write `sizeof *p` rather than `sizeof(int)` so the size stays correct if the type changes.
-- Every allocation must be freed exactly once: double free and use-after-free are undefined behaviour and common security bugs.
+Allocates space for an array and initializes all allocated bytes to zero.
 
-**Why many embedded projects avoid the heap**
+```c
+int *p = calloc(5, sizeof *p);
+```
 
-- **Fragmentation:** after many allocations and frees of different sizes, free memory is split into pieces too small to use, and an allocation fails even though plenty of memory is free in total. On a device that must run for years, this is a real failure mode.
-- **Non-deterministic timing:** allocation time depends on the heap state, which is a problem for real-time code.
-- **Failure handling:** what does an airbag controller do if `malloc` returns NULL?
+Check for failure before access. For integers, the resulting values are zero; all-bits-zero need not represent a null pointer or floating-point zero on every implementation.
 
-MISRA C and many safety standards ban dynamic allocation after initialisation. Alternatives: static allocation, fixed-size **memory pools** (allocate and free in O(1), no fragmentation), and allocating everything once at start-up.
+#### 3. realloc()
+
+Changes the size of an existing allocation. It may move the allocation to a different address.
+
+```c
+int *tmp = realloc(p, 10 * sizeof *p);
+
+if (tmp != NULL)
+    p = tmp;
+```
+
+For a nonzero requested size, failure leaves the old allocation valid. Existing contents are preserved up to the smaller of the two sizes. Additional bytes are not initialized.
+
+#### 4. free()
+
+Releases previously allocated memory.
+
+```c
+free(p);
+p = NULL;
+```
+
+Do not dereference a freed pointer or free the same allocation twice.
+
+| Function | Purpose | Initialization |
+|---|---|---|
+| malloc | Allocate bytes | Indeterminate |
+| calloc | Allocate array | Zeroed bytes |
+| realloc | Resize allocation | Preserves old portion |
+| free | Release allocation | Not applicable |
+
+#### 5. Embedded considerations
+
+Dynamic allocation can fail, fragment the heap and introduce unpredictable latency. Fixed-size memory pools or static allocation may be preferable for hard real-time firmware.
+
+**Interview takeaway:** Check allocation failures, guard size calculations against overflow, use a temporary pointer for realloc, and avoid zero-size realloc for portable behaviour.
 
 ### What is the difference between strcpy, strncpy and memcpy? {M}
 **Short answer:** `strcpy(d, s)` copies a string including its `'\0'` with **no bounds check**. `strncpy(d, s, n)` copies at most `n` characters and pads the rest with zeros, but does **not** add a terminator if the source is `n` characters or longer. `memcpy(d, s, n)` copies exactly `n` bytes regardless of content, and is undefined if the buffers overlap (use `memmove` then).
