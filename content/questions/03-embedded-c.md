@@ -390,40 +390,41 @@ Keep interrupt-side algorithms small, bounded and independent of mutable shared 
 **Interview takeaway:** Thread safety does not automatically imply reentrancy or interrupt safety. Design around ownership and the actual concurrency model.
 
 ### How do you set, clear, toggle and test a bit in a register? {E}
-**Short answer:** Build a single-bit mask with `1u << n`, then OR it to set, AND with its complement to clear, XOR to toggle, and AND to test. For multi-bit fields, clear the field with an inverted mask and OR in the new value.
+Bit manipulation uses masks to change selected bits without intentionally changing the remaining bits.
+
+#### 1. Basic operations
 
 ```c
-reg |=  (1u << n);                  /* set bit n    */
-reg &= ~(1u << n);                  /* clear bit n  */
-reg ^=  (1u << n);                  /* toggle bit n */
-if (reg & (1u << n)) { }            /* test bit n (non-zero if set) */
-bool b = (reg >> n) & 1u;           /* bit n as 0 or 1 */
+uint32_t reg = 0;
+uint32_t mask = UINT32_C(1) << 3;
 
-/* multi-bit field: e.g. bits 5..4 = mode */
-#define MODE_Pos 4u
-#define MODE_Msk (3u << MODE_Pos)
-reg = (reg & ~MODE_Msk) | ((mode << MODE_Pos) & MODE_Msk);
+reg |= mask;              // Set bit 3
+reg &= ~mask;             // Clear bit 3
+reg ^= mask;              // Toggle bit 3
+bool set = (reg & mask) != 0; // Test bit 3
 ```
 
-**Why `1u`:** `1 << 31` shifts into the sign bit of a signed `int`, which is undefined behaviour (before C23). With `1u` the shift is unsigned and well-defined.
+The bit index must be between 0 and 31 for this mask.
 
-**On real hardware, prefer hardware set/clear registers** when the peripheral has them:
+<div style="max-width:600px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 120" width="100%" role="img" aria-label="Setting bit 3 in an eight-bit value changes 00100010 to 00101010">
+<text x="8" y="24" font-size="11" fill="currentColor">Original</text><rect x="96" y="5" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="109.5" y="23" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="125" y="5" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="138.5" y="23" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="154" y="5" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="167.5" y="23" text-anchor="middle" font-size="13" fill="currentColor">1</text><rect x="183" y="5" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="196.5" y="23" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="212" y="5" width="27" height="27" rx="3" fill="#16a34a" fill-opacity=".15" stroke="#16a34a"/><text x="225.5" y="23" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="241" y="5" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="254.5" y="23" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="270" y="5" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="283.5" y="23" text-anchor="middle" font-size="13" fill="currentColor">1</text><rect x="299" y="5" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="312.5" y="23" text-anchor="middle" font-size="13" fill="currentColor">0</text><text x="8" y="59" font-size="11" fill="currentColor">Mask</text><rect x="96" y="40" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="109.5" y="58" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="125" y="40" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="138.5" y="58" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="154" y="40" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="167.5" y="58" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="183" y="40" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="196.5" y="58" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="212" y="40" width="27" height="27" rx="3" fill="#16a34a" fill-opacity=".15" stroke="#16a34a"/><text x="225.5" y="58" text-anchor="middle" font-size="13" fill="currentColor">1</text><rect x="241" y="40" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="254.5" y="58" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="270" y="40" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="283.5" y="58" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="299" y="40" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="312.5" y="58" text-anchor="middle" font-size="13" fill="currentColor">0</text><text x="8" y="94" font-size="11" fill="currentColor">Result OR</text><rect x="96" y="75" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="109.5" y="93" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="125" y="75" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="138.5" y="93" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="154" y="75" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="167.5" y="93" text-anchor="middle" font-size="13" fill="currentColor">1</text><rect x="183" y="75" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="196.5" y="93" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="212" y="75" width="27" height="27" rx="3" fill="#16a34a" fill-opacity=".15" stroke="#16a34a"/><text x="225.5" y="93" text-anchor="middle" font-size="13" fill="currentColor">1</text><rect x="241" y="75" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="254.5" y="93" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="270" y="75" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="283.5" y="93" text-anchor="middle" font-size="13" fill="currentColor">1</text><rect x="299" y="75" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="312.5" y="93" text-anchor="middle" font-size="13" fill="currentColor">0</text></svg></div>
+
+#### 2. Update a multi-bit field
 
 ```c
-GPIOA->BSRR = (1u << 5);            /* set PA5 atomically (STM32)                 */
-GPIOA->BSRR = (1u << (5 + 16));     /* reset PA5 atomically                       */
-NRF_P0->OUTSET = (1u << 13);        /* nRF52: separate SET/CLR registers          */
+#define MODE_MASK (UINT32_C(7) << 4)
+
+reg = (reg & ~MODE_MASK) |
+      ((UINT32_C(5) << 4) & MODE_MASK);
 ```
 
-A single write cannot be corrupted by an interrupt, unlike `|=` (read-modify-write).
+Clear bits 6:4, then insert the three-bit value 5.
 
-**Registers that behave differently**
+#### 3. Hardware register caution
 
-- **Write-1-to-clear (W1C)** status flags: clear a flag by writing a 1 **only** to that bit (`SR = FLAG;`), not `SR |= FLAG;`, which would clear every pending flag.
-- **Read-to-clear** registers: reading them for a test also clears them.
-- **Write-only** registers (e.g. `BSRR`): reading returns 0 or garbage, so `|=` does not work.
+The expressions above are ordinary read-modify-write operations. For GPIO or interrupt status registers, use dedicated SET/CLEAR aliases or write-one-to-clear masks when the hardware defines them. Do not assume that every register can be read and written without side effects.
 
-Always check the reference manual's access type (rw, r, w, rc_w1, rc_r).
+**Interview takeaway:** OR sets, AND with complement clears, XOR toggles and AND tests. Use unsigned masks of the proper width and follow register semantics.
 
 ### Why can a read-modify-write on a register be dangerous? {H}
 **Short answer:** `REG |= BIT;` is three separate operations: read the register, OR in the bit, write it back. If anything changes the register between the read and the write (an ISR, another core, DMA, or the hardware itself), that change is overwritten. Read-modify-write can also clear write-1-to-clear flags you did not intend to touch, and lose data on registers that change when read.
