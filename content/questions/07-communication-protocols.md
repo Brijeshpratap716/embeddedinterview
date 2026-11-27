@@ -347,26 +347,38 @@ Use this helper only if the device and adapter support the compatible SMBus-styl
 **Interview takeaway:** START/STOP delimit the transaction, address and direction select the target, and ACK/NACK coordinates byte reception. Do not confuse a 7-bit address with the transmitted address byte.
 
 ### Why does I2C need pull-up resistors, and how do you size them? {M}
-**Short answer:** Both I2C lines are **open-drain**: devices can only pull them low, so resistors pull them high when nobody drives them. A smaller resistor gives faster rising edges but more current when the line is low; a larger resistor saves current but makes edges too slow for the speed mode. Size it between `Rmin = (VDD − VOL(max)) / IOL` and `Rmax ≈ t_r / (0.8473 × Cbus)`.
+I2C requires pull-up resistors because conventional SDA and SCL outputs are open-drain. Devices drive low but release the line for high. The pull-up charges bus capacitance when every device releases it.
 
-**Formulas (from the I2C specification)**
+#### 1. Rise-time limit
 
-- `Rp(min) = (VDD − 0.4 V) / 3 mA` for standard/fast mode (devices must sink 3 mA at 0.4 V).
-- `Rp(max) = t_r / (0.8473 × C_b)`, where `t_r` is the maximum rise time (1000 ns at 100 kHz, 300 ns at 400 kHz, 120 ns at 1 MHz Fast-mode Plus) and `C_b` the total bus capacitance (≤ 400 pF).
+For a simple resistor-capacitor bus, the 30%-to-70% rise time is approximately:
 
-**Worked example (3.3 V, 400 kHz, 100 pF bus)**
+```text
+tr ≈ 0.8473 × Rp × Cbus
+Rp_max ≈ tr_max / (0.8473 × Cbus)
+```
 
-- Rp(min) = (3.3 − 0.4) / 0.003 ≈ 967 Ω
-- Rp(max) = 300 ns / (0.8473 × 100 pF) ≈ 3.5 kΩ
-- Choose **2.2 kΩ** (common for 400 kHz). At 100 kHz with the same bus, Rp(max) ≈ 11.8 kΩ, so 4.7 kΩ or 10 kΩ work.
+The maximum pull-up resistance is set by the applicable I2C mode's rise-time requirement.
 
-**Practical notes**
+#### 2. Sink-current limit
 
-- Each device's input adds capacitance (≈ 5–10 pF), plus traces and connectors; long cables need lower resistor values, bus buffers (PCA9515) or differential extenders.
-- Only **one set** of pull-ups per bus segment; many breakout boards each add their own, and too many in parallel make the value too small.
-- Internal MCU pull-ups (20–50 kΩ) are too weak for anything but very slow, short buses.
-- Mixed voltages (3.3 V and 5 V devices) need a level shifter (e.g. a MOSFET-based bidirectional shifter).
-- The `0.8473` factor comes from the time to rise from 30% to 70% of VDD in an RC circuit: `t = RC × ln(0.7/0.3)`.
+```text
+Rp_min ≈ (VDD - VOL_max) / IOL
+```
+
+A smaller resistor increases the low-state sink current. Respect the weakest device's specified drive capability.
+
+#### 3. Example calculation
+
+Assume 3.3 V, 100 pF bus capacitance, a 300 ns rise-time limit, VOL_max = 0.4 V and allowable sink current 3 mA.
+
+Rp_max ≈ 3.54 kΩ; Rp_min ≈ 0.97 kΩ. A 2.2 kΩ resistor is within this illustrative range. Confirm actual capacitance, device limits and measured waveform.
+
+#### 4. Debugging
+
+Weak pull-ups give slow rising edges; overly strong pull-ups can violate low-level voltage or sink-current limits. Multiple pull-ups in parallel reduce effective resistance.
+
+**Interview takeaway:** Pull-up sizing is an electrical timing/current trade-off, not a universal 4.7 kΩ rule.
 
 ### What is clock stretching? {M}
 **Short answer:** Clock stretching is when a target device holds SCL low after the controller releases it, to tell the controller to wait until it is ready (for example while it finishes a measurement or prepares data). Because SCL is open-drain, the controller sees that SCL has not gone high and must wait before continuing. Every I2C controller must support it, but some implementations handle it badly.
