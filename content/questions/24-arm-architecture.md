@@ -1003,6 +1003,14 @@ SEV // send event
 
 **Interview takeaway:** These are architectural hints, not locks or guarantees that the core sleeps for a particular duration.
 
+#### Event waiting and lost-wakeup considerations
+
+AArch64 maintains an event mechanism used by WFE. An event may already be recorded when WFE executes, in which case the instruction can return immediately. SEV signals an event; SEVL is a local event-setting instruction. WFI and WFE may also be treated as hints or trap under virtualization controls, depending on the architecture and configuration.
+
+A conceptual event-based lock waiter must repeatedly check the lock with the required atomic ordering. The unlock path publishes the released state and follows the matching notification protocol. A plain load followed by WFE without a correct event protocol can miss a state change. Use the OS or architecture's established synchronization primitives rather than inventing a wait loop.
+
+For low-power idle, configure appropriate wake sources and account for pending work, clock/power-domain behavior and wake latency. Neither WFI nor WFE specifies the SoC's eventual power state or guarantees that a particular interrupt has been serviced when execution resumes.
+
 ### What is the difference between a cache clean and invalidate? {M}
 **Short answer:** Cleaning writes dirty data toward the required coherency point; invalidation discards cached copies. Incorrect invalidation can lose dirty data. Use platform APIs for DMA.
 
