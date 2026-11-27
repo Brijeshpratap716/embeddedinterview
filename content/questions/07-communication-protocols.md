@@ -310,31 +310,41 @@ QSPI/OSPI controllers can access serial flash through indirect commands or memor
 **Interview takeaway:** Quad SPI is not automatically four times faster for an entire transaction. The gain depends on which phases use multiple lines and the supported timing.
 
 ### What does an I2C transaction look like? {E}
-**Short answer:** **START** (SDA falls while SCL is high), then an **address byte** (7-bit address plus a R/W bit: 0 = write, 1 = read), then an **ACK** from the addressed target (it pulls SDA low on the 9th clock), then **data bytes**, each followed by ACK or NACK, then **STOP** (SDA rises while SCL is high). To read a register, write the register address, then send a **repeated START** with the read bit and read the data, with the controller NACKing the last byte.
+I2C is a synchronous addressed bus using open-drain SDA and SCL signals. A controller initiates a transaction and the addressed target acknowledges its address and appropriate data bytes.
 
+#### 1. Register write example
+
+For a target with 7-bit address 0x50, write value 0xAB to register 0x10:
+
+```text
+START | address 0x50 + W | ACK
+      | register 0x10    | ACK
+      | data 0xAB        | ACK | STOP
 ```
-Write register 0x10 = 0xAB on device 0x48:
-S | 0x48<<1|W | A | 0x10 | A | 0xAB | A | P
 
-Read 2 bytes from register 0x00:
-S | 0x48<<1|W | A | 0x00 | A | Sr | 0x48<<1|R | A | data0 | A | data1 | N | P
-(S = START, Sr = repeated START, A = ACK, N = NACK, P = STOP)
+The transmitted address byte is 0xA0. The receiver drives ACK low on the ninth clock; NACK leaves SDA high.
+
+#### 2. Register read with repeated START
+
+```text
+START | address + W | ACK | register | ACK
+REPEATED START | address + R | ACK
+      | read data | controller NACK | STOP
 ```
 
-**Rules**
+The device's datasheet determines whether a repeated START and register-address bytes are required. For multiple read bytes, the controller commonly ACKs intermediate bytes and NACKs the last.
 
-- SDA may only change while SCL is low; a change while SCL is high is a START or STOP.
-- Data is sent MSB first.
-- The receiver ACKs each byte: the target during writes, the controller during reads (and NACKs the last byte to tell the target to stop driving SDA).
-- A NACK after the address means no device answered (wrong address, device missing or busy, e.g. an EEPROM during its internal write cycle).
+#### 3. Linux example
 
-**Common bugs**
+```c
+int val = i2c_smbus_read_byte_data(client, 0x10);
+if (val < 0)
+    return val;
+```
 
-- Using 8-bit "address" values from a datasheet that already include the R/W bit (e.g. 0x90/0x91 for device 0x48). The 7-bit address is the 8-bit one shifted right by one.
-- Sending STOP between the register address and the read: many devices then forget the register pointer or start a new transaction differently.
-- Not handling NACK and continuing as if the write succeeded.
+Use this helper only if the device and adapter support the compatible SMBus-style transaction. Otherwise use an appropriate i2c_transfer message sequence.
 
-**Tools:** `i2cdetect -y 1` (scan the bus on Linux), `i2cget`/`i2cset`/`i2ctransfer`, and a logic analyser with an I2C decoder.
+**Interview takeaway:** START/STOP delimit the transaction, address and direction select the target, and ACK/NACK coordinates byte reception. Do not confuse a 7-bit address with the transmitted address byte.
 
 ### Why does I2C need pull-up resistors, and how do you size them? {M}
 **Short answer:** Both I2C lines are **open-drain**: devices can only pull them low, so resistors pull them high when nobody drives them. A smaller resistor gives faster rising edges but more current when the line is low; a larger resistor saves current but makes edges too slow for the speed mode. Size it between `Rmin = (VDD − VOL(max)) / IOL` and `Rmax ≈ t_r / (0.8473 × Cbus)`.
