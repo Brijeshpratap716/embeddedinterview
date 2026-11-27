@@ -129,56 +129,33 @@ void move_zeros(int a[], size_t n)
 **Complexity:** O(n) time, O(1) space; stable for nonzero values.
 
 ### How do you rotate an array by d positions? {M}
-**Short answer:** Use the reversal algorithm. To rotate left by `d`: reverse the first `d` elements, reverse the rest, then reverse the whole array. It runs in O(n) time with O(1) extra memory. Reduce `d` with `d %= n` first.
+A left rotation by d can be performed using three reversals.
 
+```text
+1 2 | 3 4 5     d=2
+2 1 | 3 4 5     reverse first part
+2 1 | 5 4 3     reverse rest
+3 4 5 1 2       reverse all
+```
 ```c
-#include <stddef.h>
-
-static void reverse_range(int *a, size_t lo, size_t hi)   /* inclusive */
+static void rev(int *a, size_t n)
 {
-    while (lo < hi) {
-        int t = a[lo]; a[lo] = a[hi]; a[hi] = t;
-        lo++; hi--;
+    for (size_t i = 0; i < n/2; ++i) {
+        int t = a[i]; a[i] = a[n-1-i]; a[n-1-i] = t;
     }
 }
-
 void rotate_left(int *a, size_t n, size_t d)
 {
-    if (n == 0) return;
+    if (!n) return;
     d %= n;
-    if (d == 0) return;
-    reverse_range(a, 0, d - 1);
-    reverse_range(a, d, n - 1);
-    reverse_range(a, 0, n - 1);
+    if (!d) return;
+    rev(a,d); rev(a+d,n-d); rev(a,n);
 }
-/* {1, 2, 3, 4, 5, 6}, d = 2 -> {3, 4, 5, 6, 1, 2} */
 ```
 
-**Dry run (d = 2):**
+Right rotation by d is left rotation by (n−d%n)%n for nonempty input.
 
-```
-start          1 2 | 3 4 5 6
-reverse [0,1]  2 1 | 3 4 5 6
-reverse [2,5]  2 1 | 6 5 4 3
-reverse all    3 4 5 6 1 2
-```
-
-**Why it works:** write the array as `A B` where `A` is the first `d` elements. We want `B A`. Reversing each part gives `Aʳ Bʳ`, and reversing the whole thing gives `(Aʳ Bʳ)ʳ = B A`.
-
-**Right rotation by d** is left rotation by `n - d`, or reverse the whole array first and then the two parts.
-
-**Other methods**
-
-| Method | Time | Extra space |
-|---|---|---|
-| Rotate by one, d times | O(n·d) | O(1) |
-| Copy to a temp array | O(n) | O(n) or O(d) |
-| Juggling (GCD cycles) | O(n) | O(1) |
-| **Reversal** | **O(n)** | **O(1)** |
-
-**Forgetting `d %= n`** is the usual bug: with `d = 8` and `n = 6`, `reverse_range(a, 0, 7)` writes past the array.
-
-**Embedded relevance:** the same idea rotates a circular log buffer into chronological order before sending it, without a second buffer.
+**Complexity:** O(n) time, O(1) space.
 
 ### How do you find the leaders in an array? {E}
 **Short answer:** A leader is an element greater than every element to its right; the last element is always a leader. Scan from right to left, tracking the maximum seen so far, and print an element whenever it is greater than that maximum. O(n) time, O(1) space.
