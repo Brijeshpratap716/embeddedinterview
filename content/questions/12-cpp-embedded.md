@@ -260,48 +260,33 @@ Move type-independent work into shared non-template functions, avoid unnecessary
 **Interview takeaway:** Templates can give strong typing and static dispatch without dynamic allocation. Code size depends on instantiation and optimization, so measure rather than assuming templates are free or always expensive.
 
 ### What are smart pointers and should you use them on an MCU? {M}
-**Short answer:** Smart pointers own the object they point to and release it automatically. `std::unique_ptr` has a single owner, is the same size as a raw pointer (with a stateless deleter) and has no run-time overhead, so it is fine on an MCU, especially with a **custom deleter** that returns memory to a pool. `std::shared_ptr` uses reference counting with a separately allocated control block and atomic increments, adding RAM, code and allocation, so it is usually avoided in firmware. Since most MCU code avoids the heap anyway, the main value is clear ownership.
+Smart pointers model ownership and automate resource release. Whether they are appropriate on an MCU depends on the allocation and lifetime policy.
+
+| Type | Ownership |
+|---|---|
+| unique_ptr | Exclusive ownership |
+| shared_ptr | Shared ownership via reference count |
+| weak_ptr | Non-owning observation of shared ownership |
+
+#### 1. Custom resource deleter
 
 ```cpp
-#include <cstdio>
-#include <memory>
-
-struct Msg { int id; char data[32]; };
-
-static Msg pool[4];
-static bool used[4];
-
-Msg *pool_alloc() { for (int i = 0; i < 4; i++) if (!used[i]) { used[i] = true; return &pool[i]; } return nullptr; }
-
-struct PoolDeleter {
-    void operator()(Msg *m) const { used[m - pool] = false; std::printf("returned %d\n", m->id); }
+struct ReturnBuffer {
+    void operator()(Buffer* p) const {
+        if (p) pool_release(p);
+    }
 };
-using MsgPtr = std::unique_ptr<Msg, PoolDeleter>;     // same size as Msg*
 
-MsgPtr make_msg(int id)
-{
-    Msg *m = pool_alloc();
-    if (m) m->id = id;
-    return MsgPtr(m);                                 // may be empty if the pool is exhausted
-}
-
-int main()
-{
-    auto a = make_msg(1);
-    {
-        auto b = make_msg(2);
-    }                                                 // "returned 2"
-    std::printf("sizeof(MsgPtr)=%zu\n", sizeof(MsgPtr));
-}                                                     // "returned 1"
+using BufferHandle = std::unique_ptr<Buffer, ReturnBuffer>;
 ```
 
-**Guidance**
+A BufferHandle can own a buffer obtained from a fixed pool and return it automatically without using delete. The pool must outlive its handles.
 
-- Prefer stack objects, static objects and references; use `unique_ptr` when ownership must be passed around.
-- Avoid `shared_ptr` in hard real-time paths (atomic operations, allocation, unpredictable destruction time when the last reference drops).
-- `std::make_unique` allocates from the heap: only use it at initialisation if heap use is allowed.
-- Raw pointers are still fine for **non-owning** references; `std::span` and references make intent clearer.
-- Beware of destroying objects in ISRs through smart pointers (destructors may not be ISR-safe).
+#### 2. MCU considerations
+
+unique_ptr can be lightweight and does not inherently require heap allocation with a custom deleter. shared_ptr typically requires a control block and reference-count operations; cycles and unpredictable destruction paths require attention.
+
+**Interview takeaway:** Prefer exclusive ownership where possible. Smart pointers solve ownership, not arbitrary concurrency, ISR safety or deterministic allocation.
 
 ### What is the difference between new/delete and malloc/free? {E}
 **Short answer:** `new` allocates memory **and** runs the constructor, returning a correctly typed pointer; `delete` runs the destructor and then frees the memory. `malloc`/`free` only allocate and free raw bytes and know nothing about constructors or types. By default `new` throws `std::bad_alloc` on failure (with exceptions disabled it typically aborts, so use `new (std::nothrow)` and check for null), while `malloc` returns NULL. Memory from `new` must be released with `delete` (and `new[]` with `delete[]`), never with `free`.
