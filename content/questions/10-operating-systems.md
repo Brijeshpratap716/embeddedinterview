@@ -180,35 +180,26 @@ An orphan is reparented according to Linux namespace/subreaper rules, often to P
 **Interview takeaway:** Killing a zombie does not reap it; it has already exited. The parent or designated reaper must collect its exit status.
 
 ### What is virtual memory and why is it used? {E}
-**Short answer:** Virtual memory gives every process its own private address space. The program uses virtual addresses, and the MMU translates each one to a physical address through page tables set up by the OS. This provides isolation between processes, lets the OS use physical memory flexibly (scattered pages, only what is used, swapping), and makes sharing and memory-mapped files easy.
+Virtual memory gives each process an address-space abstraction independent of the exact physical locations backing it. The MMU translates addresses and checks permissions.
 
-**Benefits**
-
-- **Isolation and protection:** a process cannot read or write another process's memory or the kernel's; each page has permissions (read, write, execute, user/kernel).
-- **Contiguous view of scattered memory:** a 100 MB array looks contiguous to the program even though its physical pages are spread across RAM.
-- **Demand paging and overcommit:** pages get physical frames only when first touched. A process can reserve a large heap and use a little of it.
-- **Swapping:** rarely used pages can be moved to disk to free RAM.
-- **Sharing:** shared libraries and the kernel are mapped into many processes but stored once; `fork()` uses copy-on-write.
-- **Memory-mapped files and devices:** `mmap()` maps a file or device memory into the address space so it can be accessed with normal loads and stores.
-
-**Typical 64-bit Linux process layout (low to high)**
-
-```
-0x0000...       (unmapped: catches NULL pointer accesses)
-text            program code, read-only + execute
-data, bss       global/static variables
-heap ↑          malloc() (brk / mmap)
-...             shared libraries, mmap regions
-stack ↓         grows down, with a guard page
-0x0000ffff...   end of user space (ARM64 with 48-bit VA)
-kernel space    not accessible from user mode
+```text
+Process A VA 0x4000 -> MMU -> physical page A
+Process B VA 0x4000 -> MMU -> physical page B
 ```
 
-**Address translation in one line:** virtual page number → page table lookup → physical frame number; the offset inside the page is unchanged. The **TLB** caches recent translations so most accesses do not need a table walk.
+#### 1. Benefits
 
-**Costs:** page table memory, TLB misses, page fault handling. Real-time systems sometimes lock memory (`mlockall()`) to avoid page faults during time-critical work.
+Process isolation, sparse address spaces, shared libraries, mapped files, demand paging, copy-on-write and controlled access to memory.
 
-**Embedded contrast:** a Cortex-M microcontroller has no MMU, so there is no virtual memory. All tasks share one physical address space, and an **MPU** can only restrict access to regions.
+#### 2. Example
+
+malloc can return a virtual address before all underlying physical pages have been allocated. The kernel may establish physical backing when the process first accesses a page.
+
+#### 3. Protection
+
+Page-table permissions restrict read, write and execution. Invalid access may generate a fault; the kernel can resolve a valid demand fault or deliver an error such as SIGSEGV.
+
+**Interview takeaway:** Virtual memory is not synonymous with swap. Address translation and protection remain useful even when no swap is configured.
 
 ### What is paging and what is a page fault? {M}
 **Short answer:** Paging splits virtual and physical memory into fixed-size blocks (pages and frames, usually 4 KB). The page table maps each virtual page to a physical frame with permission bits. A **page fault** is the exception the MMU raises when an access finds no valid mapping or not enough permission. The kernel either fixes it (allocate a page, read it from a file or swap, copy-on-write) and retries the instruction, or sends the process `SIGSEGV` if the access was invalid.
