@@ -365,6 +365,7 @@ The invariant is writer implies readers==0, and readers>0 implies writer==0. Eve
 ```c
 #include <stdatomic.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 typedef struct buffer {
     atomic_uint refs;
@@ -374,6 +375,7 @@ typedef struct buffer {
 
 buffer_t *buf_new(size_t len)
 {
+    if (len > SIZE_MAX - sizeof(buffer_t)) return NULL;
     buffer_t *b = malloc(sizeof *b + len);
     if (b) { atomic_init(&b->refs, 1u); b->len = len; }     /* creator holds one reference */
     return b;
@@ -415,6 +417,12 @@ void buf_put(buffer_t *b)                                    /* drop a reference
 **Overflow/underflow protection:** Linux `refcount_t` saturates at a maximum and warns on underflow instead of wrapping, turning many use-after-free bugs into memory leaks (much less dangerous).
 
 **Where it is used:** Linux `kref`, `struct device` and file references, C++ `std::shared_ptr`, COM `AddRef/Release`, network buffers shared between protocol layers, DMA buffers shared between drivers (dma-buf).
+
+#### Reference counting protects lifetime, not arbitrary access
+
+If a creator owns one reference, hands an additional reference to a worker and drops its own, the count changes 1→2→1. The worker's final put changes 1→0 and destroys the object. Release on each put and acquire before final destruction establish the necessary ordering for the destruction path.
+
+A caller may increment only while it already holds a live reference or has other lifetime protection (for example a lock or RCU plus a suitable get-unless-zero mechanism). Loading an unprotected pointer and then incrementing its counter can race with free. Check allocation-size addition and counter overflow; prevent underflow by matching every get with exactly one put. Concurrent writes to data still require their own synchronization.
 
 ### Implement once-only initialisation. {M}
 **Short answer:** Use a state variable with three values — not started, in progress, done. The first thread to change 'not started' to 'in progress' with compare-and-swap runs the initialiser and then stores 'done' with release ordering. Other threads either see 'done' (acquire load, fast path) or wait until it becomes done. Everyone returns only after initialisation has **finished**.
