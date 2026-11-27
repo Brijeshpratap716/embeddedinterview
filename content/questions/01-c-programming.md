@@ -1825,55 +1825,64 @@ The array parameter is adjusted to int *. Pass the length separately; sizeof(a) 
 **Interview takeaway:** An array is not a pointer, although an array expression usually decays to a pointer to its first element. sizeof and unary address-of are important exceptions.
 
 ### What is a function pointer and where is it used? {M}
-**Short answer:** A function pointer holds the address of a function so the function can be called indirectly, chosen at run time. Embedded code uses them for interrupt vector tables, driver callbacks, state machines, command tables and "operations" structures that give C a form of polymorphism.
+A **function pointer** stores a reference to a function with a compatible signature. It allows a function to be selected and called indirectly at runtime.
+
+#### 1. Declaration and call
 
 ```c
-#include <stdint.h>
-#include <stddef.h>
-
-typedef void (*event_cb_t)(uint8_t event, void *ctx);
-
-static event_cb_t user_cb;
-static void *user_ctx;
-
-void button_register(event_cb_t cb, void *ctx) { user_cb = cb; user_ctx = ctx; }
-
-void button_isr(void)
+int add(int a, int b)
 {
-    if (user_cb != NULL)          /* always check before calling */
-        user_cb(1, user_ctx);
+    return a + b;
 }
+
+int (*operation)(int, int) = add;
+int result = operation(10, 20);
 ```
 
-**Common embedded uses**
+**Result:** 30
 
-- **Vector table:** an array of function pointers placed at the start of flash; the CPU reads the handler address from it on each interrupt.
+The parentheses around *operation are essential. Without them, the declaration would describe a function returning a pointer instead.
+
+#### 2. Callback example
 
 ```c
-__attribute__((section(".isr_vector")))
-void (*const vector_table[])(void) = { (void (*)(void))&_estack, Reset_Handler, NMI_Handler, /* ... */ };
+typedef void (*callback_t)(int);
+
+void notify(callback_t cb, int value)
+{
+    if (cb != NULL)
+        cb(value);
+}
+
+void on_receive(int data)
+{
+    printf("%d", data);
+}
+
+// notify(on_receive, 42);
 ```
 
-- **Callbacks:** a driver calls application code when data arrives, without depending on the application.
-- **State machines:** a table indexed by state (and event) that gives the handler to run.
-- **Driver operations structures:** `struct sensor_ops { int (*init)(void); int (*read)(int16_t *v); };`, which lets the same code drive different sensors (like Linux's `struct file_operations`).
-- **Command parsers:** a table of `{ "name", handler }` pairs.
+The caller supplies the function to execute when an event occurs.
 
-**Syntax help**
+#### 3. Use in Linux device drivers
 
 ```c
-int (*fp)(int, int);          /* pointer to function taking two ints, returning int */
-int *fp2(int, int);           /* a function returning int* — not a pointer! */
-int (*ops[4])(int, int);      /* array of 4 function pointers */
+static const struct file_operations my_fops = {
+    .owner = THIS_MODULE,
+    .read  = my_read,
+    .write = my_write,
+};
 ```
 
-Use a `typedef` to keep declarations readable.
+The VFS invokes the registered driver callbacks for file operations. Here my_read and my_write must have the signatures required by the kernel interface.
 
-**Safety and performance notes**
+<div style="max-width:580px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 180" width="100%" role="img" aria-label="Linux VFS dispatches a read through a driver function pointer" font-family="system-ui,sans-serif"><rect x="25" y="5" width="290" height="43" rx="6" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="22" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Userspace</text><text x="170" y="37" text-anchor="middle" font-size="10" fill="currentColor">read(fd, buffer, length)</text><path d="M170 48 v17 m-4-5 4 5 4-5" fill="none" stroke="currentColor"/><rect x="25" y="65" width="290" height="43" rx="6" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="82" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Linux VFS</text><text x="170" y="97" text-anchor="middle" font-size="10" fill="currentColor">Select registered file operations</text><path d="M170 108 v17 m-4-5 4 5 4-5" fill="none" stroke="currentColor"/><rect x="25" y="125" width="290" height="43" rx="6" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="142" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Driver callback</text><text x="170" y="157" text-anchor="middle" font-size="10" fill="currentColor">my_read(...) handles the request</text></svg></div>
 
-- Calling a NULL or corrupted function pointer jumps to a random address; on a Cortex-M this typically ends in a HardFault (or executes the vector table as code if the pointer is 0). Check for NULL and consider placing tables in flash (`const`) so they cannot be corrupted at run time.
-- Indirect calls prevent inlining and can be slightly slower.
-- The `void *ctx` parameter lets one callback serve several instances (C's version of a "this" pointer).
+#### 4. Other uses
+
+Function pointers are common in HAL callbacks, state-machine dispatch tables and interrupt vector implementations.
+
+**Interview takeaway:** Function pointers implement callbacks and runtime dispatch without hardcoding the callee. Calling through an incompatible function pointer type is undefined behaviour.
 
 ### What is the difference between call by value and call by reference? {E}
 **Short answer:** C always passes arguments **by value**: the function receives a copy, so changing the parameter does not change the caller's variable. To let a function modify the caller's data, you pass a **pointer** to it, which is what people call "call by reference" in C. (C++ has true references; C does not.)
