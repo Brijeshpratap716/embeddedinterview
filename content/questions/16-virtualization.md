@@ -128,87 +128,25 @@ Keep matching debug symbols and account for early MMU mappings; an early breakpo
 **Interview takeaway:** The virt machine is not i.MX8. Board-specific firmware and drivers require the relevant machine/device models, or real hardware. QEMU cannot validate undocumented electrical behavior.
 
 ### What is the QEMU Object Model (QOM), and how is a device model added? {H}
-**Short answer:** QOM is QEMU's object system in C: every machine, CPU, bus and device is a **type** registered with a `TypeInfo` (name, parent type, instance size, class and instance init functions). Devices inherit from `TYPE_DEVICE` or `TYPE_SYS_BUS_DEVICE`, expose properties, and do their setup in a `realize()` method. A memory-mapped device registers a `MemoryRegion` with read/write callbacks and output IRQ lines, and the board maps it at an address and wires its interrupt.
+QOM (QEMU Object Model) provides object types, inheritance, properties and lifecycle management for QEMU components. qdev builds device-model infrastructure on it.
 
-**Minimal sysbus device**
+#### Device-model workflow
+1. Define a type and state structure derived from DeviceState or SysBusDevice.
+2. Register TypeInfo with parent type, instance size and class initialization.
+3. Initialize MMIO regions, IRQs and properties.
+4. Realize the device, map resources through the board model and connect interrupt lines.
+5. Implement reset, migration state and error handling when applicable.
 
-```c
-#define TYPE_MY_TIMER "my-timer"
-OBJECT_DECLARE_SIMPLE_TYPE(MyTimerState, MY_TIMER)
-
-struct MyTimerState {
-    SysBusDevice parent_obj;
-    MemoryRegion iomem;
-    qemu_irq irq;
-    uint32_t ctrl, count;
-};
-
-static uint64_t my_timer_read(void *opaque, hwaddr off, unsigned size)
-{
-    MyTimerState *s = opaque;
-    switch (off) {
-    case 0x0: return s->ctrl;
-    case 0x4: return s->count;
-    default:
-        qemu_log_mask(LOG_GUEST_ERROR, "my-timer: bad read 0x%" HWADDR_PRIx "\n", off);
-        return 0;
-    }
-}
-
-static void my_timer_write(void *opaque, hwaddr off, uint64_t val, unsigned size)
-{
-    MyTimerState *s = opaque;
-    if (off == 0x0) { s->ctrl = val; qemu_set_irq(s->irq, val & 1); }
-}
-
-static const MemoryRegionOps my_timer_ops = {
-    .read = my_timer_read,
-    .write = my_timer_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
-    .valid = { .min_access_size = 4, .max_access_size = 4 },
-};
-
-static void my_timer_realize(DeviceState *dev, Error **errp)
-{
-    MyTimerState *s = MY_TIMER(dev);
-    memory_region_init_io(&s->iomem, OBJECT(s), &my_timer_ops, s, "my-timer", 0x1000);
-    sysbus_init_mmio(SYS_BUS_DEVICE(s), &s->iomem);
-    sysbus_init_irq(SYS_BUS_DEVICE(s), &s->irq);
-}
-
-static void my_timer_class_init(ObjectClass *klass, void *data)
-{
-    DEVICE_CLASS(klass)->realize = my_timer_realize;
-}
-
-static const TypeInfo my_timer_info = {
-    .name = TYPE_MY_TIMER,
-    .parent = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(MyTimerState),
-    .class_init = my_timer_class_init,
-};
-
-static void my_timer_register_types(void) { type_register_static(&my_timer_info); }
-type_init(my_timer_register_types)
+```text
+Machine -> sysbus device
+           |-- MemoryRegion callbacks
+           |-- IRQ output
+           +-- internal device state
 ```
 
-**In the board code:**
+For an emulated UART, a write to its transmit register invokes a MemoryRegion callback, updates state and sends a character through the configured backend.
 
-```c
-DeviceState *dev = sysbus_create_simple(TYPE_MY_TIMER, 0x09100000,
-                                        qdev_get_gpio_in(gic, MY_TIMER_IRQ));
-```
-
-Then add a device tree node so the guest kernel finds it.
-
-**Things a reviewer expects**
-
-- **Reset** handling (`device_class_set_legacy_reset` or the `ResettableClass` phases) so registers return to their reset values on a machine reset.
-- **Migration state** (`VMStateDescription`) so the VM can be saved and migrated.
-- **Properties** (`DEFINE_PROP_UINT32`) for configurable values, instead of hard-coding them.
-- Log invalid guest accesses with `LOG_GUEST_ERROR`, never `abort()` on guest behaviour.
-
-**Older terms you may hear:** `qdev_create()`/`qdev_init_nofail()` were replaced by `qdev_new()` + `sysbus_realize_and_unref()`, but `sysbus_create_simple()` is still common in board code.
+**Interview takeaway:** Model guest-visible register semantics, timing and interrupts rather than merely returning values. QOM object creation and device realization are distinct stages.
 
 ### How does QEMU model guest memory and MMIO (MemoryRegion and AddressSpace)? {H}
 **Short answer:** QEMU describes the guest's physical address map as a tree of **`MemoryRegion`s**: RAM regions backed by host memory, I/O regions whose accesses call device callbacks (`MemoryRegionOps`), aliases, and containers that hold sub-regions at offsets. An **`AddressSpace`** (e.g. the system address space each CPU sees, or a device's DMA address space) points to a root region. QEMU flattens the tree into a **`FlatView`** (a sorted list of ranges) for fast lookup, and with KVM it registers the RAM ranges with the kernel.
