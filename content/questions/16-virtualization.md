@@ -62,41 +62,26 @@ EL2 controls guest execution through registers such as HCR_EL2 and stage-2 trans
 **Interview takeaway:** Exception levels are not security states. Secure/Non-secure state and EL are separate concepts, and VHE can allow the host kernel to run at EL2.
 
 ### What happens in QEMU when you start a virtual machine? Explain the code flow. {H}
-**Short answer:** `main()` calls `qemu_init()`, which parses the command line, selects the accelerator (TCG or KVM), creates the machine object, and runs the machine's init function (e.g. `machvirt_init()` for `-M virt` on ARM, `pc_init1()`/`pc_q35_init()` on x86). That function creates the CPUs, RAM, interrupt controller and devices, generates the device tree or ACPI tables and loads the kernel/firmware. Then `qemu_main_loop()` runs the event loop while separate vCPU threads execute guest code (with TCG's `cpu_exec()` or KVM's `kvm_cpu_exec()`).
+QEMU builds a virtual machine from a machine model, CPU objects, memory regions, buses and devices, then starts vCPU execution.
 
-**Main thread (paths from recent QEMU)**
-
-```
-system/main.c       main()
-system/vl.c           qemu_init(argc, argv)
-                        parse options, qemu_create_machine()
-                        configure_accelerators()      -> kvm_init() or tcg init
-                        qmp_x_exit_preconfig()
-                          qemu_init_board()
-                            machine_run_board_init()
-                              MachineClass->init()    -> machvirt_init()  (hw/arm/virt.c)
-                                                      -> pc_q35_init()    (hw/i386/pc_q35.c)
-                          qemu_machine_creation_done()
-system/runstate.c     qemu_main_loop()                -> main_loop_wait(): timers, fd/IO events, BHs
+#### Representative system-emulation flow
+```text
+main / qemu_init
+ -> parse options and select MachineClass
+ -> instantiate machine and configure accelerator
+ -> machine initialization / device realization
+ -> allocate RAM and map MMIO
+ -> load firmware or kernel, set reset state
+ -> start vCPU threads
+ -> run main event loop and device callbacks
 ```
 
-**What the board init does (ARM `virt` example)**
+For KVM, initialization opens /dev/kvm and creates VM and vCPU fds. A vCPU thread calls KVM_RUN. For TCG, the CPU execution loop finds or translates guest translation blocks and executes generated host code. Timers, I/O and interrupts coordinate with the event loop and vCPU threads.
 
-1. Create the vCPUs from the `-cpu` model (e.g. `cortex-a53`, defined with an init function in `target/arm/cpu64.c`) and **realize** them: this sets the ID registers and features, and with KVM creates the KVM vCPU.
-2. Create **RAM** (`memory_region_init_ram` or the machine's memory backend) and map it at the board's RAM base (`0x40000000` on `virt`).
-3. Create the **GIC**, UARTs (PL011), RTC, GPIO, virtio-mmio transports, PCIe host bridge, flash for firmware, `fw_cfg`.
-4. Wire up **interrupts** (`qdev_connect_gpio_out` / `sysbus_connect_irq`).
-5. Generate the **device tree** describing all of this (or ACPI tables for UEFI boots).
-6. Set up the **boot**: load `-kernel`, `-initrd`, `-dtb`, or firmware (`-bios`), and set the CPU start state (PC and `x0` = DTB address).
+#### Source navigation
+Start with system/vl.c (or the corresponding startup code in the checked-out version), hw/arm/virt.c for the ARM virt machine, accel/tcg for TCG and accel/kvm for KVM. Exact helper names and locations vary by QEMU release.
 
-**vCPU threads**
-
-- TCG: `mttcg_cpu_thread_fn()` (one thread per vCPU when multi-threaded TCG is enabled) loops on `tcg_cpu_exec()` → `cpu_exec()`.
-- KVM: `kvm_vcpu_thread_fn()` loops on `kvm_cpu_exec()` → `ioctl(KVM_RUN)`. (Older QEMU called it `qemu_kvm_cpu_thread_fn`.)
-
-**The big QEMU lock (BQL):** device emulation runs under a global mutex. A vCPU that exits to handle MMIO takes the BQL, calls the device model, releases it and goes back to running the guest.
-
-**x86 `pc` machine:** same structure, but the board also loads SeaBIOS/OVMF into the top of the 4 GB space with `rom_load_file()`, the CPU starts in 16-bit real mode at the reset vector, and the firmware then loads the bootloader.
+**Interview takeaway:** Separate machine realization, vCPU execution and device/event processing. Starting QEMU does not automatically reproduce every physical SoC.
 
 ### How does QEMU's TCG translate and run guest code? {H}
 **Short answer:** TCG (Tiny Code Generator) works on **translation blocks** (TBs): a straight-line run of guest instructions ending at a branch. The target front end decodes each guest instruction into architecture-neutral TCG intermediate operations, the TCG back end optimises them and generates host machine code, and the result is cached. `cpu_exec()` looks up the TB for the current guest PC, translates it if missing, runs it, and repeats. Blocks are **chained** directly to each other so the common path does not return to the main loop.
