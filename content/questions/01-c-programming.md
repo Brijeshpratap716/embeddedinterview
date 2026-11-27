@@ -644,36 +644,123 @@ Inline functions are commonly used in firmware, HAL libraries and Linux kernel d
 **Interview takeaway:** Prefer inline functions for type safety and single argument evaluation. Use macros for compile-time constants, register masks, conditional compilation and operations requiring preprocessor substitution.
 
 ### Why should macro arguments and bodies be wrapped in parentheses? {E}
-**Short answer:** Macros substitute text, so operator precedence around and inside the macro can change the meaning. Put parentheses around **every use of each argument** and around the **whole body** so the macro behaves like a single value.
+Macro arguments and bodies should be wrapped in parentheses to **avoid unexpected results caused by operator precedence during macro expansion.**
+
+The preprocessor performs textual substitution without understanding the intended mathematical operation.
+
+#### 1. Macro without parentheses
 
 ```c
-#define DOUBLE(x) x + x
-int r = 3 * DOUBLE(2);        /* expands to 3 * 2 + 2 = 8, not 12 */
+#define SQUARE(x) x*x
 
-#define SQUARE(x) (x * x)
-int s = SQUARE(1 + 2);        /* expands to (1 + 2 * 1 + 2) = 5, not 9 */
+int result = SQUARE(2+3);
 ```
 
-Correct versions:
+After macro expansion:
 
 ```c
-#define DOUBLE(x) ((x) + (x))
-#define SQUARE(x) ((x) * (x))
+int result = 2+3*2+3;
 ```
 
-**Both kinds of parentheses are needed**
+Since multiplication has higher precedence than addition:
 
-- **Around arguments** `(x)`: protects against operators inside the argument (`1 + 2`).
-- **Around the body** `( ... )`: protects against operators next to the macro where it is used (`3 * DOUBLE(2)`).
+```text
+result = 2 + 6 + 3
+result = 11
+```
 
-**Other macro hygiene rules**
+Expected result: `25`
 
-- Multi-statement macros: wrap in `do { ... } while (0)` (next question).
-- Arguments with side effects are still evaluated multiple times; parentheses do not fix that. Document it or use an inline function.
-- Avoid names that clash: local variables inside macros should have unusual names (`t_`), because they can shadow the caller's variables.
-- Do not end a macro definition with a semicolon (`#define X 5;`), or `if (a == X) ...` becomes a syntax error.
+#### 2. Macro with argument parentheses
 
-**Hardware register macros** need the same care: `#define REG_CTRL (*(volatile uint32_t *)(BASE + 0x04u))` has parentheses around the address arithmetic and the whole dereference, so `REG_CTRL |= 1u;` works as expected.
+```c
+#define SQUARE(x) (x)*(x)
+
+int result = SQUARE(2+3);
+```
+
+After macro expansion:
+
+```c
+int result = (2+3)*(2+3);
+```
+
+**Output:** `25`
+
+However, another problem remains when the macro is used inside a larger expression.
+
+```c
+int result = 100 / SQUARE(5);
+```
+
+After expansion:
+
+```c
+int result = 100 / (5)*(5);
+```
+
+**Output:** `100`, instead of `4`.
+
+This happens because multiplication and division have the same precedence and are evaluated from left to right.
+
+#### 3. Correct macro implementation
+
+Wrap both individual arguments and the entire macro body in parentheses.
+
+```c
+#define SQUARE(x) ((x)*(x))
+
+int result = 100 / SQUARE(5);
+```
+
+After expansion:
+
+```c
+int result = 100 / ((5)*(5));
+```
+
+**Output:** `4`
+
+#### 4. Macro expansion comparison
+
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 220" width="100%" role="img" aria-label="Macro expansion comparison: incorrect result 11 versus correct result 25"><rect x="5" y="5" width="330" height="100" rx="7" fill="#dc2626" fill-opacity=".06" stroke="#dc2626"/>
+<text x="170" y="22" font-size="12" font-weight="600" fill="#dc2626" text-anchor="middle">Incorrect macro</text>
+<text x="170" y="40" font-size="11" font-family="monospace" fill="currentColor" text-anchor="middle">#define SQUARE(x) x*x</text>
+<text x="170" y="56" font-size="10" fill="currentColor" text-anchor="middle">SQUARE(2+3) expands to</text>
+<text x="170" y="75" font-size="13" font-family="monospace" fill="currentColor" text-anchor="middle">2 + 3 * 2 + 3</text>
+<text x="170" y="94" font-size="12" font-weight="600" fill="#dc2626" text-anchor="middle">11 (Incorrect)</text>
+<rect x="5" y="115" width="330" height="100" rx="7" fill="#16a34a" fill-opacity=".06" stroke="#16a34a"/>
+<text x="170" y="132" font-size="12" font-weight="600" fill="#16a34a" text-anchor="middle">Correct macro</text>
+<text x="170" y="150" font-size="11" font-family="monospace" fill="currentColor" text-anchor="middle">#define SQUARE(x) ((x)*(x))</text>
+<text x="170" y="166" font-size="10" fill="currentColor" text-anchor="middle">SQUARE(2+3) expands to</text>
+<text x="170" y="185" font-size="13" font-family="monospace" fill="currentColor" text-anchor="middle">((2 + 3) * (2 + 3))</text>
+<text x="170" y="204" font-size="12" font-weight="600" fill="#16a34a" text-anchor="middle">25 (Correct)</text>
+</svg></div>
+
+#### 5. Use in embedded systems
+
+Macros are frequently used for register masks and bit manipulation.
+
+```c
+#define BIT(n) (1U << (n))
+#define SET_BIT(reg, n) ((reg) |= BIT(n))
+#define CLEAR_BIT(reg, n) ((reg) &= ~BIT(n))
+```
+
+Parentheses ensure correct expansion when expressions are passed as arguments. The bit position must be within the valid width of the unsigned operand.
+
+#### 6. Comparison table
+
+| Macro definition | Expression | Result |
+|---|---|---|
+| `#define SQ(x) x*x` | `SQ(2+3)` | 11 |
+| `#define SQ(x) (x)*(x)` | `SQ(2+3)` | 25 |
+| `#define SQ(x) (x)*(x)` | `100/SQ(5)` | 100 |
+| `#define SQ(x) ((x)*(x))` | `100/SQ(5)` | 4 |
+
+**Note:** Parentheses do not prevent multiple argument evaluation. For example, `SQUARE(i++)` still causes undefined behaviour.
+
+**Interview takeaway:** Always wrap individual macro arguments and the entire expression macro body in parentheses to prevent operator precedence problems. Prefer inline functions when arguments may have side effects.
 
 ### Why are multi-line macros wrapped in do { } while(0)? {M}
 **Short answer:** It turns several statements into one statement that needs a trailing semicolon, so the macro behaves correctly everywhere a single statement can appear, especially in an `if`/`else` without braces. The compiler removes the "loop" completely, so it costs nothing.
