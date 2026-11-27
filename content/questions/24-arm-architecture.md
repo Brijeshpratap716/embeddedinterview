@@ -293,6 +293,14 @@ MRS X1, ELR_EL1 // exception return address
 
 **Interview takeaway:** Hardware saves essential exception state, but software is responsible for preserving general-purpose registers as needed.
 
+#### Vector-table selection and saved registers
+
+AArch64 vector tables have 16 slots, each 128 bytes, grouped by exception origin (current EL with SP0, current EL with SPx, lower EL in AArch64, lower EL in AArch32) and type (synchronous, IRQ, FIQ, SError). The table base is aligned as required by the architecture.
+
+For a normal AArch64 EL0 synchronous fault handled at EL1, the vector starts at VBAR_EL1+0x400. A data abort can provide an exception class and syndrome in ESR_EL1, and the faulting virtual address in FAR_EL1 when valid. ELR_EL1 identifies the architectural return address. Linux examines the cause and decides whether to repair the mapping, send a signal or report a kernel fault.
+
+An asynchronous IRQ follows a different vector slot and uses the interrupt-controller interface to identify/acknowledge the source. Unlike Cortex-M's basic automatic register stack frame, AArch64 exception-entry software explicitly saves the general registers needed for the handler and return.
+
 ### What is the MMU? {M}
 **Short answer:** The MMU translates virtual addresses into physical addresses using translation tables and enforces access permissions and memory attributes.
 
