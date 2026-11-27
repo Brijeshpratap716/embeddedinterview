@@ -1045,30 +1045,36 @@ A lock waiter may use WFE within a carefully designed loop that rechecks the loc
 **Interview takeaway:** Both are hints, not synchronization primitives. Always recheck the condition after waking and follow the architecture's event/interrupt protocol.
 
 ### What is the difference between flash and EEPROM, and what is wear levelling? {M}
-**Short answer:** Both are non-volatile memories. **Flash** is erased in large blocks (sectors or pages, typically 1–128 KB on MCUs) and programming can only change bits from 1 to 0; to change a 0 back to 1 you must erase the whole block. **EEPROM** can usually be erased and written byte by byte. Both wear out after a limited number of erase/write cycles (typically 10,000 for MCU flash, 100,000 to 1,000,000 for EEPROM). **Wear levelling** spreads writes across many locations so no single block reaches its limit early.
+Flash and EEPROM are nonvolatile memory technologies. Flash typically programs words or pages and erases larger sectors or blocks; EEPROM commonly supports finer-grained updates. Actual granularity and endurance depend on the device.
 
-| | Flash (MCU embedded) | EEPROM |
-|---|---|---|
-| Erase unit | sector/page (KBs) | byte or word |
-| Write unit | word/double-word/row (bits 1 → 0 only) | byte |
-| Endurance | ~10k cycles (some 100k) | 100k–1M cycles |
-| Retention | 10–20 years | 10–100 years |
-| Speed | erase ms (sector: up to seconds), program µs | write ~3–5 ms per byte/page |
-| Density / cost | high / low | low / higher |
-| Reads while writing | usually blocks reads of the same bank | independent (external EEPROM) |
+#### 1. Comparison
 
-**Emulated EEPROM on flash (common technique)**
+| Flash | EEPROM |
+|---|---|
+| Large capacity for firmware/storage | Often smaller configuration storage |
+| Erase before changing programmed bits as required | Finer write/erase granularity common |
+| Limited erase/program endurance | Also limited endurance |
 
-- Use two (or more) flash pages. Store records as (ID, value) pairs appended sequentially.
-- To update a value, append a new record; the newest record for an ID is valid.
-- When a page fills, copy the latest value of each ID to the other page, then erase the old page.
-- Each erase now covers many updates, multiplying the effective endurance.
+Many MCUs emulate EEPROM using dedicated flash pages.
 
-**Wear levelling in general:** log-structured storage, rotating sectors, keeping erase counts per block. Filesystems like **LittleFS** (MCU), UBIFS and F2FS (Linux) do this; managed flash (eMMC, SD) has a controller that does it internally.
+#### 2. Wear levelling
 
-**Power-loss safety:** a write or erase interrupted by power failure leaves a half-programmed area. Use sequence numbers and CRCs per record, write the new copy before invalidating the old, and validate at boot.
+Repeatedly writing a configuration value at the same physical location can wear out that location. Wear levelling distributes updates across available blocks or records.
 
-**Endurance calculation example:** writing a 32-byte record every minute to a 2 KB page pair with 10k cycles: each page holds 64 records → one erase per 64 minutes per page, alternating → each page erased about every 2 hours → 10k cycles last ~2.3 years. Using 8 pages instead extends it ~4×. Interviewers like to see this kind of estimate.
+```text
+Update 1 -> record A
+Update 2 -> record B
+Update 3 -> record C
+After reclaim: reuse erased storage
+```
+
+A journal-style scheme can store sequence numbers and checksums, select the latest valid committed record at boot, and reclaim pages when safe.
+
+#### 3. Power-loss handling
+
+Do not erase the last valid copy before committing its replacement. Use an update protocol that tolerates interrupted writes and erase operations. Observe the flash controller's voltage, alignment and timing requirements.
+
+**Interview takeaway:** Nonvolatile memory has finite endurance. Wear levelling spreads wear; transactional update design protects data integrity during resets or power loss.
 
 ### What is an RTC and how is backup domain power used? {E}
 **Short answer:** A Real-Time Clock is a low-power timer that keeps the calendar time (seconds, minutes, hours, date), usually driven by a 32.768 kHz crystal. It sits in a **backup domain** that can be powered from a separate `VBAT` pin (coin cell, supercapacitor) so it keeps running, along with a few backup registers, when the main supply is off. It also provides alarms and periodic wake-ups from low-power modes.
