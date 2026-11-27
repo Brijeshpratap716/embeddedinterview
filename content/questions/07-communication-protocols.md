@@ -406,26 +406,33 @@ If SCL remains low, determine whether a legitimate stretch, stalled target, cont
 **Interview takeaway:** Clock stretching extends a clock-low interval, not the configured nominal clock frequency. Both hardware support and timeout handling matter.
 
 ### How does I2C arbitration work with multiple controllers? {H}
-**Short answer:** Every controller monitors SDA while it transmits. Because the bus is wired-AND (any device pulling low wins), a 0 overrides a 1. If a controller sends a 1 (releases SDA) but reads back a 0, another controller is sending a 0; it has **lost arbitration** and must stop transmitting immediately, switching to receive mode if needed. Arbitration continues bit by bit through the address and data, so the winner's message is not corrupted.
+I2C supports arbitration when more than one controller begins transmitting. Because SDA is open-drain, a transmitted low level dominates a released high level.
 
-**Example: two controllers start at the same time**
+#### 1. Arbitration example
 
+```text
+Controller A sends bit 1 (releases SDA)
+Controller B sends bit 0 (drives SDA low)
+Observed SDA = 0
+Controller A loses arbitration
+Controller B continues
 ```
-Controller A sends address 0x50: 1 0 1 0 0 0 0
-Controller B sends address 0x48: 1 0 0 ...
-                                     ↑ A sends 1 (releases), B sends 0 (pulls low)
-                                       A reads 0 ≠ 1 → A loses, stops; B continues
-```
 
-The lower address wins at the first differing bit; if both address the same device, arbitration continues into the data bytes.
+During the relevant arbitration phase, a controller that sends high but observes low while SCL is high recognizes that another controller is transmitting a dominant bit.
 
-**Clock synchronisation:** both controllers drive SCL; because it is wired-AND, SCL is low while either holds it low, so the combined clock has the longest low period and the shortest high period of the two. Both then stay in step bit by bit.
+#### 2. Why the winning message is preserved
 
-**What the losing controller does:** sets an "arbitration lost" flag (raises an interrupt) and retries after the bus becomes free (after STOP). Firmware must handle this, not treat it as a fatal error.
+The winner's intended low bit remains on the bus. The losing controller stops interfering and follows the specified arbitration-loss behavior, allowing the winning transfer to continue.
 
-**Practical note:** true multi-controller I2C is relatively rare and tricky (some controllers have bugs in arbitration handling). Many systems with two processors use one controller and make the other a target, or use a separate bus.
+#### 3. Clock synchronization
 
-**Compare with CAN:** CAN uses the same principle (dominant bit wins, lowest ID wins), but CAN is designed for multi-controller from the start.
+Open-drain SCL also enables controllers to synchronize clock-low/high timing according to I2C multi-controller rules. Arbitration and clock synchronization are related but distinct mechanisms.
+
+#### 4. Driver handling
+
+A controller may report arbitration loss as a retryable error. Retry only when appropriate, after the bus is available, with bounded backoff and awareness of transaction side effects.
+
+**Interview takeaway:** I2C arbitration is nondestructive for the winning bit stream. A released-high controller loses when it observes a low level during arbitration.
 
 ### How do you recover a stuck I2C bus? {M}
 **Short answer:** If a target was reset or interrupted in the middle of a read, it may still be holding SDA low, waiting to send the rest of a byte; the controller then cannot generate a START. To recover: switch SCL to GPIO open-drain mode, toggle SCL up to 9 times until the target releases SDA (it finishes its byte and sees a NACK because SDA is high on the 9th clock), generate a STOP condition manually, then return the pins to I2C mode and reset the I2C peripheral.
