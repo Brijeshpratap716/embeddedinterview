@@ -332,7 +332,7 @@ On conventional flat-address systems, uintptr_t ordering implements the overlap 
 #include <stddef.h>
 #include <stdint.h>
 
-void *my_memset(void *dst, int c, size_t n)
+void *target_specific_word_fill(void *dst, int c, size_t n)
 {
     uint8_t *d = dst;
     uint8_t b = (uint8_t)c;
@@ -358,7 +358,7 @@ void *my_memset(void *dst, int c, size_t n)
 int a[4];
 memset(a, 1, sizeof a);    /* each int becomes 0x01010101 = 16843009, not 1 */
 memset(a, 0, sizeof a);    /* OK: all bytes 0 → all ints 0 */
-memset(a, -1, sizeof a);   /* OK: all bits 1 → each int = -1 */
+memset(a, -1, sizeof a);   /* -1 on two's-complement int targets */
 ```
 
 **Other points**
@@ -369,6 +369,20 @@ memset(a, -1, sizeof a);   /* OK: all bits 1 → each int = -1 */
 - The startup code uses the same idea to zero `.bss`.
 
 **Complexity:** O(n) time, O(1) space.
+
+#### Portable byte fill
+
+```c
+void *fill_bytes(void *dst, int value, size_t n)
+{
+    unsigned char *p = dst;
+    for (size_t i = 0; i < n; ++i)
+        p[i] = (unsigned char)value;
+    return dst;
+}
+```
+
+On an eight-bit-byte target, value 0x123 fills every byte with 0x23. For an array of integers, assign each element in a loop when the requested value is not a repeated-byte representation. Word-sized stores require both alignment and valid aliasing semantics; the byte version avoids those assumptions.
 
 ### Implement aligned_malloc() and aligned_free(). {M}
 **Short answer:** Allocate more memory than requested — `size + alignment - 1 + sizeof(void *)` — so that an aligned address with room for one pointer before it always exists inside the block. Round the address up to the alignment, store the original `malloc` pointer in the word just before the aligned address, and return the aligned address. `aligned_free` reads that stored pointer and passes it to `free`.
