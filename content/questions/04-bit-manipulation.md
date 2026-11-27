@@ -1141,28 +1141,53 @@ Nibble operations appear in packed BCD fields, hexadecimal representation and de
 **Interview takeaway:** A nibble swap exchanges two four-bit groups. It is not bit reversal or 32-bit byte swapping.
 
 ### How do you check whether a number has alternating bits? {E}
-**Short answer:** XOR the number with itself shifted right by one. For alternating bits, the result contains consecutive ones from the least significant bit through its highest set bit.
+A positive integer has alternating bits when each adjacent pair of bits differs, ignoring leading zeros. Examples include 1010 (10) and 10101 (21).
+
+#### 1. Efficient bitwise method
 
 ```c
-#include <stdint.h>
-#include <stdbool.h>
 bool alternating(uint32_t n)
 {
+    if (!n)
+        return false;
+
     uint32_t x = n ^ (n >> 1);
-    return n != 0 && (x & (x + 1u)) == 0;
+    return (x & (x + 1U)) == 0;
 }
 ```
 
-**Example (significant bits):**
+For alternating bits, XOR with the right-shifted value produces a contiguous sequence of ones from the highest set bit through bit zero. Adding one and ANDing with the original sequence clears all bits.
+
+#### 2. Example: n = 10
 
 ```text
-n       101010
-n >> 1  010101
-XOR     111111
-x + 1  1000000
-AND    0000000
+n        = 1010
+n >> 1   = 0101
+XOR      = 1111
+XOR + 1  = 10000
+AND      = 00000 (true)
 ```
 
-**Complexity:** O(1) for a fixed-width integer. Leading zeros are ignored; zero is excluded by definition here. Unsigned wraparound is intentional.
+For n = 12 (1100), XOR with its right shift gives 1010, which fails the all-ones test.
 
-**Interview takeaway:** XOR detects adjacent bit differences; the all-ones mask test validates the result.
+#### 3. Straightforward reference method
+
+```c
+bool alternating_ref(uint32_t n)
+{
+    if (!n)
+        return false;
+
+    while (n > 1) {
+        if ((n & 1U) == ((n >> 1) & 1U))
+            return false;
+        n >>= 1;
+    }
+    return true;
+}
+```
+
+A single set bit is accepted because it has no adjacent equal pair. Zero is rejected by the chosen definition. If all 32 positions must alternate including leading zeros, compare against 0xAAAAAAAA or 0x55555555 instead.
+
+**Interview takeaway:** Adjacent-bit XOR converts alternating patterns into runs of ones. Clearly define whether leading zeros and zero itself count.
+
