@@ -720,38 +720,48 @@ Power-of-two buffers allow wrapping an unsigned index with a mask. Increasing ca
 **Interview takeaway:** Handle zero, exact powers and overflow before bit spreading. This implementation returns zero as an explicit overflow sentinel.
 
 ### How do you align a value up or down to a power-of-two boundary? {E}
-**Short answer:** Align down with `x & ~(a - 1)`; align up with `(x + a - 1) & ~(a - 1)`. Both require `a` to be a power of two.
+For a power-of-two alignment A, aligned values have their lowest log2(A) bits cleared.
+
+#### 1. Align down
 
 ```c
-#define ALIGN_DOWN(x, a)  ((x) & ~((a) - 1))
-#define ALIGN_UP(x, a)    (((x) + (a) - 1) & ~((a) - 1))
-#define IS_ALIGNED(x, a)  (((x) & ((a) - 1)) == 0)
+uintptr_t down = value & ~(A - 1);
 ```
 
-**Examples with a = 8 (mask `~7` = ...11111000)**
+Assume A is a nonzero power-of-two uintptr_t. For value = 0x1035 and A = 16, down is 0x1030.
 
-| x | ALIGN_DOWN | ALIGN_UP |
-|---|---|---|
-| 13 | 8 | 16 |
-| 16 | 16 | 16 |
-| 1 | 0 | 8 |
+#### 2. Align up
 
-**Why it works:** `a - 1` is a mask of the low bits (7 = `0b111`). Clearing them rounds down to a multiple of `a`. Adding `a - 1` first pushes any value that is not already aligned past the next boundary, so the clear then rounds up.
+```c
+uintptr_t up = (value + A - 1) & ~(A - 1);
+```
 
-**Where you use it in embedded work**
+For the same example, up is 0x1040. Adding A-1 allows rounding to the next boundary before clearing the low bits.
 
-- **DMA buffers and caches:** on a Cortex-M7 with D-cache, a DMA buffer should start and end on a 32-byte cache-line boundary so that cache clean/invalidate does not touch neighbouring variables.
-- **Memory allocators:** returning 8-byte aligned blocks so `double` and `uint64_t` work.
-- **Page arithmetic:** `ALIGN_DOWN(addr, 4096)` gives the page base address.
-- **Stack pointers:** the AAPCS requires 8-byte stack alignment at public function calls.
+#### 3. Safe implementation
 
-**Pitfalls**
+```c
+bool align_up(uintptr_t v, uintptr_t a, uintptr_t *out)
+{
+    if (!out || !a || (a & (a - 1)))
+        return false;
 
-- With a pointer, cast to `uintptr_t` first: `ALIGN_UP((uintptr_t)p, 32)`.
-- Types must match: if `x` is 64-bit and `a` is an `unsigned int`, `~(a - 1)` is a 32-bit mask and clears the upper 32 bits of `x`. Cast `a` to the type of `x`.
-- `ALIGN_UP` can overflow near the top of the address range.
+    uintptr_t mask = a - 1;
+    if (v > UINTPTR_MAX - mask)
+        return false;
 
-For non-power-of-two alignment, use `((x + a - 1) / a) * a`.
+    *out = (v + mask) & ~mask;
+    return true;
+}
+```
+
+This conservatively rejects overflow of the intermediate sum.
+
+#### 4. Embedded use
+
+DMA buffers, cache lines and memory regions may require alignment. Rounding a pointer value is valid only when the resulting address is accessible and belongs to the appropriate allocated storage; reserve extra space when manually aligning buffers.
+
+**Interview takeaway:** Mask-based rounding requires a nonzero power-of-two alignment. Validate the input, check overflow and respect allocation bounds.
 
 ### How do you compute x % 8 or x / 8 using bit operations? {E}
 **Short answer:** For an unsigned `x` and a power-of-two divisor 2ᵏ, `x / 2ᵏ == x >> k` and `x % 2ᵏ == x & (2ᵏ - 1)`. So `x / 8 == x >> 3` and `x % 8 == x & 7`.
