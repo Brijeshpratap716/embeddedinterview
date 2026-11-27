@@ -288,22 +288,13 @@ For I²C communication failure, first check START, address and ACK with a logic 
 **Interview takeaway:** A clean digital decode does not establish electrical margin. Select sample rate, thresholds, bandwidth and probes for the signal.
 
 ### How do you design logging and diagnostics for devices in the field? {M}
-**Short answer:** Make failures reportable after the fact: store a persistent **crash record** (fault registers, PC/LR, stack snippet, task name, firmware version and reset reason) in no-init RAM or flash, keep a compact **ring-buffer event log** with timestamps and severity levels, maintain **counters and health metrics** (resets by cause, communication errors, watchdog events, minimum free stack/heap, battery), and upload them when connectivity is available or expose them over a service interface. Keep logging cheap (binary records or log IDs instead of formatted strings), rate-limited and safe to call from any context.
+Field diagnostics should preserve useful failure evidence without exhausting memory, storage, bandwidth or power.
 
-**Design elements**
+#### Design
+Use severity levels, monotonic timestamps, component IDs and compact event records. Buffer logs with explicit overflow policy; rate-limit repeated errors. Persist reset cause, build ID and a small crash snapshot using a power-loss-tolerant strategy. Avoid writing flash on every event.
 
-| Element | Detail |
-|---|---|
-| Log levels | ERROR / WARN / INFO / DEBUG, configurable at run time per module |
-| Format | binary records: {timestamp, module, event ID, args}; decoded on the host using the build's string table (keeps flash small and logging fast) |
-| Storage | RAM ring buffer, flushed to flash in batches (wear levelling, power-fail safe), with a bounded size |
-| Context safety | ISR-safe enqueue (lock-free SPSC or a short critical section); formatting and I/O in a low-priority task |
-| Crash path | minimal code that does not depend on the heap, RTOS or peripherals that may have failed |
-| Versioning | firmware version, build ID (hash of the ELF) in every report so addresses can be symbolised |
-| Privacy/security | no secrets or personal data in logs; authenticate the upload channel |
+#### Recovery
+Expose version, health counters and recent failures through an authenticated diagnostic interface. Correlate events with watchdog resets and provide controlled rollback for failed updates.
 
-**Reset-cause handling at boot:** read the reset-cause register (POR, BOR, watchdog, software, pin), log it, check for a crash record from the previous run, then clear both.
+**Interview takeaway:** Do not log secrets or personal data unnecessarily. Make collection opt-in where appropriate, bound overhead and preserve the exact build identity for symbolication.
 
-**Tools/services:** Memfault, Zephyr's logging and coredump subsystems, AWS IoT Device Defender, or a custom backend; on embedded Linux, journald, `pstore`/ramoops, and kdump.
-
-**Interview point:** "Without field diagnostics, an intermittent bug that happens once a month on 1 in 1,000 devices is nearly impossible to fix; with a crash record and the matching ELF file, it is often a 10-minute job."
