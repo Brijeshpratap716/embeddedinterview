@@ -181,45 +181,27 @@ void leaders(const int a[], size_t n)
 **Complexity:** O(n) time, O(1) auxiliary space without output storage.
 
 ### How do you find the maximum difference arr[j] - arr[i] with j > i? {M}
-**Short answer:** Scan left to right, keeping the minimum value seen so far. At each element compute `arr[j] - min_so_far` and keep the largest. One pass, O(n) time, O(1) space. This is the same as "best time to buy and sell a stock once".
+Track the minimum value before the current position and maximize the difference against it.
 
 ```c
-#include <stddef.h>
-
-/* n >= 2 */
-int max_difference(const int *arr, size_t n)
+bool max_difference(const int32_t a[], size_t n, int64_t *out)
 {
-    int min_so_far = arr[0];
-    int best = arr[1] - arr[0];
-    for (size_t j = 1; j < n; j++) {
-        if (arr[j] - min_so_far > best)
-            best = arr[j] - min_so_far;
-        if (arr[j] < min_so_far)
-            min_so_far = arr[j];
+    if (n < 2) return false;
+    int32_t min = a[0];
+    int64_t best = (int64_t)a[1] - min;
+    for (size_t j = 1; j < n; ++j) {
+        int64_t diff = (int64_t)a[j] - min;
+        if (diff > best) best = diff;
+        if (a[j] < min) min = a[j];
     }
-    return best;
+    *out = best;
+    return true;
 }
-/* {2, 3, 10, 6, 4, 8, 1} -> 8  (10 - 2) */
 ```
 
-**Dry run**
+[7, 1, 5, 3, 6] gives 5 (6−1). A decreasing array gives a negative answer because i must precede j. Casting before subtraction avoids int32_t overflow.
 
-| j | arr[j] | min before | arr[j]-min | best |
-|---|---|---|---|---|
-| 1 | 3 | 2 | 1 | 1 |
-| 2 | 10 | 2 | 8 | 8 |
-| 3 | 6 | 2 | 4 | 8 |
-| 4 | 4 | 2 | 2 | 8 |
-| 5 | 8 | 2 | 6 | 8 |
-| 6 | 1 | 2 | -1 | 8 |
-
-**Why the order of the two `if`s matters:** compute the difference before updating the minimum, so `j > i` holds. Starting the loop at `j = 1` avoids comparing an element with itself.
-
-**Why initialise `best = arr[1] - arr[0]` and not 0:** for a strictly decreasing array such as `{9, 7, 4}`, the correct answer is `-2`. Starting at 0 would report a difference that does not exist. (If the question is "maximum profit", where not trading is allowed, 0 is correct; clarify.)
-
-**Naive version:** two nested loops over all pairs, O(n²).
-
-**Follow-up:** "Return the indices too": store the index whenever `min_so_far` changes and record `(min_index, j)` whenever `best` improves.
+**Complexity:** O(n) time, O(1) space.
 
 ### How do you find the longest subarray of alternating even and odd numbers? {M}
 **Short answer:** Walk the array once with a running count. If the current element has a different parity from the previous one, extend the run (`count++`); otherwise restart it at 1. Track the maximum. O(n) time, O(1) space.
