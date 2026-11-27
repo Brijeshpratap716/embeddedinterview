@@ -169,6 +169,17 @@ void insertion_sort(int *a, size_t n)
 
 **Follow-up — binary insertion sort:** find the insert position with binary search (fewer comparisons), but shifting still costs O(n) per element.
 
+#### Dry run with the sorted prefix
+
+| Iteration | Key | Array after insertion |
+|---|---:|---|
+| Initial | — | 5, 2, 4, 1 |
+| 1 | 2 | 2, 5, 4, 1 |
+| 2 | 4 | 2, 4, 5, 1 |
+| 3 | 1 | 1, 2, 4, 5 |
+
+The loop invariant is that a[0..i) is sorted before each insertion. Shifting rather than repeatedly swapping reduces writes. Using greater-than rather than greater-than-or-equal preserves the relative order of equal-key records. Sorted data requires only n−1 key comparisons.
+
 ### Implement selection sort. {E}
 **Short answer:** For each position from left to right, find the smallest element in the unsorted remainder and swap it into that position. It always does about n²/2 comparisons but at most n − 1 swaps, which is its only real advantage: it minimises writes.
 
