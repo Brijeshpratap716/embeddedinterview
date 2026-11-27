@@ -631,32 +631,52 @@ AArch64 uses exception vector instruction slots at offsets from VBAR_ELx rather 
 **Interview takeaway:** The vector table is an architecture-defined interface between hardware exception entry and software handlers. Its placement, alignment and entry format must match the target.
 
 ### What are weak symbols? {M}
-**Short answer:** A weak symbol is a definition that the linker uses only if no normal (strong) definition with the same name exists. Start-up files define every interrupt handler as a weak alias of a default handler, so when you write a function with the exact same name in your code, your strong definition replaces it, without editing the start-up file.
+A weak symbol is a linker symbol that can be overridden by a suitable strong definition. It is widely used for default firmware handlers and board hooks.
+
+#### 1. Default implementation
 
 ```c
-/* startup.c */
-void Default_Handler(void) { for (;;) { } }
-void USART1_IRQHandler(void) __attribute__((weak, alias("Default_Handler")));
-
-/* uart.c: this strong definition overrides the weak one */
-void USART1_IRQHandler(void)
+// startup.c
+void Default_Handler(void)
 {
-    /* real handler */
+    for (;;) {}
+}
+
+void UART_IRQHandler(void)
+    __attribute__((weak, alias("Default_Handler")));
+```
+
+With a supporting GNU-compatible compiler, the weak UART handler refers to Default_Handler unless a strong definition is selected.
+
+#### 2. Application override
+
+```c
+// uart.c
+void UART_IRQHandler(void)
+{
+    uart_service_irq();
 }
 ```
 
-**Other uses**
+The linker selects the strong handler instead of the weak default. The signatures and symbol names must match.
 
-- **Hooks with default implementations:** a library defines `__attribute__((weak)) void app_error_hook(int code) { }` and calls it; the application may override it.
-- **Platform overrides:** HAL libraries define weak callbacks (`HAL_UART_RxCpltCallback`) that you implement in your code.
-- **Optional features:** `if (optional_fn) optional_fn();` with a weak **declaration** (`extern void optional_fn(void) __attribute__((weak));`), which is NULL if no one defines it.
+#### 3. Board customization
 
-**Pitfalls**
+```c
+__attribute__((weak))
+void board_init(void)
+{
+    // Default board initialization
+}
+```
 
-- **Misspelled handler name:** `void USART1_IRQHandle(void)` (missing `r`) compiles and links fine; the weak default stays in the vector table, and when the interrupt fires the system hangs in `Default_Handler`. When debugging a hang there, check which interrupt is active (`SCB->ICSR` `VECTACTIVE` field).
-- **C++ name mangling:** a handler defined in a `.cpp` file must be `extern "C"`, or its name will not match.
-- **Static libraries:** the linker only pulls an object file out of a `.a` archive to satisfy an **undefined** reference; it does not search archives to replace a weak definition. A strong override inside a library may therefore be silently ignored unless something else pulls in that object (use `--whole-archive` or put the override in a directly linked object).
-- **LTO and weak symbols** have had compiler bugs; check the map file to see which definition was used.
+Another translation unit can supply a strong board_init implementation to customize the board without editing the common source.
+
+#### 4. Important details
+
+Weak symbols and aliases are toolchain-specific extensions. Multiple strong definitions usually produce a link error. Archive extraction and link order can affect which definitions are included; check the final ELF symbol table with nm.
+
+**Interview takeaway:** Weak symbols provide overridable defaults, not runtime polymorphism. Verify the final linked symbol when debugging an unexpected default handler.
 
 ### How do you place a variable or function at a specific address or section? {M}
 **Short answer:** Put it in a named section with `__attribute__((section(".name")))` and map that section to the right memory region (or address) in the linker script. For a fixed absolute address, define the section at that address in the script, or (for read-only/hardware addresses) use a pointer to that address instead of a variable.
