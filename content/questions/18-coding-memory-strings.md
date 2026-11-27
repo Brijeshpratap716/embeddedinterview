@@ -703,6 +703,27 @@ alloc → C        (most recently freed slot reused first: cache friendly)
 
 **Complexity:** O(1) alloc/free, O(total) init, memory overhead zero per object (only rounding).
 
+#### Fixed pool with typed storage
+
+```c
+#define POOL_N 16
+struct object { int id; unsigned flags; };
+static struct object objects[POOL_N];
+static bool used[POOL_N];
+
+struct object *pool_get(void)
+{
+    for (unsigned i = 0; i < POOL_N; ++i)
+        if (!used[i]) {
+            used[i] = true;
+            return &objects[i];
+        }
+    return NULL;
+}
+```
+
+This alternative uses correctly aligned typed objects and explicit allocation state. Its scan is O(POOL_N), unlike a free-index stack which gives O(1) allocation and release. Validate exact slot identity and allocation state before freeing. The original intrusive free-list variant requires appropriately aligned backing storage, sufficient stride and valid pointer-storage semantics; synchronize accesses when shared.
+
 ### How do you find the alignment of a variable or type? {E}
 **Short answer:** For a **type**, use `alignof(T)` (C11 `_Alignof`), which the compiler knows at compile time. For an actual **address**, convert it to `uintptr_t`: `addr & -addr` gives the largest power of two that divides it, and `(addr & (n - 1)) == 0` tests alignment to a specific power of two `n`.
 
