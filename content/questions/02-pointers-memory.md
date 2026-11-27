@@ -730,45 +730,52 @@ Inspect fault status registers and the saved exception frame when debugging Cort
 **Interview takeaway:** High-water marks are observations, not proof of a safe worst-case stack size. Combine runtime checks, static analysis, interrupt nesting estimates and an adequate safety margin.
 
 ### What is alignment and what happens on an unaligned access? {M}
-**Short answer:** An object is **aligned** when its address is a multiple of its alignment requirement, which for basic types is usually their size (a `uint32_t` at an address divisible by 4). The compiler aligns variables and adds struct padding automatically. Unaligned accesses usually come from casting byte pointers; depending on the CPU they are slower, need extra instructions, or fault.
+Memory alignment means placing an object at an address that satisfies its required alignment. For example, a four-byte-aligned object must start at an address divisible by four.
 
-**Behaviour by core**
+#### 1. Aligned and unaligned addresses
 
-| Core | Unaligned `LDR`/`STR` (word/halfword) | Notes |
-|---|---|---|
-| Cortex-M0/M0+/M23 (Armv6-M/v8-M baseline) | HardFault | no unaligned support at all |
-| Cortex-M3/M4/M7/M33 | supported in hardware, slower (split into two accesses) | `LDRD`/`STRD`, `LDM`/`STM` still fault; can be made to trap with `CCR.UNALIGN_TRP` |
-| Cortex-A (ARMv7-A/ARMv8-A) | supported for normal memory | faults on **Device** memory (peripherals) and for exclusive/atomic instructions |
-| x86 | supported, small penalty | atomics across cache lines are very slow (split locks) |
+| Address | 4-byte aligned? |
+|---|---|
+| 0x2000 | Yes |
+| 0x2001 | No |
+| 0x2004 | Yes |
+| 0x2006 | No |
 
-**The classic bug**
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 158" width="100%" role="img" aria-label="A four-byte unaligned access spans two naturally aligned four-byte regions" font-family="system-ui,sans-serif"><text x="10" y="16" font-size="11" font-weight="600" fill="currentColor">Aligned 32-bit access starts at 0x2000</text><rect x="10" y="24" width="40" height="30" fill="#3b82f6" fill-opacity=".14" stroke="#3b82f6"/><text x="30" y="43" text-anchor="middle" font-size="12" fill="currentColor">B0</text><text x="30" y="68" text-anchor="middle" font-size="10" fill="currentColor">2000</text><rect x="50" y="24" width="40" height="30" fill="#3b82f6" fill-opacity=".14" stroke="#3b82f6"/><text x="70" y="43" text-anchor="middle" font-size="12" fill="currentColor">B1</text><text x="70" y="68" text-anchor="middle" font-size="10" fill="currentColor">2001</text><rect x="90" y="24" width="40" height="30" fill="#3b82f6" fill-opacity=".14" stroke="#3b82f6"/><text x="110" y="43" text-anchor="middle" font-size="12" fill="currentColor">B2</text><text x="110" y="68" text-anchor="middle" font-size="10" fill="currentColor">2002</text><rect x="130" y="24" width="40" height="30" fill="#3b82f6" fill-opacity=".14" stroke="#3b82f6"/><text x="150" y="43" text-anchor="middle" font-size="12" fill="currentColor">B3</text><text x="150" y="68" text-anchor="middle" font-size="10" fill="currentColor">2003</text><rect x="170" y="24" width="40" height="30" fill="#94a3b8" fill-opacity=".14" stroke="#94a3b8"/><text x="190" y="43" text-anchor="middle" font-size="12" fill="currentColor">—</text><text x="190" y="68" text-anchor="middle" font-size="10" fill="currentColor">2004</text><rect x="210" y="24" width="40" height="30" fill="#94a3b8" fill-opacity=".14" stroke="#94a3b8"/><text x="230" y="43" text-anchor="middle" font-size="12" fill="currentColor">—</text><text x="230" y="68" text-anchor="middle" font-size="10" fill="currentColor">2005</text><rect x="250" y="24" width="40" height="30" fill="#94a3b8" fill-opacity=".14" stroke="#94a3b8"/><text x="270" y="43" text-anchor="middle" font-size="12" fill="currentColor">—</text><text x="270" y="68" text-anchor="middle" font-size="10" fill="currentColor">2006</text><rect x="290" y="24" width="40" height="30" fill="#94a3b8" fill-opacity=".14" stroke="#94a3b8"/><text x="310" y="43" text-anchor="middle" font-size="12" fill="currentColor">—</text><text x="310" y="68" text-anchor="middle" font-size="10" fill="currentColor">2007</text><text x="10" y="92" font-size="11" font-weight="600" fill="currentColor">Unaligned 32-bit access starts at 0x2002</text><rect x="10" y="100" width="40" height="30" fill="#94a3b8" fill-opacity=".14" stroke="#94a3b8"/><text x="30" y="119" text-anchor="middle" font-size="12" fill="currentColor">—</text><text x="30" y="144" text-anchor="middle" font-size="10" fill="currentColor">2000</text><rect x="50" y="100" width="40" height="30" fill="#94a3b8" fill-opacity=".14" stroke="#94a3b8"/><text x="70" y="119" text-anchor="middle" font-size="12" fill="currentColor">—</text><text x="70" y="144" text-anchor="middle" font-size="10" fill="currentColor">2001</text><rect x="90" y="100" width="40" height="30" fill="#dc2626" fill-opacity=".14" stroke="#dc2626"/><text x="110" y="119" text-anchor="middle" font-size="12" fill="currentColor">B0</text><text x="110" y="144" text-anchor="middle" font-size="10" fill="currentColor">2002</text><rect x="130" y="100" width="40" height="30" fill="#dc2626" fill-opacity=".14" stroke="#dc2626"/><text x="150" y="119" text-anchor="middle" font-size="12" fill="currentColor">B1</text><text x="150" y="144" text-anchor="middle" font-size="10" fill="currentColor">2003</text><rect x="170" y="100" width="40" height="30" fill="#dc2626" fill-opacity=".14" stroke="#dc2626"/><text x="190" y="119" text-anchor="middle" font-size="12" fill="currentColor">B2</text><text x="190" y="144" text-anchor="middle" font-size="10" fill="currentColor">2004</text><rect x="210" y="100" width="40" height="30" fill="#dc2626" fill-opacity=".14" stroke="#dc2626"/><text x="230" y="119" text-anchor="middle" font-size="12" fill="currentColor">B3</text><text x="230" y="144" text-anchor="middle" font-size="10" fill="currentColor">2005</text><rect x="250" y="100" width="40" height="30" fill="#94a3b8" fill-opacity=".14" stroke="#94a3b8"/><text x="270" y="119" text-anchor="middle" font-size="12" fill="currentColor">—</text><text x="270" y="144" text-anchor="middle" font-size="10" fill="currentColor">2006</text><rect x="290" y="100" width="40" height="30" fill="#94a3b8" fill-opacity=".14" stroke="#94a3b8"/><text x="310" y="119" text-anchor="middle" font-size="12" fill="currentColor">—</text><text x="310" y="144" text-anchor="middle" font-size="10" fill="currentColor">2007</text></svg></div>
+
+#### 2. Check alignment in C
 
 ```c
-void parse(const uint8_t *buf)            /* buf from a UART or network packet */
+#include <stdint.h>
+#include <stdbool.h>
+
+bool is_aligned(const void *p, uintptr_t a)
 {
-    uint32_t len = *(const uint32_t *)(buf + 1);   /* unaligned if buf+1 is not a multiple of 4,
-                                                      and also a strict-aliasing violation */
+    return a != 0 && (a & (a - 1)) == 0 &&
+           (((uintptr_t)p & (a - 1)) == 0);
 }
 ```
 
-**Correct, portable approaches**
+This assumes a conventional flat byte-addressed target with uintptr_t. The mask works for power-of-two alignments.
+
+#### 3. What happens on an unaligned access?
+
+Some ARM processors support certain unaligned normal-memory accesses; others generate a fault or require software handling. Device-memory accesses may have stricter rules. Even if a processor supports an unaligned load, dereferencing a misaligned typed pointer can be undefined in C.
+
+For ordinary byte buffers, a safe way to copy the representation is:
 
 ```c
-uint32_t len;
-memcpy(&len, buf + 1, sizeof len);        /* compiler emits the best sequence for the target */
-
-uint32_t len_le = (uint32_t)buf[1] | (uint32_t)buf[2] << 8 |
-                  (uint32_t)buf[3] << 16 | (uint32_t)buf[4] << 24;   /* also fixes byte order */
+uint32_t value;
+memcpy(&value, buffer + 1, sizeof value);
 ```
 
-**Controlling alignment**
+The buffer must contain enough readable bytes. Convert byte order separately if the data comes from a protocol.
 
-- `_Alignas(32) uint8_t dma_buf[512];` (C11) or `__attribute__((aligned(32)))` for cache-line-aligned DMA buffers.
-- `alignof(T)` (C11 `_Alignof`) gives a type's requirement.
-- `aligned_alloc(align, size)` for aligned heap memory.
-- Packed structs remove padding but may create unaligned members (see the C topic).
+#### 4. Embedded use
 
-**Why alignment matters beyond correctness:** aligned data never spans two cache lines or two bus transactions; DMA controllers often require aligned buffers; and atomic operations generally require natural alignment.
+DMA engines, cache maintenance and hardware descriptors may require alignment stronger than the C type's normal alignment. Follow the device specification rather than assuming four-byte alignment is sufficient.
+
+**Interview takeaway:** Alignment is a requirement of the language, ABI and hardware. Misalignment may reduce performance, fault or cause undefined behaviour.
 
 ### What is endianness and how do you check it in code? {E}
 **Short answer:** Endianness is the order in which the bytes of a multi-byte value are stored in memory. **Little-endian** stores the least significant byte at the lowest address (x86, almost all Arm systems in practice, RISC-V). **Big-endian** stores the most significant byte first (network byte order, older PowerPC, some DSPs and Motorola parts). You can check it at run time by looking at the first byte of a known integer.
