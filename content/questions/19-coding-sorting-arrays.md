@@ -520,6 +520,10 @@ long long max_product3(const int *a, size_t n)               /* n >= 3 */
 
 **Variant — maximum product of two numbers:** the same idea with the two largest and the two smallest.
 
+#### Why only two candidate products?
+
+For an ordered sequence, a maximum positive product either uses three large positive values or the two most negative values with the largest positive value. If all values are negative, selecting the three largest (closest to zero) gives the least negative product. For [-10,-8,2,3,4], compare 4×3×2=24 with (-10)×(-8)×4=320. Repeated values occupy distinct positions and are allowed. Even int64_t may overflow for three arbitrary int32_t operands; require representable products or use checked/wider multiplication.
+
 ### Solve 3Sum: find all unique triplets that sum to zero. {M}
 **Short answer:** Sort the array, then for each index `i` look for two numbers in the rest of the array that sum to `-a[i]` using two pointers moving inwards: move the left pointer right when the sum is too small and the right pointer left when it is too large. Skip equal values to avoid duplicate triplets. O(n²) time, O(1) extra space (besides sorting).
 
