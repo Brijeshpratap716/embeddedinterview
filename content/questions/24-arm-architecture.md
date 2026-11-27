@@ -955,6 +955,30 @@ RET
 
 **Interview takeaway:** The stack frame preserves call state and local storage; the stack grows toward lower addresses in the usual AArch64 ABI.
 
+#### Numerical stack-frame trace
+
+Assume SP starts at 0x8000 and the function executes the following prologue:
+
+```asm
+STP X29, X30, [SP, #-16]!
+MOV X29, SP
+SUB SP, SP, #32
+```
+
+SP first becomes 0x7FF0. Saved X29 is at 0x7FF0 and saved X30 at 0x7FF8. X29 points to the frame record. After reserving 32 bytes, SP becomes 0x7FD0, leaving aligned local storage below the saved registers.
+
+```text
+Higher addresses
+0x8000  caller's original SP
+0x7FF8  saved X30 (return address)
+0x7FF0  saved X29  <- frame pointer
+        local storage (32 bytes)
+0x7FD0  current SP
+Lower addresses
+```
+
+Before returning, reverse the local allocation and restore the saved pair with LDP. The compiler may instead omit a frame pointer, combine allocations, or use different spill offsets; the ABI and unwind metadata govern the valid layout. A stack frame is not necessarily the same size as a function's C local variables, since alignment, register spills and outgoing arguments also matter.
+
 ### What is WFI versus WFE? {M}
 **Short answer:** WFI waits for an interrupt or another permitted wake condition. WFE waits for an event or other permitted wake condition; SEV sends an event. Neither is a synchronization primitive by itself.
 
