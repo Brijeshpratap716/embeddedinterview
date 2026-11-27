@@ -289,23 +289,29 @@ unique_ptr can be lightweight and does not inherently require heap allocation wi
 **Interview takeaway:** Prefer exclusive ownership where possible. Smart pointers solve ownership, not arbitrary concurrency, ISR safety or deterministic allocation.
 
 ### What is the difference between new/delete and malloc/free? {E}
-**Short answer:** `new` allocates memory **and** runs the constructor, returning a correctly typed pointer; `delete` runs the destructor and then frees the memory. `malloc`/`free` only allocate and free raw bytes and know nothing about constructors or types. By default `new` throws `std::bad_alloc` on failure (with exceptions disabled it typically aborts, so use `new (std::nothrow)` and check for null), while `malloc` returns NULL. Memory from `new` must be released with `delete` (and `new[]` with `delete[]`), never with `free`.
+`new/delete` are C++ object allocation/lifetime operations; `malloc/free` allocate and release raw storage through C library APIs.
 
-| | `new` / `delete` | `malloc` / `free` |
-|---|---|---|
-| Constructors / destructors | yes | no |
-| Returns | typed pointer | `void *` |
-| Failure | throws `bad_alloc` (or `nullptr` with `nothrow`) | NULL |
-| Size | computed from the type | given in bytes |
-| Customisable | per class (`operator new`) or globally | wrap or replace the allocator |
-| Arrays | `new[]` / `delete[]` (stores the count) | manual |
+#### 1. Example
 
-**Embedded considerations**
+```cpp
+Widget* p = new Widget(10);
+delete p;
+```
 
-- Both usually use the same heap (the default `operator new` calls `malloc`), so fragmentation and non-deterministic timing apply equally.
-- You can **override global `operator new`/`delete`** to route allocations to an RTOS heap (`pvPortMalloc`), to a pool, or to trap any use after initialisation (call an error handler), enforcing a "no heap at run time" policy.
-- **Placement new** constructs an object in memory you already have, without allocating (next question).
-- Class-specific `operator new` can allocate from a per-class pool: fast and fragmentation-free.
+A new-expression allocates storage and constructs Widget. Delete destroys it and deallocates the storage.
+
+```cpp
+void* mem = std::malloc(sizeof(Widget));
+std::free(mem);
+```
+
+Malloc does not ordinarily perform Widget's constructor, and free does not invoke its destructor.
+
+#### 2. Failure and matching
+
+Ordinary new normally throws std::bad_alloc on failure; nothrow new can return nullptr for allocation failure. Malloc returns null on failure for nonzero requests. Pair new with delete, new[] with delete[], and malloc with free. Never mix allocation families without a documented compatible mechanism.
+
+**Interview takeaway:** C++ object lifetime is separate from raw storage. Embedded projects can use custom allocation policies, but constructors/destructors must still be respected.
 
 ### What is placement new and when is it used in embedded code? {M}
 **Short answer:** Placement new (`new (address) T(args)`) constructs an object in memory you already own — a static buffer, a memory pool slot or a memory-mapped region — without allocating anything. You are then responsible for calling the destructor explicitly (`obj->~T()`) and for the memory's alignment and lifetime. It is how fixed-capacity containers, `std::optional`, object pools and "construct later" singletons work without a heap.
