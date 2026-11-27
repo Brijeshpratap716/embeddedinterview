@@ -1465,46 +1465,31 @@ Use KASAN for supported memory-bug detection, KCSAN for certain race detection, 
 **Interview takeaway:** Diagnose from the first fault and matching symbols. An oops may be a symptom of earlier corruption; continuing after it is not proof that the system is safe.
 
 ### What is the DRM/KMS display stack? {H}
-**Short answer:** The Direct Rendering Manager (DRM) is the Linux graphics and display subsystem; **KMS** (kernel mode setting) is the display part. KMS models the display pipeline as objects: **framebuffers** (memory holding pixels, backed by GEM buffer objects), **planes** (layers that scan out a framebuffer: primary, overlay, cursor, with format, scaling and position), **CRTCs** (the scan-out engines that blend planes and generate timing for one display mode), **encoders** (convert the pixel stream to a signal type: DSI, HDMI, eDP, LVDS) and **connectors** (the outputs with their modes and hot-plug status), plus **bridges** and **panels** for external chips and displays. User space commits a complete new state with the **atomic** API, which is validated (`atomic_check`) and committed by the driver. Normal synchronized page flips typically latch at vblank; asynchronous flips may tear, and modesets can temporarily blank the output.
+DRM (Direct Rendering Manager) is Linux's graphics subsystem. KMS (Kernel Mode Setting) manages display configuration, scanout and the relationship between framebuffer data and physical outputs.
 
-```
-GEM buffers → framebuffers → planes ─┐
-                                     ├→ CRTC (timing, blending) → encoder → bridge(s) → connector → panel/monitor
-                         overlay ────┘
-```
+#### 1. Display pipeline
 
-**Atomic commit flow**
+<div style="max-width:650px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 270" width="100%" role="img" aria-label="Framebuffers feed planes, which feed CRTC composition and timings, encoder, bridge and connector panel">
+<rect x="5" y="5" width="155" height="29" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="82.5" y="23" font-size="11" text-anchor="middle" fill="currentColor">Framebuffer A</text><rect x="180" y="5" width="155" height="29" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="257.5" y="23" font-size="11" text-anchor="middle" fill="currentColor">Framebuffer B</text><rect x="5" y="48" width="155" height="29" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="82.5" y="66" font-size="11" text-anchor="middle" fill="currentColor">Primary plane</text><rect x="180" y="48" width="155" height="29" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="257.5" y="66" font-size="11" text-anchor="middle" fill="currentColor">Overlay plane</text><rect x="95" y="100" width="150" height="29" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="118" font-size="11" text-anchor="middle" fill="currentColor">CRTC / mixer</text><rect x="95" y="145" width="150" height="29" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="163" font-size="11" text-anchor="middle" fill="currentColor">Encoder</text><rect x="95" y="190" width="150" height="29" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="208" font-size="11" text-anchor="middle" fill="currentColor">Bridge (optional)</text><rect x="95" y="235" width="150" height="29" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="253" font-size="11" text-anchor="middle" fill="currentColor">Connector / panel</text><path d="M82.5 34 V48 M257.5 34 V48 M82.5 77 V88 H170 V100 M257.5 77 V88 H170 M170 129 V145 M170 174 V190 M170 219 V235" stroke="currentColor" fill="none"/></svg></div>
 
-1. User space (Wayland compositor, Android HWComposer via drm_hwcomposer, `modetest`, Weston) builds a property set: plane FB_ID, CRTC_X/Y/W/H, CRTC MODE_ID, ACTIVE, connector CRTC_ID.
-2. `DRM_IOCTL_MODE_ATOMIC` with `TEST_ONLY` can check a configuration without applying it.
-3. The driver's `atomic_check` callbacks validate bandwidth, formats, scaling limits and clocks.
-4. `atomic_commit` programs the hardware (usually through helpers: `drm_atomic_helper_commit_tail`), arranges hardware programming and completion. A synchronized page flip commonly latches at vblank; completion events are delivered according to the driver's hardware and commit semantics.
+A framebuffer describes pixel storage and layout. Planes select buffers, source/destination rectangles and blending properties. A CRTC controls composition/scanout timing. Encoders and bridges connect the pipeline to output signals; connectors represent output endpoints. Actual hardware mapping can vary.
 
-**MIPI DSI panel driver essentials**
+#### 2. Atomic modesetting flow
 
-```c
-static int mypanel_prepare(struct drm_panel *panel)
-{
-    struct mypanel *p = container_of(panel, struct mypanel, panel);
-    int ret = regulator_bulk_enable(ARRAY_SIZE(p->supplies), p->supplies);
-    if (ret) return ret;
-    gpiod_set_value_cansleep(p->reset, 0);
-    msleep(20);
-    mipi_dsi_dcs_exit_sleep_mode(p->dsi);
-    msleep(120);
-    return mipi_dsi_dcs_set_display_on(p->dsi);
-}
-/* get_modes() returns the panel's drm_display_mode (timings, size);
- * probe sets dsi->lanes, dsi->format, dsi->mode_flags and calls mipi_dsi_attach() */
+Userspace (such as a compositor) creates an atomic request containing object properties. The driver/core validate the proposed state through atomic checks, then the commit programs the required hardware changes. Fences, vblank events and hardware-specific commit sequencing coordinate buffer readiness and presentation.
+
+An atomic commit does not by itself guarantee every possible update is tear-free; supported modes, async flags and hardware behavior matter.
+
+#### 3. Debugging with libdrm
+
+```sh
+modetest -M msm -c
+modetest -M msm -p
 ```
 
-**Concepts interviewers probe**
+The DRM driver name and available options depend on the platform. Enumerate actual connector, CRTC and plane IDs rather than hardcoding them.
 
-- **GEM** (buffer objects), **dumb buffers** (simple CPU-drawn framebuffers), **PRIME/dma-buf** (sharing buffers between GPU, camera and display), **fences** (implicit/explicit synchronisation: render finished before scan-out).
-- **Vblank handling** and page-flip events; **underflow** debugging (memory bandwidth, QoS, clocks).
-- **Mode timings:** pixel clock, hactive/hfp/hsync/hbp, same for vertical; refresh = pixel clock / (htotal × vtotal).
-- **DSI:** video vs command mode, lanes, burst mode, low-power vs high-speed transmission for DCS commands.
-- Debug: `modetest -M <driver>`, `/sys/kernel/debug/dri/0/state`, `drm.debug=0x1e` on the command line, `cat /sys/class/drm/card0-DSI-1/modes`.
+**Interview takeaway:** KMS connects memory-backed framebuffers to display timing and outputs through atomic state. Understand both the logical DRM objects and the hardware pipeline.
 
 ### What is the difference between a kernel thread and a user thread? {E}
 **Short answer:** A kernel thread runs entirely in kernel space, has no user address space (its `mm` is NULL; it borrows the previous task's page tables), and is created with `kthread_run()` or by subsystems (`kworker`, `ksoftirqd`, `irq/NN-name`, `kswapd`, `rcu_*`). A user thread belongs to a process, shares that process's address space and file descriptors, runs user code at EL0, and enters the kernel only through system calls, exceptions and interrupts. Both are `task_struct`s scheduled by the same scheduler.
