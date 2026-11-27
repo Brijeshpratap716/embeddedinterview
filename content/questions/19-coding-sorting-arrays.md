@@ -640,3 +640,8 @@ Following `x = a[x]` from 0: 0 → 1 → 3 → 2 → 4 → 2 → 4 → … The c
 | Floyd | O(n) | O(1) | no |
 
 **Related:** missing number from 1..n (sum or XOR formula), find all duplicates where values are in range (index-marking trick).
+
+#### Interpreting array values as links
+
+For [1,3,4,2,2], index 0 leads to 1, then 3, then 2, then 4, then back to 2. The cycle entry is the duplicate value 2. Because index 0 is never a value, traversal begins outside the cycle. Floyd's two phases find a meeting point and then the cycle entry without modifying the array. The input must contain n+1 values in [1,n] and one distinct repeated value. Out-of-range values can cause illegal indexing, so validate the domain if not guaranteed by the question.
+
