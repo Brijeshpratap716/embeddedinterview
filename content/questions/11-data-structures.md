@@ -234,20 +234,25 @@ Exactly one producer and one consumer, initialized state, valid output pointer, 
 **Interview takeaway:** Separate index ownership is necessary but not sufficient. Acquire/release ordering protects slot publication and reuse.
 
 ### What is the difference between an array and a linked list? {E}
-**Short answer:** An array stores elements contiguously, giving O(1) access by index and excellent cache behaviour, but inserting or deleting in the middle needs O(n) shifting and its size is fixed. A linked list stores each element in a separate node with a pointer, giving O(1) insertion and deletion once you have the node and flexible size, but O(n) access by position, pointer overhead and poor cache locality.
+An array stores elements contiguously; a linked list stores nodes connected through pointers, which can occupy unrelated addresses.
 
-| | Array | Linked list |
-|---|---|---|
-| Access by index | O(1) | O(n) |
-| Insert/delete in the middle | O(n) shifting | O(1) given the node (or its predecessor) |
-| Memory overhead | none | one or two pointers per node |
-| Cache behaviour | excellent (prefetch, contiguous) | poor (nodes scattered) |
-| Size | fixed (or realloc) | grows node by node |
-| Allocation | one block, often static | per node (or from a pool) |
+| Array | Linked list |
+|---|---|
+| O(1) indexed access | O(n) indexed access |
+| Good cache locality | Pointer chasing may reduce locality |
+| Insertion in middle can move elements | O(1) relinking given insertion position |
+| Fixed capacity or resized allocation | Nodes can be added/removed separately |
+| No per-element link overhead | Link pointer(s) consume memory |
 
-**In embedded systems:** arrays usually win: no allocation, predictable timing, and better performance for the small n typical in firmware. Linked lists are used where objects must move between collections cheaply: RTOS ready/blocked lists, timer lists, free lists in memory pools, and network buffer chains, usually as **intrusive lists** (next question) with nodes from static pools.
+#### 1. Example
 
-**Real-world note:** even on desktops, iterating an array is often an order of magnitude faster than a linked list of the same length because of cache misses, so "O(1) insert" is not the whole story.
+An array of 100 four-byte ints requires 400 bytes of element storage. A singly linked node on a typical 64-bit ABI may require 16 bytes for an int, padding and a pointer, so the same 100 values can need about 1600 bytes before allocator metadata.
+
+#### 2. Embedded selection
+
+Use fixed arrays for bounded buffers, fast indexing and cache locality. Use lists when frequent insertion/removal and stable node addresses are valuable. Searching for an insertion position can still cost O(n).
+
+**Interview takeaway:** Linked-list insertion is O(1) only when the relevant position is already known. Consider memory overhead and deterministic allocation.
 
 ### What is an intrusive linked list? {M}
 **Short answer:** In an intrusive list the link pointers are **embedded inside** the data structure itself, instead of a separate list node that points to the data. A generic `container_of` macro recovers the outer structure from the address of the embedded link. No separate allocation is needed per element, an object can be on several lists at once (one embedded link per list), and the same list code works for any type. The Linux kernel's `list_head` and RTOS kernels use this design.
