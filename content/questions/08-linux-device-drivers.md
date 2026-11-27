@@ -1244,46 +1244,51 @@ Streaming mappings use appropriate direction and ownership synchronization, incl
 **Interview takeaway:** The DMA API abstracts translation, coherency and device constraints. Never substitute virt_to_phys for a portable DMA mapping.
 
 ### How does mmap work in a driver? {H}
-**Short answer:** Implementing `.mmap` lets user space map device memory or a driver buffer directly into its address space, avoiding copies. The driver checks the requested size and offset in the `vm_area_struct`, then maps the pages: `remap_pfn_range()` (or `io_remap_pfn_range` / `vm_iomap_memory()`) for device registers or reserved physical memory, `dma_mmap_coherent()` for DMA buffers, or `vm_insert_page`/`vm_map_pages` for normal kernel pages. Register mappings must be **uncached** (`pgprot_noncached` / `pgprot_device`).
+A driver's mmap callback maps suitable device or driver-managed memory into a userspace virtual address range. It can avoid repeated read/write copies, but requires careful permissions and lifetime management.
 
-**Mapping a DMA buffer to user space**
+#### 1. Mapping flow
+
+```text
+Application mmap(fd, length, offset)
+        |
+VFS calls driver's .mmap callback
+        |
+Driver validates size, offset and access
+        |
+Map supported pages / device resource
+        |
+User virtual address accesses mapped region
+```
+
+#### 2. Coherent DMA buffer example
 
 ```c
-static int mydev_mmap(struct file *f, struct vm_area_struct *vma)
+static int demo_mmap(struct file *file,
+                     struct vm_area_struct *vma)
 {
-    struct mydev *d = f->private_data;
-    size_t size = vma->vm_end - vma->vm_start;
+    struct demo *d = file->private_data;
+    unsigned long len = vma->vm_end - vma->vm_start;
 
-    if (vma->vm_pgoff != 0 || size > d->buf_size)
-        return -EINVAL;                               /* never map more than you own */
-    return dma_mmap_coherent(d->dev, vma, d->buf, d->buf_dma, size);
+    if (vma->vm_pgoff != 0 || len > d->size)
+        return -EINVAL;
+
+    return dma_mmap_coherent(d->dev, vma,
+                             d->cpu_addr, d->dma_addr,
+                             d->size);
 }
 ```
 
-**Mapping a register page (e.g. for a user-space data path)**
+This fragment assumes the buffer was allocated through dma_alloc_coherent and the device supports the mapping. Enforce page alignment, permitted mapping flags and buffer lifetime. Do not free a buffer while userspace still maps it.
 
-```c
-static int regs_mmap(struct file *f, struct vm_area_struct *vma)
-{
-    struct mydev *d = f->private_data;
-    vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
-    return vm_iomap_memory(vma, d->regs_phys, d->regs_len);   /* checks size/offset for you */
-}
-```
+#### 3. Other mappings
 
-**User space**
+Use suitable VMA/PFN or page insertion helpers for documented device resources or pages, and remap_vmalloc_range for applicable vmalloc storage. A CPU physical PFN is not necessarily a DMA address.
 
-```c
-uint32_t *buf = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-```
+#### 4. Security
 
-**Points to discuss**
+Never map arbitrary kernel memory or adjacent resources. Validate offsets/lengths with overflow-safe arithmetic; ensure exposed pages contain only permitted data. Synchronize userspace and hardware access.
 
-- **Security:** validate size and offset; exposing registers can let user space break isolation (e.g. by programming DMA to arbitrary memory) — usually only for trusted or privileged processes, or use VFIO with an IOMMU.
-- **Lifetime:** the mapping can outlive `close()`; the buffer must stay valid until the VMA is unmapped (reference counting, or `vm_operations_struct.close`).
-- **Synchronisation:** user space and hardware now share memory directly: define a protocol (head/tail indices, memory barriers, cache maintenance for non-coherent buffers).
-- **Page-fault-based mapping:** for large or lazily allocated buffers, implement `vm_ops->fault` and insert pages on demand.
-- Frameworks provide this already: V4L2 (`VIDIOC_REQBUFS` + mmap), DRM dumb buffers/GEM, UIO, and `dma-heap`.
+**Interview takeaway:** mmap changes the data-access interface, not the ownership problem. Choose the mapping helper for the allocation type and preserve lifetime until all mappings are gone.
 
 ### What are kernel timers, hrtimers and delays? {M}
 **Short answer:** **Timers** (`timer_list`, `mod_timer`) run a callback in softirq context after a delay measured in **jiffies** (resolution 1/HZ, e.g. 4 ms with HZ=250), suitable for timeouts that do not need precision. **High-resolution timers** (`hrtimer`) have nanosecond-based expiry using the hardware clock event device, for precise timing. For **delays**, use `udelay`/`ndelay` (busy-wait, for microseconds, allowed in atomic context), `usleep_range` (sleep, 10 µs–20 ms), and `msleep`/`fsleep` (sleep, longer).
