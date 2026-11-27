@@ -672,48 +672,52 @@ The C source has no conditional branch statement, but the compiler decides which
 **Interview takeaway:** Handle the minimum signed value explicitly. Prefer correct unsigned arithmetic over tricks relying on signed shifts or overflow.
 
 ### How do you round up to the next power of two? {M}
-**Short answer:** Subtract one, copy the highest set bit into every lower position with shifts and ORs, then add one. The smearing turns any value into `2ᵏ - 1`, and adding one gives `2ᵏ`.
+To round a positive unsigned integer up to the next power of two (including itself), spread its highest set bit to all lower positions, then add one.
+
+#### 1. 32-bit implementation
 
 ```c
-uint32_t next_pow2(uint32_t x)
+uint32_t next_pow2(uint32_t n)
 {
-    x--;
-    x |= x >> 1;
-    x |= x >> 2;
-    x |= x >> 4;
-    x |= x >> 8;
-    x |= x >> 16;
-    return x + 1;
+    if (n <= 1)
+        return 1;
+    if (n > UINT32_C(0x80000000))
+        return 0; // Overflow: no representable power
+
+    n--;
+    n |= n >> 1;
+    n |= n >> 2;
+    n |= n >> 4;
+    n |= n >> 8;
+    n |= n >> 16;
+    return n + 1U;
 }
 ```
 
-**Walk-through for x = 37 (0b100101)**
+Subtracting first ensures exact powers of two remain unchanged.
 
-```
-x - 1      = 0b100100
-|= >>1     = 0b110110
-|= >>2     = 0b111111   (already all ones below the top bit)
-...        = 0b111111   (63)
-+ 1        = 0b1000000  (64)
-```
+#### 2. Example: n = 10
 
-**Why subtract one first:** so that an exact power of two maps to itself. Without it, `next_pow2(64)` would give 128.
-
-**Edge cases**
-
-- `x = 0` → `x - 1` wraps to `0xFFFFFFFF`, smearing changes nothing, and `+ 1` wraps to 0. Decide what 0 should return and handle it explicitly.
-- `x > 2³¹` → the answer does not fit in 32 bits and the result wraps to 0.
-
-**With CLZ (one instruction on Cortex-M3+):**
-
-```c
-uint32_t next_pow2_clz(uint32_t x)   /* 2 <= x <= 2^31 */
-{
-    return 1u << (32 - __builtin_clz(x - 1));
-}
+```text
+n-1           = 00001001
+OR with >> 1  = 00001101
+OR with >> 2  = 00001111
+Remaining shifts leave the mask unchanged.
+Add one       = 00010000 (16)
 ```
 
-**Where it is used:** sizing ring buffers and hash tables so you can wrap indices with `& (size - 1)`, choosing a DMA or MPU region size (the classic Arm v7-M MPU requires power-of-two region sizes aligned to their size), and memory allocators that use power-of-two size classes (buddy allocator).
+| Input | Result |
+|---:|---:|
+| 0 | 1 (chosen convention) |
+| 1 | 1 |
+| 8 | 8 |
+| 10 | 16 |
+
+#### 3. Embedded use
+
+Power-of-two buffers allow wrapping an unsigned index with a mask. Increasing capacity may waste memory; check available RAM and multiplication overflow before allocating.
+
+**Interview takeaway:** Handle zero, exact powers and overflow before bit spreading. This implementation returns zero as an explicit overflow sentinel.
 
 ### How do you align a value up or down to a power-of-two boundary? {E}
 **Short answer:** Align down with `x & ~(a - 1)`; align up with `(x + a - 1) & ~(a - 1)`. Both require `a` to be a power of two.
