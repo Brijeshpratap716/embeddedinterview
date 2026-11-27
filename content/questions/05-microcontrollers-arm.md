@@ -267,6 +267,33 @@ Lower numerical priority means higher urgency. Only a target-specific number of 
 
 **Interview takeaway:** NVIC controls processor interrupt delivery, not peripheral event generation. Configure both the device and interrupt controller correctly.
 
+#### 4. Main NVIC registers and interrupt states
+
+| Register | Purpose |
+|---|---|
+| ISER / ICER | Enable / disable external IRQs |
+| ISPR / ICPR | Set / clear pending IRQs |
+| IABR (where implemented) | Read active status |
+| IPR | Set configurable IRQ priorities |
+
+An IRQ can be inactive, pending, active, or active and pending. An interrupt cannot preempt itself; a new request can become pending during the ISR, but pending state is not an event counter.
+
+#### 5. Complete interrupt handling sequence
+
+```text
+Peripheral event -> NVIC pending -> priority/mask arbitration
+ -> CPU stacks R0-R3, R12, LR, PC, xPSR
+ -> CPU fetches handler from vector table
+ -> Handler mode / ISR -> acknowledge peripheral
+ -> exception return / restore context (or tail-chain)
+```
+
+The CPU performs exception entry, vector fetch and context restoration; NVIC arbitrates IRQs. Tail-chaining skips unnecessary unstacking and restacking when another eligible exception follows. Higher preemption priority can interrupt an active lower-priority handler.
+
+Cortex-M3/M4 can support up to 240 external IRQs, but the actual count varies by implementation and other Cortex-M cores have different limits. Vector slot 0 is the initial MSP, not a system interrupt. Reset is a special exception; SysTick and SCB are separate core-system components, and not all system exceptions are enabled using NVIC_EnableIRQ().
+
+Reference: [Arm CMSIS NVIC documentation](https://arm-software.github.io/CMSIS_6/latest/Core/group__NVIC__gr.html).
+
 ### What are tail-chaining and late arrival? {H}
 Tail-chaining and late arrival are Cortex-M exception mechanisms that reduce interrupt handling overhead.
 
