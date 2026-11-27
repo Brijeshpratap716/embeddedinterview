@@ -527,66 +527,80 @@ A firmware system can run out of sufficiently large contiguous heap blocks despi
 **Interview takeaway:** Monitor both total free memory and the largest available free block. Fixed-size pools eliminate external fragmentation within that pool, but may still waste space inside slots.
 
 ### What is a memory pool, and how do you implement a fixed-size block allocator? {M}
-**Short answer:** A memory pool pre-allocates a block of memory divided into equal-sized chunks and keeps the free chunks in a linked list (the "free list"), with the link stored inside each free chunk. Allocation takes the first chunk from the list and freeing pushes it back, both in O(1) with no fragmentation, which makes pools ideal for real-time and embedded systems.
+A memory pool preallocates a fixed number of blocks and manages their availability. It is useful for predictable allocation in firmware and RTOS applications.
+
+#### 1. Pool design
+
+- Reserve N equally sized and suitably aligned slots.
+- Track free slots using a free list or bitmap.
+- Allocate one slot and mark it occupied.
+- Return the slot to the pool when the owner finishes.
+
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 189" width="100%" role="img" aria-label="Fixed-size pool allocation and release do not split the underlying slots" font-family="system-ui,sans-serif"><text x="8" y="17" font-size="11" font-weight="600" fill="currentColor">Initial pool: 4 slots</text><rect x="8" y="24" width="81" height="30" fill="#16a34a" fill-opacity=".16" stroke="#16a34a"/><text x="48.5" y="43" font-size="10" fill="currentColor" text-anchor="middle">Free 0</text><rect x="89" y="24" width="81" height="30" fill="#16a34a" fill-opacity=".16" stroke="#16a34a"/><text x="129.5" y="43" font-size="10" fill="currentColor" text-anchor="middle">Free 1</text><rect x="170" y="24" width="81" height="30" fill="#16a34a" fill-opacity=".16" stroke="#16a34a"/><text x="210.5" y="43" font-size="10" fill="currentColor" text-anchor="middle">Free 2</text><rect x="251" y="24" width="81" height="30" fill="#16a34a" fill-opacity=".16" stroke="#16a34a"/><text x="291.5" y="43" font-size="10" fill="currentColor" text-anchor="middle">Free 3</text><text x="8" y="76" font-size="11" font-weight="600" fill="currentColor">After two allocations</text><rect x="8" y="83" width="81" height="30" fill="#3b82f6" fill-opacity=".16" stroke="#3b82f6"/><text x="48.5" y="102" font-size="10" fill="currentColor" text-anchor="middle">Used 0</text><rect x="89" y="83" width="81" height="30" fill="#3b82f6" fill-opacity=".16" stroke="#3b82f6"/><text x="129.5" y="102" font-size="10" fill="currentColor" text-anchor="middle">Used 1</text><rect x="170" y="83" width="81" height="30" fill="#16a34a" fill-opacity=".16" stroke="#16a34a"/><text x="210.5" y="102" font-size="10" fill="currentColor" text-anchor="middle">Free 2</text><rect x="251" y="83" width="81" height="30" fill="#16a34a" fill-opacity=".16" stroke="#16a34a"/><text x="291.5" y="102" font-size="10" fill="currentColor" text-anchor="middle">Free 3</text><text x="8" y="135" font-size="11" font-weight="600" fill="currentColor">After releasing slot 0</text><rect x="8" y="142" width="81" height="30" fill="#16a34a" fill-opacity=".16" stroke="#16a34a"/><text x="48.5" y="161" font-size="10" fill="currentColor" text-anchor="middle">Free 0</text><rect x="89" y="142" width="81" height="30" fill="#3b82f6" fill-opacity=".16" stroke="#3b82f6"/><text x="129.5" y="161" font-size="10" fill="currentColor" text-anchor="middle">Used 1</text><rect x="170" y="142" width="81" height="30" fill="#16a34a" fill-opacity=".16" stroke="#16a34a"/><text x="210.5" y="161" font-size="10" fill="currentColor" text-anchor="middle">Free 2</text><rect x="251" y="142" width="81" height="30" fill="#16a34a" fill-opacity=".16" stroke="#16a34a"/><text x="291.5" y="161" font-size="10" fill="currentColor" text-anchor="middle">Free 3</text></svg></div>
+
+#### 2. Simple fixed-size block allocator in C
+
+This pool stores a specific object type and uses a free-index stack. Initialization is O(N); allocation is O(1). Release validates the supplied pointer by checking the four slots.
 
 ```c
+#include <stdbool.h>
 #include <stddef.h>
-#include <stdint.h>
 
-#define BLOCK_SIZE  32u
-#define BLOCK_COUNT 16u
+#define N 4
 
-typedef union block {
-    union block *next;                 /* used while the block is free */
-    uint8_t data[BLOCK_SIZE];          /* used while it is allocated  */
-} block_t;
+struct Block {
+    unsigned char data[32];
+};
 
-static block_t pool[BLOCK_COUNT];
-static block_t *free_list;
+static struct Block pool[N];
+static unsigned free_ids[N], top;
+static bool used[N];
 
 void pool_init(void)
 {
-    for (size_t i = 0; i < BLOCK_COUNT - 1; i++)
-        pool[i].next = &pool[i + 1];
-    pool[BLOCK_COUNT - 1].next = NULL;
-    free_list = &pool[0];
+    top = N;
+    for (unsigned i = 0; i < N; i++) {
+        free_ids[i] = i;
+        used[i] = false;
+    }
 }
 
-void *pool_alloc(void)
+struct Block *pool_alloc(void)
 {
-    block_t *b = free_list;            /* in an RTOS/ISR context: protect with a critical section */
-    if (b) free_list = b->next;
-    return b;                          /* NULL when the pool is exhausted */
+    if (top == 0)
+        return NULL;
+
+    unsigned i = free_ids[--top];
+    used[i] = true;
+    return &pool[i];
 }
 
-void pool_free(void *p)
+bool pool_free(struct Block *p)
 {
-    if (p == NULL) return;
-    block_t *b = p;
-    b->next = free_list;
-    free_list = b;
+    for (unsigned i = 0; i < N; i++) {
+        if (p == &pool[i] && used[i]) {
+            used[i] = false;
+            free_ids[top++] = i;
+            return true;
+        }
+    }
+    return false;
 }
 ```
 
-**Why a union:** a free block does not need its data, so its first bytes can hold the `next` pointer, costing no extra memory. The union also makes every block aligned for a pointer.
+Call pool_init once before allocating. Do not reinitialize while blocks are in use. Each successful allocation returns one Block; a full pool returns NULL.
 
-**Properties**
+#### 3. Advantages and limitations
 
-| | Memory pool | General `malloc` |
-|---|---|---|
-| Time | O(1), constant | varies with heap state |
-| External fragmentation | none | possible |
-| Internal fragmentation | yes, if objects are smaller than the block | small (headers, alignment) |
-| Sizes | one per pool (use several pools for several sizes) | any |
+| Advantages | Limitations |
+|---|---|
+| Preallocated storage | Fixed capacity |
+| Bounded allocation time | Fixed slot size |
+| No external fragmentation within pool | Possible unused slot bytes |
 
-**Production details**
+The example is single-threaded. Protect shared pool state with an appropriate lock or interrupt-safe mechanism when used concurrently. A stale pointer to a slot that has since been reallocated cannot be detected merely with a used flag.
 
-- **Thread/ISR safety:** wrap alloc/free in a critical section, or use a lock-free stack (watch out for the ABA problem).
-- **Debug checks:** fill freed blocks with a pattern, check that a freed pointer is inside the pool and on a block boundary, detect double free with a bitmap.
-- **Statistics:** track the minimum number of free blocks ever (high-water mark) to size the pool.
-- **Alignment:** if blocks hold types with stricter alignment (e.g. `double`, DMA buffers needing 32-byte alignment), align the pool array and round the block size up.
-
-**Where you see pools:** RTOS memory pools (Zephyr `k_mem_slab`, ThreadX block pools, CMSIS-RTOS `osMemoryPool`), network stacks (lwIP `pbuf` pools, Linux's `kmem_cache` slab allocator), and USB/CAN message buffers.
+**Interview takeaway:** Pools trade flexibility for predictable resource use. Use typed, aligned slots or a carefully designed raw-storage allocator and validate ownership.
 
 ### How would you implement a simple malloc() and free()? {H}
 **Short answer:** Manage a fixed memory region as a list of blocks, each starting with a small header (size and a free flag, or a link to the next free block). `malloc` searches the free list for a block that is big enough (first fit or best fit), splits off the remainder if it is large, marks the block used and returns the address just after the header. `free` marks the block free and **coalesces** it with adjacent free neighbours to fight fragmentation.
