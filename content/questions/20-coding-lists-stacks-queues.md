@@ -126,6 +126,10 @@ free(cur);
 
 **Doubly linked lists** delete in O(1) given the node, because the node knows its predecessor.
 
+#### Pointer-to-pointer trace
+
+For head → 10 → 20 → 30, pp first points to head. After advancing, pp points to the next member of node 10. Deleting 20 changes that member directly to point to 30. If deleting 10, pp instead points to head, so the same assignment updates the caller's head. Save the old node, unlink, then free. To delete every match rather than the first, continue from the same pp after deletion.
+
 ### Delete a node when you are given only a pointer to that node (no head). {M}
 **Short answer:** You cannot reach the previous node, so instead of removing this node you copy the **next** node's value (and next pointer) into it and free the next node. The list then looks as if the given node was deleted. This trick fails for the last node, which has no next node to copy from.
 
