@@ -95,46 +95,35 @@ Linux then establishes its own translation environment. U-Boot does not remain a
 **Interview takeaway:** Bootloader-to-kernel handoff is an ABI. Correct addresses alone are insufficient; CPU state, cache visibility, DTB and firmware interfaces must also be valid.
 
 ### What does the Linux kernel do from head.S to starting the init process? {H}
-**Short answer:** `head.S` sets up the early page tables, enables the MMU and jumps to `start_kernel()` in `init/main.c`. `start_kernel()` initialises the architecture (`setup_arch`), memory management, the scheduler, interrupts, timers and the console, then calls `rest_init()`, which creates `kernel_init` (it becomes PID 1) and `kthreadd` (PID 2) and turns the boot thread into the idle task (PID 0). `kernel_init` runs all driver initcalls, mounts the root filesystem and `exec`s `/sbin/init`.
+Linux initializes itself in stages, from architecture-specific early assembly to generic kernel initialization and finally userspace. Function details change between versions.
 
-**1. Early assembly (`arch/arm64/kernel/head.S`)**
+#### 1. Representative ARM64 flow
 
-- Record the boot arguments (DTB address in `x0`).
-- Check the exception level; set up EL2 for KVM if entered there.
-- Create identity-mapped and kernel page tables, enable the MMU.
-- Set up the initial stack and jump to `start_kernel()` (via `__primary_switched`).
+```text
+arch/arm64/kernel/head.S
+    -> early entry, preserve boot arguments
+    -> establish translation and execution environment
+    -> start_kernel()
+       -> architecture setup, memory management
+       -> scheduler, IRQ, timer and core initialization
+    -> rest_init()
+       -> create init and kthreadd execution contexts
+    -> kernel_init()
+       -> initialization calls and root filesystem setup
+       -> execute userspace init
+```
 
-On 32-bit ARM with a `zImage`, a decompressor runs first and then jumps to the real kernel `head.S`.
+#### 2. Important functions
 
-**2. `start_kernel()` (key calls, in roughly this order)**
+start_kernel is the central generic initialization entry. Architecture-specific setup discovers CPU and memory information and processes the supplied hardware description. The kernel builds its own mappings and initializes the page allocator, scheduler and interrupts.
 
-| Call | What it does |
-|---|---|
-| `setup_arch(&command_line)` | parse the device tree, find memory, early page tables, CPU features |
-| `setup_command_line`, `parse_args` | process `bootargs` |
-| `mm_core_init()` (older: `mm_init()`) | buddy allocator, slab, vmalloc |
-| `sched_init()` | runqueues, the idle task |
-| `early_irq_init()`, `init_IRQ()` | interrupt descriptors, the GIC driver |
-| `rcu_init()` | read-copy-update |
-| `time_init()`, timers, `timekeeping_init()` | clocksource and clockevents (arch timer) |
-| `console_init()` | early console so `printk` output appears |
-| `calibrate_delay()` | BogoMIPS for delay loops |
-| `rest_init()` | hand over to the threads below |
+Initcalls initialize built-in subsystems and drivers at ordered initialization levels. Probing can continue asynchronously or be deferred. The init path prepares root filesystem access and executes an appropriate init program.
 
-**3. `rest_init()`**
+#### 3. When does userspace begin?
 
-- `user_mode_thread(kernel_init, ...)` creates **PID 1** (it starts as a kernel thread and later becomes the user-space init).
-- `kernel_thread(kthreadd, ...)` creates **PID 2**, the parent of all other kernel threads.
-- The boot CPU then calls `cpu_startup_entry()` and becomes the **idle task (PID 0)**, which runs when nothing else is runnable.
+The initial init task begins in kernel context and becomes a userspace program when the kernel successfully executes init. PID 1 then handles userspace initialization; it is not the function start_kernel.
 
-**4. `kernel_init()`**
-
-- `kernel_init_freeable()`: brings up the other CPUs (SMP), runs `do_basic_setup()` → `do_initcalls()`: every driver and subsystem `*_initcall()` in level order, which is when platform drivers probe against device tree nodes.
-- Unpacks the initramfs (if any); if it has `/init`, runs it. Otherwise `prepare_namespace()` mounts the root device from `root=`.
-- Frees the `__init` memory ("Freeing unused kernel memory").
-- Tries `init=` from the command line, then `/sbin/init`, `/etc/init`, `/bin/init`, `/bin/sh`. If none work: **"Kernel panic - not syncing: No working init found."**
-
-**Follow-up: "Is PID 1 a kernel thread?"** It begins as one and becomes a normal user process when `kernel_execve()` loads the init binary, so it keeps PID 1.
+**Interview takeaway:** Separate early architecture setup, generic kernel initialization, device initialization and userspace startup. Exact symbols and ordering are version-specific.
 
 ### What does the init process (PID 1) do, and what special rules apply to it? {M}
 **Short answer:** PID 1 is the first user-space process. It brings the system to a working state (mounts filesystems, starts daemons, starts login terminals or the main application) and then supervises it. It must never exit (the kernel panics if it does), it becomes the parent of every orphaned process so it must reap zombies, and the kernel does not deliver signals to it that it has not installed a handler for.
