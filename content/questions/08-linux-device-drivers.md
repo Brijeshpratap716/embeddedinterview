@@ -1331,53 +1331,39 @@ Use udelay for very short hardware-required waits where sleeping is not permitte
 **Interview takeaway:** Match timing API to required resolution and context. A timer schedules work; it does not guarantee a callback runs at the exact expiration instant.
 
 ### How does power management work for drivers (system suspend and runtime PM)? {H}
-**Short answer:** Drivers implement two kinds of power management through `dev_pm_ops`. **System sleep** callbacks (`suspend`/`resume`, plus `_late`/`_noirq` variants) save state and power the device down when the whole system suspends (to RAM or disk), then restore it. **Runtime PM** (`runtime_suspend`/`runtime_resume`) powers an individual device down whenever it is idle while the system runs: the driver calls `pm_runtime_resume_and_get()` before using the hardware and `pm_runtime_put_autosuspend()` when done, and the core suspends it after an autosuspend delay when the usage count reaches zero.
+Linux driver power management includes runtime PM for individual devices and system sleep transitions that coordinate the platform.
+
+#### 1. Runtime PM
+
+A device can suspend when idle and resume before use. The driver manages usage references and implements runtime callbacks that control clocks, supplies, context and hardware state.
 
 ```c
-static int mydev_runtime_suspend(struct device *dev)
-{
-    struct mydev *d = dev_get_drvdata(dev);
-    clk_disable_unprepare(d->clk);
-    return regulator_disable(d->vdd);
-}
+int ret = pm_runtime_resume_and_get(dev);
+if (ret < 0)
+    return ret;
 
-static int mydev_runtime_resume(struct device *dev)
-{
-    struct mydev *d = dev_get_drvdata(dev);
-    int ret = regulator_enable(d->vdd);
-    if (ret) return ret;
-    ret = clk_prepare_enable(d->clk);
-    if (ret) { regulator_disable(d->vdd); return ret; }
-    regcache_cache_only(d->map, false);
-    return regcache_sync(d->map);                 /* restore registers after power loss */
-}
+ret = perform_transfer(d);
 
-static const struct dev_pm_ops mydev_pm = {
-    RUNTIME_PM_OPS(mydev_runtime_suspend, mydev_runtime_resume, NULL)
-    SYSTEM_SLEEP_PM_OPS(pm_runtime_force_suspend, pm_runtime_force_resume)
-};
-/* .driver.pm = pm_ptr(&mydev_pm) */
-
-/* in probe */
-pm_runtime_set_autosuspend_delay(dev, 200);
-pm_runtime_use_autosuspend(dev);
-devm_pm_runtime_enable(dev);
-
-/* around each hardware access */
-ret = pm_runtime_resume_and_get(dev);
-if (ret) return ret;
-do_transfer(d);
 pm_runtime_mark_last_busy(dev);
 pm_runtime_put_autosuspend(dev);
+return ret;
 ```
 
-**Concepts to mention**
+This assumes runtime PM and autosuspend were configured appropriately during initialization. Balance successful usage references and follow target-kernel APIs.
 
-- **Device hierarchy:** children suspend before parents and resume after them; device links handle non-parent dependencies (fw_devlink).
-- **PM domains (genpd):** power islands shared by several devices, switched off when all are runtime-suspended.
-- **Wake-up sources:** `device_init_wakeup()`, `enable_irq_wake()` so a button or RTC can wake the system.
-- **Clocks and voltages:** DVFS via OPP tables and cpufreq/devfreq; interconnect bandwidth votes.
-- **Debugging:** `/sys/devices/.../power/runtime_status`, `/sys/kernel/debug/pm_genpd/`, `echo mem > /sys/power/state`, `pm_test`, and `no_console_suspend` to see messages during suspend.
+#### 2. System suspend/resume
+
+Before suspend, stop new work and quiesce hardware and DMA as required. Save state or configure wakeup sources. Resume restores required power, clocks, register state and ongoing interfaces in the correct order.
+
+#### 3. Dependencies
+
+Suppliers such as power domains, regulators and parent devices must be available before register access. Runtime and system PM callbacks can interact; use the PM framework's supported helpers rather than ad hoc state transitions.
+
+#### 4. Debugging
+
+Inspect runtime status and usage counts where exposed in sysfs, relevant PM logs and clock/regulator state. A device that never suspends may have an unbalanced usage reference or persistent activity.
+
+**Interview takeaway:** Runtime PM saves power per device; system PM coordinates sleep across devices. Correct usage counts, ordering and asynchronous teardown are critical.
 
 ### What is PREEMPT_RT and what changes for drivers? {H}
 **Short answer:** PREEMPT_RT (merged into mainline in 6.12, `CONFIG_PREEMPT_RT`) turns Linux into a real-time OS with bounded latencies of typically tens of microseconds. It makes almost all kernel code pre-emptible: interrupt handlers run in **threads** with configurable priorities, `spinlock_t` and `rwlock_t` become **sleeping rt_mutexes with priority inheritance**, softirqs run in thread context, and long non-pre-emptible sections are broken up. Drivers must not rely on "spinlock means interrupts and pre-emption are off".
