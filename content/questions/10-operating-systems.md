@@ -253,39 +253,26 @@ For a single isolated 4 KiB page using four levels, a new hierarchy may require 
 **Interview takeaway:** Multi-level tables save memory for sparse mappings at the cost of potentially more lookup steps. Actual levels, granules and supported address widths depend on the CPU and OS configuration.
 
 ### What is a TLB, and how do you calculate the effective memory access time? {M}
-**Short answer:** The TLB (Translation Lookaside Buffer) is a small, fast cache inside the MMU that holds recent virtual-to-physical translations. On a hit, the translation is available immediately; on a miss, the hardware (or OS) must walk the page tables in memory first. Effective access time = hit rate × (time on a hit) + miss rate × (time on a miss).
+A Translation Lookaside Buffer (TLB) caches address translations and associated attributes, avoiding repeated page-table walks.
 
-**Worked example 1**
+#### 1. Example timing model
 
-- Memory access: 100 ns. TLB lookup: assume it overlaps with the cache access (≈ 0 ns).
-- Two-level page table: a miss needs 2 extra memory reads.
-- Hit rate 98%.
+Assume a 10 ns TLB lookup, 100 ns memory access, a one-level page table stored in memory, no overlap, and a 95% TLB hit rate.
 
-```
-EAT = 0.98 × 100 + 0.02 × (2 × 100 + 100)
-    = 98 + 6 = 104 ns       (4% slower than with no translation at all)
-```
+- Hit: 10 + 100 = 110 ns.
+- Miss: 10 + 100 (table entry) + 100 (data) = 210 ns.
 
-With a 4-level table, a miss costs 500 ns: `0.98 × 100 + 0.02 × 500 = 108 ns`.
+Effective access time = 0.95 × 110 + 0.05 × 210 = 115 ns.
 
-**Worked example 2 (required hit rate)**
+#### 2. Real processors
 
-A page-table walk takes 40 times as long as a TLB lookup `t`. What hit rate keeps the average translation time at 2t?
+Modern processors can overlap translation and cache lookup, cache intermediate translation-table entries and walk multiple levels. Therefore, actual timing differs from this simplified model. A miss may be resolved by a hardware walk without kernel entry.
 
-```
-h·t + (1 − h)·(t + 40t) = 2t
-t + (1 − h)·40t        = 2t
-(1 − h)                = 1/40  →  h = 97.5 %
-```
+#### 3. ASIDs and invalidation
 
-**TLB facts worth mentioning**
+Address-space identifiers distinguish cached translations for different processes. When mappings change, the kernel performs appropriate TLB invalidation and synchronization on affected CPUs.
 
-- Typical sizes: an L1 data TLB of 32–64 entries and a unified L2 TLB of 512–2048 entries. Cortex-A53, for example, has small micro-TLBs per side plus a 512-entry main TLB.
-- **TLB reach** = entries × page size. 1024 entries × 4 KB = 4 MB. With 2 MB huge pages, the same 1024 entries cover 2 GB. That is why databases, JVMs and VMs benefit from huge pages.
-- **ASIDs** (ARM) / **PCIDs** (x86) tag entries with the process, so a context switch does not require flushing the TLB. ARM also tags with **VMID** for virtual machines.
-- When the kernel changes a mapping, it must **invalidate** the stale TLB entries (`TLBI` instructions on ARM64, broadcast to other cores in the inner-shareable domain), which is called a TLB shootdown on x86.
-
-**Follow-up: "Why is the TLB hit rate usually so high?"** Locality: programs access the same pages repeatedly (loops, stack, hot data), and one entry covers 4096 bytes of consecutive addresses.
+**Interview takeaway:** TLB caches translations, not application data. State your timing assumptions before computing effective access time; a TLB miss is not automatically a page fault.
 
 ### Why is the page size usually 4 KB? What happens with smaller or larger pages? {M}
 **Short answer:** 4 KB is a compromise. Smaller pages waste less memory inside partly used pages (internal fragmentation) but need more page-table entries and more TLB entries for the same memory. Larger pages reduce page-table size and TLB misses and make disk I/O more efficient, but waste more memory and make copy-on-write and paging coarser. Modern systems keep a small base page and add huge pages where they help.
