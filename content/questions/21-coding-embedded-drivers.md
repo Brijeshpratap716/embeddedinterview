@@ -599,6 +599,12 @@ task: store count - 1 (4) ← the ISR's increment is lost; count is now wrong
 
 **Alternative without any critical section:** the SPSC ring with separate head/tail indices (no shared count), as in the lock-free question.
 
+#### Establish the single-core contract
+
+The example assumes exactly one interrupt producer that cannot reenter or be preempted by another producer, and one task consumer. The task masks the producing IRQ before examining count or copying a message. The platform irq_save/restore implementation must also provide required compiler ordering and preserve the previous mask. Validate message length against eight-byte storage; a full queue must report loss.
+
+An ISR can notify a task after successful enqueue using the RTOS's documented ISR API. Never sleep or acquire a blocking mutex in the interrupt. Local interrupt masking does not serialize another CPU, NMI or DMA.
+
 ### Implement a software timer module. {M}
 **Short answer:** Keep a table of timers, each with an expiry time, a period (0 for one-shot), an active flag and a callback. A 1 ms tick interrupt only increments a time counter; the main loop (or a timer task) calls `timer_process()`, which compares each active timer's expiry with the current time using a wrap-safe signed difference, runs the callback for expired timers, and re-arms periodic ones by adding the period to the previous expiry.
 
