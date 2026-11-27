@@ -923,32 +923,34 @@ Use bounded reconnect backoff, keepalive, explicit session/retained-message poli
 **Interview takeaway:** MQTT QoS controls messaging delivery, not device safety or confidentiality. Secure the connection, broker permissions and application-level handling separately.
 
 ### What is Bluetooth Low Energy, and how do GAP and GATT work? {M}
-**Short answer:** Bluetooth Low Energy (BLE) is a 2.4 GHz wireless protocol designed for very low power, short-range communication (sensors, wearables, phone accessories). **GAP** (Generic Access Profile) defines how devices discover and connect: **advertisers/peripherals** broadcast advertising packets, **scanners/centrals** listen and initiate connections. **GATT** (Generic Attribute Profile) defines how data is exchanged once connected: a **server** exposes **services**, each containing **characteristics** (values with properties: read, write, notify, indicate), identified by UUIDs, and a **client** reads, writes or subscribes to them.
+Bluetooth Low Energy (BLE) provides low-power wireless communication for devices that exchange relatively small amounts of data, such as sensors and wearables.
 
-**Typical sensor example**
+#### 1. GAP
 
+Generic Access Profile defines discovery, advertising, scanning, connection roles and related procedures. A peripheral may advertise while a central scans and initiates a connection.
+
+#### 2. GATT
+
+Generic Attribute Profile defines how structured data is organized and accessed using services, characteristics and descriptors over the attribute protocol.
+
+```text
+Temperature service
+    └─ Temperature characteristic
+          ├─ value
+          └─ client configuration descriptor (if supported)
 ```
-GATT server (sensor)
-└── Service: Environmental Sensing (0x181A)
-    ├── Characteristic: Temperature (0x2A6E)   properties: read, notify
-    │    └── CCCD descriptor (client enables notifications here)
-    └── Characteristic: Humidity (0x2A6F)      properties: read, notify
-```
 
-The phone (central/GATT client) connects, discovers services, writes to the CCCD to enable notifications, and receives a notification each time the temperature changes.
+A GATT client can read, write or subscribe to supported notifications/indications from a server. GAP central/peripheral roles are distinct from GATT client/server roles.
 
-**Key concepts**
+#### 3. Notifications vs indications
 
-- **Advertising:** packets every 20 ms–10 s on 3 advertising channels; can carry data without connecting (beacons, broadcast sensors).
-- **Connection interval** (7.5 ms–4 s), **peripheral latency** and **supervision timeout** trade latency for power.
-- **MTU and data length extension** decide how many bytes fit per packet (default 20 bytes of payload; up to ~244 with DLE and a larger MTU).
-- **Security:** pairing (Just Works, Passkey, Numeric Comparison, Out of Band), bonding (storing keys), LE Secure Connections (ECDH). Just Works has no man-in-the-middle protection.
-- **PHYs:** 1M, 2M (faster) and Coded (long range, 125/500 kbps).
-- Newer features: LE Audio (LC3 codec, Auracast broadcast), direction finding, periodic advertising.
+Notifications do not require an ATT-level confirmation; indications do. Both rely on the underlying link behavior. Choose based on throughput and application requirements.
 
-**Power:** a BLE sensor sleeping between connection events can average a few µA and run for years on a coin cell.
+#### 4. Embedded considerations
 
-**Embedded stacks:** Zephyr Bluetooth (used by nRF Connect SDK), NimBLE (Apache Mynewt, ESP-IDF), vendor stacks (TI, ST, Silicon Labs), BlueZ on Linux.
+Tune advertising and connection intervals, MTU, data length and power use. Use appropriate pairing, bonding, encryption and authorization for sensitive characteristics.
+
+**Interview takeaway:** GAP manages finding and connecting devices; GATT describes and exchanges application attributes. Security and power depend on configuration.
 
 ### How do you choose a wireless technology for an IoT device? {M}
 **Short answer:** Match range, data rate, power budget, network topology, infrastructure and cost. **BLE** for short range, very low power and phone connectivity; **Wi-Fi** for high data rates and direct internet access with mains or large batteries; **Thread/Zigbee** (802.15.4) for low-power mesh networks in buildings (Thread with Matter for smart homes); **LoRaWAN** for kilometres of range with tiny data and multi-year battery life; **NB-IoT/LTE-M** (cellular) for wide-area coverage without your own gateways.
