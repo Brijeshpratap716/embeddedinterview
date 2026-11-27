@@ -470,75 +470,69 @@ Firmware description creates a platform device, the platform bus matches the dri
 **Interview takeaway:** A platform driver binds to platform-described hardware and obtains resources from the device model instead of assuming fixed physical addresses.
 
 ### How do you write an I2C (or SPI) client driver? {M}
-**Short answer:** Register a `struct i2c_driver` with an OF match table and an `i2c_device_id` table. In `probe(struct i2c_client *client)` you get the device's address and adapter; talk to it with `i2c_smbus_read_byte_data()`/`i2c_smbus_write_byte_data()`, `i2c_transfer()` for combined messages, or more commonly through **regmap** (`devm_regmap_init_i2c`). Then register with the right subsystem (hwmon, IIO, input...). These calls **sleep**, so use them only in process context (threaded IRQs, workqueues), never in a hard IRQ handler or under a spinlock.
+An I2C or SPI client driver manages a peripheral connected to a controller bus. The bus core matches the device and calls the driver's probe function; the client then uses subsystem transfer APIs.
 
-```c
-#include <linux/module.h>
-#include <linux/i2c.h>
-#include <linux/regmap.h>
-
-#define REG_ID   0x0F
-#define REG_CTRL 0x20
-
-struct mysensor { struct regmap *map; };
-
-static const struct regmap_config mysensor_regmap = {
-    .reg_bits = 8, .val_bits = 8, .max_register = 0x7F,
-};
-
-static int mysensor_probe(struct i2c_client *client)
-{
-    struct mysensor *s = devm_kzalloc(&client->dev, sizeof(*s), GFP_KERNEL);
-    unsigned int id;
-    int ret;
-
-    if (!s) return -ENOMEM;
-    s->map = devm_regmap_init_i2c(client, &mysensor_regmap);
-    if (IS_ERR(s->map)) return PTR_ERR(s->map);
-
-    ret = regmap_read(s->map, REG_ID, &id);
-    if (ret) return dev_err_probe(&client->dev, ret, "no response at 0x%02x\n", client->addr);
-    if (id != 0x33) return dev_err_probe(&client->dev, -ENODEV, "unexpected id 0x%02x\n", id);
-
-    ret = regmap_update_bits(s->map, REG_CTRL, 0x0F, 0x07);   /* enable axes, set rate */
-    if (ret) return ret;
-
-    i2c_set_clientdata(client, s);
-    return 0;                                   /* then register with IIO/hwmon/input */
-}
-
-static const struct of_device_id mysensor_of_match[] = { { .compatible = "acme,mysensor" }, { } };
-MODULE_DEVICE_TABLE(of, mysensor_of_match);
-static const struct i2c_device_id mysensor_id[] = { { "mysensor" }, { } };
-MODULE_DEVICE_TABLE(i2c, mysensor_id);
-
-static struct i2c_driver mysensor_driver = {
-    .driver   = { .name = "mysensor", .of_match_table = mysensor_of_match },
-    .probe    = mysensor_probe,
-    .id_table = mysensor_id,
-};
-module_i2c_driver(mysensor_driver);
-MODULE_LICENSE("GPL");
-```
+#### 1. I2C device tree
 
 ```dts
-&i2c1 {
+&i2c0 {
     status = "okay";
-    clock-frequency = <400000>;
-    sensor@18 {
-        compatible = "acme,mysensor";
-        reg = <0x18>;
-        interrupt-parent = <&gpio2>;
-        interrupts = <5 IRQ_TYPE_EDGE_RISING>;
+    sensor@50 {
+        compatible = "vendor,sensor";
+        reg = <0x50>;
     };
 };
 ```
 
-**SPI is almost identical:** `struct spi_driver`, `probe(struct spi_device *spi)`, `spi_setup()` for mode/speed, `spi_sync()`/`spi_write_then_read()` or `devm_regmap_init_spi()`, and `spi-max-frequency` in the device tree.
+The reg value is the unshifted 7-bit address for this example.
 
-**Why regmap:** one register API for I2C, SPI and MMIO, a register cache (fewer bus transactions, restore after suspend), range checks, and a debugfs dump of all registers (`/sys/kernel/debug/regmap/`).
+#### 2. I2C client driver fragment
 
-**Testing without a driver:** `i2cdetect`, `i2cget`, `i2cset` (with `-f` if a driver owns the address).
+```c
+static int sensor_probe(struct i2c_client *client)
+{
+    int id;
+
+    if (!i2c_check_functionality(client->adapter,
+                                 I2C_FUNC_SMBUS_BYTE_DATA))
+        return -EOPNOTSUPP;
+
+    id = i2c_smbus_read_byte_data(client, 0x00);
+    if (id < 0)
+        return id;
+    if (id != EXPECTED_ID)
+        return -ENODEV;
+
+    return 0;
+}
+
+static const struct of_device_id sensor_match[] = {
+    { .compatible = "vendor,sensor" },
+    { }
+};
+MODULE_DEVICE_TABLE(of, sensor_match);
+
+static struct i2c_driver sensor_driver = {
+    .driver = {
+        .name = "demo_sensor",
+        .of_match_table = sensor_match,
+    },
+    .probe = sensor_probe,
+};
+module_i2c_driver(sensor_driver);
+```
+
+EXPECTED_ID and register offsets are device-specific. This uses a contemporary single-argument probe signature; adapt to the target kernel version.
+
+#### 3. SPI alternative
+
+Register a spi_driver with a match table. Use spi_sync or appropriate helpers to execute spi_message/spi_transfer operations, configuring mode, speed and bits per word according to the device. SPI normally identifies devices through chip selects.
+
+#### 4. Functional subsystem
+
+After successful probe, register the appropriate interface such as input, IIO, hwmon or DRM panel. Transfer functions commonly sleep; do not call them from hard IRQ context.
+
+**Interview takeaway:** The controller driver operates the bus; the client driver understands the peripheral's register protocol and function.
 
 ### What is the device tree and why is it used? {M}
 **Short answer:** The device tree is a data structure that describes hardware that cannot be discovered at run time: CPUs, memory, peripherals, their addresses, interrupts, clocks, GPIOs, regulators and pin configuration. Source files (`.dts`/`.dtsi`) are compiled by `dtc` into a binary blob (`.dtb`) that the bootloader passes to the kernel. One kernel image can then support many boards, because board details live in data instead of C code.
