@@ -2091,41 +2091,64 @@ These commands help inspect section sizes and placement.
 **Interview takeaway:** .bss saves initial image space because it does not normally store every zero byte. Both sections consume RAM at runtime; exact placement depends on the linker script and toolchain.
 
 ### What is a dangling pointer, a wild pointer and a NULL pointer? {E}
-**Short answer:** A **NULL pointer** deliberately points to nothing; dereferencing it is undefined behaviour. A **wild pointer** is an uninitialised pointer containing a random address. A **dangling pointer** still holds the address of an object that no longer exists: memory that was freed, or a local variable whose function has returned.
+These terms describe three different pointer states. Dereferencing any of them is invalid unless the pointer has been set to refer to a valid object.
+
+#### 1. Wild pointer
+
+An uninitialized automatic pointer is commonly called a wild pointer.
 
 ```c
-int *wild;                  /* wild: indeterminate value */
-*wild = 5;                  /* writes to a random address */
-
-int *dang = malloc(sizeof *dang);
-free(dang);
-*dang = 5;                  /* dangling: use after free */
-
-int *get_local(void)
-{
-    int x = 42;
-    return &x;              /* dangling: x is gone when the function returns */
-}
-
-int *np = NULL;
-*np = 1;                    /* NULL dereference: undefined behaviour */
+int *p;
+// *p = 10;   // Undefined behaviour
 ```
 
-**Why they are dangerous in embedded systems**
+Initialize it before use:
 
-- On a Cortex-M, address 0 is usually the start of flash (or the vector table). A NULL **read** returns the initial stack pointer value instead of faulting, and a NULL **write** may be silently ignored or cause a bus fault depending on the memory map. Bugs survive testing.
-- A dangling pointer to a stack frame may "work" until an interrupt or another call overwrites that stack area.
+```c
+int a = 10;
+int *p = &a;
+```
 
-**Prevention**
+#### 2. Dangling pointer
 
-- Initialise every pointer, to a valid object or `NULL`.
-- Set pointers to `NULL` after `free()` (and avoid keeping several copies of an owning pointer).
-- Never return the address of a non-static local.
-- Check pointers from callers and from allocation (`if (p == NULL)`).
-- Use the **MPU** to make the first few hundred bytes at address 0 inaccessible so NULL dereferences fault immediately.
-- Run code on the host with **AddressSanitizer** (`-fsanitize=address`) and use static analysis to catch use-after-free and uninitialised use.
+A dangling pointer refers to storage whose object's lifetime has ended.
 
-**Interview follow-up:** "Is `free(NULL)` safe?" Yes, it does nothing. "Is double `free` safe?" No, it is undefined behaviour and can corrupt the heap.
+```c
+int *p = malloc(sizeof *p);
+if (p != NULL) {
+    *p = 10;
+    free(p);
+    // *p = 20;  // Use-after-free
+    p = NULL;
+}
+```
+
+Returning the address of an automatic local variable also creates a lifetime problem.
+
+#### 3. NULL pointer
+
+A null pointer intentionally refers to no object or function.
+
+```c
+int *p = NULL;
+
+if (p != NULL)
+    printf("%d", *p);
+```
+
+Checking for NULL is useful, but it does not establish that a non-null pointer is valid.
+
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 185" width="100%" role="img" aria-label="Wild pointer is uninitialized; dangling pointer refers to expired storage; null pointer refers to no object">
+<text x="10" y="18" font-size="11" font-weight="600" fill="currentColor">Wild pointer</text><rect x="10" y="25" width="100" height="30" rx="4" fill="#dc2626" fill-opacity=".1" stroke="#dc2626"/><text x="60" y="44" text-anchor="middle" font-size="12" fill="currentColor">p = ?</text><path d="M110 40 H218 m-5-4 5 4-5 4" stroke="#dc2626" stroke-dasharray="4 3" fill="none"/><rect x="218" y="25" width="112" height="30" rx="4" fill="#dc2626" fill-opacity=".1" stroke="#dc2626"/><text x="274" y="44" text-anchor="middle" font-size="11" fill="currentColor">Unknown target</text><text x="10" y="76" font-size="11" font-weight="600" fill="currentColor">Dangling pointer</text><rect x="10" y="83" width="100" height="30" rx="4" fill="#dc2626" fill-opacity=".1" stroke="#dc2626"/><text x="60" y="102" text-anchor="middle" font-size="12" fill="currentColor">p</text><path d="M110 98 H218 m-5-4 5 4-5 4" stroke="#dc2626" stroke-dasharray="4 3" fill="none"/><rect x="218" y="83" width="112" height="30" rx="4" fill="#dc2626" fill-opacity=".1" stroke="#dc2626"/><text x="274" y="102" text-anchor="middle" font-size="11" fill="currentColor">Expired object</text><text x="10" y="134" font-size="11" font-weight="600" fill="currentColor">NULL pointer</text><rect x="10" y="141" width="100" height="30" rx="4" fill="#64748b" fill-opacity=".1" stroke="#64748b"/><text x="60" y="160" text-anchor="middle" font-size="12" fill="currentColor">p = NULL</text><path d="M110 156 H218 m-5-4 5 4-5 4" stroke="#64748b" stroke-dasharray="4 3" fill="none"/><rect x="218" y="141" width="112" height="30" rx="4" fill="#64748b" fill-opacity=".1" stroke="#64748b"/><text x="274" y="160" text-anchor="middle" font-size="11" fill="currentColor">No object</text>
+</svg></div>
+
+| Pointer | Meaning |
+|---|---|
+| Wild | Uninitialized pointer |
+| Dangling | Object lifetime has ended |
+| NULL | Intentionally points to no object |
+
+**Interview takeaway:** Initialize pointers, respect object lifetime and manage allocation ownership. Setting one pointer to NULL after free does not repair other aliases to the freed object.
 
 ### What is the volatile keyword? {E}
 **Short answer:** `volatile` tells the compiler that an object can change, or that accessing it has effects, outside the normal flow of the program it can see (hardware, an ISR, another core, a debugger). So every read and write written in the source must actually be performed, in program order relative to other volatile accesses, and cannot be cached in a register, merged or removed.
