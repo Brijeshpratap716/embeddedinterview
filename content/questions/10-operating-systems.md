@@ -300,25 +300,31 @@ Large mappings may benefit large contiguous buffers, but memory availability, al
 **Interview takeaway:** Page size trades fragmentation and mapping flexibility against translation overhead. Check the actual system with getconf PAGESIZE instead of assuming 4096.
 
 ### What are page replacement algorithms (FIFO, LRU, Clock), and what is Belady's anomaly? {M}
-**Short answer:** When physical memory is full and a new page is needed, the OS must choose a victim page to evict. **FIFO** evicts the oldest page; **Optimal** evicts the page used furthest in the future (impossible in practice, used as a benchmark); **LRU** evicts the page unused for the longest time; **Clock (second chance)** approximates LRU cheaply with a reference bit. **Belady's anomaly** is FIFO's surprising behaviour of sometimes causing *more* faults with *more* frames.
+Page replacement chooses which resident pages to reclaim when memory is under pressure. The goal is to keep useful pages in memory and minimize expensive faults or writeback.
 
-**Worked example:** reference string `7 0 1 2 0 3 0 4`, **3 frames**.
+| Algorithm | Selection rule |
+|---|---|
+| FIFO | Evict oldest loaded page |
+| LRU | Evict least recently used page |
+| Clock | Approximate recency using reference bits and a rotating pointer |
 
-| Algorithm | Frames after each reference (miss = *) | Faults |
-|---|---|---|
-| FIFO | 7* 70* 701* 201* 201 231* 230* 430* | 7 |
-| LRU | 7* 70* 701* 201* 201 203* 203 403* | 6 |
-| Optimal | 7* 70* 701* 201* 201 203* 203 403* | 6 |
+#### 1. Belady's anomaly
 
-At reference `3`, FIFO evicts `0` (the oldest) even though `0` is used next; LRU evicts `1`, which was least recently used.
+With FIFO, increasing the number of page frames can sometimes increase the number of faults. A standard reference string is:
 
-**Clock algorithm (what real kernels approximate):** pages are arranged in a circle with a hand. Each page has a hardware "accessed" bit set on use. To evict, look at the page under the hand: if its bit is 1, clear it and move on (second chance); if it is 0, evict it. Pages in active use keep getting their bit set and survive.
+```text
+1 2 3 4 1 2 5 1 2 3 4 5
+FIFO with 3 frames: 9 faults
+FIFO with 4 frames: 10 faults
+```
 
-**Linux:** uses active and inactive LRU lists (and the newer **multi-generational LRU**, MGLRU), driven by the accessed bits in page table entries. Clean file pages are cheap to drop (re-read from the file later); dirty or anonymous pages must be written to the file or swap first.
+Exact LRU has the stack property, so it does not suffer this anomaly.
 
-**Belady's anomaly:** with FIFO and the string `1 2 3 4 1 2 5 1 2 3 4 5`, 3 frames give 9 faults but 4 frames give 10. LRU and Optimal are "stack algorithms" and never show this anomaly.
+#### 2. Real Linux
 
-**Related:** **thrashing** happens when the working set does not fit no matter which algorithm you use.
+Linux reclaim is more complex than a textbook FIFO or LRU: it considers page activity, file-backed versus anonymous memory, writeback, reclaim context and kernel configuration.
+
+**Interview takeaway:** Replacement is an approximation of future reuse. More RAM does not make every possible replacement algorithm monotonic, and real OS reclaim involves more than selecting a victim page.
 
 ### What is an inverted page table? {H}
 **Short answer:** A normal page table has one entry per **virtual page** of each process. An inverted page table has one entry per **physical frame**, recording which process (address-space ID) and which virtual page currently occupy it. Its size depends only on physical memory, not on the number of processes or the size of their address spaces. The drawback is lookup: you have to search for the entry that matches (ASID, virtual page), so a hash table is used to make it fast.
