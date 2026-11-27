@@ -721,29 +721,31 @@ Enable the source and wait for stability. Configure voltage scaling and flash wa
 **Interview takeaway:** Clock configuration includes more than selecting a PLL frequency. Respect voltage, flash timing, oscillator limits and actual peripheral clock rates.
 
 ### How does dynamic voltage and frequency scaling (DVFS) save power? {M}
-**Short answer:** The dynamic power of CMOS logic is roughly **P = C · V² · f** (switched capacitance × voltage squared × frequency). DVFS lowers the clock frequency when full performance is not needed and, because a lower frequency allows a lower supply voltage, lowers the voltage too. Since power depends on V², reducing voltage gives a large saving. The OS (or firmware) picks an **operating performance point** (OPP: a frequency/voltage pair) based on the current load.
+Dynamic Voltage and Frequency Scaling (DVFS) reduces power by adjusting operating voltage and clock frequency according to workload.
 
-**Example:** going from 1.2 GHz at 1.1 V to 600 MHz at 0.9 V:
+#### 1. Dynamic-power relationship
 
+A simplified CMOS model is:
+
+```text
+P_dynamic ≈ activity × capacitance × voltage² × frequency
 ```
-P2 / P1 = (0.9² × 0.6) / (1.1² × 1.2) = 0.486 / 1.452 ≈ 0.33
-```
 
-Half the speed for about one third of the dynamic power, so the energy per operation also drops (~0.67×).
+Lowering voltage has a quadratic effect on this component of power; reducing frequency also reduces dynamic power. Leakage and other system components are not included in this simplified equation.
 
-**Rules when switching**
+#### 2. Example
 
-- **Raising performance:** increase the voltage first, wait for it to settle, then increase the frequency.
-- **Lowering:** decrease the frequency first, then the voltage.
-- Flash wait states (MCU) or memory timings must also be valid for the new frequency.
+A system can run at a high operating point during demanding computation and use a lower validated voltage/frequency pair during idle or light work. Lower frequency may increase completion time, so energy savings depend on the workload and idle behavior.
 
-**In Linux:** the **cpufreq** framework with governors (`schedutil`, `ondemand`, `performance`, `powersave`), OPP tables in the device tree, a clock driver and a regulator (PMIC) driver; on Arm servers and newer SoCs, firmware (SCMI) performs the change. Check with `cpupower frequency-info` or `/sys/devices/system/cpu/cpu0/cpufreq/`.
+#### 3. Safe transition ordering
 
-**On MCUs:** switch between run modes or PLL settings (e.g. STM32L4 range 1/range 2), run from a slower clock when idle, and use voltage scaling registers.
+When increasing frequency, raise voltage first if required. When reducing voltage, lower frequency first. Respect clock stabilization, regulator ramp times and validated operating points.
 
-**DVFS vs "race to idle":** sometimes it is better to run at full speed, finish quickly and go into a deep sleep state, because static (leakage) power and the rest of the system (memory, radio) keep consuming power while the CPU works slowly. The right choice depends on how much the sleep states save; measure.
+#### 4. Linux implementation
 
-**Related techniques:** clock gating (stop clocks to unused blocks), power gating (switch off domains), big.LITTLE task placement, and thermal throttling (reducing the OPP when the chip gets too hot).
+Linux commonly uses the cpufreq subsystem with governors and an operating-point table supplied by platform firmware or device tree. Thermal management can restrict the available frequencies.
+
+**Interview takeaway:** DVFS selects safe voltage/frequency pairs, not arbitrary values. Optimize energy and deadlines together; lower instantaneous power does not always mean lower total energy.
 
 ### What are the GPIO modes, and what are drive strength and slew rate? {E}
 **Short answer:** A GPIO pin can be configured as an **input** (floating, with pull-up, or with pull-down), an **output** (push-pull or open-drain), an **alternate function** (controlled by a peripheral such as UART TX or a timer PWM output), or **analog** (digital buffer disconnected, for ADC/DAC). Outputs also have configurable **drive strength** (how much current the pin can source or sink while keeping valid logic levels) and **slew rate/speed** (how fast the edges are).
