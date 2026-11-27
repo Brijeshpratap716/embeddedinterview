@@ -353,6 +353,12 @@ void rw_write_unlock(rwlock_t *l)
 
 **Alternatives:** seqlocks (writers never wait for readers, readers retry), RCU (readers take no lock at all; writers publish new copies), POSIX `pthread_rwlock_t`, Linux `rw_semaphore`.
 
+#### Reader/writer timeline
+
+R1 and R2 acquire read access concurrently. W1 arrives and increments waiting_writers; it waits until both readers finish. R3 arrives but also waits because a writer is pending. The last reader signals W1; after writing, W1 wakes another pending writer or broadcasts to readers if no writers remain.
+
+The invariant is writer implies readers==0, and readers>0 implies writer==0. Every update to these counters is protected by the internal mutex; the logical read/write lock remains held while the internal mutex is released. This is writer preference, not strict FIFO fairness: continuous writers may starve readers. Recursive read acquisition and read-to-write upgrade are unsupported and can deadlock. Cancellation while waiting needs cleanup that adjusts waiting_writers and wakes eligible peers.
+
 ### Implement a reference counter for a shared object. {M}
 **Short answer:** Store an atomic count in the object. Each new owner calls `get` (atomic increment). Each owner calls `put` when done (atomic decrement); the caller that brings the count to zero frees the object. Use relaxed ordering for the increment, release ordering for the decrement, and an acquire fence before freeing so the freeing thread sees all other owners' writes.
 
