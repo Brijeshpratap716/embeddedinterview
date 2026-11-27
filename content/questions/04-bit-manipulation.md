@@ -395,35 +395,52 @@ This is useful for bit-oriented protocols, some CRC implementations and bit-orde
 **Interview takeaway:** A byte swap preserves the bits within each byte. Bit reversal reverses every selected bit; a fixed width must be specified.
 
 ### How do you reverse the bits of a 32-bit integer? {M}
-**Short answer:** Swap progressively larger groups of bits (1, 2, 4, 8, then 16) using masks. It runs in constant time with no loop. On Cortex-M3 and later it is a single `RBIT` instruction.
+A 32-bit bit reversal maps bit i to bit 31-i. It can be implemented with a loop or a fixed sequence of mask-and-shift operations.
+
+#### 1. Simple loop
 
 ```c
-uint32_t reverse_bits(uint32_t x)
+uint32_t reverse32(uint32_t n)
 {
-    x = ((x >> 1) & 0x55555555u) | ((x & 0x55555555u) << 1);  /* swap adjacent bits   */
-    x = ((x >> 2) & 0x33333333u) | ((x & 0x33333333u) << 2);  /* swap bit pairs       */
-    x = ((x >> 4) & 0x0F0F0F0Fu) | ((x & 0x0F0F0F0Fu) << 4);  /* swap nibbles         */
-    x = ((x >> 8) & 0x00FF00FFu) | ((x & 0x00FF00FFu) << 8);  /* swap bytes           */
-    return (x >> 16) | (x << 16);                             /* swap 16-bit halves   */
+    uint32_t out = 0;
+    for (unsigned i = 0; i < 32; i++) {
+        out = (out << 1) | (n & 1U);
+        n >>= 1;
+    }
+    return out;
 }
 ```
 
-**How the masks work:** `0x5` is `0101`, so `0x55555555` selects the even bits and `0xAAAAAAAA` the odd bits. `0x3` = `0011` selects the low pair in each nibble, and `0x0F` the low nibble in each byte. Each line moves the selected group up and the other group down.
+For input 0x00000001, the result is 0x80000000.
 
-**Example:** `reverse_bits(0x00000001) == 0x80000000`; `reverse_bits(0x0000000F) == 0xF0000000`.
-
-**Cost:** 5 steps for 32 bits (log₂ 32), versus 32 iterations for the loop version.
-
-**Using the hardware:**
+#### 2. Parallel bit reversal
 
 ```c
-#include "cmsis_compiler.h"
-uint32_t r = __RBIT(x);     /* Cortex-M3/M4/M7/M33 */
+uint32_t reverse32_fast(uint32_t x)
+{
+    x = ((x & 0x55555555U) << 1) |
+        ((x >> 1) & 0x55555555U);
+    x = ((x & 0x33333333U) << 2) |
+        ((x >> 2) & 0x33333333U);
+    x = ((x & 0x0F0F0F0FU) << 4) |
+        ((x >> 4) & 0x0F0F0F0FU);
+    x = ((x & 0x00FF00FFU) << 8) |
+        ((x >> 8) & 0x00FF00FFU);
+    return (x << 16) | (x >> 16);
+}
 ```
 
-GCC also has `__builtin_bitreverse32` in recent versions (Clang has had it for longer).
+Each stage swaps neighboring groups of 1, 2, 4, 8 and 16 bits. After all five stages every bit has moved to its reversed position.
 
-**Follow-up:** "Reverse only the lower `k` bits?" `reverse_bits(x) >> (32 - k)` for `1 ≤ k ≤ 32` (handle `k == 32` without the shift, because shifting by 0 is fine but shifting by 32 is not).
+#### 3. ARM alternative
+
+```asm
+RBIT W0, W0
+```
+
+AArch64 provides RBIT. Some Cortex-M implementations also support bit reversal directly; use a documented intrinsic if available.
+
+**Interview takeaway:** Bit reversal is not a byte swap. The loop is simple, the mask-based version has fixed operation count, and hardware can provide an even more efficient implementation.
 
 ### How do you swap the odd and even bits of a number? {M}
 **Short answer:** Mask the odd bits with `0xAAAAAAAA` and shift them right by one, mask the even bits with `0x55555555` and shift them left by one, then OR the two halves.
