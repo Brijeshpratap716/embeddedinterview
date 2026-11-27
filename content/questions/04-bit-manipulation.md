@@ -554,35 +554,45 @@ Linux provides FIELD_GET and FIELD_PREP for suitably defined contiguous masks, a
 **Interview takeaway:** Extract with mask then shift; insert with clear then OR. Do not alter reserved bits or blindly use RMW on special registers.
 
 ### How do you check if two integers have opposite signs? {E}
-**Short answer:** `(a ^ b) < 0`. XOR of two numbers has its sign bit set only when the two sign bits differ, so the result is negative exactly when the signs are opposite.
+Two integers have opposite signs when exactly one is negative. Zero is nonnegative in this test.
+
+#### 1. Portable C implementation
 
 ```c
 #include <stdbool.h>
 
-bool opposite_signs(int a, int b)
+bool opposite_sign(int a, int b)
 {
-    return (a ^ b) < 0;
+    return (a < 0) != (b < 0);
 }
 ```
 
-**Example**
+This avoids arithmetic overflow and does not depend on integer representation.
 
+#### 2. Bitwise alternative
+
+On a conventional two's-complement system:
+
+```c
+bool opposite = (a ^ b) < 0;
 ```
-a =  5  -> 0000...0101
-b = -3  -> 1111...1101
-a ^ b   -> 1111...1000  (sign bit 1, negative) -> opposite signs
 
-a = -5, b = -3 -> sign bits both 1 -> XOR sign bit 0 -> same sign
-```
+XOR makes the sign bit one when the two sign bits differ. The comparison form above is clearer and portable across C implementations.
 
-**Edge cases**
+| a | b | Result |
+|---:|---:|---|
+| -5 | 3 | True |
+| 5 | 3 | False |
+| -5 | -3 | False |
+| -5 | 0 | True (negative vs nonnegative) |
 
-- Zero counts as positive, so `opposite_signs(0, -1)` is true and `opposite_signs(0, 5)` is false. Say this out loud in an interview.
-- No overflow is possible: XOR never overflows, unlike `a * b < 0`, which can overflow for large values (undefined behaviour for signed types).
+If the requirement is strictly positive versus strictly negative, explicitly reject zero.
 
-**Readable alternative:** `(a < 0) != (b < 0)`. Modern compilers generate the same code, so this is preferable in production.
+#### 3. Why not multiply?
 
-**Where it is used:** detecting a zero crossing in a signal (consecutive samples with opposite signs), and overflow checks: for `s = a + b`, overflow happened if `a` and `b` have the same sign and `s` has a different sign: `((a ^ s) & (b ^ s)) < 0`. Compute `s` with unsigned arithmetic so the addition itself is not undefined.
+Testing a*b < 0 can overflow signed integers and gives different zero semantics.
+
+**Interview takeaway:** Compare sign conditions directly. Do not multiply values just to determine their signs.
 
 ### How do you check if a number is even or odd using bitwise operators? {E}
 **Short answer:** Test the lowest bit: `(n & 1) == 0` means even and `(n & 1) == 1` means odd. Every odd number has bit 0 set, because all other bits contribute even values.
