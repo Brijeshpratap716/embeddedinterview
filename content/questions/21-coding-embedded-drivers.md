@@ -230,14 +230,14 @@ int spi_transfer(spi_t *s, const uint8_t *tx, uint8_t *rx, size_t len, uint32_t 
     cs_low();
     for (size_t i = 0; i < len; i++) {
         uint32_t t = timeout;
-        while (!(s->SR & SPI_SR_TXE))  if (--t == 0) { rc = -1; goto out; }
+        while (!(s->SR & SPI_SR_TXE))  if (t == 0 || --t == 0) { rc = -1; goto out; }
         *(volatile uint8_t *)&s->DR = tx ? tx[i] : 0xFF;          /* dummy byte for read-only */
         t = timeout;
-        while (!(s->SR & SPI_SR_RXNE)) if (--t == 0) { rc = -1; goto out; }
+        while (!(s->SR & SPI_SR_RXNE)) if (t == 0 || --t == 0) { rc = -1; goto out; }
         uint8_t b = *(volatile uint8_t *)&s->DR;                  /* always read to clear RXNE */
         if (rx) rx[i] = b;
     }
-    { uint32_t t = timeout; while ((s->SR & SPI_SR_BSY) && --t) { } }   /* last bit fully out */
+    { uint32_t t = timeout; while (s->SR & SPI_SR_BSY) { if (t == 0 || --t == 0) { rc = -1; goto out; } } }   /* last bit fully out */
 out:
     cs_high();
     return rc;
@@ -273,6 +273,10 @@ CS high
 **Shared bus with several devices:** each device has its own CS; reconfigure mode and speed per device; protect the bus with a mutex in an RTOS so two tasks do not interleave transactions.
 
 **Performance:** byte-by-byte polling has gaps between bytes (software overhead). For long transfers (displays, flash, SD cards), use DMA for both TX and RX channels and wait for the RX DMA complete (RX finishes last). On Linux, the equivalent is `spi_sync()` with `spi_transfer` structures or the `spidev` interface from user space.
+
+#### Full-duplex register read example
+
+For a sensor using bit 7 as a read-command flag, reading register 0x12 may transmit 0x92 followed by 0xFF. The first received byte may be undefined; the second may be the requested data. Check the sensor's exact opcode and dummy-cycle rules. Hold CS across both bytes, configure the correct CPOL/CPHA and wait for the documented end-of-transfer condition before deasserting CS. On timeout, stop or recover the controller according to its hardware rules; deasserting CS alone may not abort a running peripheral. Use a monotonic timer for production deadlines.
 
 ### Write I2C register read and write functions. {M}
 **Short answer:** A **register write** is: START, device address + W, register address, data byte(s), STOP. A **register read** is: START, address + W, register address, then a **repeated START**, address + R, read the data bytes (ACK each except the last, which gets a NACK), STOP. Every step needs a timeout and a check for NACK, and the driver must be able to recover a stuck bus.
