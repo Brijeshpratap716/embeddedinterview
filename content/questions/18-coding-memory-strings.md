@@ -1069,6 +1069,21 @@ int main(void)
 
 **Library alternative:** `for (p = strchr(s, c); p; p = strchr(p + 1, c)) n++;` — also O(n), useful when `strchr` is optimised with word-at-a-time scanning.
 
+#### Count over a raw receive buffer
+
+```c
+size_t count_byte(const unsigned char *buf,
+                  size_t n, unsigned char target)
+{
+    size_t count = 0;
+    for (size_t i = 0; i < n; ++i)
+        count += buf[i] == target;
+    return count;
+}
+```
+
+Unlike a string traversal, this counts embedded zero bytes. For [0x41,0x00,0x41,0x00], count_byte with target zero returns 2. Always distinguish protocol payload length from NUL termination.
+
 ### Remove duplicate characters from a string (keep first occurrences). {E}
 **Short answer:** Keep a 256-entry 'seen' table and two pointers. For each character read, if it has not been seen, mark it and copy it to the write position; otherwise skip it. Terminate at the write position. This keeps the first occurrence of each character in the original order, in one pass with O(1) extra space.
 
