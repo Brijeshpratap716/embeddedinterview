@@ -316,26 +316,23 @@ Avoid nested locks when possible, do not hold locks across unrelated blocking op
 **Interview takeaway:** Draw the resource dependency graph and eliminate cycles through a consistent locking design.
 
 ### What is a livelock and what is starvation? {M}
-**Short answer:** In a **livelock**, tasks keep running and changing state but make no progress, for example two tasks that detect a conflict, both back off and retry at the same moment forever. **Starvation** means a task never gets the CPU or a resource because others always win; in a fixed-priority RTOS, a high-priority task that never blocks starves every lower-priority task, including the idle task.
+Deadlock, livelock and starvation are different forms of failure to make useful progress.
 
-**Livelock examples and fixes**
+| Problem | Meaning | Example |
+|---|---|---|
+| Deadlock | Tasks wait indefinitely for each other | Circular mutex dependency |
+| Livelock | Tasks actively react but make no progress | Two tasks repeatedly release and retry conflicting locks in synchrony |
+| Starvation | A task is repeatedly denied CPU time or a resource | Always-ready high-priority task prevents low-priority work |
 
-- Two tasks using "try lock A then B; if B fails, release A and retry" in lock-step: add **random back-off** or a fixed lock order.
-- Network devices retransmitting after collisions at the same time: Ethernet's **randomised exponential back-off** exists to avoid exactly this.
-- Two tasks politely yielding to each other forever.
+#### 1. Solutions
 
-**Starvation examples and fixes**
+For deadlock, use a consistent lock order. For livelock, avoid symmetric retry behavior through ownership rules or bounded backoff. For starvation, use suitable scheduling, bounded high-priority workloads and fair resource arbitration when requirements permit.
 
-| Cause | Fix |
-|---|---|
-| High-priority task busy-waits/polls | make it block on events; never poll in a high-priority task |
-| Too much work at high priority | move work to lower priorities, reduce rates, or a faster CPU |
-| Unfair locks (spinlocks, readers starving writers) | fair locks (ticket, FIFO), writer preference |
-| Aging not used in priority schedulers | increase the priority of long-waiting tasks over time (general-purpose OSes) |
+#### 2. Embedded diagnosis
 
-**Symptoms of starvation in an RTOS:** the idle task never runs (CPU load 100%), the watchdog starts resetting the system, low-priority logging or communication stops, and `vApplicationIdleHook` (where you might sleep or kick a watchdog) never executes.
+Track task progress counters, queue depths, lock owners, blocked durations and execution trace. High CPU activity does not establish that the application is progressing.
 
-**Monitoring:** measure CPU load and per-task run time (`configGENERATE_RUN_TIME_STATS`), and track the stack and execution time of high-priority tasks.
+**Interview takeaway:** Deadlock is waiting without progress; livelock is activity without progress; starvation is repeated denial of progress to a particular task.
 
 ### What is a message queue and when should you use one? {E}
 **Short answer:** A message queue is a thread-safe FIFO that copies fixed-size items from senders to receivers, with blocking and timeouts on both ends. Queues decouple producers and consumers, absorb bursts, and avoid shared global data and locks. In FreeRTOS, `xQueueSend` **copies** the item into the queue, so for large data send a pointer (and define who owns and frees the buffer).
