@@ -887,30 +887,62 @@ On failure the logger receives the expression's spelling.
 **Interview takeaway:** These operators operate on preprocessing tokens, not runtime strings or values.
 
 ### What is the difference between #include <file> and #include "file"? {E}
-**Short answer:** `#include <file>` searches only the system include directories and those given with `-I`. `#include "file"` first looks in the directory of the file that contains the `#include`, then falls back to the same paths as `<file>`. Use quotes for your project's own headers and angle brackets for the standard library and third-party SDK headers.
+Both forms of `#include` insert header contents during preprocessing. They differ primarily in **header search rules**.
 
-**Search order with GCC**
+#### 1. Angle brackets
 
-| Form | Searched |
-|---|---|
-| `"file.h"` | directory of the current file → `-iquote` dirs → `-I` dirs → system dirs |
-| `<file.h>` | `-I` dirs → `-isystem` dirs → system dirs (e.g. the toolchain's `include/`) |
+```c
+#include <stdio.h>
+#include <stdint.h>
+```
 
-See the exact list with `arm-none-eabi-gcc -xc -E -v /dev/null`.
+The compiler normally searches configured include directories, including standard library and toolchain headers.
 
-**Why it matters**
+#### 2. Double quotes
 
-- If your project has a header with the same name as a system one (e.g. `config.h`, `time.h`), quotes find yours first; angle brackets find the system one. Avoid such clashes.
-- Headers included with `-isystem` get fewer warnings, which is useful for noisy vendor code but can hide real problems.
+```c
+#include "driver.h"
+#include "board.h"
+```
 
-**Good include practice**
+Compilers such as GCC normally look in the directory containing the including file first, followed by configured quote/include search paths.
 
-- Each header should be self-contained (include what it needs) and have include guards.
-- Each `.c` file includes its own header first, which proves the header is self-contained.
-- Do not put definitions (variables, non-inline functions) in headers.
-- Prefer forward declarations (`struct uart;`) over including big headers when only a pointer is needed; it speeds up builds and reduces coupling.
+#### 3. Example project
 
-**Embedded note:** vendor SDKs (CMSIS, STM32 HAL, nRF SDK) are usually added with `-I`, and you include them with angle brackets or quotes depending on the project's convention. Consistency matters more than the choice.
+```text
+project/
+    main.c
+    board.h
+    drivers/
+        uart.h
+```
+
+```c
+// main.c
+#include "board.h"
+#include "uart.h"
+#include <stdint.h>
+```
+
+Build with GCC:
+
+```sh
+gcc -I drivers -c main.c -o main.o
+```
+
+The `-I` option adds a directory to the header search path.
+
+#### 4. Comparison
+
+| Feature | Angle brackets | Double quotes |
+|---|---|---|
+| Common use | Library and SDK headers | Project headers |
+| Typical first search | Configured include paths | Including file's directory |
+| Example | `<stdint.h>` | `"board.h"` |
+
+Exact search order is implementation-defined and can be changed by build flags. Both forms can find project headers if the paths are configured.
+
+**Interview takeaway:** Use quotes for nearby project headers and angle brackets for standard or configured SDK headers. `#include` is a preprocessing operation, not a linker operation.
 
 ### What are include guards and #pragma once? {E}
 **Short answer:** Include guards stop a header from being processed twice in the same translation unit (which would cause redefinition errors for types and inline functions). The classic form uses `#ifndef`/`#define`/`#endif`; `#pragma once` does the same in one line and is supported by all major compilers, but it is not part of the C standard.
