@@ -157,25 +157,24 @@ Use frameworks such as Unity/Ceedling or a project-specific test harness. Check 
 **Interview takeaway:** Unit tests do not prove electrical timing or register side effects; complement them with integration and hardware tests.
 
 ### What is hardware-in-the-loop (HIL) testing, and how do you set up CI for firmware? {M}
-**Short answer:** **CI for firmware** builds every configuration and target on each commit, runs static analysis and host unit tests, checks code size, and produces versioned artifacts. **Hardware-in-the-loop** testing then flashes the build onto real boards (or a board farm) connected to test equipment that simulates the environment — sensors, buses, power supplies, network — and runs automated system tests that check behaviour, timing and recovery. Simulation-based testing (QEMU, Renode) sits in between: whole firmware images on virtual hardware, faster and easier to scale than real boards.
+Hardware-in-the-loop testing runs production or representative firmware on physical hardware while a test system supplies controlled inputs and checks outputs.
 
-**Typical pipeline**
-
-```
-commit → build (all boards, debug + release, warnings as errors)
-       → static analysis (cppcheck/clang-tidy/MISRA checker), formatting check
-       → host unit tests + sanitizers + coverage report
-       → size report (fail if flash/RAM grows beyond a budget)
-       → simulation tests (Renode/QEMU) for boot, protocols, RTOS behaviour
-       → HIL: flash test boards, run system tests (pytest + serial/CAN/SPI tools, power cycling)
-       → artifacts: signed images, map files, ELF with symbols, release notes
+```text
+CI runner -> flash DUT -> stimulus generator
+                |            |
+                +-> UART / GPIO / bus capture -> assertions
 ```
 
-**HIL rig components:** a host PC or Raspberry Pi per rack, debug probes for flashing, USB-controlled relays/power switches for power cycling, programmable supplies (brown-out tests), signal generators or DACs to simulate sensors, CAN/UART/SPI adapters, logic analysers with scripted captures, and a test framework (pytest, Robot Framework, LabGrid, Lava).
+#### Pipeline
+1. Build and run host unit tests.
+2. Reserve a board and flash the artifact.
+3. Reset/power-cycle through a fixture.
+4. Inject protocol traffic, timing events or sensor stimuli.
+5. Assert response, latency and recovery; upload logs and waveforms.
 
-**What HIL catches that unit tests cannot:** timing and interrupt interactions, peripheral configuration errors, boot and update procedures (including failed updates and rollbacks), power-loss behaviour, long-duration stability (leaks, counter overflows), and hardware revision differences.
+Provide timeouts, fixture health checks and exclusive board ownership. Separate flaky infrastructure from product defects.
 
-**Tips:** make the firmware testable — a test command shell or RPC over UART/USB, deterministic logs, and version reporting — and keep HIL tests stable (flaky tests get ignored).
+**Interview takeaway:** HIL verifies real integration and timing; keep tests repeatable and retain the exact binary and board revision.
 
 ### What is code coverage, and what coverage levels do safety standards require? {M}
 **Short answer:** Code coverage measures which parts of the code the tests executed. **Statement coverage** checks every line ran; **branch (decision) coverage** checks every `if`/`switch` took each outcome; **MC/DC** (Modified Condition/Decision Coverage) checks that each individual condition in a decision independently affects the outcome. Coverage shows what is **not** tested — it does not prove the tested code is correct. Safety standards require higher levels for more critical software: e.g. DO-178C requires MC/DC for Level A avionics software, and ISO 26262 recommends MC/DC for ASIL D.
