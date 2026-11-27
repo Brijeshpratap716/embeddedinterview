@@ -624,29 +624,35 @@ Include interrupt interference, scheduling/context-switch costs, blocking, relea
 **Interview takeaway:** Average CPU utilization alone cannot prove deadlines. Use an appropriate worst-case response-time analysis and validate on the target.
 
 ### How much stack does a task need and how do you size it? {M}
-**Short answer:** Estimate it from the worst-case call depth of the task's code (local variables, saved registers, function arguments, padding) plus the context-switch frame (16 words on Cortex-M, plus 18 more for FP context if the task uses the FPU, and on some ports a little more). Then **measure** under worst-case conditions with the high-water mark and add a safety margin (20–50%). Interrupts use the main stack on Cortex-M, so they do not need to be included in task stacks.
+An RTOS task stack must accommodate its maximum active call chain, saved registers, local objects and any exception context stored on that stack.
 
-**Step by step**
+#### 1. Estimate the size
 
-1. **Static analysis:** compile with `-fstack-usage` to get each function's frame size, and combine with the call graph (`-fcallgraph-info`, puncover, or commercial tools) to get the worst path. Recursion and function pointers need manual bounds.
-2. **Add** the context frame and any library calls that are stack-hungry (`printf`/`snprintf` with floating point can use 500 bytes to 1 KB or more).
-3. **Measure:** run stress tests that exercise every path, then check `uxTaskGetStackHighWaterMark(handle)` (minimum free stack ever, in words). FreeRTOS fills stacks with `0xA5` to measure this.
-4. **Margin:** keep 25% or more free in the worst measured case, since tests rarely hit the true worst case.
+1. Analyze function call depth and stack usage.
+2. Include library calls, context-switch state and FPU state if used.
+3. Account for interrupt/exception frames according to the architecture.
+4. Add a margin for observed and analyzed worst-case usage.
 
-**Protection during development and in the field**
+Avoid large automatic buffers and unbounded recursion on small task stacks.
 
-- `configCHECK_FOR_STACK_OVERFLOW = 2` (check pattern at each switch) and `vApplicationStackOverflowHook()`.
-- MPU guard regions (FreeRTOS-MPU, Zephyr `CONFIG_HW_STACK_PROTECTION`) or Armv8-M PSPLIM for immediate faults.
-- Log the minimum free stack per task in diagnostics.
+#### 2. FreeRTOS watermark
 
-**Reducing stack needs**
+```c
+UBaseType_t unused =
+    uxTaskGetStackHighWaterMark(task);
+```
 
-- Move large buffers out of local variables into static memory or pools.
-- Avoid `printf`-family functions in small tasks; use a logging task.
-- Avoid deep call chains and recursion; avoid variable-length arrays and `alloca`.
-- Watch for large structs passed by value.
+This returns the minimum observed unused stack depth, in stack units. For a port with four-byte StackType_t, a watermark of 32 units corresponds to 128 bytes. Confirm the API and port units rather than assuming bytes.
 
-**Typical values:** simple tasks 128–256 words (512 B–1 KB) on Cortex-M; tasks using TLS, filesystems or networking several KB.
+#### 3. Example
+
+If a task has a 1024-byte stack and testing shows a minimum of 128 unused bytes, the observed maximum usage is 896 bytes. This is not proof that all future call paths fit.
+
+#### 4. Protection
+
+Use configured RTOS stack-overflow checking, MPU guards where available, compiler stack-usage reports and representative stress tests.
+
+**Interview takeaway:** Size stacks using worst-case analysis plus measured margins. Hardware exception stacking and task stack units are common sources of sizing mistakes.
 
 ### What are software timers in an RTOS? {E}
 **Short answer:** Software timers run a callback function after a delay, either once (one-shot) or repeatedly (auto-reload), without needing a dedicated task per timer. In FreeRTOS all timer callbacks execute in a single **timer service (daemon) task**, so callbacks must be short and must never block, otherwise every other timer is delayed.
