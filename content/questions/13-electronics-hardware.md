@@ -20,22 +20,23 @@ Measure the voltage across a known series resistor and calculate current using I
 **Interview takeaway:** Use these equations to size components and validate measured values; do not treat a GPIO as an unlimited voltage source.
 
 ### What are pull-up and pull-down resistors? {E}
-**Short answer:** A pull-up resistor connects a signal to the supply so the line reads a defined **high** when nothing actively drives it; a pull-down connects it to ground for a defined **low**. Without one, an unconnected (floating) CMOS input picks up noise, reads random values and can draw extra current because the input stage sits halfway between levels. Typical values are 4.7 kΩ–100 kΩ; lower values give faster edges and better noise immunity but waste more current when the line is driven to the opposite level. Most MCUs have selectable internal pulls of roughly 30–50 kΩ.
+Pull-up and pull-down resistors establish a predictable logic level when no active driver is present.
 
-**Where they are needed**
+```text
+3.3 V                     GPIO
+  |                         |
+  R (pull-up)               R (pull-down)
+  |                         |
+GPIO ---- switch ---- GND  GND
+```
 
-| Situation | Typical choice |
-|---|---|
-| Button to ground | pull-up (internal is fine), button pulls low |
-| Open-drain buses (I2C, 1-Wire, interrupt lines shared by several devices) | external pull-up, sized for rise time |
-| Reset lines (nRST) | pull-up so the device runs by default |
-| Boot-mode/strap pins | pull-up or pull-down to select the boot mode at reset |
-| Chip selects | pull-up so devices stay deselected while the MCU is in reset |
-| MOSFET gates | pull-down (or pull-up for P-channel) so loads stay off while the MCU boots |
+#### 1. Example
+With a pull-up, an open switch reads high and a closed switch reads low. With a 10 kΩ pull-up to 3.3 V, pressing the switch draws approximately 0.33 mA.
 
-**Choosing a value:** balance rise time (R × C of the line: 10 kΩ with 50 pF gives τ = 0.5 µs) against current when the line is low (V/R) and the strength of the driving device; weak pulls (100 kΩ+) are sensitive to leakage and noise.
+#### 2. Selecting resistance
+A weaker pull saves current but increases the RC rise time and susceptibility to leakage/noise. A stronger pull switches faster but consumes more current when driven low. Internal pulls are convenient but have relatively wide tolerance.
 
-**Firmware note:** internal pull-ups are configured in the GPIO registers and take effect only after the code runs; anything that must be defined during reset (enables, gates, boot pins) needs external resistors.
+**Interview takeaway:** A floating input is not reliably zero or one. I²C specifically needs pull-ups because devices drive the bus low and release it for high.
 
 ### What are the GPIO output modes (push-pull vs open-drain) and input options? {E}
 **Short answer:** A **push-pull** output actively drives both high (to VDD) and low (to ground), giving fast, strong edges for normal signals. An **open-drain** output can only pull low or release the line (high impedance); a pull-up resistor makes the high level. Open-drain allows several devices to share one line (wired-AND, as in I2C and shared interrupt lines), lets a device "drive" a line to a different voltage than its own supply (within the pin's tolerance), and prevents shorts when two outputs disagree. Inputs can be floating, pulled up or down, with optional Schmitt trigger and analog mode.
