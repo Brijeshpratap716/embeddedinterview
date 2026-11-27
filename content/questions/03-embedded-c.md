@@ -1260,39 +1260,40 @@ Record relevant state, error codes, counters and reset causes. Avoid flooding lo
 **Interview takeaway:** Never ignore error returns or wait forever on unreliable hardware. Recovery must be bounded, observable and consistent with the system's safety requirements.
 
 ### What does the inline assembly __asm volatile("" ::: "memory") do? {H}
-**Short answer:** It is a **compiler barrier**. The empty assembly statement with a `"memory"` clobber tells the compiler that the (empty) code might read or write any memory, so it must not move memory accesses across this point, must write out values it is holding in registers before it, and must reload values from memory after it. It emits **no instruction**, so it does not stop the CPU or the bus from reordering anything.
+The GNU C expression `__asm__ volatile("" ::: "memory")` is an empty inline assembly statement with a memory clobber. It acts as a **compiler memory barrier**.
+
+#### 1. Meaning of each part
 
 ```c
-#define compiler_barrier() __asm volatile ("" ::: "memory")
-
-flag_data = compute();
-compiler_barrier();        /* the store to flag_data is emitted before the store to ready */
-ready = 1;
+__asm__ volatile("" ::: "memory");
 ```
 
-**What each part means**
+- Empty instruction string: emits no actual CPU instruction.
+- volatile: the compiler retains the assembly operation under its documented rules.
+- memory clobber: tells the compiler that memory may have been read or changed by the assembly.
 
-- `__asm volatile`: do not delete or move this statement (volatile asm).
-- `""`: no instructions.
-- `::: "memory"`: the clobber list says "memory may have changed", which forces the compiler to forget cached values.
+The compiler must account for those possible effects when optimizing memory accesses across the statement.
 
-**Where it is used**
+#### 2. Why it is not a CPU barrier
 
-- The Linux kernel's `barrier()` is exactly this.
-- Inside lock and critical-section macros, so that accesses to protected data are not moved outside the lock by the compiler (CMSIS `__disable_irq()` includes a memory clobber for the same reason).
-- Benchmarking, to stop the compiler from optimising away or reordering the code being measured.
-- Preventing the compiler from merging or removing memory accesses in tight polling loops on non-volatile data (better: use `volatile` or atomics).
+```text
+C source --> compiler memory barrier --> machine code
+                                      (no fence instruction)
+CPU execution --> architecture memory model still applies
+```
 
-**Compiler barrier vs hardware barrier**
+The CPU can still reorder accesses permitted by the architecture. The compiler may also move computations that do not depend on affected memory.
 
-| | Compiler barrier | Hardware barrier (`DMB`/`DSB`) |
-|---|---|---|
-| Prevents compiler reordering | yes | yes (CMSIS versions include a memory clobber) |
-| Prevents CPU/bus reordering | no | yes |
-| Instructions emitted | none | one |
-| Enough for | single-core code vs interrupts, when the CPU itself does not reorder visibly | multi-core, DMA, write buffers, device memory |
+#### 3. Compare with Arm barriers
 
-**C11 equivalents:** `atomic_signal_fence(memory_order_seq_cst)` is a compiler-only fence (for code vs signal handlers/ISRs on the same core); `atomic_thread_fence()` is a full fence that also emits a hardware barrier.
+```c
+__asm__ volatile("" ::: "memory"); // Compiler barrier
+__DMB();                         // CMSIS memory-ordering barrier
+```
+
+The CMSIS intrinsic has platform-specific semantics and emits the appropriate barrier instruction. Use Linux barrier APIs in kernel code.
+
+**Interview takeaway:** A compiler barrier limits compiler transformations; it does not provide CPU ordering, atomicity, cache maintenance or C11 inter-thread synchronization.
 
 ### How do you make a firmware image position independent or relocatable? {H}
 **Short answer:** Compile with position-independent options (`-fPIC`/`-fpie`, or on Cortex-M `-fropi`/`-frwpi` with Arm Compiler, or GCC's `-msingle-pic-base -mpic-register=r9 -mno-pic-data-is-text-relative` for separate data), so code uses PC-relative addressing and data is reached through a base register or a global offset table (GOT) that is fixed up at load time. In practice most MCU firmware is linked at a **fixed address**, and bootloaders support multiple images with fixed slots or by **swapping** images rather than relocating them.
