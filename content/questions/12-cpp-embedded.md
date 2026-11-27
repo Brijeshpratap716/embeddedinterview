@@ -407,28 +407,30 @@ The clear register is assumed to accept a direct mask write. Build separate abst
 **Interview takeaway:** Types can prevent invalid register operations at compile time. They cannot replace the hardware manual, barriers, endian handling or concurrency design.
 
 ### What is the static initialisation order fiasco? {M}
-**Short answer:** Global and static objects with dynamic initialisation (constructors that run before `main`) in **different translation units** are initialised in an unspecified order. If one global's constructor uses another global defined in a different `.cpp` file, it may run before that object is constructed and use garbage. On embedded systems, there is a second problem: global constructors run from start-up code, possibly before clocks, memory (external SDRAM) or peripherals are initialised.
+The static initialization order fiasco occurs when a global object in one C++ translation unit depends on another global object whose dynamic initialization has not yet occurred.
+
+#### 1. Example
 
 ```cpp
-// uart.cpp
-Uart debug_uart(USART2, 115200);            // constructor configures hardware
+// file1.cpp
+extern Device device;
+Logger logger(device);
 
-// logger.cpp
-Logger logger(debug_uart);                  // constructor writes a banner through debug_uart
-// if logger is constructed first, it uses an unconstructed Uart → undefined behaviour
+// file2.cpp
+Device device(/* hardware configuration */);
 ```
 
-**Fixes**
+The initialization order across translation units is not generally a dependency order chosen by the programmer. Logger may observe a device that has not been dynamically initialized.
 
-| Technique | How |
-|---|---|
-| Construct on first use | `Uart &debug_uart() { static Uart u(USART2, 115200); return u; }` — initialised the first time the function runs (thread-safe "magic statics" in C++11; with `-fno-threadsafe-statics` you must ensure first use from one context) |
-| `constexpr` / `constinit` constructors | objects initialised statically at compile time have no order problem |
-| Explicit initialisation | globals with trivial constructors plus an `init()` called from `main` in a defined order, after the clock and board setup |
-| Placement new into static storage | construct objects explicitly in `main` (see the placement new question) |
-| Keep globals in one translation unit | order within one file is the definition order |
+#### 2. Solutions
 
-**Embedded advice:** keep global constructors trivial (no hardware access), initialise hardware explicitly from `main` in a documented order, and check that the start-up code actually runs `__libc_init_array` (otherwise global constructors never run at all, a common bug with custom start-up files). Destruction order at exit is the reverse, which rarely matters in firmware that never exits.
+Prefer constant initialization where possible (constexpr/constinit as applicable), explicitly initialize dependent resources in a board-init sequence, or use function-local static objects with documented initialization/lifetime behavior.
+
+#### 3. Embedded caveat
+
+Global constructors may run before application hardware initialization. Function-local static guards can require runtime synchronization; verify behavior if they are used from multiple threads or interrupt contexts.
+
+**Interview takeaway:** Avoid hidden hardware dependencies in global constructors. Explicit startup ordering makes firmware initialization and failure handling easier to reason about.
 
 ### How do you call C code from C++ and C++ from C (extern "C")? {E}
 **Short answer:** C++ compilers **mangle** function names to encode namespaces and parameter types (for overloading), while C uses plain names. Declaring functions `extern "C"` tells the C++ compiler to use C linkage (unmangled names and the C calling convention), so C and C++ object files can link together. C headers used from C++ wrap their declarations in `extern "C"` guarded by `#ifdef __cplusplus`; C++ functions that C code must call (including interrupt handlers referenced by a C vector table) are defined `extern "C"`.
