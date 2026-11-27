@@ -434,6 +434,14 @@ failed:
 
 **Interview takeaway:** Virtual allocation and physical backing are separate; demand paging often defers physical allocation until access.
 
+#### Why a 4096-byte allocation does not equal one physical page
+
+Suppose malloc returns virtual address 0x40001020. The requested interval of 4096 bytes ends just before 0x40002020. With 4 KiB pages, it spans two pages because the starting offset is 0x20. The allocator may already have mapped and touched either page. An initial write can generate a minor fault for anonymous demand allocation; later accesses usually reuse the established mapping.
+
+On a Linux system, compare virtual versus resident usage using /proc/PID/maps and /proc/PID/smaps or smaps_rollup. Use getconf PAGESIZE to check the configured page size. The allocator can reuse freed chunks without returning them to the kernel immediately; a large mapping may instead be unmapped, depending on allocator behavior.
+
+Virtual memory overcommit means a successful allocation does not universally guarantee that every future page touch can be backed under memory pressure. Also, physically contiguous backing is not guaranteed. For DMA in a Linux driver, allocate/map using the kernel DMA API, rather than treating a malloc pointer as a bus address.
+
 ### What is cache coherency? {M}
 **Short answer:** Hardware keeps coherent copies of a cache line consistent across cores. A writer typically obtains ownership and invalidates other copies; a later coherent reader obtains the updated value. DRAM need not be updated immediately.
 
