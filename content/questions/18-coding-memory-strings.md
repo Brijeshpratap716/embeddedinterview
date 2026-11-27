@@ -1288,6 +1288,10 @@ permute(abc, 0)
 
 **Limits:** 10 characters give 3,628,800 permutations; mention that the output size, not the algorithm, is the problem. Recursion depth is n, so stack use is small.
 
+#### Why backtracking restores the string
+
+At recursion depth l, positions before l are fixed. Choose one character for position l, recurse over the remaining suffix, then undo the swap so the next choice starts from the same state. For "aab", skipping duplicate choices at each depth yields aab, aba and baa. The number of unique permutations is n! divided by the factorial of each character multiplicity. Recursion depth is O(n), and printing each result costs O(n). Handle the empty string as one empty permutation if required.
+
 ### Find the longest palindromic substring. {M}
 **Short answer:** Every palindrome mirrors around a centre, which is either a character (odd length) or the gap between two characters (even length). For each of the 2n − 1 centres, expand outwards while the characters on both sides match, and keep the longest span found. Time O(n²), space O(1).
 
