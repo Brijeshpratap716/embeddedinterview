@@ -764,39 +764,33 @@ For a DMA receive buffer, the ISR signals completion and transfers ownership acc
 **Interview takeaway:** Use a handoff instead of sharing mutable state wherever practical. Select synchronization according to ISR priority, CPU count and device ownership.
 
 ### How do you measure task execution time and CPU load in an RTOS? {M}
-**Short answer:** Use the RTOS's run-time statistics (FreeRTOS `configGENERATE_RUN_TIME_STATS` with a fast timer, then `vTaskGetRunTimeStats()`), measure idle time to compute CPU load (`load = 1 − idle time / total time`), toggle GPIOs at task entry/exit and watch them on a logic analyser, or use trace tools (Percepio Tracealyzer, SEGGER SystemView) that record every context switch and interrupt with timestamps.
+Task execution time measures how much CPU time a task consumes; CPU load measures the fraction of time the processor is busy over a defined interval.
 
-**FreeRTOS run-time stats**
+#### 1. Measure elapsed time with a cycle counter
 
-```c
-/* FreeRTOSConfig.h */
-#define configGENERATE_RUN_TIME_STATS 1
-#define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS() dwt_init()      /* e.g. DWT cycle counter */
-#define portGET_RUN_TIME_COUNTER_VALUE()         (DWT->CYCCNT)
-
-/* somewhere in a debug command */
-char buf[512];
-vTaskGetRunTimeStats(buf);   /* "Task  AbsTime  %Time" per task, including IDLE */
-```
-
-The counter should run 10–100× faster than the tick for useful resolution.
-
-**Measuring a single function's WCET**
+On Cortex-M implementations supporting an enabled DWT cycle counter:
 
 ```c
-uint32_t t0 = DWT->CYCCNT;
-filter_update();
-uint32_t cycles = DWT->CYCCNT - t0;
-if (cycles > max_cycles) max_cycles = cycles;      /* keep the worst seen */
+uint32_t start = DWT->CYCCNT;
+work();
+uint32_t elapsed = DWT->CYCCNT - start;
 ```
 
-Run it under worst-case conditions (all interrupts active, caches cold) and record the maximum, not the average.
+Unsigned subtraction handles wrap for intervals shorter than the counter period. Divide cycles by the applicable CPU clock to estimate elapsed time. Interrupts and preemption can contribute to this elapsed measurement.
 
-**GPIO method:** set a pin high at task start, low at the end; an oscilloscope or logic analyser shows execution time, period and jitter for several tasks at once, with no software overhead to speak of. Great for checking real-time behaviour and interrupt latency.
+#### 2. Measure per-task CPU time
 
-**Trace tools** show the whole timeline: which task ran when, blocking reasons, response times and missed deadlines. They are the fastest way to understand priority problems.
+An RTOS trace hook or runtime-statistics facility can accumulate time between context switches. FreeRTOS supports runtime statistics when the relevant timer and configuration are provided. Ensure the statistics timer has sufficient resolution and understand whether interrupt time is attributed to tasks.
 
-**CPU load target:** keep peak load below about 70–80% to leave headroom for worst-case bursts and future features, and alarm in diagnostics if idle time falls below a threshold.
+#### 3. CPU load example
+
+If a single CPU is idle for 25 ms during a 100 ms observation window, estimated non-idle load is 75%, subject to the accounting method.
+
+#### 4. Real-time profiling
+
+Measure worst-case latency, execution time, queue backlog and deadline misses with representative workloads. A GPIO and scope or a hardware trace interface may help when software instrumentation perturbs timing.
+
+**Interview takeaway:** Elapsed time, CPU execution time and response time are distinct. Measure the correct metric and account for interrupts, frequency changes and counter wrap.
 
 ### How is memory allocated in an RTOS, and why prefer static allocation? {M}
 **Short answer:** RTOS objects (task stacks and control blocks, queues, semaphores, timers) can be allocated **dynamically** from an RTOS heap or **statically** from memory you provide. Safety-critical and long-running systems prefer static allocation (or allocation only at start-up) because it cannot fail at run time, cannot fragment, is deterministic, and makes RAM usage visible at link time.
