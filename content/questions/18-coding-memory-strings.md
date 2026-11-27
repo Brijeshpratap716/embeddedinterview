@@ -450,6 +450,12 @@ raw (from malloc)                    aligned (returned, multiple of 64)
 
 **Complexity:** O(1) time; overhead up to `alignment - 1 + sizeof(void *)` bytes per allocation.
 
+#### Example: 64-byte aligned allocation
+
+Suppose malloc returns address 0x1003 (illustrative arithmetic only), and pointer metadata needs 8 bytes. Start rounding at 0x100B, yielding 0x1040. Save the original pointer in the preceding metadata space. The returned address satisfies (address & 63) == 0.
+
+Reserve enough storage for both the adjustment and requested payload. Require alignment at least _Alignof(void *) and check all size arithmetic; prefer the platform's aligned allocation API when available. An aligned CPU pointer is not automatically a DMA bus address or a coherent buffer.
+
 ### Implement calloc() on top of your allocator. {E}
 **Short answer:** `calloc(count, size)` allocates `count * size` bytes and zeroes them. The key part is checking that the multiplication does not overflow before allocating — if `count > SIZE_MAX / size`, return NULL — and then calling `memset(p, 0, total)` on success.
 
