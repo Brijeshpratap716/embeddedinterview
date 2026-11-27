@@ -649,44 +649,43 @@ DMB ISH orders appropriate accesses within the inner-shareable domain; other sco
 **Interview takeaway:** Memory type controls access behavior; shareability describes relevant observer domains. Neither automatically makes arbitrary DMA devices coherent.
 
 ### How do Arm multi-core processors support parallel programming? {M}
-**Short answer:** Arm multi-core clusters provide **hardware cache coherency** between cores (snoop control unit, coherent interconnects), **atomic and exclusive-access instructions** for locks and lock-free data structures (`LDXR`/`STXR`, and Armv8.1 LSE atomics like `LDADD`, `CAS`, `SWP`), **memory barriers** (`DMB`, `DSB`, `ISB`, and load-acquire/store-release `LDAR`/`STLR`) because the memory model is weakly ordered, **event signalling** (`WFE`/`SEV`) for power-efficient spinning, **inter-processor interrupts** via the GIC (SGIs), and SIMD (Neon/SVE) inside each core. Heterogeneous designs (big.LITTLE, DynamIQ) add cores with different performance and power.
+Arm multicore systems run multiple instruction streams simultaneously. Shared-memory communication depends on hardware cache coherency and software synchronization.
 
-**Building blocks**
+#### 1. Typical arrangement
 
-| Feature | Purpose |
-|---|---|
-| Cache coherency (MOESI, SCU/CCI/CMN) | every core sees the latest value of shared data without software flushes |
-| `LDXR`/`STXR` (exclusive monitor) | atomic read-modify-write by retry loop (Armv8.0) |
-| LSE atomics (`LDADD`, `CAS`, `SWP`) | single-instruction atomics that scale better under contention (Armv8.1+) |
-| Barriers and acquire/release | enforce ordering on a weakly ordered memory model |
-| `WFE`/`SEV` | a waiting core sleeps until another core signals (spinlocks) |
-| GIC SGIs | one core interrupts another (scheduler IPIs, TLB shootdown, function calls on other CPUs) |
-| Generic timer per core | per-core scheduling ticks with a common time base |
-| big.LITTLE / DynamIQ | run demanding threads on big cores, background work on LITTLE cores |
+```text
+Core 0 / L1       Core 1 / L1
+      |                 |
+      +-- coherent interconnect -- shared cache / RAM
+```
 
-**Weak memory ordering example (message passing):**
+A coherency protocol coordinates cached copies of shared memory. It does not make every multi-instruction operation atomic.
+
+#### 2. Parallel programming example
 
 ```c
 #include <stdatomic.h>
 
-int data;
-atomic_int ready;
+static atomic_uint completed;
 
-void producer(void) { data = 42; atomic_store_explicit(&ready, 1, memory_order_release); }   /* STLR */
-int consumer(void)
+void worker_finished(void)
 {
-    while (!atomic_load_explicit(&ready, memory_order_acquire)) { }                           /* LDAR */
-    return data;   /* guaranteed to see 42 */
+    atomic_fetch_add_explicit(&completed, 1,
+                              memory_order_relaxed);
 }
 ```
 
-Without acquire/release, a core could observe `ready == 1` before the write to `data` becomes visible.
+Multiple workers can update this standalone statistic without lost increments. If a counter also publishes other data, stronger synchronization may be required.
 
-**Software side:** POSIX threads, OpenMP, and data-parallel frameworks (OpenCL, Vulkan compute) on the GPU. **Processor affinity** pins threads to cores to keep caches warm or isolate real-time work.
+#### 3. Operating system support
 
-**Scalability limits:** contention on shared locks and cache lines (false sharing), memory bandwidth, and Amdahl's law: if 10% of a program is serial, the speed-up can never exceed 10×.
+The scheduler distributes runnable threads across CPU cores. Interprocessor interrupts can request rescheduling or translation invalidation. Locks, atomics, memory barriers and per-CPU data protect shared state.
 
-**Follow-up example: merge sort.** With unlimited processors, the sorting of halves can run in parallel, and with a parallel merge the depth is O(log² n) (O(n) if the merge itself is sequential at the top level); with p processors, the time is roughly O((n log n)/p + n) for the simple version where the final merge is sequential.
+#### 4. Performance consideration
+
+False sharing occurs when cores modify distinct objects that share a cache line, causing unnecessary coherency traffic. Use per-core data and measured cache-line-aware layout when useful.
+
+**Interview takeaway:** Hardware coherency keeps participating caches consistent, while software synchronization establishes ordering and atomicity. Parallelism also introduces contention and communication overhead.
 
 ### How is the system clock configured on an MCU? {M}
 **Short answer:** An MCU has several clock sources: a fast internal RC oscillator (starts quickly, less accurate), an external crystal or oscillator (accurate, needed for USB, CAN, precise UART baud rates), and a 32.768 kHz low-speed crystal for the RTC. A **PLL** multiplies a source up to the core frequency, and prescalers divide it for the buses and peripherals. When raising the frequency, increase the flash wait states (and the voltage scale, if applicable) **before** switching to the faster clock.
