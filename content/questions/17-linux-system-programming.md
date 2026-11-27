@@ -217,62 +217,25 @@ Use fdatasync where its metadata guarantees suffice. fflush only flushes C-libra
 **Interview takeaway:** Atomic rename and durable rename are distinct. Actual power-loss guarantees also depend on the filesystem, device firmware and whether storage honors flushes.
 
 ### What is the sequence of socket calls for a TCP server and client? {E}
-**Short answer:** **Server:** `socket()` → `bind()` (choose IP and port) → `listen()` → `accept()` (blocks until a client connects, returns a new socket for that connection) → `read()`/`write()` (or `recv`/`send`) → `close()`. **Client:** `socket()` → `connect()` (TCP three-way handshake) → `write()`/`read()` → `close()`.
+TCP provides a reliable, ordered byte stream between connected endpoints.
 
-```
-Server                                  Client
-socket()                                socket()
-bind(port 8080)
+```text
+Server                         Client
+socket()                       socket()
+bind()
 listen()
-accept()  ◄──── SYN / SYN-ACK / ACK ──── connect()
-recv()    ◄──────── request ─────────── send()
-send()    ───────── response ─────────► recv()
-close()   ◄──────── FIN/ACK ──────────► close()
+accept() <-------------------- connect()
+recv()/send() <--------------> send()/recv()
+close(client_fd)               close()
+close(listen_fd)
 ```
 
-**Minimal TCP echo server**
+The listening socket remains available for new clients; accept returns a new connected fd. A client normally does not need an explicit bind because the kernel selects a local address/port.
 
-```c
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <stdio.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <unistd.h>
+#### Practical concerns
+Check all return values, handle short sends/receives and define application message framing. recv returning 0 indicates orderly peer shutdown. Handle SIGPIPE or use a supported suppression mechanism when sending after disconnect.
 
-int main(void)
-{
-    int ls = socket(AF_INET, SOCK_STREAM, 0);
-    int on = 1;
-    setsockopt(ls, SOL_SOCKET, SO_REUSEADDR, &on, sizeof on);
-
-    struct sockaddr_in a = { .sin_family = AF_INET, .sin_port = htons(8080),
-                             .sin_addr.s_addr = htonl(INADDR_ANY) };
-    if (bind(ls, (struct sockaddr *)&a, sizeof a) < 0) { perror("bind"); return 1; }
-    listen(ls, 16);                               /* backlog of pending connections */
-
-    for (;;) {
-        int c = accept(ls, NULL, NULL);           /* blocks */
-        if (c < 0) continue;
-        char buf[512];
-        ssize_t n;
-        while ((n = recv(c, buf, sizeof buf, 0)) > 0)
-            send(c, buf, (size_t)n, 0);
-        close(c);
-    }
-}
-```
-
-**Details interviewers check**
-
-- **Byte order:** ports and addresses are in network byte order (big-endian): `htons`, `htonl`, `ntohs`.
-- **`SO_REUSEADDR`** lets the server restart immediately instead of failing with "Address already in use" while old connections are in `TIME_WAIT`.
-- **TCP is a byte stream:** one `send()` of 1000 bytes may arrive as several `recv()` calls, and several sends may arrive together. Applications need framing (length prefix or delimiter).
-- **Partial writes:** `send()` may send fewer bytes than requested; loop until all are sent.
-- **`SIGPIPE`:** writing to a connection the peer closed kills the process unless you ignore `SIGPIPE` or use `MSG_NOSIGNAL`.
-- **UDP** is different: `socket(AF_INET, SOCK_DGRAM, 0)`, no `listen`/`accept`/`connect` needed, `sendto`/`recvfrom` with addresses; each datagram is delivered whole or not at all.
-
-**Handling many clients:** one process per client (`fork()` after `accept`), one thread per client, or one thread with `select`/`poll`/`epoll` (see the next question).
+**Interview takeaway:** TCP does not preserve application message boundaries. One send may require multiple recv calls, and multiple sends can arrive in one recv.
 
 ### Which socket calls block, and how do select, poll and epoll handle many connections? {M}
 **Short answer:** By default `accept()` (until a client connects), `connect()` (until the handshake completes), `recv()`/`read()` (until data arrives), and `send()`/`write()` (until there is room in the send buffer) can all block. To handle many connections in one thread, make the sockets non-blocking and use an I/O multiplexer: `select()` and `poll()` scan a list of descriptors on every call (O(n)), while **`epoll`** registers descriptors once and returns only the ready ones (O(ready)), which scales to tens of thousands of connections.
