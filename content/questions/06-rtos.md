@@ -56,38 +56,27 @@ Hard real-time requires defensible worst-case timing analysis and controlled res
 **Interview takeaway:** Classify the consequence of lateness before choosing scheduling policy, priority and recovery behavior.
 
 ### What are the states of a task? {E}
-**Short answer:** In FreeRTOS a task is **Running** (executing on the CPU), **Ready** (able to run, waiting for the CPU), **Blocked** (waiting for an event or a delay, usually with a timeout), or **Suspended** (removed from scheduling until explicitly resumed). A deleted task's memory is freed later by the idle task.
+An RTOS task typically transitions between Ready, Running, Blocked and Suspended states.
 
-```
-            create
-              │
-              ▼
-   ┌───────► Ready ◄──────────────┐
-   │          │  ▲                │ event / timeout
-   │ resume   │  │ preempted      │
-   │          ▼  │                │
-Suspended ◄─ Running ─── wait ──► Blocked
-   ▲  suspend   │
-   └────────────┘ (from any state)
-```
+<div style="max-width:650px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 196" width="100%" role="img" aria-label="Ready task scheduled to running, preempted back to ready, blocked on wait, then made ready by event">
+<rect x="8" y="25" width="110" height="33" rx="5" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="63" y="46" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">READY</text><rect x="222" y="25" width="110" height="33" rx="5" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="277" y="46" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">RUNNING</text><rect x="222" y="139" width="110" height="33" rx="5" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="277" y="160" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">BLOCKED</text><rect x="8" y="139" width="110" height="33" rx="5" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="63" y="160" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">SUSPENDED</text><path d="M118 34 H222 m-5-4 5 4-5 4 M222 50 H118 m5-4 -5 4 5 4 M277 58 V139 m-4-5 4 5 4-5 M222 155 H151 V73 H63 V58 m-4 5 4-5 4 5 M45 58 V139 m-4-5 4 5 4-5 M81 139 V58 m-4 5 4-5 4 5" fill="none" stroke="currentColor"/><g fill="currentColor" font-size="10"><text x="170" y="24" text-anchor="middle">Dispatch</text><text x="170" y="66" text-anchor="middle">Preempt / yield</text><text x="286" y="99">Wait</text><text x="158" y="110">Event</text><text x="36" y="103" text-anchor="end">Suspend</text><text x="89" y="103">Resume</text></g></svg></div>
 
-| State | Meaning | How it gets there |
-|---|---|---|
-| Running | using the CPU (one task per core) | scheduler picked it |
-| Ready | could run but a higher or equal priority task is running | created, unblocked, resumed, or pre-empted |
-| Blocked | waiting for time or an event | `vTaskDelay`, waiting on a queue/semaphore/notification, with a timeout |
-| Suspended | not schedulable, no timeout | `vTaskSuspend()`; leaves only via `vTaskResume()` |
+#### 1. Meaning
 
-**Key behaviours**
+| State | Meaning |
+|---|---|
+| Running | Currently executing on a CPU |
+| Ready | Eligible to execute |
+| Blocked | Waiting for time or an event/resource |
+| Suspended | Explicitly removed from normal scheduling |
 
-- A blocked task uses **no CPU**; that is why tasks should block instead of polling.
-- When an event arrives, the task moves to **Ready**, not directly to Running; it runs only if it has the highest priority among ready tasks.
-- A blocked task with a timeout returns to Ready when the timeout expires, and the API call returns an error code (e.g. `pdFALSE`, `errQUEUE_EMPTY`), which the task must check.
-- `vTaskSuspend` is rarely the right tool for synchronisation: there is no timeout and it is easy to miss a resume. Prefer blocking on an event.
+#### 2. Example
 
-**Zephyr names:** running, ready (runnable), pending (waiting on an object), sleeping, suspended, dead.
+A UART worker blocks waiting on a queue. An ISR posts a message, making the worker ready. If it has higher priority than the current task, the scheduler may dispatch it immediately.
 
-**Inspection:** `vTaskList()` / `uxTaskGetSystemState()` in FreeRTOS, `kernel threads` in the Zephyr shell, or RTOS-aware debugger views (Ozone, STM32CubeIDE, Tracealyzer).
+A delayed task is blocked, not necessarily suspended. State terminology differs across kernels; in SMP more than one task can run simultaneously.
+
+**Interview takeaway:** Ready means eligible, not currently executing. A blocked task consumes no CPU time while waiting for its condition.
 
 ### What is pre-emptive versus cooperative scheduling? {E}
 **Short answer:** With **pre-emptive** scheduling, the kernel switches to a higher-priority task as soon as it becomes ready (because of an interrupt, a timer or another task), even in the middle of the current task's code. With **cooperative** scheduling, a task keeps the CPU until it voluntarily yields or blocks. Pre-emption gives better worst-case response for urgent work; cooperative scheduling is simpler and needs fewer locks, but one task that does not yield stalls everything.
