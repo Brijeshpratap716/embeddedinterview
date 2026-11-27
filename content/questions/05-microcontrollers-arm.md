@@ -688,28 +688,37 @@ False sharing occurs when cores modify distinct objects that share a cache line,
 **Interview takeaway:** Hardware coherency keeps participating caches consistent, while software synchronization establishes ordering and atomicity. Parallelism also introduces contention and communication overhead.
 
 ### How is the system clock configured on an MCU? {M}
-**Short answer:** An MCU has several clock sources: a fast internal RC oscillator (starts quickly, less accurate), an external crystal or oscillator (accurate, needed for USB, CAN, precise UART baud rates), and a 32.768 kHz low-speed crystal for the RTC. A **PLL** multiplies a source up to the core frequency, and prescalers divide it for the buses and peripherals. When raising the frequency, increase the flash wait states (and the voltage scale, if applicable) **before** switching to the faster clock.
+An MCU system clock is configured by selecting a clock source and setting clock-tree dividers and multipliers. The resulting clocks must satisfy CPU, memory and peripheral limits.
 
-**Typical sequence (STM32-style)**
+#### 1. Typical clock tree
 
-1. Enable the external oscillator (HSE) and wait for its ready flag (with a timeout and a fallback to the internal oscillator).
-2. Set the regulator voltage scale for the target frequency if the chip requires it.
-3. Configure **flash wait states** (latency) and enable prefetch/caches for the new frequency.
-4. Configure the PLL (input divider, multiplier, output dividers), enable it, wait for lock.
-5. Set AHB/APB prescalers so buses stay within their maximum frequencies.
-6. Switch the system clock multiplexer to the PLL and wait until the switch is confirmed.
-7. Update `SystemCoreClock` so SysTick, delays and UART baud calculations use the right value.
+```text
+Internal RC / external crystal
+              |
+             PLL
+              |
+          SYSCLK
+              |
+     AHB / core prescaler
+              |
+          APB buses --> peripheral clocks
+```
 
-**Example numbers:** 8 MHz HSE ÷ 8 = 1 MHz × 336 = 336 MHz VCO ÷ 2 = 168 MHz SYSCLK (STM32F4), APB1 = 42 MHz, APB2 = 84 MHz.
+Actual bus topology and clock names depend on the MCU.
 
-**Why wait states matter:** flash access time is fixed (e.g. ~30 ns). At 168 MHz a cycle is 6 ns, so the CPU must wait several cycles per flash read. Too few wait states → the CPU reads garbage → random HardFaults that appear only at high speed or high temperature.
+#### 2. Example calculation
 
-**Other points**
+Assume an 8 MHz crystal, PLL input divider 2, multiplication factor 40 and output divider 2.
 
-- **Clock security system (CSS):** detects a failed external crystal and switches to the internal oscillator, raising an NMI.
-- **Peripheral clocks** must be enabled individually (`RCC->AHB1ENR |= ...`) before accessing peripheral registers, or writes are ignored and reads return 0: a very common bring-up bug.
-- **Low power:** run slower or from the internal oscillator when possible; power scales roughly with frequency.
-- **Accuracy:** UART needs roughly ±2% total baud error, USB full-speed ±0.25% (internal RC oscillators often need clock recovery/trim to meet it), CAN about ±0.5% or tighter.
+PLL output = (8 MHz / 2) × 40 / 2 = 80 MHz.
+
+If the APB divider is 2, its bus clock is 40 MHz. Some timer clocks use additional multipliers when the bus prescaler is not one; check the reference manual.
+
+#### 3. Safe initialization
+
+Enable the source and wait for stability. Configure voltage scaling and flash wait states as required before increasing frequency. Set PLL parameters, wait for lock, switch the clock source and configure peripheral gates/prescalers. Handle timeout or oscillator failure.
+
+**Interview takeaway:** Clock configuration includes more than selecting a PLL frequency. Respect voltage, flash timing, oscillator limits and actual peripheral clock rates.
 
 ### How does dynamic voltage and frequency scaling (DVFS) save power? {M}
 **Short answer:** The dynamic power of CMOS logic is roughly **P = C · V² · f** (switched capacitance × voltage squared × frequency). DVFS lowers the clock frequency when full performance is not needed and, because a lower frequency allows a lower supply voltage, lowers the voltage too. Since power depends on V², reducing voltage gives a large saving. The OS (or firmware) picks an **operating performance point** (OPP: a frequency/voltage pair) based on the current load.
