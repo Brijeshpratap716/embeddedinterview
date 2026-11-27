@@ -234,24 +234,15 @@ Watchdog recovery, reset-cause logs and retries can help with transient disturba
 **Interview takeaway:** Component-level ESD ratings are different from finished-product immunity tests. Verify protection on the actual assembly.
 
 ### What is signal integrity and what causes ringing? {H}
-**Short answer:** Signal integrity is about whether a digital signal arrives at the receiver with clean edges and correct levels and timing. **Ringing** — overshoot and oscillation after an edge — happens when a fast edge travels along a trace that behaves as a transmission line whose impedance is not matched at the ends, so energy reflects back and forth; it can also come from parasitic inductance and capacitance forming a resonant circuit. Problems appear when the **edge rise time** is short compared with the trace's propagation delay (roughly when the trace length exceeds about 1/6 of the distance the edge travels during its rise time), regardless of the clock frequency.
+Signal integrity means preserving valid waveforms and timing. Fast edges on PCB traces and cables can behave as transmission-line events even at low clock frequencies.
 
-**Rule of thumb:** signals travel about 15 cm/ns on FR-4. An edge with a 1 ns rise time "sees" any trace longer than a few cm as a transmission line. Modern MCU GPIOs with fast slew settings have sub-ns edges even when toggled at only 1 MHz.
+#### Ringing
+Impedance discontinuities reflect traveling edges. Reflections and parasitic capacitance/inductance cause overshoot, undershoot and repeated threshold crossings.
 
-**Fixes**
+#### Debugging
+Use a suitable scope probe with short ground connection. Compare source and receiver waveforms. Inspect return paths, stubs, drive strength and termination. A source-series resistor can reduce SPI clock ringing when chosen for the actual trace and driver impedance.
 
-| Problem | Fix |
-|---|---|
-| Reflections on point-to-point lines (SPI clock, SDRAM) | series termination resistor (22–33 Ω) near the driver, matching driver impedance to the trace impedance |
-| Unnecessary fast edges | reduce GPIO slew rate/speed setting |
-| Long buses (CAN, RS-485) | parallel termination at both ends matching the cable impedance (120 Ω) |
-| High-speed interfaces (USB, Ethernet, DDR, MIPI) | controlled-impedance traces (50 Ω single-ended, 90–100 Ω differential), length matching, continuous reference planes |
-| Crosstalk | spacing (3× trace width), ground between sensitive traces, avoid long parallel runs |
-| Ground bounce | good decoupling, solid ground plane, short return paths |
-
-**Measuring:** use an oscilloscope with enough bandwidth (5× the signal's knee frequency ≈ 0.35 / rise time) and a short ground connection on the probe (the long ground clip adds inductance and creates fake ringing).
-
-**Firmware-visible symptoms:** double-clocked SPI data (ringing on SCLK crosses the threshold twice), random bit errors at high clock rates that disappear at lower rates, and EMI test failures.
+**Interview takeaway:** Edge rate and electrical length matter more than clock frequency alone.
 
 ### How do you design firmware and hardware for low power? {M}
 **Short answer:** Average current is what drains the battery, so minimise the time spent awake and the current in each state: run fast and sleep (race to idle), use the deepest sleep mode that still meets wake-up latency and retention needs, switch off unused peripherals, clocks and external components, avoid polling, wake on interrupts or low-power timers, configure every GPIO (no floating inputs, no pull-ups fighting outputs), and measure the real current profile with a power analyser.
