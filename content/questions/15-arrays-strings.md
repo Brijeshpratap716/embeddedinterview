@@ -268,66 +268,31 @@ int64_t max_profit(const int32_t p[], size_t n)
 **Complexity:** O(n) time, O(1) space.
 
 ### How do you solve the trapping rain water problem? {H}
-**Short answer:** Water above bar `i` is `min(max height to the left, max height to the right) - height[i]`, if positive. Precompute left-max and right-max arrays (O(n) time, O(n) space), or use two pointers to do it in O(1) space.
+Water above index i equals min(max height to left, max height to right) − height[i]. Two pointers avoid allocating prefix and suffix arrays.
 
 ```c
-#include <stddef.h>
-
-/* two-pointer version: O(n) time, O(1) space */
-int trap_water(const int *h, size_t n)
+uint64_t trapped(const uint32_t h[], size_t n)
 {
     if (n < 3) return 0;
-    size_t lo = 0, hi = n - 1;
-    int left_max = 0, right_max = 0, water = 0;
-
-    while (lo < hi) {
-        if (h[lo] < h[hi]) {               /* left side is the limit */
-            if (h[lo] >= left_max) left_max = h[lo];
-            else water += left_max - h[lo];
-            lo++;
-        } else {                           /* right side is the limit */
-            if (h[hi] >= right_max) right_max = h[hi];
-            else water += right_max - h[hi];
-            hi--;
+    size_t l = 0, r = n-1;
+    uint32_t lm = 0, rm = 0;
+    uint64_t total = 0;
+    while (l < r) {
+        if (h[l] <= h[r]) {
+            if (h[l] > lm) lm = h[l];
+            total += lm - h[l++];
+        } else {
+            if (h[r] > rm) rm = h[r];
+            total += rm - h[r--];
         }
     }
-    return water;
-}
-/* {3, 0, 6, 2, 5} -> 3 + 3 = 6 */
-```
-
-**Prefix-max version (easier to explain first):**
-
-```c
-int trap_water_arrays(const int *h, size_t n)
-{
-    if (n < 3) return 0;
-    int left[n], right[n], water = 0;          /* VLA: fine on a PC, avoid on an MCU */
-    left[0] = h[0];
-    for (size_t i = 1; i < n; i++) left[i] = h[i] > left[i - 1] ? h[i] : left[i - 1];
-    right[n - 1] = h[n - 1];
-    for (size_t i = n - 1; i-- > 0; ) right[i] = h[i] > right[i + 1] ? h[i] : right[i + 1];
-    for (size_t i = 1; i + 1 < n; i++) {
-        int level = left[i] < right[i] ? left[i] : right[i];
-        if (level > h[i]) water += level - h[i];
-    }
-    return water;
+    return total;
 }
 ```
 
-**Dry run for {3, 0, 6, 2, 5}:**
+[3, 0, 2, 0, 4] traps 7 units. Process the lower endpoint because a sufficient boundary exists on the other side. Assume total fits uint64_t.
 
-| i | h | left max | right max | level | water |
-|---|---|---|---|---|---|
-| 1 | 0 | 3 | 6 | 3 | 3 |
-| 2 | 6 | 6 | 6 | 6 | 0 |
-| 3 | 2 | 6 | 5 | 5 | 3 |
-
-Total 6.
-
-**Why two pointers work:** if `h[lo] < h[hi]`, there is a bar on the right at least as tall as `h[lo]`, so the water at `lo` depends only on `left_max`. We can settle position `lo` and move on, and likewise for the right side.
-
-**Embedded note:** the array version allocates two `n`-sized arrays; on a microcontroller that is a lot of stack (and VLAs are best avoided there). The two-pointer version uses three integers.
+**Complexity:** O(n) time, O(1) space.
 
 ### How do you find the maximum number of consecutive 1s in a binary array? {E}
 **Short answer:** Keep a running count of 1s, reset it to 0 on every 0, and remember the largest count seen. One pass, O(n) time, O(1) space.
