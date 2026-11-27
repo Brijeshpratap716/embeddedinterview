@@ -145,47 +145,35 @@ GPIO resource ownership, interrupt-mask restoration, peripheral clocks, mutexes,
 **Interview takeaway:** RAII makes cleanup follow scope and ownership. It does not require heap allocation or exception support, and should be designed around acquisition failure.
 
 ### What are move semantics and why do they matter even without a heap? {M}
-**Short answer:** Move semantics (C++11) let an object transfer ownership of its resources to another object instead of copying them. A **move constructor** / **move assignment** takes an rvalue reference (`T&&`), steals the source's resource, and leaves the source in a valid but empty state. `std::move` is just a cast that says "this object may be moved from". On embedded systems, moves matter mostly for **unique ownership** types: a buffer handle from a pool, a DMA channel or a file descriptor that must have exactly one owner, can be returned from functions and stored in containers without copying or double release.
+Move semantics transfer ownership or state from one object to another instead of copying expensive or exclusive resources. They are useful even when the resource is a fixed hardware channel rather than heap memory.
+
+#### 1. Example
 
 ```cpp
-#include <cstdio>
 #include <utility>
 
-class PoolBuffer {
+class Channel {
+    int id = -1;
 public:
-    explicit PoolBuffer(int idx) : idx_(idx) { std::printf("take %d\n", idx_); }
-    ~PoolBuffer() { if (idx_ >= 0) std::printf("give %d\n", idx_); }   // return to the pool
+    explicit Channel(int n) : id(n) {}
+    ~Channel() { if (id >= 0) release_channel(id); }
 
-    PoolBuffer(const PoolBuffer &) = delete;                // one owner only
-    PoolBuffer &operator=(const PoolBuffer &) = delete;
+    Channel(const Channel&) = delete;
+    Channel& operator=(const Channel&) = delete;
 
-    PoolBuffer(PoolBuffer &&o) noexcept : idx_(o.idx_) { o.idx_ = -1; }   // steal
-    PoolBuffer &operator=(PoolBuffer &&o) noexcept {
-        if (this != &o) { if (idx_ >= 0) std::printf("give %d\n", idx_); idx_ = o.idx_; o.idx_ = -1; }
-        return *this;
-    }
-    int index() const { return idx_; }
-private:
-    int idx_;
+    Channel(Channel&& other) noexcept
+        : id(std::exchange(other.id, -1)) {}
+    Channel& operator=(Channel&&) = delete;
 };
-
-PoolBuffer acquire() { return PoolBuffer(3); }     // returned without copying (guaranteed elision)
-
-int main()
-{
-    PoolBuffer a = acquire();
-    PoolBuffer b = std::move(a);                  // ownership moves; a is now empty
-    std::printf("a=%d b=%d\n", a.index(), b.index());
-}                                                 // prints "give 3" exactly once
 ```
 
-**Key rules**
+The move constructor transfers the channel ID and invalidates the old owner. Only the new owner releases it. The channel must have been validly acquired.
 
-- **Rule of zero:** prefer members that already manage themselves (`std::array`, `std::unique_ptr`), so you write no special members at all.
-- **Rule of five:** if you write a destructor, copy constructor/assignment or move constructor/assignment, think about all five.
-- Mark moves `noexcept` (containers rely on it).
-- Copy elision: returning a local or a temporary usually constructs it directly in the caller (guaranteed for prvalues since C++17).
-- Using an object after `std::move` is legal only for operations that don't assume a value (assign, destroy).
+#### 2. std::move
+
+std::move casts an expression to an rvalue category that permits move-aware overload selection; it does not itself transfer anything. The chosen constructor or assignment performs the move.
+
+**Interview takeaway:** Move semantics encode transfer of ownership, not just heap optimization. Moved-from objects must remain valid according to their documented state; avoid duplicate resource release.
 
 ### What are constexpr and consteval? {M}
 **Short answer:** `constexpr` marks variables and functions that **can** be evaluated at compile time; when used where a constant is required (array sizes, template arguments, `static_assert`, `constexpr` variables), the compiler must evaluate them, so lookup tables, register values and configuration checks cost no run-time code or RAM. `consteval` (C++20) marks functions that **must** be evaluated at compile time — calling one with run-time values is an error. `constinit` (C++20) guarantees a variable is initialised statically (no run-time constructor, no initialisation-order problems).
