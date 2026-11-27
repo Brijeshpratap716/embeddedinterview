@@ -99,6 +99,10 @@ size_t my_strlcpy(char *dst, const char *src, size_t size)
 
 **Complexity:** O(n) time, O(1) space.
 
+#### Why the terminator needs its own byte
+
+For source "ABC", a destination of capacity 4 stores A, B, C and NUL. Capacity 3 can hold only "AB" as a valid C string. For an external input with an explicit received length, validate that length or find its terminator within the received extent before calling even a bounded destination-copy routine. Bounding the destination does not bound reads of a malformed source.
+
 ### Implement strcmp(). {E}
 **Short answer:** Advance both pointers while the characters are equal and not the end of the first string. At the first difference (or when either string ends) return the difference of the two characters, compared as `unsigned char`. The result is negative if `a < b`, zero if equal, positive if `a > b`.
 
