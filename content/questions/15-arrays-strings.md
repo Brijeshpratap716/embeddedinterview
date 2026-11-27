@@ -314,39 +314,28 @@ size_t max_ones(const int a[], size_t n)
 **Complexity:** O(n) time, O(1) space. Allowing flips of up to k zeros requires a variable-size sliding window.
 
 ### How do you find the maximum sum of k consecutive elements (sliding window)? {M}
-**Short answer:** Sum the first `k` elements; that is the first window and the first candidate for the maximum. Then slide: add the element entering the window and subtract the one leaving (`sum += a[i] - a[i-k]`), updating the maximum each time. O(n) instead of O(n·k).
+Instead of recalculating each k-element sum, subtract the outgoing element and add the incoming element.
 
 ```c
-#include <stddef.h>
-
-/* 1 <= k <= n */
-long max_window_sum(const int *a, size_t n, size_t k)
+bool max_window(const int32_t a[], size_t n, size_t k,
+                int64_t *out)
 {
-    long sum = 0;
-    for (size_t i = 0; i < k; i++)
-        sum += a[i];
-    long best = sum;                       /* the first window counts too */
-    for (size_t i = k; i < n; i++) {
-        sum += a[i] - a[i - k];
+    if (!k || k > n) return false;
+    int64_t sum = 0;
+    for (size_t i = 0; i < k; ++i) sum += a[i];
+    int64_t best = sum;
+    for (size_t i = k; i < n; ++i) {
+        sum += (int64_t)a[i] - a[i-k];
         if (sum > best) best = sum;
     }
-    return best;
+    *out = best;
+    return true;
 }
-/* {1, 8, 30, -5, 20, 7}, k = 3 -> 45  (30 - 5 + 20) */
 ```
 
-**Dry run (k = 3):** first window 1+8+30 = 39 (best 39). Slide: +(-5) -1 = 33. +20 -8 = 45 (best 45). +7 -30 = 22. Answer 45.
+For [2, 1, 5, 1, 3, 2], k=3, sums are 8, 7, 9, 6; answer 9. Assume intermediate sums fit int64_t. Initialize best from the first window, not zero, for negative input.
 
-**The bug to avoid.** Initialising `maxSum = 0` and only comparing inside the sliding loop has two problems: the first window is never considered (wrong if it is the biggest), and if every window sum is negative the function returns 0. Set `best` to the first window's sum.
-
-**Overflow:** the running sum of many `int` values can overflow; use a wider accumulator (`long` or `int64_t`).
-
-**Embedded uses of the same idea**
-
-- **Moving-average filter:** keep a ring buffer of the last `k` samples and a running sum; each new sample adds one value and subtracts the oldest. Dividing by `k` gives the average. With `k` a power of two, the division is a shift.
-- **Rate limiting:** count events in the last `k` milliseconds.
-
-**Follow-ups:** variable-size window ("smallest subarray with sum ≥ S": grow the right edge, shrink the left edge while the condition holds), and "maximum in every window of size k" (deque of indices, O(n)).
+**Complexity:** O(n) time, O(1) space.
 
 ### How do you check if a string is a palindrome? {E}
 **Short answer:** Compare characters from both ends moving inward: `s[low]` with `s[high]`. If any pair differs, it is not a palindrome. O(n) time, O(1) space.
