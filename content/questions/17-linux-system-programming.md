@@ -265,47 +265,24 @@ After a TCP socket is connected, read/write can often transfer data just like re
 **Interview takeaway:** Unix unifies descriptor operations without forcing all object-specific behavior into open/read/write. Sockets are descriptors with specialized lifecycle and protocol controls.
 
 ### How is the Linux networking stack structured, what is an sk_buff, and how does it compare with the OSI model? {H}
-**Short answer:** In Linux, the socket layer and the protocols (TCP, UDP, IP) run in the kernel, network device drivers sit at the bottom, and the application layer is in user space. Packets travel through the layers in a **`struct sk_buff`** (socket buffer), which holds the packet data plus metadata (device, protocol, header offsets, timestamps). Headers are added or removed by moving pointers within the buffer rather than copying data. Linux follows the practical TCP/IP 4-layer model rather than the 7-layer OSI model.
+Linux networking is organized around socket APIs, transport protocols, IP routing, neighbor/link layers, network devices and drivers.
 
-**Layers (receive path, bottom to top)**
-
-```
-NIC hardware → DMA into ring buffer → IRQ → NAPI poll (driver)
-  → netif_receive_skb()                 link layer (Ethernet, VLAN, bridge)
-  → ip_rcv() → routing, netfilter       network layer (IPv4/IPv6)
-  → tcp_v4_rcv() / udp_rcv()            transport layer
-  → socket receive queue
-  → recv() in the application           (copy to user space)
+```text
+Userspace socket
+  -> TCP / UDP (transport)
+  -> IPv4 / IPv6 (network)
+  -> routing / neighbor / qdisc
+  -> net_device driver
+  -> NIC descriptors / DMA -> wire
 ```
 
-Transmit goes the other way: `send()` → TCP segments → IP routing/neighbour lookup → queueing discipline (qdisc, traffic shaping) → driver `ndo_start_xmit()` → DMA to the NIC.
+Receive path: NIC DMA -> IRQ/NAPI poll -> driver constructs or attaches packet buffers -> Ethernet/IP processing -> TCP/UDP -> socket receive queue -> application.
 
-**`sk_buff` essentials**
+An sk_buff describes a packet and its metadata: protocol, offsets, length, device association, checksum state and pointers to linear or fragmented data. It is not necessarily one contiguous copied packet.
 
-| Field | Purpose |
-|---|---|
-| `head`, `data`, `tail`, `end` | buffer boundaries; `data`..`tail` is the current packet |
-| `skb_push()` / `skb_pull()` | add/remove a header by moving `data` (no copy) |
-| `skb_reserve()` | leave headroom so lower layers can prepend headers |
-| `dev`, `protocol`, `mark`, `tstamp` | metadata |
-| `transport_header`, `network_header`, `mac_header` | offsets of each header |
-| fragments / `skb_shinfo` | scatter-gather pages for large packets (GSO/GRO) |
+OSI is a conceptual seven-layer model; Linux implementation boundaries and offloads do not map one-to-one to every layer.
 
-**OSI vs Linux (TCP/IP)**
-
-| OSI | Linux / TCP/IP | Where |
-|---|---|---|
-| 7 Application, 6 Presentation, 5 Session | Application (HTTP, MQTT, TLS) | user space |
-| 4 Transport | TCP, UDP, SCTP | kernel |
-| 3 Network | IPv4, IPv6, ICMP, routing, netfilter | kernel |
-| 2 Data link | Ethernet, Wi-Fi (mac80211), bridge, VLAN | kernel + driver |
-| 1 Physical | PHY, cable, radio | hardware (PHY driver configures it) |
-
-OSI's presentation and session layers have no separate kernel layer; their functions (encryption, encoding, session management) are in applications or libraries (kernel TLS, `kTLS`, is a partial exception).
-
-**Performance features:** NAPI (polling under load), GRO/GSO (combine or split large packets to reduce per-packet work), checksum and segmentation offload to the NIC, RSS/RPS (spread flows across cores), XDP (eBPF programs at the driver level), and AF_XDP or DPDK for user-space packet processing when the kernel stack is too slow.
-
-**Why networking is treated differently from other I/O:** data arrives unsolicited and at unpredictable times, must be demultiplexed to the right socket by protocol and port, may be lost or reordered (TCP must handle retransmission and flow control), and rates can reach millions of packets per second, so per-packet overhead dominates.
+**Interview takeaway:** Separate packet data, skb metadata and DMA ownership. NAPI reduces interrupt overhead by polling batches of packets under load.
 
 ### How do you find out why a Linux program is slow or stuck? {M}
 **Short answer:** First look at what the process is doing and waiting for: `top`/`htop` (CPU, state), `ps -o stat,wchan` (where it sleeps), `strace -p PID` (system calls), `cat /proc/PID/stack` (kernel stack, as root), and `gdb -p PID` / `thread apply all bt` (user stacks). Then measure the right resource: `perf top`/`perf record` for CPU, `vmstat`/`iostat` for memory and I/O, `ss` for sockets, and PSI files for contention.
