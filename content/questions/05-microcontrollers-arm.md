@@ -361,42 +361,35 @@ FAULTMASK is a specialized mechanism for carefully controlled fault-handling or 
 **Interview takeaway:** PRIMASK masks most configurable interrupts, BASEPRI selectively masks by urgency, and FAULTMASK masks nearly all exceptions. Use the platform's established synchronization APIs.
 
 ### What causes a HardFault and how do you debug one? {M}
-**Short answer:** A HardFault is the catch-all fault on Cortex-M. Common causes: accessing an invalid address (NULL or wild pointer, freed memory), stack overflow, executing from a non-executable or invalid address, branching to an address without the Thumb bit, unaligned multi-word accesses, divide by zero (if trapping is enabled), undefined instructions, and MemManage/BusFault/UsageFault faults escalated because their handlers are disabled. Debug it by capturing the stacked registers to find the faulting PC, then reading the fault status registers.
+HardFault is a Cortex-M exception that can indicate an escalation of another fault or a processor fault that cannot be handled by an enabled configurable fault handler.
 
-**Debugging steps**
+#### 1. Common causes
 
-1. **Capture the stack frame** in a handler (assembly wrapper chooses MSP or PSP from bit 2 of `LR`, as shown in the MSP/PSP question).
+- Invalid or forbidden memory access.
+- Invalid instruction, execution state or exception return.
+- Fault during exception entry or stacking.
+- Stack corruption or invalid function pointer.
+- Escalated MemManage, BusFault or UsageFault, where supported.
 
-```c
-void hard_fault_c(uint32_t *frame)
-{
-    volatile uint32_t pc   = frame[6];          /* faulting instruction (or next, if imprecise) */
-    volatile uint32_t lr   = frame[5];          /* caller */
-    volatile uint32_t cfsr = SCB->CFSR;         /* which fault and why */
-    volatile uint32_t hfsr = SCB->HFSR;
-    volatile uint32_t mmfar = SCB->MMFAR, bfar = SCB->BFAR;
-    (void)pc; (void)lr; (void)cfsr; (void)hfsr; (void)mmfar; (void)bfar;
-    __BKPT(0);                                  /* stop here in the debugger */
-    for (;;) { }
-}
+#### 2. Debugging workflow
+
+1. Halt in HardFault_Handler using a debugger.
+2. Determine which stack and frame type EXC_RETURN describes.
+3. Inspect the saved PC, LR and xPSR.
+4. Examine HFSR and, where implemented, CFSR and valid fault address registers.
+5. Resolve the faulting instruction using the ELF and disassembly.
+
+```sh
+arm-none-eabi-addr2line -e firmware.elf -f 0x08001234
 ```
 
-2. **Find the code:** `arm-none-eabi-addr2line -e fw.elf 0x08001234` or look up PC and LR in the map file/disassembly.
-3. **Decode `CFSR`** (Configurable Fault Status Register):
-   - **MMFSR** (MemManage): `IACCVIOL`, `DACCVIOL`, `MSTKERR` (stacking error, often stack overflow), `MMARVALID` → address in `MMFAR`.
-   - **BFSR** (BusFault): `PRECISERR` (address in `BFAR`), `IMPRECISERR` (write buffered, PC is later than the fault), `STKERR`, `IBUSERR`.
-   - **UFSR** (UsageFault): `UNDEFINSTR`, `INVSTATE` (Thumb bit clear: bad function pointer), `INVPC`, `NOCP` (FPU used but not enabled), `UNALIGNED`, `DIVBYZERO`, `STKOF` (Armv8-M stack limit).
-4. **`HFSR.FORCED`** = 1 means a configurable fault was escalated to HardFault (enable the separate handlers in `SCB->SHCSR` to get more specific faults).
-5. **Imprecise BusFault:** the stacked PC is after the real culprit, because the write was buffered. Temporarily set `DISDEFWBUF` in `SCnSCB->ACTLR` (Cortex-M3/M4) to make bus faults precise while debugging.
+The address is an illustrative saved PC. Some bus faults are imprecise, so the stacked PC may not identify the exact faulting instruction.
 
-**Recognisable patterns**
+#### 3. Basic handler strategy
 
-- PC = `0xFFFFFFFE` or a RAM address equal to the initial stack pointer: a NULL or erased-flash function pointer was called.
-- `INVSTATE`: function pointer without bit 0 set.
-- `NOCP`: floating point used before `SCB->CPACR` enabled the FPU (often in start-up code or an early `printf("%f")`).
-- `MSTKERR`/`STKERR` or random faults that change with code changes: stack overflow.
+Capture the fault registers and stack-frame information into a dedicated diagnostic area, if safe. Avoid ordinary logging routines that might depend on damaged stack, locks or hardware. Recover or reset according to the system's defined policy.
 
-**In production:** save the frame and status registers into a `.noinit` area, reset, and report them on the next boot. Tools like SEGGER Ozone, STM32CubeIDE's fault analyser and Memfault automate the decoding.
+**Interview takeaway:** Do not simply clear HardFault and resume. Inspect the architectural fault evidence, the saved context and memory map; available registers differ across Cortex-M profiles.
 
 ### What are SVC and PendSV used for? {H}
 **Short answer:** **SVC** (Supervisor Call) is a synchronous exception triggered by the `SVC #n` instruction; unprivileged code uses it to request privileged services, and RTOSes use it to start the first task. **PendSV** (Pendable Service) is an asynchronous exception triggered by software setting a bit in `SCB->ICSR`; it is given the **lowest** priority, so it runs only after all other interrupts have finished, which makes it the right place for an RTOS to perform context switches.
