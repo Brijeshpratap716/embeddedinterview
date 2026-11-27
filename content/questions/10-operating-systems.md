@@ -229,32 +229,28 @@ A TLB miss can trigger a hardware table walk and refill without any page fault. 
 **Interview takeaway:** A page fault is an exception requiring fault handling, not necessarily a bug. Distinguish translation-cache misses, demand faults and invalid accesses.
 
 ### How do multi-level page tables work? Calculate the size of the page tables. {M}
-**Short answer:** A single flat page table for a large address space is huge and mostly empty, so the virtual page number is split into several indexes. The first index selects an entry in a top-level table, which points to a second-level table, and so on; the last level gives the physical frame. Tables for unused parts of the address space are simply not allocated, which saves most of the memory.
+Multi-level page tables divide a virtual page number into indexes for several levels. Lower-level tables are allocated only for address ranges that need mappings.
 
-**Worked example: 32-bit addresses, 4 KB pages, 4-byte entries**
+#### 1. Worked 48-bit example
 
-- Offset: 4 KB = 2¹² → **12 bits**.
-- Page number: 32 − 12 = **20 bits** → 2²⁰ = 1,048,576 pages.
-- **Single-level table:** 2²⁰ entries × 4 B = **4 MB per process**, even for a tiny program.
-- **Two-level, 10 + 10 bits** (classic 32-bit x86 and ARMv7 short-descriptor style):
-  - Level 1: 2¹⁰ = 1024 entries × 4 B = 4 KB (one page).
-  - Each level-2 table: 1024 entries × 4 B = 4 KB, and it maps 1024 × 4 KB = **4 MB** of address space.
-  - A process using 8 MB of code and data at the bottom plus one stack page at the top needs: 1 level-1 table + 2 level-2 tables (for 8 MB) + 1 level-2 table (for the stack) = **4 pages = 16 KB** instead of 4 MB.
-- **Worst case** (every page mapped): 4 KB + 1024 × 4 KB = 4 MB + 4 KB, slightly **more** than a single-level table. Multi-level tables save space only because real address spaces are sparse.
+Assume 4 KiB pages and 8-byte descriptors, as in one common AArch64 configuration.
 
-**ARM64 with 4 KB granule and 48-bit virtual addresses**
-
-```
-47      39 38      30 29      21 20      12 11        0
-[ L0 idx ][ L1 idx  ][ L2 idx  ][ L3 idx  ][ offset    ]
-  9 bits    9 bits    9 bits     9 bits     12 bits
+```text
+VA bits: [47:39] [38:30] [29:21] [20:12] [11:0]
+          L0      L1      L2      L3      offset
 ```
 
-Each table holds 512 entries of 8 bytes = exactly 4 KB. Higher-level entries can also be **block** entries that map 1 GB (L1) or 2 MB (L2) directly ("huge pages"), skipping the lower levels.
+Each 9-bit index selects one of 512 entries. A full table contains 512 × 8 = 4096 bytes.
 
-**Cost:** each extra level adds a memory access to every TLB miss. Four levels means up to four reads before the real access, which is why TLBs and page-walk caches are essential.
+#### 2. Flat table size
 
-**Formula to remember:** with page size 2ᵖ and entry size 2ᵉ, each table has 2^(p−e) entries, so each level resolves p − e bits. For 4 KB pages and 8-byte entries: 12 − 3 = 9 bits per level.
+A 48-bit address space with 4 KiB pages has 2^36 virtual pages. An eight-byte flat entry per page would need 2^39 bytes = 512 GiB.
+
+#### 3. Sparse mapping
+
+For a single isolated 4 KiB page using four levels, a new hierarchy may require one 4 KiB table per level (16 KiB), plus the mapped data page. Nearby pages reuse existing tables; large block mappings can reduce table usage.
+
+**Interview takeaway:** Multi-level tables save memory for sparse mappings at the cost of potentially more lookup steps. Actual levels, granules and supported address widths depend on the CPU and OS configuration.
 
 ### What is a TLB, and how do you calculate the effective memory access time? {M}
 **Short answer:** The TLB (Translation Lookaside Buffer) is a small, fast cache inside the MMU that holds recent virtual-to-physical translations. On a hit, the translation is available immediately; on a miss, the hardware (or OS) must walk the page tables in memory first. Effective access time = hit rate × (time on a hit) + miss rate × (time on a miss).
