@@ -546,27 +546,28 @@ A wakeup can be spurious, or another thread can consume the available item befor
 **Interview takeaway:** The condition variable is a notification mechanism, not the condition itself. Protect queue state with the mutex and wait in a loop.
 
 ### Why does an OS need a scheduler, and what criteria are used to judge scheduling algorithms? {E}
-**Short answer:** There are usually more runnable tasks than CPUs, and tasks often wait for I/O. The scheduler decides which ready task runs on each CPU and for how long, so that the CPU is kept busy while some tasks wait, interactive tasks respond quickly, and real-time tasks meet their deadlines. Algorithms are judged on CPU utilisation, throughput, turnaround time, waiting time, response time, fairness and, for real-time systems, deadline misses and predictability.
+An OS scheduler selects which ready task runs on each CPU. It allocates limited CPU time while respecting priorities, resource constraints and the chosen scheduling policy.
 
-**Criteria**
+#### 1. Evaluation criteria
 
-| Criterion | Definition | Goal |
-|---|---|---|
-| CPU utilisation | fraction of time the CPU does useful work | maximise |
-| Throughput | jobs completed per unit time | maximise |
-| Turnaround time | completion time − arrival time | minimise |
-| Waiting time | time spent in the ready queue (turnaround − burst, for CPU-only jobs) | minimise |
-| Response time | arrival → first time it runs (or first output) | minimise (interactive) |
-| Fairness | each task gets a fair share; no starvation | ensure |
-| Deadlines / jitter | real-time tasks finish on time with low variation | guarantee |
+| Metric | Meaning |
+|---|---|
+| CPU utilization | Fraction of time CPU performs useful work |
+| Throughput | Jobs completed per unit time |
+| Turnaround | Completion time minus arrival time |
+| Waiting time | Time spent ready but not running |
+| Response time | Time until first service, or a defined application response |
+| Deadline misses | Jobs failing their timing requirement |
 
-These conflict: short time slices improve response time but add context-switch overhead and reduce throughput; favouring short jobs minimises average waiting time but can starve long ones.
+#### 2. Example
 
-**How scheduling relates to the process life cycle:** the scheduler only chooses among **Ready** tasks. It runs when the current task blocks (Running → Blocked), exits, or is pre-empted (timer tick, or a higher-priority task becomes Ready because an interrupt or another task woke it).
+A batch scheduler may emphasize throughput, an interactive scheduler responsiveness and fairness, and a real-time scheduler bounded response/deadline satisfaction.
 
-**Pre-emptive vs non-pre-emptive:** in a non-pre-emptive (cooperative) scheduler, a task keeps the CPU until it blocks or yields; in a pre-emptive one the OS can take the CPU away at any time. All general-purpose OSes and most RTOSes are pre-emptive.
+#### 3. Trade-offs
 
-**System calls and scheduling:** a system call is a natural scheduling point. Blocking calls (`read` on an empty socket, `sleep`, `pthread_mutex_lock` on a held lock) move the task to Blocked and invoke the scheduler; on return from any system call or interrupt, the kernel checks whether a reschedule is needed.
+A very short scheduling quantum can improve responsiveness but increases context-switch overhead. Giving urgent tasks priority can delay lower-priority work. SMP scheduling also balances load and cache locality.
+
+**Interview takeaway:** There is no universally best scheduler. Evaluate it against workload objectives and worst-case timing requirements.
 
 ### Compare FCFS, SJF, SRTF and Round Robin with a worked example. {M}
 **Short answer:** **FCFS** runs jobs in arrival order (simple, but short jobs wait behind long ones). **SJF** picks the shortest next CPU burst (optimal average waiting time if bursts are known, non-pre-emptive). **SRTF** is the pre-emptive version: a newly arrived job pre-empts the current one if its burst is shorter than the remaining time. **Round Robin** gives each job a fixed time slice in turn (fair, good response time; performance depends on the quantum).
