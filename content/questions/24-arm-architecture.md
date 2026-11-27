@@ -568,6 +568,31 @@ Release orders prior accesses before publication; acquire orders later accesses 
 
 **Interview takeaway:** Barriers enforce memory ordering, not atomicity or automatic cache writeback. The barrier scope and memory type matter. [Linux memory barriers](https://docs.kernel.org/core-api/wrappers/memory-barriers.html).
 
+#### Choosing the correct barrier for a concrete situation
+
+| Situation | Relevant mechanism |
+|---|---|
+| Publish normal-memory data between CPU cores | Release/acquire or paired SMP barriers |
+| Publish a DMA descriptor before ownership | DMA ordering primitives plus required mapping/sync |
+| Complete specified cache maintenance before proceeding | Architecture-required DSB scope |
+| Change a system register affecting instruction execution | Required context synchronization, often ISB |
+
+The barrier domain matters: DMB ISH orders specified accesses for the inner-shareable domain, DMB ISHST restricts the ordering to the appropriate store class, and other scopes/variants serve different observers. DSB is not a universal instruction that flushes all caches or waits for every peripheral's internal operation; it waits for the operations required by its architectural type and scope. ISB synchronizes the instruction stream with context changes; it is not a substitute for data-memory ordering.
+
+A typical one-time Linux publication can also be written more directly:
+
+```c
+// Producer
+WRITE_ONCE(data, 100);
+smp_store_release(&flag, 1);
+
+// Consumer
+if (smp_load_acquire(&flag) == 1)
+    value = READ_ONCE(data);
+```
+
+Both sides must participate in the synchronization protocol; a producer barrier alone does not solve every consumer ordering issue. Use portable C11 atomic operations for userspace threads and Linux SMP/DMA/MMIO APIs for kernel code. Do not insert raw barriers blindly or rely on volatile for ordering.
+
 ### What is acquire and release ordering? {M}
 **Short answer:** Release orders earlier accesses before publication; acquire orders later accesses after observing publication. Together they support safe producer-consumer communication.
 
