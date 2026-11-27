@@ -9,31 +9,41 @@ desc: Bitwise operators, masks, shifts, counting bits, powers of two and the cla
 Bit manipulation questions are short, easy to grade, and show up in nearly every firmware interview. Each answer below starts with the one-line answer you would give first, then the reasoning, a worked example and the follow-up questions interviewers usually ask next. Do all bit work on **unsigned** types unless you have a reason not to.
 
 ### What are the bitwise operators in C? {E}
-**Short answer:** C has six bitwise operators: AND `&`, OR `|`, XOR `^`, NOT `~`, left shift `<<` and right shift `>>`. They work on each bit independently, unlike the logical operators `&&`, `||` and `!`, which treat the whole value as true or false.
+Bitwise operators manipulate individual bits of integer operands. They are heavily used in firmware to control registers, construct masks and process binary data.
 
-| Operator | Name | Rule per bit | Example (`a=0b1100`, `b=0b1010`) |
-|---|---|---|---|
-| `&` | AND | 1 only if both bits are 1 | `a & b = 0b1000` |
-| &#124; | OR | 1 if either bit is 1 | `a | b = 0b1110` |
-| `^` | XOR | 1 if the bits differ | `a ^ b = 0b0110` |
-| `~` | NOT | flips every bit | `~a` = all bits inverted |
-| `<<` | left shift | moves bits up, fills with 0 | `a << 1 = 0b11000` |
-| `>>` | right shift | moves bits down | `a >> 2 = 0b0011` |
+#### 1. Basic operators
 
-**What each one is used for in firmware**
+Assume a = 12 (1100) and b = 10 (1010).
 
-- `&` **tests or clears** bits: `if (reg & BIT3)`, `reg &= ~BIT3`.
-- `|` **sets** bits: `reg |= BIT3`.
-- `^` **toggles** bits: `led ^= BIT5`.
-- `~` **builds inverted masks** for clearing.
-- `<< n` **multiplies by 2ⁿ** and builds single-bit masks: `1u << n`.
-- `>> n` **divides by 2ⁿ** (for unsigned values) and extracts fields.
+| Operator | Operation | Result |
+|---|---|---|
+| `&` | AND | 1000 = 8 |
+| `\|` | OR | 1110 = 14 |
+| `^` | XOR | 0110 = 6 |
+| `~` | NOT | Inverts all bits of the promoted operand |
+| `<<` | Left shift | a << 1 = 24 |
+| `>>` | Right shift | a >> 1 = 6 |
 
-**Logical vs bitwise:** `0x10 && 0x01` is `1` (both non-zero), but `0x10 & 0x01` is `0`. Logical operators also short-circuit: in `p && p->x` the right side is not evaluated when `p` is NULL. Bitwise operators always evaluate both sides.
+#### 2. Truth table
 
-**Precedence trap:** `&`, `^` and `|` bind more loosely than `==`. `if (reg & MASK == MASK)` parses as `reg & (MASK == MASK)`, i.e. `reg & 1`. Always write `if ((reg & MASK) == MASK)`.
+| A | B | AND | OR | XOR |
+|---|---|---|---|---|
+| 0 | 0 | 0 | 0 | 0 |
+| 0 | 1 | 0 | 1 | 1 |
+| 1 | 0 | 0 | 1 | 1 |
+| 1 | 1 | 1 | 1 | 0 |
 
-**Follow-up:** "Why use `1u` instead of `1`?" Because `1 << 31` shifts into the sign bit of a signed `int`, which is undefined behaviour before C23. `1u << 31` is well-defined.
+#### 3. Embedded register example
+
+```c
+uint32_t reg = 0;
+reg |= UINT32_C(1) << 3; // Set bit 3
+reg &= ~(UINT32_C(1) << 3); // Clear bit 3
+```
+
+For MMIO, ensure the register permits read-modify-write. C integer promotions can affect the width of complement and shift operations, especially for uint8_t and uint16_t.
+
+**Interview takeaway:** Bitwise operators work on individual integer bits; logical operators such as && and || work on truth values and may short-circuit. Use unsigned operands and valid shift counts.
 
 ### How do you set, clear, toggle and check the nth bit? {E}
 **Short answer:** Build a mask with `1u << n`, then use OR to set, AND with the inverted mask to clear, XOR to toggle and AND to test.
