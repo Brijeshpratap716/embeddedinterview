@@ -443,59 +443,36 @@ This preserves space runs but reverses their positions; normalize whitespace sep
 **Complexity:** O(n) time, O(1) space.
 
 ### How do you search for a pattern in a string (naive and KMP)? {M}
-**Short answer:** The naive method tries every starting position `i` and compares the pattern character by character: O(n·m) in the worst case. KMP precomputes, for each prefix of the pattern, how far it can fall back after a mismatch, so the text is never rescanned: O(n + m).
+Naive matching tries the pattern at each possible starting position, costing O(nm) worst-case time. KMP avoids rechecking characters by preprocessing the pattern's longest proper prefix that is also a suffix (LPS).
 
 ```c
-#include <stdio.h>
-#include <string.h>
-
-void search_naive(const char *text, const char *pat)
+/* Caller provides lps[m]; m > 0. */
+void build_lps(const char *p, size_t m, size_t *lps)
 {
-    size_t n = strlen(text), m = strlen(pat);
-    if (m == 0 || m > n) return;            /* n - m would underflow with size_t */
-    for (size_t i = 0; i <= n - m; i++) {
-        size_t j = 0;
-        while (j < m && text[i + j] == pat[j]) j++;
-        if (j == m) printf("Pattern found at index %zu\n", i);
+    lps[0]=0;
+    for (size_t i=1,j=0; i<m;) {
+        if (p[i]==p[j]) lps[i++]=++j;
+        else if (j) j=lps[j-1];
+        else lps[i++]=0;
     }
 }
-/* text "geeksforgeeks", pattern "eks" -> indices 2 and 10 */
-```
-
-**The `size_t` trap:** `strlen` returns `size_t`. If the pattern is longer than the text, `n - m` wraps to a huge value and the loop reads far past the end. Check `m > n` first (or use signed `int` lengths as in many textbook versions).
-
-**KMP (Knuth–Morris–Pratt)**
-
-```c
-void search_kmp(const char *text, const char *pat)
+size_t kmp(const char *s, size_t n, const char *p,
+           size_t m, const size_t *lps)
 {
-    size_t n = strlen(text), m = strlen(pat);
-    if (m == 0) return;
-    size_t lps[m];                           /* longest proper prefix that is also a suffix */
-    lps[0] = 0;
-    for (size_t i = 1, len = 0; i < m; ) {
-        if (pat[i] == pat[len])      lps[i++] = ++len;
-        else if (len)                len = lps[len - 1];
-        else                         lps[i++] = 0;
+    if (!m) return 0;
+    for (size_t i=0,j=0; i<n;) {
+        if (s[i]==p[j]) {
+            ++i; ++j;
+            if (j==m) return i-m;
+        } else if (j) j=lps[j-1];
+        else ++i;
     }
-    for (size_t i = 0, j = 0; i < n; ) {
-        if (text[i] == pat[j]) {
-            i++; j++;
-            if (j == m) { printf("found at %zu\n", i - m); j = lps[j - 1]; }
-        } else if (j) {
-            j = lps[j - 1];                  /* fall back in the pattern, not the text */
-        } else {
-            i++;
-        }
-    }
+    return SIZE_MAX;
 }
 ```
+For "ababaca", LPS is [0,0,1,2,3,0,1]. On mismatch, KMP retains the reusable prefix rather than restarting.
 
-**When the naive method is worst:** text `"AAAAAAAAAB"` with pattern `"AAAB"` compares almost the whole pattern at every position.
-
-**In practice:** `strstr()` finds the first occurrence and libraries use fast algorithms. In firmware, the common case is matching short tokens in a UART stream (e.g. waiting for `"OK\r\n"` from a modem); a small KMP-style state machine processes one byte at a time as it arrives, with no buffering.
-
-**Other algorithms to name:** Rabin–Karp (rolling hash, good for many patterns), Boyer–Moore (skips ahead, fast on long patterns).
+**Complexity:** O(n+m) time and O(m) auxiliary space.
 
 ### How does bubble sort work, and how is it different from binary search? {E}
 **Short answer:** Bubble sort repeatedly walks the array and swaps neighbouring elements that are in the wrong order, so the largest remaining value "bubbles" to the end on each pass. It is O(n²). Binary search is a different thing: it **finds** a key in an already sorted array by halving the search range, in O(log n).
