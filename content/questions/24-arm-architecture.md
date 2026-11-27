@@ -865,6 +865,22 @@ MRS X0, VTTBR_EL2 // stage-2 table base
 
 **Interview takeaway:** Stage-2 translation and configurable traps let EL2 isolate and manage guests.
 
+#### Worked translation and trap example
+
+Guest Linux maps VA 0x40001234 through its stage-1 tables to IPA 0x80000234. The hypervisor maps IPA page 0x80000000 to host physical page 0xA0000000. The resulting host PA is 0xA0000234, assuming 4 KiB pages and permitted accesses.
+
+| EL2 register | Role |
+|---|---|
+| HCR_EL2 | Virtualization controls and selected trap routing |
+| VTTBR_EL2 | Stage-2 translation root and VMID, as configured |
+| VTCR_EL2 | Stage-2 translation parameters |
+| ELR_EL2 / SPSR_EL2 | Exception return state |
+| ESR_EL2 | Exception syndrome where applicable |
+
+If the guest accesses an emulated peripheral that is not backed by ordinary stage-2 RAM, the hypervisor can handle the resulting fault and emulate the register operation. In Linux KVM, some exits are handled in the kernel; selected events such as emulated MMIO can return to QEMU through KVM_RUN. QEMU services the device model and re-enters guest execution.
+
+A combined translation can be cached in the TLB, so two-stage translation does not require two complete walks for every instruction. Guest DMA needs its own device isolation/mapping mechanism. KVM accelerates compatible-ISA guests; TCG dynamically translates guest instructions on a different host architecture.
+
 ### What is the ARM64 calling convention? {M}
 **Short answer:** AAPCS64 passes ordinary integer/pointer arguments in X0–X7 and returns simple integer results in X0. X19–X28 are callee-saved; SP must be 16-byte aligned at public interfaces.
 
