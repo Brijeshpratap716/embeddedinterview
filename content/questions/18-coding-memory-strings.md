@@ -956,6 +956,10 @@ int first_unique_char(const char *s)
 
 **Complexity:** O(n) time, 256 ints of space (constant). A brute-force nested loop is O(n²) — mention it only as the naive baseline.
 
+#### Why the second pass matters
+
+For "swiss", counts are s=3, w=1, i=1. Iterating over the count table would return the lowest byte value occurring once, which is i, not the first unique character w. Scanning the original order returns w. Use a size_t frequency array if arbitrary-length inputs are supported and return an index or a status plus output byte rather than conflating a sentinel with valid data.
+
 ### Remove spaces from a string in place. {E}
 **Short answer:** Use two pointers over the same buffer: a read pointer visits every character and a write pointer receives only the characters to keep. Because the write pointer never gets ahead of the read pointer, no data is lost. Terminate the string at the final write position. One pass, O(n) time, O(1) space.
 
