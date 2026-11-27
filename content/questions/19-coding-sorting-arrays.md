@@ -530,6 +530,7 @@ For an ordered sequence, a maximum positive product either uses three large posi
 ```c
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 static int cmp_int(const void *a, const void *b)
 {
@@ -544,7 +545,7 @@ void three_sum(int *a, size_t n)
         if (i > 0 && a[i] == a[i - 1]) continue;           /* skip duplicate first values */
         size_t l = i + 1, r = n - 1;
         while (l < r) {
-            long sum = (long)a[i] + a[l] + a[r];
+            int64_t sum = (int64_t)a[i] + a[l] + a[r];
             if (sum < 0) l++;
             else if (sum > 0) r--;
             else {
@@ -584,6 +585,10 @@ void three_sum(int *a, size_t n)
 | 4Sum | two nested loops + two pointers | O(n³) |
 
 **Pitfalls:** duplicate triplets (the skips), overflow when adding three large ints (use `long`), and the early exit `if (a[i] > 0) break;` (all later values are positive).
+
+#### Two-pointer trace
+
+Sorted input: [-4,-1,-1,0,1,2]. Fix the first -1. With left=-1 and right=2 the sum is zero; output [-1,-1,2]. Move both endpoints and skip duplicates, then left=0 and right=1 also sum to zero. A negative sum requires increasing the left value; a positive sum requires decreasing the right value. Sorting changes the original array. If original indices are required, sort value/index pairs and specify how duplicate index combinations should be reported. The O(n²) scan dominates an O(n log n) sorting implementation.
 
 ### Find the duplicate number in an array of n+1 integers in the range 1..n. {M}
 **Short answer:** Because every value is between 1 and n, treat each value as a pointer to the index with that number: `i → a[i]`. Starting from index 0 this forms a linked list that must contain a cycle, and the duplicate value is exactly where two pointers enter the same node — the cycle entrance. Floyd's tortoise-and-hare finds it in O(n) time with O(1) space, without modifying the array.
