@@ -2455,41 +2455,64 @@ On embedded systems, the logging backend may write to UART or a trace buffer ins
 **Interview takeaway:** Variadic arguments follow the target ABI, so they are not necessarily all stored on the stack. Use stdarg.h rather than manually walking memory. Reading a nonexistent argument or using an incompatible va_arg type can cause undefined behaviour.
 
 ### What is conditional compilation, and how is it used in embedded projects? {E}
-**Short answer:** Conditional compilation uses preprocessor directives (`#if`, `#ifdef`, `#ifndef`, `#elif`, `#else`, `#endif`, and the `defined()` operator) to include or exclude code before it is compiled. Embedded projects use it to build one code base for several boards and MCUs, to enable debug features, and to select features at build time.
+Conditional compilation allows the preprocessor to include or exclude source code based on compile-time conditions. It is commonly used to support different boards, processors, debug configurations and firmware features.
+
+#### 1. Common directives
+
+| Directive | Purpose |
+|---|---|
+| #if | Tests a preprocessor integer expression |
+| #ifdef | Tests whether a macro is defined |
+| #ifndef | Tests whether a macro is not defined |
+| #elif | Tests another condition |
+| #else | Selects the alternative |
+| #endif | Ends the conditional block |
+
+#### 2. Board-specific configuration
 
 ```c
-#if defined(BOARD_REV_B)
-#  define LED_PIN 5
-#elif defined(BOARD_REV_A)
-#  define LED_PIN 3
+#if defined(BOARD_A)
+    #define LED_PIN 3
+#elif defined(BOARD_B)
+    #define LED_PIN 7
 #else
-#  error "Unknown board revision"
-#endif
-
-#ifndef UART_BAUD
-#  define UART_BAUD 115200u          /* default that can be overridden with -DUART_BAUD=9600 */
-#endif
-
-#if DEBUG_LEVEL >= 2
-#  define LOG_DEBUG(...) log_msg(__VA_ARGS__)
-#else
-#  define LOG_DEBUG(...) do { } while (0)   /* compiled out completely */
+    #error "Unsupported board"
 #endif
 ```
 
-**Where the symbols come from:** `-D` options on the compiler command line (set by Make/CMake per build configuration), a generated `config.h` (Kconfig in Zephyr and Linux, `sdkconfig.h` in ESP-IDF), and compiler-predefined macros (`__ARM_ARCH`, `__GNUC__`, `__BYTE_ORDER__`, `__ARM_FEATURE_DSP`).
+Select the board through the build command:
 
-**`#ifdef` vs `#if`**
+```sh
+arm-none-eabi-gcc -DBOARD_A -c gpio.c -o gpio.o
+```
 
-- `#ifdef X` checks only whether `X` is defined, even if it is defined as 0.
-- `#if X` evaluates its value; an undefined `X` silently counts as 0. GCC's `-Wundef` warns about that, which catches typos like `#if DEBUG_LEVLE > 1`.
-- Kconfig-style systems prefer `#if IS_ENABLED(CONFIG_FOO)` or `if (IS_ENABLED(CONFIG_FOO))` in C code, so both branches are still compiled and type-checked.
+Only the selected configuration is passed to the compiler.
 
-**Good practice**
+#### 3. Enable or disable debug logging
 
-- Use `#error` to stop the build when a required option is missing or inconsistent.
-- Keep `#ifdef` blocks small; large conditional regions make code hard to read and test. Prefer separate source files per platform, selected by the build system (`uart_stm32.c`, `uart_nrf.c`).
-- Remember that code inside a disabled `#if` is not compiled at all, so it can rot. CI should build all configurations.
+```c
+#ifdef DEBUG
+    #define LOG(...) printf(__VA_ARGS__)
+#else
+    #define LOG(...) ((void)0)
+#endif
+
+LOG("State: %d\n", state);
+```
+
+When DEBUG is not defined, the logging call is removed during preprocessing. Avoid passing arguments whose side effects are required by the program.
+
+#### 4. Conditional compilation vs runtime if
+
+| Conditional compilation | Runtime if |
+|---|---|
+| Selects tokens before compilation | Selects behaviour during execution |
+| Can exclude unavailable target headers and functions | Both branches normally need valid C |
+| No runtime condition for excluded source | Condition may require runtime evaluation |
+
+A defined macro with value zero still satisfies #ifdef. Use #if FEATURE when you intend to test its numeric value.
+
+**Interview takeaway:** Conditional compilation is essential for portable BSPs and firmware variants. Test each supported build configuration; code excluded in one build may contain errors that only appear in another.
 
 ### What is _Static_assert and why is it useful? {M}
 **Short answer:** `_Static_assert(condition, "message")` (C11; `static_assert` with `<assert.h>`, and a keyword in C23) checks a constant expression **at compile time**. If the condition is false, the build fails with your message. It costs nothing at run time, so it is ideal for checking assumptions about sizes, layouts and configuration that would otherwise cause subtle run-time bugs.
