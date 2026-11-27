@@ -1885,34 +1885,57 @@ Function pointers are common in HAL callbacks, state-machine dispatch tables and
 **Interview takeaway:** Function pointers implement callbacks and runtime dispatch without hardcoding the callee. Calling through an incompatible function pointer type is undefined behaviour.
 
 ### What is the difference between call by value and call by reference? {E}
-**Short answer:** C always passes arguments **by value**: the function receives a copy, so changing the parameter does not change the caller's variable. To let a function modify the caller's data, you pass a **pointer** to it, which is what people call "call by reference" in C. (C++ has true references; C does not.)
+C supports **pass by value only**. A function can modify a caller's object by receiving a copy of its pointer, which is commonly described as call by reference.
+
+#### 1. Passing a value
 
 ```c
-void inc_value(int x)    { x++; }           /* changes only the local copy */
-void inc_ref(int *x)     { (*x)++; }         /* changes the caller's variable */
+void change(int x)
+{
+    x = 100;
+}
 
-int n = 5;
-inc_value(n);   /* n is still 5 */
-inc_ref(&n);    /* n is now 6 */
+int a = 10;
+change(a);
 ```
 
-**Passing a pointer is still pass-by-value**: the pointer itself is copied. So a function cannot change *which* object the caller's pointer points to, unless you pass a pointer to the pointer:
+After the call, a remains 10 because x is a separate copy.
+
+#### 2. Passing an address
 
 ```c
-void alloc_buf(uint8_t **out, size_t n) { *out = malloc(n); }
-uint8_t *buf;
-alloc_buf(&buf, 64);
+void change(int *p)
+{
+    *p = 100;
+}
+
+int a = 10;
+change(&a);
 ```
 
-**Arrays** are passed as a pointer to their first element, so the function can modify the caller's array.
+After the call, a becomes 100 because p points to a.
 
-**Structs** are copied when passed by value. A 100-byte config struct passed by value costs 100 bytes of stack and a copy on every call. Embedded code usually passes `const struct cfg *` for read-only access (no copy, and the `const` documents and enforces that the function will not modify it):
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 170" width="100%" role="img" aria-label="Passing a copy versus modifying the original object through a copied pointer">
+<text x="10" y="16" font-size="12" font-weight="600" fill="currentColor">Pass by value</text><rect x="10" y="26" width="108" height="32" rx="4" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="64" y="46" text-anchor="middle" font-size="12" fill="currentColor">a = 10</text><path d="M118 42 H222 m-5-4 5 4-5 4" stroke="currentColor" fill="none"/><text x="170" y="35" text-anchor="middle" font-size="10" fill="currentColor">copy</text><rect x="222" y="26" width="108" height="32" rx="4" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/><text x="276" y="46" text-anchor="middle" font-size="12" fill="currentColor">x = 100</text>
+<text x="10" y="91" font-size="12" font-weight="600" fill="currentColor">Pass a pointer value</text><rect x="10" y="101" width="108" height="32" rx="4" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="64" y="121" text-anchor="middle" font-size="12" fill="currentColor">a = 100</text><rect x="222" y="101" width="108" height="32" rx="4" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/><text x="276" y="121" text-anchor="middle" font-size="12" fill="currentColor">p = &amp;a</text><path d="M222 117 H118 m5-4 -5 4 5 4" fill="none" stroke="currentColor"/><text x="170" y="110" text-anchor="middle" font-size="10" fill="currentColor">writes via *p</text>
+<text x="170" y="153" text-anchor="middle" font-size="10" fill="currentColor">The pointer is copied, but the pointed-to object is shared.</text></svg></div>
+
+#### 3. Modifying the caller's pointer
 
 ```c
-void uart_init(const uart_cfg_t *cfg);
+void assign(int **p, int *target)
+{
+    *p = target;
+}
+
+int a = 10;
+int *ptr = NULL;
+assign(&ptr, &a);
 ```
 
-**Returning values:** returning small structs by value is fine and often efficient (the AAPCS returns structs up to 4 bytes in `r0`, larger ones through memory provided by the caller). For several results, return a status and write results through pointer parameters, or return a small struct.
+Now ptr points to a. A double pointer is needed here because the object to modify is itself a pointer.
+
+**Interview takeaway:** All C arguments are passed by value. Passing a pointer permits indirect modification of the caller's object; use const-qualified pointees when modification is not intended.
 
 ### What is recursion and why is it avoided in embedded code? {E}
 **Short answer:** Recursion is a function calling itself (directly or through other functions). Each call uses a new stack frame. It is avoided in embedded systems because the maximum stack depth depends on the input and cannot easily be bounded at compile time, stacks are small (often 512 bytes to a few KB per task), and a stack overflow on a microcontroller without an MPU silently corrupts other memory. MISRA C forbids recursion.
