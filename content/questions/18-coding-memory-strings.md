@@ -1348,3 +1348,89 @@ Answer: length 3, starting at 0 (`"bab"`; `"aba"` is equally valid).
 
 "racecar" expands from its middle e; "abba" expands from the gap between the two b characters. There are 2n−1 candidate centres for nonempty strings. For "cbbd", expanding the centre between b and b first matches both, then fails on c versus d, producing start 1, length 2. Use size_t-safe boundary checks when inputs can exceed LONG_MAX; Manacher's algorithm reduces worst-case time to O(n) at the cost of extra state.
 
+### Implement a variable-size static heap allocator with splitting, coalescing and alignment. {H}
+**Short answer:** Reserve a static aligned heap. Maintain a sorted list of blocks (offset, size, free flag). Allocate using first fit, split a larger block, and merge adjacent free blocks on release. This educational allocator keeps metadata outside the heap and allocates byte buffers in aligned units.
+
+```c
+#include <stddef.h>
+#include <stdbool.h>
+
+#define ALIGN _Alignof(max_align_t)
+#define UNITS 64
+#define MAX_BLOCKS UNITS
+
+_Alignas(max_align_t) static unsigned char heap[UNITS * ALIGN];
+
+struct block {
+    size_t off, size; /* measured in alignment units */
+    bool free;
+};
+static struct block b[MAX_BLOCKS] = {{0, UNITS, true}};
+static size_t nb = 1;
+
+void *heap_alloc(size_t bytes)
+{
+    if (!bytes || bytes > sizeof heap) return NULL;
+    size_t need = (bytes + ALIGN - 1) / ALIGN;
+
+    for (size_t i = 0; i < nb; i++) {
+        if (!b[i].free || b[i].size < need) continue;
+
+        if (b[i].size > need && nb < MAX_BLOCKS) {
+            for (size_t j = nb; j > i + 1; j--)
+                b[j] = b[j-1];
+            b[i+1] = (struct block){b[i].off + need,
+                                   b[i].size - need, true};
+            b[i].size = need;
+            nb++;
+        }
+        b[i].free = false;
+        return heap + b[i].off * ALIGN;
+    }
+    return NULL;
+}
+
+bool heap_free(void *p)
+{
+    if (!p) return true;
+    size_t i;
+    for (i = 0; i < nb; i++)
+        if (p == heap + b[i].off * ALIGN) break;
+    if (i == nb || b[i].free) return false;
+    b[i].free = true;
+
+    for (size_t j = 0; j + 1 < nb;) {
+        if (b[j].free && b[j+1].free) {
+            b[j].size += b[j+1].size;
+            for (size_t k = j+1; k+1 < nb; k++)
+                b[k] = b[k+1];
+            nb--;
+        } else j++;
+    }
+    return true;
+}
+```
+
+**Example:** With 16-byte alignment, requesting 20 bytes reserves two units (32 bytes). Freeing adjacent allocations merges their blocks and reduces external fragmentation. The aligned heap base and unit-sized offsets guarantee fundamental alignment; for an explicitly 64-byte-aligned byte pool, use _Alignas(64) and 64-byte units on a platform that supports that alignment.
+
+Allocation is O(B) for B blocks; freeing can be O(B²) due to metadata shifts. The allocator rejects foreign pointers and detectable double frees, but cannot detect stale pointers after an address is reused. It is not a conforming general-purpose malloc replacement (the backing array has a declared type); use for byte buffers or platform-supported storage. No concurrent or ISR safety is implied; add synchronization if required.
+
+### Implement offsetof() using a compiler builtin. {M}
+**Short answer:** The compiler knows the layout and padding of each structure. The GCC/Clang builtin gives the member's byte offset at compile time without evaluating a null pointer.
+
+```c
+#include <stddef.h>
+#define MY_OFFSETOF(type, member) __builtin_offsetof(type, member)
+
+struct device {
+    char status;
+    int id;
+};
+
+size_t id_offset(void)
+{
+    return MY_OFFSETOF(struct device, id);
+}
+```
+
+On a common ABI with 4-byte int alignment, the offset of id is 4 rather than 1. Use standard offsetof from stddef.h in portable code; the builtin is compiler-specific. Do not implement it by subtracting or dereferencing null pointers, and do not apply it to a bit-field.
