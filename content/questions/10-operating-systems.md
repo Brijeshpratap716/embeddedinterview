@@ -403,32 +403,31 @@ Processes can map the same memory using suitable mmap/shm interfaces. This avoid
 **Interview takeaway:** Choose IPC based on data volume, latency, isolation, ownership and synchronization. Signals notify; shared memory shares storage; sockets and queues provide communication abstractions.
 
 ### What is a race condition, and what is a critical section? {E}
-**Short answer:** A race condition is a bug where the result depends on the timing of two or more concurrent activities that access shared data, at least one of them writing. A **critical section** is the piece of code that accesses that shared data and must not be executed by more than one task at a time. Protecting critical sections (mutual exclusion) prevents races.
+A race condition occurs when behavior depends incorrectly on the timing or interleaving of concurrent operations. A critical section is code that must execute with suitable protection against conflicting accesses.
 
-**The classic example: `count++` is not atomic.** It is three steps: load, add, store.
+#### 1. Lost update
 
-```
-Thread A: load count (5)
-Thread B: load count (5)
-Thread A: add 1, store 6
-Thread B: add 1, store 6      ← one increment lost; expected 7
+```c
+count++;
 ```
 
-**Ways to protect a critical section**
+Two threads can both read the same old count, add one and store the same new value. In C, unsynchronized conflicting accesses to an ordinary object also constitute a data race and undefined behavior.
 
-| Technique | When |
-|---|---|
-| Mutex | threads/tasks; the section may block |
-| Spinlock | very short sections, multi-core, cannot sleep (kernel, ISRs with IRQs disabled) |
-| Disable interrupts | single-core MCU, task vs ISR, very short sections |
-| Atomic operations (`stdatomic.h`, `LDREX`/`STREX`, `LDADD`) | single variables, counters, flags |
-| Avoid sharing | message passing, per-thread data, single owner |
+#### 2. Protect the critical section
 
-**Requirements for a correct critical-section solution:** mutual exclusion (only one inside), progress (if nobody is inside, someone waiting can enter), and bounded waiting (nobody waits forever).
+```c
+pthread_mutex_lock(&lock);
+count++;
+pthread_mutex_unlock(&lock);
+```
 
-**Can a task be pre-empted while inside a critical section?** Yes, if it is protected by a mutex: the task can be pre-empted, and others trying to enter will block until it resumes and unlocks. That is fine for correctness, but it can cause **priority inversion**, which is why mutexes have priority inheritance. If the critical section is protected by **disabling interrupts or pre-emption** (or a spinlock in the kernel), the task cannot be pre-empted there, so such sections must be very short.
+All cooperating threads must use the same lock when accessing the protected state as required. A C11 atomic counter is another solution for independent increments.
 
-**Finding races:** ThreadSanitizer (`-fsanitize=thread`), Helgrind, the kernel's KCSAN and lockdep, code review of every shared variable, and stress tests on multi-core hardware. Races are timing-dependent, so "it worked in testing" proves little.
+#### 3. Race condition versus data race
+
+A higher-level race can occur even when individual accesses are atomic, for example checking availability and then reserving a resource in separate atomic steps.
+
+**Interview takeaway:** Protect the invariant, not just an individual variable. Use the synchronization mechanism appropriate to the execution context.
 
 ### What is a spinlock, and what are its advantages and disadvantages? {M}
 **Short answer:** A spinlock is a lock where a waiting thread repeatedly checks ("spins on") the lock variable in a loop instead of sleeping. It is very fast when the lock is held only briefly and the holder is running on another core, because there is no context switch. It wastes CPU time if the wait is long, and it is useless or dangerous on a single core if the holder can be pre-empted.
