@@ -178,25 +178,36 @@ Identify the board revision and bootloader generation. Check the boot medium, pl
 **Interview takeaway:** Raspberry Pi boot is a useful example of platform-specific firmware. Describe the general chain, then verify model-specific details instead of applying the same SoC boot sequence everywhere.
 
 ### What happens when a user logs in on a Linux terminal? {M}
-**Short answer:** init starts `getty` on each terminal; `getty` opens the TTY, prints the login prompt and reads the user name, then `exec`s `login`. `login` checks the password (via PAM against `/etc/shadow`), sets up the session, changes to the user's UID/GID with `setgid()`/`setuid()`, and `exec`s the user's shell from `/etc/passwd`. Over SSH, `sshd` does the same job instead of getty/login.
+A Linux terminal login establishes an authenticated user session and starts a shell or another configured program.
 
-**Step by step on a serial console**
+#### 1. Typical local-console flow
 
-1. **init** starts `getty` (`agetty`, or BusyBox `getty`) for `ttyS0`/`ttyAMA0`, as configured in `/etc/inittab` or a systemd `serial-getty@.service`.
-2. **getty** opens the terminal device, sets the baud rate and line settings (`termios`), makes it the controlling terminal of a new session (`setsid()`), prints `/etc/issue` and `login:`, reads the name.
-3. getty `exec`s **`login username`** (the same process, PID unchanged).
-4. **login** reads the password with echo disabled, verifies it through **PAM** (which hashes the input and compares with `/etc/shadow`), checks account expiry and `/etc/nologin`.
-5. login records the session (`utmp`/`wtmp`, `lastlog`), sets the TTY owner to the user, then **drops privileges**: `initgroups()`, `setgid()`, `setuid()`. This order matters: after `setuid()` to a normal user it can no longer change groups.
-6. It sets `HOME`, `SHELL`, `USER`, `PATH`, changes to the home directory and `exec`s the **shell** with a leading `-` in `argv[0]` (e.g. `-bash`), which tells the shell it is a login shell and should read `/etc/profile` and `~/.profile`.
+```text
+PID 1 starts getty
+       -> display login prompt on tty
+       -> login / authentication stack
+       -> set user and group credentials
+       -> establish environment and session
+       -> execute user's shell
+```
 
-**Where the kernel is involved**
+On many distributions, PAM participates in authentication and session setup. Minimal embedded systems may use a different authentication implementation.
 
-- The **TTY layer** and line discipline handle echo, line editing (canonical mode), and turning Ctrl-C into `SIGINT` for the foreground process group.
-- `setuid()`/`setgid()` are system calls; the kernel checks that only a privileged process (root, or with `CAP_SETUID`) may change to an arbitrary UID.
-- Sessions and process groups (`setsid`, `tcsetpgrp`) let the shell do job control.
-- When you log out, the shell exits, init sees its child died and starts a fresh `getty`.
+#### 2. Why credentials matter
 
-**Embedded note:** many products disable login on the serial console in production, or use `autologin` during development. Leaving a root shell on the debug UART of a shipped device is a classic security finding.
+The login process validates credentials, then establishes the user's UID, GID, supplementary groups, home directory and environment according to system policy. The resulting shell executes with the user's permissions, not automatically root privileges.
+
+#### 3. Related commands
+
+```sh
+tty
+id
+ps -o pid,ppid,tty,comm
+```
+
+An SSH login uses a network service and a different session setup path, while a graphical login uses a display manager or equivalent.
+
+**Interview takeaway:** A login prompt is userspace functionality. The kernel provides process, terminal and credential mechanisms; userspace authentication and session software apply the login policy.
 
 ### What is a bootloader and why does an embedded Linux system need one? {E}
 **Short answer:** A bootloader is the program that runs before the operating system. It initialises the minimum hardware the kernel needs (clocks, DRAM, storage, console), loads the kernel, device tree and optional initramfs into RAM, prepares the boot arguments and jumps to the kernel. The kernel cannot do this itself because, at power-on, nothing (not even DRAM) is ready to hold it.
