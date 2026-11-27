@@ -748,35 +748,32 @@ Linux commonly uses the cpufreq subsystem with governors and an operating-point 
 **Interview takeaway:** DVFS selects safe voltage/frequency pairs, not arbitrary values. Optimize energy and deadlines together; lower instantaneous power does not always mean lower total energy.
 
 ### What are the GPIO modes, and what are drive strength and slew rate? {E}
-**Short answer:** A GPIO pin can be configured as an **input** (floating, with pull-up, or with pull-down), an **output** (push-pull or open-drain), an **alternate function** (controlled by a peripheral such as UART TX or a timer PWM output), or **analog** (digital buffer disconnected, for ADC/DAC). Outputs also have configurable **drive strength** (how much current the pin can source or sink while keeping valid logic levels) and **slew rate/speed** (how fast the edges are).
+A GPIO pin can be configured for different electrical and functional roles. The available settings depend on the microcontroller's pin controller.
 
-| Mode | Use | Notes |
-|---|---|---|
-| Input floating | signals driven by another device | never leave unconnected inputs floating (noise, extra current) |
-| Input pull-up / pull-down | buttons, open-drain signals, defined default state | internal pulls are weak (typically 20–50 kΩ) |
-| Output push-pull | LEDs, chip selects, enables | drives high and low actively |
-| Output open-drain | I2C, shared interrupt lines, level shifting with an external pull-up | only drives low |
-| Alternate function | UART, SPI, I2C, timers, USB | the peripheral controls the pin; select the AF number in the pin mux |
-| Analog | ADC inputs, DAC outputs, unused pins | lowest leakage; no Schmitt trigger input current |
+#### 1. Common modes
 
-**Drive strength**
+| Mode | Use |
+|---|---|
+| Input | Read a digital signal |
+| Output | Drive a digital level |
+| Alternate function | Connect pin to UART, SPI, timer or other peripheral |
+| Analog | Route analog signal or disable digital circuitry where supported |
 
-- Rated in mA (e.g. 4, 8, 20 mA per pin) and limited per port and per chip. Exceeding it drops the output voltage below valid levels and can damage the pin.
-- An LED needs a series resistor sized for the pin's capability; larger loads (relays, motors, LED strips) need a transistor or MOSFET driver.
+Inputs may use pull-up or pull-down resistors to avoid floating levels.
 
-**Slew rate / speed setting**
+#### 2. Drive strength and slew rate
 
-- Faster edges are needed for high-frequency signals (SPI at 50 MHz, SDIO, Ethernet RMII).
-- Faster edges also cause more ringing, crosstalk, EMI and higher switching current. Use the **slowest setting that meets timing**, especially for long traces or cables.
+Drive strength controls output capability and electrical behavior. Slew rate controls how quickly the voltage transitions between levels. Faster edges may improve timing but increase electromagnetic emissions, ringing and switching noise.
 
-**Other configuration details**
+#### 3. Example: SPI clock
 
-- **Schmitt trigger** inputs (hysteresis) reject noise on slow edges.
-- **Interrupts on edges** (EXTI) for wake-up and events.
-- **Lock registers** on some MCUs prevent accidental reconfiguration of critical pins.
-- **Reset state:** most pins are inputs (often floating or analog) after reset; outputs that control hardware (motor enables, power switches) need external pull resistors so they are safe before firmware configures them.
+A fast SPI signal may need an appropriate drive/slew setting for its load and frequency. A slow LED or button signal usually does not need the fastest edge setting.
 
-**Power tip:** configure unused pins as analog (or output low) to minimise current; a single floating input can add tens or hundreds of µA in sleep.
+#### 4. Firmware configuration
+
+Configure pin multiplexing, direction, output type, pulls and electrical settings before enabling the peripheral. Set output initial levels safely to avoid unintended pulses during initialization.
+
+**Interview takeaway:** GPIO configuration involves both logical function and electrical characteristics. Choose settings based on circuit load, timing and signal integrity rather than always maximizing drive strength.
 
 ### What is the difference between open-drain and push-pull outputs? {E}
 **Short answer:** A **push-pull** output has two transistors (one to the supply, one to ground) and actively drives the line both high and low, giving strong, fast edges. An **open-drain** (open-collector for bipolar transistors) output has only the transistor to ground: it can pull the line low or release it; a pull-up resistor makes the line high when released. Open-drain lets several devices share one line safely and lets the line be pulled up to a different voltage.
