@@ -417,75 +417,57 @@ Drivers acquire clocks, regulators, IRQs, memory mappings and other resources du
 **Interview takeaway:** Device, driver and bus are separate objects. The bus determines matching; probe initializes a specific bound instance.
 
 ### What is a platform device and platform driver? {M}
-**Short answer:** Platform devices are peripherals that are not on a discoverable bus: SoC blocks at fixed memory addresses (UARTs, timers, I2C/SPI controllers, GPIO banks, display controllers), usually described in the device tree. A platform driver registers a `struct platform_driver` with an OF match table; in `probe()` it gets its memory region, interrupts, clocks, resets and regulators from the device's resources and sets up the hardware.
+A platform device represents hardware that is not normally discovered through a self-enumerating bus like PCI or USB. Platform devices often describe SoC-integrated controllers using device tree or ACPI.
+
+#### 1. Device-tree example
+
+```dts
+demo@40000000 {
+    compatible = "vendor,demo";
+    reg = <0x40000000 0x1000>;
+};
+```
+
+The reg encoding must match the parent node's address/size cell configuration.
+
+#### 2. Driver example
 
 ```c
-#include <linux/module.h>
-#include <linux/platform_device.h>
-#include <linux/io.h>
-#include <linux/clk.h>
-#include <linux/interrupt.h>
-
-struct mydev { void __iomem *base; struct clk *clk; int irq; };
-
-static irqreturn_t mydev_irq(int irq, void *data)
+static int demo_probe(struct platform_device *pdev)
 {
-    struct mydev *d = data;
-    u32 st = readl(d->base + 0x04);
-    if (!st) return IRQ_NONE;                 /* not ours (shared line) */
-    writel(st, d->base + 0x04);               /* acknowledge */
-    return IRQ_HANDLED;
-}
+    void __iomem *base;
 
-static int mydev_probe(struct platform_device *pdev)
-{
-    struct device *dev = &pdev->dev;
-    struct mydev *d = devm_kzalloc(dev, sizeof(*d), GFP_KERNEL);
-    int ret;
+    base = devm_platform_ioremap_resource(pdev, 0);
+    if (IS_ERR(base))
+        return PTR_ERR(base);
 
-    if (!d) return -ENOMEM;
-    d->base = devm_platform_ioremap_resource(pdev, 0);
-    if (IS_ERR(d->base)) return PTR_ERR(d->base);
-
-    d->clk = devm_clk_get_enabled(dev, NULL);          /* get + prepare + enable, auto-disabled */
-    if (IS_ERR(d->clk)) return dev_err_probe(dev, PTR_ERR(d->clk), "no clock\n");
-
-    d->irq = platform_get_irq(pdev, 0);
-    if (d->irq < 0) return d->irq;
-    ret = devm_request_irq(dev, d->irq, mydev_irq, 0, dev_name(dev), d);
-    if (ret) return ret;
-
-    platform_set_drvdata(pdev, d);
-    dev_info(dev, "probed, version 0x%x\n", readl(d->base));
+    platform_set_drvdata(pdev, base);
     return 0;
 }
 
-static const struct of_device_id mydev_of_match[] = {
-    { .compatible = "acme,mydev" },
+static const struct of_device_id demo_of_match[] = {
+    { .compatible = "vendor,demo" },
     { }
 };
-MODULE_DEVICE_TABLE(of, mydev_of_match);
+MODULE_DEVICE_TABLE(of, demo_of_match);
 
-static struct platform_driver mydev_driver = {
-    .probe  = mydev_probe,
-    .driver = { .name = "mydev", .of_match_table = mydev_of_match },
+static struct platform_driver demo_driver = {
+    .probe = demo_probe,
+    .driver = {
+        .name = "demo",
+        .of_match_table = demo_of_match,
+    },
 };
-module_platform_driver(mydev_driver);
-MODULE_LICENSE("GPL");
+module_platform_driver(demo_driver);
 ```
 
-**Matching device tree node**
+This is a kernel module fragment requiring the relevant headers and license declaration. Real hardware initialization occurs in probe.
 
-```dts
-mydev@40010000 {
-    compatible = "acme,mydev";
-    reg = <0x40010000 0x1000>;
-    interrupts = <GIC_SPI 45 IRQ_TYPE_LEVEL_HIGH>;
-    clocks = <&ccu 12>;
-};
-```
+#### 3. Probe sequence
 
-**Tips:** use `dev_err_probe()` for errors (it stays quiet for `-EPROBE_DEFER`), store per-device state in a struct (no globals, so multiple instances work), and use `of_device_get_match_data()` to pass per-variant data from the match table.
+Firmware description creates a platform device, the platform bus matches the driver, and probe obtains resources. An unavailable dependency may require deferred probing.
+
+**Interview takeaway:** A platform driver binds to platform-described hardware and obtains resources from the device model instead of assuming fixed physical addresses.
 
 ### How do you write an I2C (or SPI) client driver? {M}
 **Short answer:** Register a `struct i2c_driver` with an OF match table and an `i2c_device_id` table. In `probe(struct i2c_client *client)` you get the device's address and adapter; talk to it with `i2c_smbus_read_byte_data()`/`i2c_smbus_write_byte_data()`, `i2c_transfer()` for combined messages, or more commonly through **regmap** (`devm_regmap_init_i2c`). Then register with the right subsystem (hwmon, IIO, input...). These calls **sleep**, so use them only in process context (threaded IRQs, workqueues), never in a hard IRQ handler or under a spinlock.
