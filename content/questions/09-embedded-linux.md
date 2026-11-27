@@ -611,48 +611,37 @@ The relevant metric may be time to display, first control action or application-
 **Interview takeaway:** Optimize the measured critical path while preserving security, reliability and required initialization. A fast boot that occasionally fails is not an improvement.
 
 ### How do you access GPIO from Linux user space? {M}
-**Short answer:** Use the **GPIO character device** (`/dev/gpiochipN`) through **libgpiod** and its command-line tools (`gpiodetect`, `gpioinfo`, `gpioget`, `gpioset`, `gpiomon`). The old sysfs interface (`/sys/class/gpio`) is deprecated. For production, describe fixed-function pins in the device tree and let a kernel driver own them.
+Linux userspace GPIO access normally uses the GPIO character-device interface exposed as /dev/gpiochipN. libgpiod provides convenient APIs and command-line tools.
 
-**Command-line examples (libgpiod v2 syntax)**
+#### 1. Inspect GPIO lines
 
-```bash
-gpiodetect                         # list GPIO chips
-gpioinfo gpiochip0                 # line names, direction, consumers
-gpioget -c gpiochip0 17            # read line 17
-gpioset -c gpiochip0 18=1          # drive line 18 high (holds it while running)
-gpiomon -c gpiochip0 -e rising 23  # wait for rising edges
+```sh
+gpiodetect
+gpioinfo
 ```
 
-**C with libgpiod v2 (sketch)**
+Identify the correct GPIO chip and line by board configuration or line name. Exact command syntax for reads/writes differs between libgpiod major versions.
 
-```c
-#include <gpiod.h>
+#### 2. Access pattern
 
-struct gpiod_chip *chip = gpiod_chip_open("/dev/gpiochip0");
-struct gpiod_line_settings *s = gpiod_line_settings_new();
-gpiod_line_settings_set_direction(s, GPIOD_LINE_DIRECTION_OUTPUT);
-struct gpiod_line_config *lc = gpiod_line_config_new();
-unsigned int offset = 18;
-gpiod_line_config_add_line_settings(lc, &offset, 1, s);
-struct gpiod_line_request *req = gpiod_chip_request_lines(chip, NULL, lc);
-gpiod_line_request_set_value(req, 18, GPIOD_LINE_VALUE_ACTIVE);
+Open the chip, request the relevant lines with direction, initial value and polarity settings, then read/write or wait for edge events. Release the request when finished.
+
+```text
+Userspace application -> libgpiod -> GPIO character device
+                     -> kernel GPIO controller driver -> pin
 ```
 
-**Why sysfs was deprecated**
+A requested output is generally owned for the lifetime of the line request. Other users may not be able to acquire it simultaneously.
 
-- Global GPIO numbers that change between kernel versions and boards.
-- No ownership: any process could change any pin, and an exported pin stayed configured after the program crashed.
-- Edge events through `poll()` on a value file were awkward and could lose events.
-- The character device gives named lines, per-process ownership (released automatically when the process exits), timestamps on events, bias (pull-up/down) and debounce settings.
+#### 3. Legacy sysfs
 
-**Production advice**
+The old GPIO sysfs interface is deprecated. Use the character-device ABI for new designs when supported.
 
-- LEDs: `gpio-leds` driver → `/sys/class/leds/...` (with triggers like heartbeat).
-- Buttons: `gpio-keys` → a standard input device (`/dev/input/eventN`).
-- Resets and enables for chips: let the chip's kernel driver request them via `reset-gpios`/`enable-gpios` in the device tree.
-- Use user-space GPIO for prototyping, test equipment and truly application-specific signals.
+#### 4. Limitations
 
-**Timing limits:** user-space GPIO toggling has jitter (scheduling, syscalls). For precise waveforms use PWM, SPI or a timer peripheral, a kernel driver, or a coprocessor (e.g. the Cortex-M core on an i.MX8M or STM32MP1).
+Userspace GPIO is unsuitable for precise high-speed bit-banging when scheduling jitter matters. Do not take control of pins already owned by a kernel driver or required by a safety-critical function.
+
+**Interview takeaway:** Use libgpiod and the documented GPIO character-device ABI; hardware ownership and timing requirements still apply.
 
 ### What is the difference between a kernel driver and a user-space driver (UIO, spidev)? {M}
 **Short answer:** A kernel driver runs in kernel space, handles interrupts directly and plugs into a subsystem (network, input, IIO, DRM), so any application can use the device through a standard interface. A user-space driver talks to the hardware through a generic kernel helper (`spidev`, `i2c-dev`, `UIO`, `VFIO`, libgpiod); it is faster to write and debug and can stay proprietary, but it has higher latency, cannot be used by other kernel subsystems, and is harder to make safe.
