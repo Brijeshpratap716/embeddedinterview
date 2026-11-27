@@ -716,32 +716,30 @@ Account for cable propagation, transceiver delays, oscillator tolerance, control
 **Interview takeaway:** CAN bit rate is not determined by the prescaler alone. The number and arrangement of time quanta, SJW and physical network timing all matter.
 
 ### What is LIN, and how is it used alongside CAN? {M}
-**Short answer:** LIN (Local Interconnect Network) is a low-cost, single-wire, UART-based automotive bus (up to 20 kbps) with one commander (master) and up to 15 responders (slaves). The commander sends a **header** (break, sync byte 0x55, protected identifier) and the addressed node responds with 1–8 data bytes plus a checksum. It is used for simple, non-critical body electronics (window motors, seat controls, mirrors, rain sensors, switches) where CAN would be too expensive; a CAN ECU usually acts as the LIN commander and gateway.
+LIN (Local Interconnect Network) is a low-cost serial automotive network commonly used for slower body-control devices. It uses a scheduled communication model with one controlling node.
 
-**Frame**
+#### 1. Frame concept
 
+```text
+Header from commander: Break | Sync | Protected ID
+Response:              Data bytes | Checksum
 ```
-| Break (≥13 dominant bits) | Sync 0x55 | PID (6-bit ID + 2 parity) | Data 1-8 bytes | Checksum |
-          ^----------- header (commander) -----------^   ^-------- response (responder) ---------^
-```
 
-**Key characteristics**
+The configured publisher supplies the response; subscribed nodes consume it according to the schedule. LIN uses a single-wire physical layer with an appropriate transceiver and typically operates at up to about 20 kbit/s.
 
-| | LIN | CAN |
-|---|---|---|
-| Wires | 1 (+ 12 V and ground) | 2 (twisted pair) |
-| Speed | ≤ 20 kbps | 125 kbps–1 Mbps (FD faster) |
-| Access | commander polls via a schedule table | multi-controller arbitration |
-| Determinism | fully scheduled by the commander | priority-based |
-| Cost | very low (UART + simple transceiver, often an RC oscillator) | higher |
+#### 2. LIN versus CAN
 
-**Details**
+| LIN | CAN |
+|---|---|
+| Scheduled communication | Message arbitration |
+| Single-wire physical layer | Differential physical layer common |
+| Low cost, lower speed | Higher throughput and robust error handling |
 
-- The **sync byte 0x55** lets responders with inaccurate RC oscillators measure the bit rate and adjust (auto-baud), which is why cheap nodes work.
-- The commander's **schedule table** defines which frames are sent when, giving deterministic timing.
-- Checksum: classic (data only) or enhanced (data + PID, LIN 2.x).
-- Diagnostics and node configuration are standardised (LIN 2.x, ISO 17987), and LIN supports sleep/wake-up over the bus.
-- Many MCUs have LIN mode in their UARTs (break generation/detection).
+#### 3. Vehicle example
+
+A body controller can communicate with window or seat modules over LIN and publish aggregated status to a CAN network. The gateway manages scheduling, signal mapping and diagnostics.
+
+**Interview takeaway:** LIN trades bandwidth and distributed arbitration for predictable low-cost scheduled communication. It complements rather than universally replaces CAN.
 
 ### What are the USB transfer types? {M}
 **Short answer:** USB has four transfer types. **Control** transfers configure and query devices on endpoint 0 (enumeration, standard and class requests) with guaranteed delivery. **Bulk** transfers move large amounts of data with error checking and retries but no timing guarantee (mass storage, printers, CDC serial data). **Interrupt** transfers carry small, periodic data with a guaranteed maximum polling interval (keyboards, mice, HID, status). **Isochronous** transfers reserve bandwidth with fixed timing but no retransmission (audio, video).
