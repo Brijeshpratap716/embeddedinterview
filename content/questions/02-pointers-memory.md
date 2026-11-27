@@ -988,32 +988,60 @@ Check register width, alignment, reserved bits, read/write side effects and memo
 **Interview takeaway:** Fixed-address pointers are common on bare metal. Linux uses mapped I/O addresses and MMIO accessors. Always follow the hardware's register semantics.
 
 ### Why is sizeof not a function? {E}
-**Short answer:** `sizeof` is a compile-time **operator**, not a function. The compiler evaluates it from the type of its operand, so no code runs and the operand expression is **not evaluated** (except for variable-length arrays). Parentheses are required only around a type name: `sizeof(int)`; for an expression, `sizeof x` is valid.
+`sizeof` is a built-in C operator, not a library function. It returns the size of a type or object representation in units of C bytes, as a value of type size_t.
+
+#### 1. Syntax
+
+```c
+int a = 10;
+
+sizeof(int);  // Type
+sizeof(a);    // Expression
+sizeof a;     // Parentheses optional for expression
+```
+
+On a target with four-byte int, all three produce 4.
+
+#### 2. Is its operand evaluated?
+
+For ordinary non-VLA operands, it is not evaluated.
 
 ```c
 int i = 5;
-size_t s = sizeof(i++);      /* s = 4, and i is still 5: i++ never executes */
+size_t n = sizeof(i++);
 
-int arr[10];
-sizeof arr;                  /* 40 */
-sizeof arr[0];               /* 4 */
-sizeof(int[10]);             /* 40 */
-
-void f(int n) { int vla[n]; sizeof vla; }   /* VLA: evaluated at run time */
+printf("%d", i); // 5
 ```
 
-**Facts interviewers check**
+The compiler determines the size from the expression's type without executing the increment.
 
-- The result type is `size_t` (unsigned). Mixing it with negative signed values in comparisons is a classic bug: `if (-1 < sizeof(int))` is false.
-- `sizeof(char)` is always 1. In C, `sizeof('a')` is `sizeof(int)` because a character constant is an `int`.
-- `sizeof` on a struct includes padding.
-- `sizeof` on an array parameter gives the pointer size, because the parameter is really a pointer.
-- `sizeof` on a function name is invalid in standard C.
-- Because the result is a constant expression (except for VLAs), it can be used in `#define`s, array sizes and `_Static_assert`, but **not** in `#if` (the preprocessor runs before types exist).
+#### 3. Variable-length array exception
 
-**Printing it:** use `%zu`: `printf("%zu\n", sizeof arr);`.
+On implementations supporting variable-length arrays:
 
-**Good style:** `malloc(n * sizeof *p)` rather than `malloc(n * sizeof(struct foo))`; the expression form stays correct if the type of `p` changes.
+```c
+void fun(size_t n)
+{
+    int a[n];    // Assume n > 0 and a valid bounded size
+    printf("%zu", sizeof a);
+}
+```
+
+The array's size depends on n at runtime. Some VLA-related sizeof operands therefore require runtime evaluation.
+
+#### 4. Array vs pointer
+
+```c
+int arr[10];
+int *p = arr;
+
+sizeof arr;  // 10 * sizeof(int)
+sizeof p;    // Size of int pointer
+```
+
+sizeof includes structure padding, but cannot discover an allocation's size from a pointer.
+
+**Interview takeaway:** sizeof operates on types and expressions, not on runtime function arguments. Its result is size_t, so use the %zu printf format.
 
 ### How do you find the number of elements in an array? {E}
 **Short answer:** Divide the size of the whole array by the size of one element: `sizeof(a) / sizeof((a)[0])`, usually wrapped in an `ARRAY_SIZE` macro. It only works on a real array whose declaration is in scope; on a pointer (including an array passed to a function) it silently gives a wrong result.
