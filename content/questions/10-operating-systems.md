@@ -686,22 +686,32 @@ Pinning may reduce load-balancing flexibility and overload one CPU. Isolation al
 **Interview takeaway:** Affinity restricts placement; it does not reserve a CPU exclusively or guarantee latency. Measure whether pinning improves the actual workload.
 
 ### What are the ways a CPU can communicate with an I/O device (polling, interrupts, DMA)? {E}
-**Short answer:** With **polling** the CPU repeatedly reads a status register until the device is ready (simple, lowest latency for very fast devices, but wastes CPU time). With **interrupts** the device signals the CPU when it needs attention, and the CPU does other work meanwhile. With **DMA** a DMA controller copies whole blocks of data between the device and memory without the CPU, interrupting only when the transfer is done. Device registers are accessed through memory-mapped I/O (ARM) or a separate I/O port space (x86 `in`/`out`).
+The CPU can communicate with peripherals through polling, interrupts or DMA, depending on the device and workload.
 
-| | Polling | Interrupt-driven | DMA |
-|---|---|---|---|
-| CPU cost per byte | high (busy loop) | one interrupt per event/byte | almost none (one interrupt per block) |
-| Latency | lowest if the CPU is already looping | interrupt entry latency (µs) | setup cost, then hardware speed |
-| Complexity | trivial | ISR, shared data protection | buffer management, cache coherency, descriptors |
-| Good for | very short waits, boot code, very high rates (NAPI busy polling) | keyboards, UART at low rates, buttons, timers | disks, network, audio, displays, high-rate ADC/SPI |
+| Mechanism | CPU role | Example |
+|---|---|---|
+| Polling | Repeatedly read status | Wait for UART TX readiness |
+| Interrupt | Service hardware notification | Handle incoming GPIO event |
+| DMA | Configure transfer and handle completion | Receive a block of audio samples |
 
-**Interrupt handling basics:** the device asserts an IRQ line → interrupt controller (GIC, NVIC, APIC) → CPU saves state and jumps to the vector → the handler acknowledges the device and does minimal work → defers the rest (bottom half, tasklet, workqueue, threaded IRQ, or an RTOS task) → returns.
+#### 1. Data flow
 
-**Hybrid approaches:** Linux network drivers use **NAPI**: the first packet raises an interrupt, then the driver disables the interrupt and polls while traffic is heavy, switching back to interrupts when it is quiet. This avoids an "interrupt storm" at high packet rates.
+```text
+Polling: CPU -> read device status -> repeat
+Interrupt: device -> interrupt controller -> CPU ISR
+DMA: device <--> DMA engine / interconnect <--> memory
+     CPU configures and receives completion
+```
 
-**DMA caveats:** on CPUs without hardware cache coherency for DMA (many Cortex-A/M7 systems), the driver must clean the cache before a device reads memory and invalidate it before the CPU reads what a device wrote. Linux's DMA API (`dma_map_single`, `dma_alloc_coherent`) handles this.
+#### 2. Linux use
 
-**Watching interrupts on Linux:** `/proc/interrupts` shows per-CPU counts for every IRQ. Sampling it over a minute and dividing by 60 gives a stable per-second rate, smoothing out bursts that a one-second sample would exaggerate or miss.
+Drivers map registers using MMIO APIs, register IRQ handlers and use DMA mapping APIs. For high-rate networking, a hybrid interrupt/polling mechanism such as NAPI can reduce per-packet interrupt overhead.
+
+#### 3. Trade-offs
+
+Polling wastes cycles during long waits but can be simple and predictable for short bounded waits. Interrupts reduce idle checking but add scheduling/service overhead. DMA improves bulk transfer efficiency but adds mapping and ownership requirements.
+
+**Interview takeaway:** Choose based on transfer size, latency, event frequency and CPU overhead. DMA does not eliminate synchronization or error handling.
 
 ### What is a system call and how does it work? {M}
 **Short answer:** A system call is the controlled entry point from a user program into the kernel, used whenever the program needs something only the kernel may do (I/O, memory, creating processes). The C library puts the syscall number and arguments in registers and executes a trap instruction (`svc #0` on ARM64, `syscall` on x86-64). The CPU switches to kernel mode at a fixed entry point; the kernel checks the arguments, runs the handler from the syscall table and returns the result. Negative return values become `errno` in libc.
