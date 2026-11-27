@@ -636,6 +636,23 @@ A `while (p != NULL)` loop on a circular list never ends — the classic bug.
 
 **Detecting whether a list is circular:** Floyd's algorithm or check whether walking from the head returns to the head.
 
+#### Remove the first node in O(1)
+
+```c
+bool cl_pop_front(node_t **tail, int *out)
+{
+    if (!*tail) return false;
+    node_t *head = (*tail)->next;
+    *out = head->val;
+    if (head == *tail) *tail = NULL;
+    else (*tail)->next = head->next;
+    free(head);
+    return true;
+}
+```
+
+For 10→20→30→10, tail points to 30 and head is tail->next. Removing 10 connects 30 to 20. Unlike a conventional singly linked list, iteration stops upon returning to the start rather than finding NULL.
+
 ### Implement a Linux-style intrusive doubly linked list (list_head). {H}
 **Short answer:** Embed a small `struct list_head { next, prev }` inside each object instead of allocating separate list nodes. The list is circular with a sentinel head (an empty list points to itself), so `list_add` and `list_del` are a few pointer assignments with no special cases, and `container_of` gets back from the embedded `list_head` to the containing object. Objects can be on several lists at once by embedding several `list_head` members.
 
