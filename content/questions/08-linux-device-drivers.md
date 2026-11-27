@@ -1492,32 +1492,35 @@ The DRM driver name and available options depend on the platform. Enumerate actu
 **Interview takeaway:** KMS connects memory-backed framebuffers to display timing and outputs through atomic state. Understand both the logical DRM objects and the hardware pipeline.
 
 ### What is the difference between a kernel thread and a user thread? {E}
-**Short answer:** A kernel thread runs entirely in kernel space, has no user address space (its `mm` is NULL; it borrows the previous task's page tables), and is created with `kthread_run()` or by subsystems (`kworker`, `ksoftirqd`, `irq/NN-name`, `kswapd`, `rcu_*`). A user thread belongs to a process, shares that process's address space and file descriptors, runs user code at EL0, and enters the kernel only through system calls, exceptions and interrupts. Both are `task_struct`s scheduled by the same scheduler.
+A userspace thread executes application code with its process address space and enters the kernel through system calls, faults or interrupts. A kernel thread primarily executes kernel code and normally has no ordinary userspace address space of its own.
 
-**Creating a kernel thread in a driver**
+| User thread | Kernel thread |
+|---|---|
+| Runs userspace application code | Runs kernel function |
+| Has process memory mappings | Normally no userspace mm of its own |
+| Uses system calls for services | Can call permitted kernel APIs |
+| Scheduled by kernel scheduler | Also scheduled by kernel scheduler |
+
+#### 1. Kernel thread example
 
 ```c
-static int poll_fn(void *data)
+static int worker(void *arg)
 {
-    struct mydev *d = data;
     while (!kthread_should_stop()) {
-        poll_hardware(d);
-        msleep_interruptible(10);
+        // Wait for work using appropriate synchronization.
+        do_work_or_wait(arg);
     }
     return 0;
 }
-
-d->task = kthread_run(poll_fn, d, "mydev-poll");
-if (IS_ERR(d->task)) return PTR_ERR(d->task);
-/* in remove: */ kthread_stop(d->task);
 ```
 
-**Points**
+Create with kthread_run or the appropriate kthread API, handle error pointers, and stop/synchronize it during teardown. A blocking worker must be able to wake and observe stop requests.
 
-- Kernel threads appear in `ps` in square brackets (`[kworker/0:1H]`).
-- Prefer workqueues or threaded IRQs over custom kthreads unless you need a dedicated, long-running loop or a specific RT priority (`sched_set_fifo(task)`).
-- In Linux, user threads are created with `clone()` sharing the address space (pthreads, 1:1 model): each user thread has its own kernel `task_struct` and kernel stack.
-- Kernel threads can be frozen during suspend (`set_freezable()`, `try_to_freeze()`).
+#### 2. Use cases
+
+Kernel threads perform background processing, filesystem work, interrupt-thread handling and other kernel services. Workqueues often offer a simpler managed alternative for deferred work.
+
+**Interview takeaway:** Both are schedulable tasks; the distinction is execution role and memory context. Kernel threads are not automatically immune to blocking or scheduling latency.
 
 ### How do you build an out-of-tree kernel module? {E}
 **Short answer:** Write a minimal Kbuild Makefile that sets `obj-m` and calls the kernel build system with `M=$(PWD)`. Build against the configured source or headers of the exact kernel the module will run on (`vermagic` must match). For an embedded target, point `KDIR` at the target kernel build tree and pass `ARCH` and `CROSS_COMPILE`.
