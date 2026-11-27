@@ -766,6 +766,16 @@ int main(void)
 
 **Forcing alignment:** `_Alignas(32) uint8_t dma_buf[512];` or `__attribute__((aligned(32)))`; check it with `_Static_assert(_Alignof(...) == 32, "")`.
 
+#### Alignment versus size
+
+```c
+struct example { char tag; uint32_t value; };
+printf("%zu %zu\n", sizeof(struct example),
+       _Alignof(struct example));
+```
+
+On a typical ABI with four-byte uint32_t alignment, the structure is eight bytes with alignment four; the compiler inserts padding between fields. To require a 64-byte boundary for a buffer, use _Alignas(64) where supported and verify its address with a uintptr_t mask. Alignment is not necessarily equal to object size.
+
 ### How do you check whether a pointer is NULL safely? {E}
 **Short answer:** Compare the pointer with `NULL` before it is used for the first time, and return an error code instead of dereferencing it. Do the check at module boundaries (public functions, data from callbacks or other tasks), set pointers to NULL after freeing them, and remember that a NULL check cannot detect dangling or uninitialised pointers.
 
