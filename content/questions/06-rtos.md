@@ -106,24 +106,26 @@ A high-priority control task that wakes from a timer can preempt a background lo
 **Interview takeaway:** Preemption improves responsiveness but does not eliminate blocking, interrupt masking or priority inversion. Cooperative scheduling still needs interrupt-safe sharing.
 
 ### What is time slicing / round-robin scheduling? {E}
-**Short answer:** When several ready tasks share the **same** highest priority, the scheduler gives each a time slice and rotates between them in round-robin order. In FreeRTOS a slice is one tick (`configUSE_TIME_SLICING`). Tasks of **different** priorities are never time-sliced against each other: the higher-priority ready task always runs.
+Round-robin scheduling gives eligible tasks turns on the CPU. In a fixed-priority RTOS, time slicing commonly applies to tasks of equal priority.
 
-**Example (1 ms tick, three tasks at priority 2, one at priority 3)**
+#### 1. Example
 
+```text
+Time:   0     1     2     3     4 ms
+Task:   | A   | B   | A   | B   |
 ```
-Priority 3 task blocked:   A B C A B C A ...   (each runs for one tick in turn)
-Priority 3 task ready:     H H H ...           (A, B, C get nothing until H blocks)
-```
 
-**Details**
+Both tasks are ready at the same priority, and each time slice is 1 ms in this simplified example.
 
-- A task that blocks before its slice ends gives up the rest of it; the next equal-priority task runs immediately.
-- A task woken by an event does not necessarily run at once if a task of the same priority is running (it runs at the next tick or yield), unless the port/config says otherwise (`configUSE_PREEMPTION` with yields on equal priority).
-- The idle task shares priority 0 with application tasks at priority 0; `configIDLE_SHOULD_YIELD` controls whether it yields to them.
+#### 2. When does the scheduler change task?
 
-**When to use equal priorities with time slicing:** background jobs of similar importance (logging, housekeeping). For time-critical work, give tasks distinct priorities and let them block, rather than relying on slices.
+A task can yield, block or exhaust its slice. A higher-priority task becoming ready may preempt the current task before its slice finishes.
 
-**Linux comparison:** `SCHED_RR` is round robin among equal real-time priorities (100 ms default slice); normal tasks use weighted fair scheduling instead.
+#### 3. FreeRTOS
+
+With preemptive scheduling and time slicing enabled, equal-priority ready tasks can rotate at tick boundaries. Exact scheduling behavior depends on the kernel configuration and port; a tick is not necessarily a guaranteed uninterrupted time slice.
+
+**Interview takeaway:** Round-robin improves sharing among peers. It does not mean every task receives equal CPU time regardless of priority or blocking behavior.
 
 ### What is a context switch and what is saved? {M}
 **Short answer:** A context switch saves the state of the running task so it can be resumed later, and restores the state of the next task. On Cortex-M, the hardware automatically stacks `R0`–`R3`, `R12`, `LR`, `PC` and `xPSR` when PendSV is entered; the PendSV handler saves the remaining registers `R4`–`R11` (and the FPU registers `S16`–`S31` if the task used the FPU) onto the task's own stack, stores the stack pointer (PSP) in the task's control block, loads the next task's PSP and registers, and returns, so the hardware unstacks the rest.
