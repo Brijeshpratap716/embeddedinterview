@@ -430,45 +430,41 @@ A higher-level race can occur even when individual accesses are atomic, for exam
 **Interview takeaway:** Protect the invariant, not just an individual variable. Use the synchronization mechanism appropriate to the execution context.
 
 ### What is a spinlock, and what are its advantages and disadvantages? {M}
-**Short answer:** A spinlock is a lock where a waiting thread repeatedly checks ("spins on") the lock variable in a loop instead of sleeping. It is very fast when the lock is held only briefly and the holder is running on another core, because there is no context switch. It wastes CPU time if the wait is long, and it is useless or dangerous on a single core if the holder can be pre-empted.
+A spinlock provides mutual exclusion by repeatedly checking a lock until it becomes available, rather than putting the waiter to sleep.
+
+#### 1. Conceptual C11 example
 
 ```c
 #include <stdatomic.h>
 
-typedef struct { atomic_flag f; } spinlock_t;
-#define SPINLOCK_INIT { ATOMIC_FLAG_INIT }
+static atomic_flag lock = ATOMIC_FLAG_INIT;
 
-static inline void spin_lock(spinlock_t *l)
+void acquire(void)
 {
-    while (atomic_flag_test_and_set_explicit(&l->f, memory_order_acquire))
-        ;   /* spin; real implementations add a pause/WFE hint here */
+    while (atomic_flag_test_and_set_explicit(
+               &lock, memory_order_acquire)) {
+        // Spin.
+    }
 }
 
-static inline void spin_unlock(spinlock_t *l)
+void release(void)
 {
-    atomic_flag_clear_explicit(&l->f, memory_order_release);
+    atomic_flag_clear_explicit(&lock,
+                               memory_order_release);
 }
 ```
 
-The **acquire**/**release** ordering makes sure memory accesses inside the critical section cannot move outside it.
+This demonstrates acquire/release semantics. Production implementations use architecture and OS-specific mechanisms to reduce contention and handle scheduling/context rules.
 
-**Advantages**
+#### 2. Advantages and disadvantages
 
-- No context switch: lowest latency for very short critical sections.
-- Can be used where sleeping is not allowed: interrupt handlers and other atomic contexts in the kernel.
-- Simple, small.
+Spinlocks can avoid sleep/wakeup overhead for very short critical sections. They waste CPU cycles under contention and may cause cache-line traffic or deadlock if the owner cannot run.
 
-**Disadvantages**
+#### 3. Kernel use
 
-- Burns CPU while waiting; with many waiters it wastes a lot of cycles and memory bandwidth (cache-line bouncing).
-- On a **single core** with pre-emption, a waiter spins for its whole time slice while the holder cannot run. The kernel avoids this by disabling pre-emption while a spinlock is held.
-- If an interrupt handler on the same CPU tries to take a lock that the interrupted code already holds, it deadlocks: use `spin_lock_irqsave()`.
-- Not fair in the simplest form (a waiter can starve); **ticket locks** and **queued spinlocks (MCS/qspinlock)** fix fairness and cache traffic.
-- The holder must never sleep.
+Ordinary non-RT Linux spinlocks protect short non-sleeping sections. Interrupt-side locking may require local IRQ masking. PREEMPT_RT changes spinlock_t semantics; raw spinlocks retain strict spinning behavior.
 
-**On ARM:** the lock is built from exclusive load/store (`LDAXR`/`STXR`) or ARMv8.1 atomics (`CAS`, `SWPA`), and waiters use `WFE` (wait for event) so the core sleeps until the lock line changes, saving power.
-
-**Rule of thumb:** spinlock if the critical section is shorter than about two context switches and cannot sleep; mutex otherwise. In user space, use a mutex: glibc's `pthread_mutex` already spins briefly before sleeping (adaptive mutexes), and user-space spinning cannot disable pre-emption.
+**Interview takeaway:** Spin only when the owner can make progress quickly. Do not use a naive spinlock as a general-purpose mutex or block inside a non-sleeping critical section.
 
 ### What is a semaphore, and how does it differ from a mutex in POSIX? How are semaphores used for mutual exclusion and for synchronisation? {M}
 **Short answer:** A semaphore is an integer counter with two atomic operations: **wait** (`P`, `sem_wait`: decrement, block if it would go below zero) and **post** (`V`, `sem_post`: increment, wake a waiter). A mutex is a lock with an **owner**: only the thread that locked it may unlock it, and it can support priority inheritance and error checking. Use a mutex for mutual exclusion; use a semaphore for signalling between tasks or counting resources.
