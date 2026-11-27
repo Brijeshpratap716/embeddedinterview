@@ -458,35 +458,28 @@ Consider application compatibility, target architecture, memory footprint, local
 **Interview takeaway:** A C library is part of the userspace ABI. Select it with the toolchain and root filesystem, not independently of the application ecosystem.
 
 ### Which filesystems are used on embedded flash? {M}
-**Short answer:** It depends on the flash type. On **raw NAND/NOR** (an MTD device without its own controller) use **UBIFS** on top of **UBI** (or JFFS2 on small NOR), because the filesystem must handle wear levelling and bad blocks. On **managed flash** (eMMC, SD, UFS, SSD) the controller does that, so use **ext4** or **F2FS**. For a read-only root use **SquashFS** or **EROFS**.
+Embedded storage filesystems depend on whether the device exposes raw flash or a managed block interface.
 
-**Raw flash vs managed flash**
+| Storage | Suitable examples |
+|---|---|
+| Raw NAND/NOR flash via MTD | UBIFS on UBI, JFFS2 where appropriate |
+| Managed eMMC, SD, SSD | ext4, F2FS, other block filesystems |
+| Read-only compressed image | SquashFS |
+| RAM-backed storage | tmpfs |
 
-| | Raw NAND/NOR (MTD) | Managed (eMMC, SD, UFS) |
-|---|---|---|
-| Interface | `/dev/mtdN`, erase blocks, pages, OOB area | `/dev/mmcblkN`, normal block device |
-| Bad blocks, ECC, wear levelling | software (UBI, MTD, NAND driver) | controller firmware (FTL) |
-| Filesystems | UBIFS (on UBI), JFFS2, YAFFS2 | ext4, F2FS, (btrfs) |
+#### 1. Raw versus managed flash
 
-**Filesystem guide**
+Raw NAND has erase blocks, bad blocks and endurance constraints. UBI manages eraseblock mapping and wear-related concerns; UBIFS operates on UBI volumes. Managed block devices generally hide physical flash management behind their controller.
 
-- **UBIFS:** journaling, compression, scales to large NAND, fast mount. UBI below it spreads erases across the whole flash and manages bad blocks and volumes.
-- **JFFS2:** older log-structured filesystem for small NOR; mount time grows with size.
-- **ext4:** the default on eMMC/SD; mature, journaling. Use `data=ordered` (the default) and avoid unnecessary writes.
-- **F2FS:** designed for flash-based block devices; can reduce write amplification on cheap SD/eMMC.
-- **SquashFS / EROFS:** compressed and **read-only**; the root image cannot be corrupted by power loss. EROFS is newer, faster to read, and used by Android.
-- **tmpfs:** RAM-based, for `/tmp`, `/run` and logs that do not need to survive reboot.
-- **OverlayFS:** a writable layer (on a data partition or tmpfs) over a read-only root.
+#### 2. Embedded design example
 
-**A robust layout used by many products**
+Use a read-only SquashFS system image for predictable deployment and a separate writable partition for persistent configuration. An overlay filesystem can combine layers if the system design requires it.
 
-```
-boot partition       (FAT or raw)   bootloader, kernel, DTB
-rootfs A / rootfs B  (SquashFS/EROFS or ext4 mounted ro)   A/B update slots
-data                 (ext4/F2FS or UBIFS)                  config, logs, user data
-```
+#### 3. Power-loss concerns
 
-**Protecting against power loss and wear:** keep the root read-only, write data with `fsync()` and the write-temp-then-`rename()` pattern, limit logging to flash (journald with `Storage=volatile`, or rate limits), avoid `atime` updates (`noatime`), and monitor eMMC health (`mmc extcsd read` gives the life-time estimate).
+Select the filesystem and update strategy according to consistency requirements. Journaling and atomic update protocols help, but do not guarantee every recent write survives unexpected power loss. Use appropriate fsync and storage flush semantics.
+
+**Interview takeaway:** Do not place a normal block filesystem directly on arbitrary raw NAND. Choose according to the storage abstraction, endurance, power-loss behavior and update strategy.
 
 ### How do A/B (dual-copy) OTA updates work? {M}
 **Short answer:** The device has two copies (slots) of the system. While running from slot A, the update client writes the new image into slot B, verifies it, and tells the bootloader to try B on the next boot. If B boots and the application confirms it is healthy, B becomes the active slot. If B fails to boot after a few attempts (detected by the bootloader's boot counter, often helped by a watchdog), the bootloader rolls back to A.
