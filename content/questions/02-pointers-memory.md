@@ -1003,3 +1003,31 @@ Modern compilers provide `__builtin_offsetof`, which `<stddef.h>` uses; always u
 - **Serialisation** code that needs member positions.
 
 **Cautions:** `container_of` is only correct if the pointer really points to that member of that type of struct; a wrong type gives a silently wrong address. The kernel's version adds a type check using `typeof` to catch mismatches at compile time.
+
+### How do you allocate a 64-byte-aligned buffer without malloc? {M}
+**Short answer:** Use the C11 alignment specifier on a fixed-size object, or a compiler/platform alignment facility.
+
+```c
+#include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
+_Alignas(64) static unsigned char buffer[256];
+
+bool is_aligned(const void *p, uintptr_t a)
+{
+    return a && !(a & (a - 1u)) &&
+           !((uintptr_t)p & (a - 1u));
+}
+```
+
+**Example:** 0x1000 is 64-byte aligned because its low six bits are zero; 0x1004 is not.
+
+```text
+0x1000      0x1040      0x1080      0x10C0
+| 64 bytes  | 64 bytes  | 64 bytes  | 64 bytes  |
+^ buffer start
+```
+
+**Why:** Alignment can be needed for SIMD, cache-line isolation and DMA buffers. Extended alignment support depends on the compiler and target. DMA mapping and cache ownership are separate requirements; alignment alone does not make the buffer DMA-safe.
+
+**Interview takeaway:** Static aligned storage avoids heap allocation and provides the required address boundary when supported.
