@@ -1110,46 +1110,52 @@ The results are three rows and four columns.
 **Interview takeaway:** Compute array length before array-to-pointer decay and pass it explicitly to functions. sizeof cannot recover the length of a dynamically allocated buffer.
 
 ### What is the difference between memcpy and memmove? {E}
-**Short answer:** Both copy `n` bytes from source to destination. `memcpy` assumes the two regions **do not overlap**; if they do, the behaviour is undefined. `memmove` handles overlap correctly, as if the data were first copied to a temporary buffer, usually by copying backwards when the destination is above the source.
+Both memcpy and memmove copy a specified number of bytes. The difference is that **memmove supports overlapping source and destination regions**, while memcpy requires them not to overlap.
+
+#### 1. memcpy example
 
 ```c
-char buf[] = "abcdef";
+int src[] = {10, 20, 30};
+int dst[3];
 
-memmove(buf + 2, buf, 4);   /* "ababcd" - correct */
-memcpy(buf + 2, buf, 4);    /* undefined: may give "ababab" with a simple forward copy */
+memcpy(dst, src, sizeof src);
 ```
 
-**Why a forward copy breaks with overlap:** copying `buf[0..3]` to `buf[2..5]` one byte at a time from the front overwrites `buf[2]` and `buf[3]` before they are read.
+Both arrays are separate objects, so memcpy is appropriate.
 
-**How `memmove` decides direction**
+#### 2. Overlapping memory example
 
 ```c
-void *my_memmove(void *dst, const void *src, size_t n)
-{
-    unsigned char *d = dst;
-    const unsigned char *s = src;
-    if (d < s) {
-        while (n--) *d++ = *s++;          /* copy forward */
-    } else if (d > s) {
-        d += n; s += n;
-        while (n--) *--d = *--s;          /* copy backward */
-    }
-    return dst;
-}
+char s[] = "ABCDE";
+
+memmove(s + 1, s, 4);
+
+printf("%s", s); // AABCD
 ```
 
-(Comparing pointers into different objects with `<` is technically unspecified in C; library implementations do it with integer addresses.)
+The destination starts inside the source range. Using memcpy for this operation would cause undefined behaviour.
 
-**When to use which**
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 162" width="100%" role="img" aria-label="Overlapping copy from indices zero through three into indices one through four, producing AABCD">
+<text x="12" y="13" font-size="11" font-weight="600" fill="currentColor">Before: ABCDE</text><rect x="12" y="20" width="52" height="28" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="38" y="38" font-size="12" text-anchor="middle" fill="currentColor">A</text><rect x="64" y="20" width="52" height="28" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="90" y="38" font-size="12" text-anchor="middle" fill="currentColor">B</text><rect x="116" y="20" width="52" height="28" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="142" y="38" font-size="12" text-anchor="middle" fill="currentColor">C</text><rect x="168" y="20" width="52" height="28" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="194" y="38" font-size="12" text-anchor="middle" fill="currentColor">D</text><rect x="220" y="20" width="52" height="28" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="246" y="38" font-size="12" text-anchor="middle" fill="currentColor">E</text><rect x="272" y="20" width="52" height="28" fill="#94a3b8" fill-opacity=".13" stroke="#3b82f6"/><text x="298" y="38" font-size="12" text-anchor="middle" fill="currentColor">\0</text><text x="12" y="95" font-size="11" font-weight="600" fill="currentColor">After: AABCD</text><rect x="12" y="102" width="52" height="28" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="38" y="120" font-size="12" text-anchor="middle" fill="currentColor">A</text><rect x="64" y="102" width="52" height="28" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="90" y="120" font-size="12" text-anchor="middle" fill="currentColor">A</text><rect x="116" y="102" width="52" height="28" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="142" y="120" font-size="12" text-anchor="middle" fill="currentColor">B</text><rect x="168" y="102" width="52" height="28" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="194" y="120" font-size="12" text-anchor="middle" fill="currentColor">C</text><rect x="220" y="102" width="52" height="28" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="246" y="120" font-size="12" text-anchor="middle" fill="currentColor">D</text><rect x="272" y="102" width="52" height="28" fill="#94a3b8" fill-opacity=".13" stroke="#3b82f6"/><text x="298" y="120" font-size="12" text-anchor="middle" fill="currentColor">\0</text>
+<path d="M12 53 H220 M12 49 V57 M220 49 V57" stroke="#16a34a" fill="none"/><text x="116" y="66" text-anchor="middle" font-size="10" fill="currentColor">Source: bytes 0–3</text><path d="M64 135 H272 M64 131 V139 M272 131 V139" stroke="#ca8a04" fill="none"/><text x="168" y="151" text-anchor="middle" font-size="10" fill="currentColor">Destination: bytes 1–4</text></svg></div>
 
-- `memcpy` when the buffers are distinct (most cases); it can be slightly faster because it may copy in any order and use the widest possible loads.
-- `memmove` when shifting data inside one buffer: removing bytes from the front of a receive buffer, inserting into an array, scrolling a display buffer.
+#### 3. How memmove handles overlap
 
-**Embedded notes**
+Conceptually, memmove behaves as if the source bytes were copied into a temporary buffer before copying them to the destination. Implementations often avoid temporary storage by choosing a suitable copy direction:
 
-- Neither function respects `volatile` or peripheral access widths: do not use them to copy to or from hardware registers or device memory; write an explicit loop with `volatile` accesses of the right width.
-- For large copies on an MCU, a DMA memory-to-memory transfer can free the CPU.
-- Compilers often replace small fixed-size `memcpy` calls with inline loads and stores, and they may also turn a hand-written copy loop into a `memcpy` call (which matters if you are writing the `memcpy` implementation itself: build it with `-fno-builtin` or `-ffreestanding`).
+- When a higher-address destination overlaps the source, copy backward.
+- When a lower-address destination overlaps the source, copy forward.
+- When regions do not overlap, either direction can work.
+
+This direction logic assumes a conventional flat-address implementation.
+
+| Feature | memcpy | memmove |
+|---|---|---|
+| Overlapping regions | Undefined behaviour | Supported |
+| Copy length | Exact byte count | Exact byte count |
+| Performance | May allow extra optimizations | Depends on implementation |
+
+**Interview takeaway:** Choose memmove when buffers might overlap and memcpy when non-overlap is guaranteed. Neither function automatically checks bounds or adds a string terminator.
 
 ### What is a NULL pointer dereference on a Cortex-M and why might it not crash? {H}
 **Short answer:** On most Cortex-M microcontrollers, address `0x00000000` is valid memory: flash (or an alias of it) containing the vector table. Reading through a NULL pointer therefore returns real data (the initial stack pointer value and the reset vector) instead of faulting, so the bug goes unnoticed. Writes to that area are usually ignored or cause a bus fault, depending on the part.
