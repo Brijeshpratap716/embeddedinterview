@@ -256,22 +256,13 @@ Use nonblocking sockets for event-driven servers. Read/write until no progress i
 **Interview takeaway:** Readiness is not a guarantee of a complete message or successful operation. Avoid blocking a single event-loop thread.
 
 ### Why does Linux have a separate socket API instead of using only open/read/write? {M}
-**Short answer:** Sockets **are** file descriptors, so `read()`, `write()`, `close()`, `poll()` and `epoll` work on them. But networking needs things a file path cannot express: choosing a protocol family and type (TCP vs UDP vs raw, IPv4 vs IPv6 vs Unix vs CAN), binding to local addresses and ports, connecting to or accepting from remote endpoints that may not exist yet, per-message addresses for datagrams, and many options. The socket API (`socket`, `bind`, `listen`, `accept`, `connect`, `sendto`, `recvfrom`, `setsockopt`, `shutdown`) adds exactly those operations.
+Sockets use file descriptors, but connection-oriented networking requires operations beyond ordinary file open/read/write.
 
-**What the file API cannot express**
+socket creates a communication endpoint with domain, type and protocol. bind selects a local address, listen enables incoming connections, accept creates connected endpoints, and connect selects a remote peer. sendto/recvfrom carry datagram addressing; sendmsg/recvmsg support ancillary data and scatter/gather. setsockopt configures protocol behavior.
 
-- **Creation without a name:** `socket(AF_INET6, SOCK_STREAM, 0)` creates an endpoint; there is nothing in the file system to `open()`.
-- **Addresses:** a network peer is identified by an address and port (or a CAN ID, or a Bluetooth address), not a path. `bind()`/`connect()` take a generic `struct sockaddr`.
-- **Connection set-up:** `listen()`/`accept()` create a **new** descriptor for each incoming connection, a concept files do not have.
-- **Datagram semantics:** for UDP, each `sendto()` is one message with its own destination, and `recvfrom()` reports who sent each one. Message boundaries are preserved.
-- **Options and control data:** `setsockopt()` (buffer sizes, `TCP_NODELAY`, keepalive, multicast membership, timestamps) and ancillary data with `sendmsg()`/`recvmsg()` (passing file descriptors over Unix sockets, packet info).
-- **Half-close:** `shutdown(fd, SHUT_WR)` sends FIN but keeps reading.
+After a TCP socket is connected, read/write can often transfer data just like recv/send with default flags. However, opening a pathname alone cannot express arbitrary network endpoint creation and connection state.
 
-**The design choice still unifies a lot:** because sockets are descriptors, they can be inherited across `fork()`, redirected by shells, passed to `poll()`/`epoll()` together with pipes, serial ports and timers, and closed with `close()`.
-
-**Historical note:** the API came from 4.2BSD (1983) and became the POSIX standard. Plan 9 took the opposite approach and represented network connections as files (`/net/tcp/clone`), showing it is possible; it never became mainstream.
-
-**Linux-specific families worth knowing in embedded work:** `AF_CAN` (SocketCAN for CAN bus), `AF_PACKET` (raw Ethernet frames), `AF_NETLINK` (configuring the kernel: routes, interfaces), `AF_UNIX` (local IPC), `AF_VSOCK` (host ↔ VM communication).
+**Interview takeaway:** Unix unifies descriptor operations without forcing all object-specific behavior into open/read/write. Sockets are descriptors with specialized lifecycle and protocol controls.
 
 ### How is the Linux networking stack structured, what is an sk_buff, and how does it compare with the OSI model? {H}
 **Short answer:** In Linux, the socket layer and the protocols (TCP, UDP, IP) run in the kernel, network device drivers sit at the bottom, and the application layer is in user space. Packets travel through the layers in a **`struct sk_buff`** (socket buffer), which holds the packet data plus metadata (device, protocol, header offsets, timestamps). Headers are added or removed by moving pointers within the buffer rather than copying data. Linux follows the practical TCP/IP 4-layer model rather than the 7-layer OSI model.
