@@ -870,6 +870,19 @@ int *dangling_example(void)
 
 **Related term — memory leak:** the opposite problem: memory still allocated but no pointer refers to it any more.
 
+#### Ownership after free
+
+```c
+int *p = malloc(sizeof *p);
+if (p) {
+    *p = 42;
+    free(p);
+    p = NULL;
+}
+```
+
+If another pointer copied p before the free, clearing p does not clear the alias. Establish one owner or a reference-counted lifetime protocol, and invalidate borrowed references before releasing the object. Do not demonstrate a wild pointer by reading an uninitialized pointer or dereferencing a dangling one in executable test code.
+
 ### Count vowels and consonants in a string. {E}
 **Short answer:** Walk the string once, convert each character to lower case, skip anything that is not a letter, and increment the vowel counter for `a e i o u` and the consonant counter for every other letter. Time O(n), space O(1).
 
