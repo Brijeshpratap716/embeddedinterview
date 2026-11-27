@@ -127,6 +127,12 @@ Waiting with plain loads keeps the cache line shared among waiters; only when it
 
 **When not to use one:** on a single-core MCU a spinlock between a task and an ISR deadlocks (the ISR spins forever while the task it interrupted holds the lock) — disable interrupts instead. Between tasks on one core, use a mutex.
 
+#### Why acquire and release are important
+
+Atomic test-and-set ensures only one contender changes the flag from clear to set. Acquire prevents subsequent protected accesses from being reordered before lock acquisition; release publishes protected updates before unlocking. Atomicity alone without these ordering semantics would not be a sufficient lock protocol.
+
+Under heavy contention, repeated test-and-set writes cause coherence traffic. Test-test-and-set implementations using an atomic load before the attempted exchange, backoff or queue locks may reduce contention. A spinlock is appropriate only when the owner can run and release quickly. On a single-core MCU, an ISR spinning on a lock held by the interrupted task deadlocks. Never substitute an architecture hint for correct synchronization.
+
 ### Implement a mutex using atomic compare-and-swap. {M}
 **Short answer:** Represent the mutex as an atomic integer (0 = unlocked, 1 = locked). `lock` uses compare-and-swap to change 0 to 1; if it fails, someone else holds the mutex, so the thread yields or sleeps and tries again. `unlock` stores 0 with release ordering. A production mutex adds a sleeping wait queue (futex), ownership tracking and, for real-time systems, priority inheritance.
 
