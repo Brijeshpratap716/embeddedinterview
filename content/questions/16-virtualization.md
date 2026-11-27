@@ -104,49 +104,28 @@ For ARM64 on x86-64, an ARM ADD instruction becomes TCG operations that are lowe
 **Interview takeaway:** TCG translates blocks on demand, not an entire guest binary in advance. Self-modifying code and mapping changes require appropriate TB invalidation.
 
 ### How do you use QEMU to run and debug an ARM64 Linux kernel? {M}
-**Short answer:** Use the `virt` machine: `qemu-system-aarch64 -M virt -cpu cortex-a53 -smp 2 -m 1G -nographic -kernel Image -initrd rootfs.cpio.gz -append "console=ttyAMA0"`. Add `-s -S` to make QEMU wait for GDB on port 1234, then connect `gdb vmlinux` with `target remote :1234` and debug the kernel from the first instruction.
+Use QEMU's ARM virt machine for generic ARM64 Linux development. The kernel must support its virtual interrupt controller, timer, UART and storage configuration.
 
 ```bash
-qemu-system-aarch64 \
-  -M virt -cpu cortex-a53 -smp 2 -m 1024 \
-  -nographic \
-  -kernel arch/arm64/boot/Image \
-  -initrd rootfs.cpio.gz \
-  -append "console=ttyAMA0 nokaslr" \
-  -s -S
+qemu-system-aarch64 -machine virt -cpu cortex-a57 \
+  -m 1024 -smp 2 -nographic \
+  -kernel Image -initrd rootfs.cpio.gz \
+  -append "console=ttyAMA0 rdinit=/init nokaslr" \
+  -S -gdb tcp::1234
 ```
 
-| Option | Meaning |
-|---|---|
-| `-M virt` | generic ARM virtual board (no real hardware equivalent; QEMU generates its device tree) |
-| `-cpu cortex-a53` | CPU model for TCG; with KVM use `-cpu host` |
-| `-smp 2` / `-m 1024` | 2 vCPUs, 1 GiB RAM |
-| `-nographic` | no display window; serial console on the terminal (`Ctrl-A x` to quit, `Ctrl-A c` for the monitor) |
-| `-kernel` / `-initrd` / `-append` | direct kernel boot, no bootloader needed |
-| `-dtb` | use your own device tree instead of the generated one |
-| `-accel kvm` (`-enable-kvm`) | use KVM; only works when the host is ARM64 |
-| `-s -S` | GDB server on TCP 1234 (`-s`), and do not start the CPUs until GDB says so (`-S`) |
+Assume a suitable ARM64 kernel Image and initramfs containing /init. On an x86 host use TCG; on compatible ARM hardware configure KVM if desired.
 
-**Debug session**
-
-```bash
-aarch64-linux-gnu-gdb vmlinux     # or gdb-multiarch
-(gdb) target remote :1234
-(gdb) hbreak start_kernel
-(gdb) continue
-(gdb) bt
+```gdb
+file vmlinux
+target remote localhost:1234
+break start_kernel
+continue
 ```
 
-Build the kernel with `CONFIG_DEBUG_INFO` and `CONFIG_GDB_SCRIPTS` (then `lx-dmesg`, `lx-ps` work in GDB), and boot with `nokaslr` so addresses match the symbols.
+Keep matching debug symbols and account for early MMU mappings; an early breakpoint may require a physical address.
 
-**More debugging tools**
-
-- `-d int,guest_errors -D qemu.log` – log exceptions and invalid device accesses.
-- QEMU monitor (`Ctrl-A c`): `info registers`, `info mtree` (memory map), `info qtree` (devices), `xp /16x 0x40000000` (physical memory).
-- `-trace "pl011*"` – trace events of a device model.
-- `-machine dumpdtb=virt.dtb` – save the generated device tree, then `dtc -I dtb -O dts virt.dtb` to read it.
-
-**Why teams use this:** kernel and driver development before hardware exists, reproducible CI tests (boot every commit in QEMU), and debugging early boot crashes that are hard to catch on a real board.
+**Interview takeaway:** The virt machine is not i.MX8. Board-specific firmware and drivers require the relevant machine/device models, or real hardware. QEMU cannot validate undocumented electrical behavior.
 
 ### What is the QEMU Object Model (QOM), and how is a device model added? {H}
 **Short answer:** QOM is QEMU's object system in C: every machine, CPU, bus and device is a **type** registered with a `TypeInfo` (name, parent type, instance size, class and instance init functions). Devices inherit from `TYPE_DEVICE` or `TYPE_SYS_BUS_DEVICE`, expose properties, and do their setup in a `realize()` method. A memory-mapped device registers a `MemoryRegion` with read/write callbacks and output IRQ lines, and the board maps it at an address and wires its interrupt.
