@@ -778,61 +778,51 @@ DMA engines, cache maintenance and hardware descriptors may require alignment st
 **Interview takeaway:** Alignment is a requirement of the language, ABI and hardware. Misalignment may reduce performance, fault or cause undefined behaviour.
 
 ### What is endianness and how do you check it in code? {E}
-**Short answer:** Endianness is the order in which the bytes of a multi-byte value are stored in memory. **Little-endian** stores the least significant byte at the lowest address (x86, almost all Arm systems in practice, RISC-V). **Big-endian** stores the most significant byte first (network byte order, older PowerPC, some DSPs and Motorola parts). You can check it at run time by looking at the first byte of a known integer.
+Endianness defines the order in which the bytes of a multi-byte value are stored in memory.
 
-```
-value 0x12345678 at address 0x100
-               0x100 0x101 0x102 0x103
-little-endian:  78    56    34    12
-big-endian:     12    34    56    78
-```
+#### 1. Little-endian vs big-endian
+
+For the value 0x12345678, assuming eight-bit bytes:
+
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 158" width="100%" role="img" aria-label="The same 32-bit value has different byte order on little-endian and big-endian systems" font-family="system-ui,sans-serif"><text x="10" y="16" font-size="11" font-weight="600" fill="currentColor">Little-endian: least significant byte at lowest address</text><rect x="10" y="24" width="80" height="30" fill="#3b82f6" fill-opacity=".14" stroke="#3b82f6"/><text x="50" y="43" text-anchor="middle" font-size="12" fill="currentColor">78</text><text x="50" y="68" text-anchor="middle" font-size="10" fill="currentColor">0x1000</text><rect x="90" y="24" width="80" height="30" fill="#3b82f6" fill-opacity=".14" stroke="#3b82f6"/><text x="130" y="43" text-anchor="middle" font-size="12" fill="currentColor">56</text><text x="130" y="68" text-anchor="middle" font-size="10" fill="currentColor">0x1001</text><rect x="170" y="24" width="80" height="30" fill="#3b82f6" fill-opacity=".14" stroke="#3b82f6"/><text x="210" y="43" text-anchor="middle" font-size="12" fill="currentColor">34</text><text x="210" y="68" text-anchor="middle" font-size="10" fill="currentColor">0x1002</text><rect x="250" y="24" width="80" height="30" fill="#3b82f6" fill-opacity=".14" stroke="#3b82f6"/><text x="290" y="43" text-anchor="middle" font-size="12" fill="currentColor">12</text><text x="290" y="68" text-anchor="middle" font-size="10" fill="currentColor">0x1003</text><text x="10" y="92" font-size="11" font-weight="600" fill="currentColor">Big-endian: most significant byte at lowest address</text><rect x="10" y="100" width="80" height="30" fill="#16a34a" fill-opacity=".14" stroke="#16a34a"/><text x="50" y="119" text-anchor="middle" font-size="12" fill="currentColor">12</text><text x="50" y="144" text-anchor="middle" font-size="10" fill="currentColor">0x1000</text><rect x="90" y="100" width="80" height="30" fill="#16a34a" fill-opacity=".14" stroke="#16a34a"/><text x="130" y="119" text-anchor="middle" font-size="12" fill="currentColor">34</text><text x="130" y="144" text-anchor="middle" font-size="10" fill="currentColor">0x1001</text><rect x="170" y="100" width="80" height="30" fill="#16a34a" fill-opacity=".14" stroke="#16a34a"/><text x="210" y="119" text-anchor="middle" font-size="12" fill="currentColor">56</text><text x="210" y="144" text-anchor="middle" font-size="10" fill="currentColor">0x1002</text><rect x="250" y="100" width="80" height="30" fill="#16a34a" fill-opacity=".14" stroke="#16a34a"/><text x="290" y="119" text-anchor="middle" font-size="12" fill="currentColor">78</text><text x="290" y="144" text-anchor="middle" font-size="10" fill="currentColor">0x1003</text></svg></div>
+
+The integer value remains the same. Only its memory representation differs.
+
+#### 2. Detect endianness in C
 
 ```c
 #include <stdint.h>
+#include <stdio.h>
 
-int is_little_endian(void)
+int main(void)
 {
-    uint32_t x = 1;
-    return *(const uint8_t *)&x == 1;     /* lowest-addressed byte holds the LSB */
-}
+    uint16_t x = 0x0102;
+    const unsigned char *p =
+        (const unsigned char *)&x;
 
-/* same idea with a union */
-int is_little_endian_union(void)
-{
-    union { uint32_t u; uint8_t b[4]; } v = { .u = 1 };
-    return v.b[0] == 1;
+    if (p[0] == 0x02)
+        puts("Little-endian");
+    else if (p[0] == 0x01)
+        puts("Big-endian");
+
+    return 0;
 }
 ```
 
-Reading an object through `char *`/`unsigned char *`/`uint8_t *` is always allowed (it does not violate strict aliasing), so the pointer version is valid C.
+This assumes eight-bit bytes and ordinary little- or big-endian representation. Access through unsigned char is allowed for inspecting object representations.
 
-**Compile-time check (GCC/Clang):**
+#### 3. Why it matters in embedded systems
+
+Network protocols often use big-endian fields, while ARM Linux commonly runs little-endian. Peripheral registers and binary files can also define their own byte order.
 
 ```c
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-/* little-endian target */
-#endif
+uint16_t value = ((uint16_t)buf[0] << 8) |
+                  (uint16_t)buf[1];
 ```
 
-**Where endianness matters**
+This decodes a two-byte big-endian field regardless of CPU byte order. Both bytes must be valid unsigned eight-bit values.
 
-- **Communication:** network protocols (TCP/IP headers are big-endian), CAN signals (Intel vs Motorola byte order in DBC files), Modbus (big-endian registers), USB and Bluetooth (little-endian).
-- **Files and flash data** shared between different processors.
-- **Casting byte buffers to structs** or integers.
-
-**The portable way:** never depend on the host's endianness. Build and split values from bytes explicitly with shifts, which work on any host:
-
-```c
-uint32_t get_be32(const uint8_t *b)
-{
-    return (uint32_t)b[0] << 24 | (uint32_t)b[1] << 16 | (uint32_t)b[2] << 8 | b[3];
-}
-void put_le16(uint8_t *b, uint16_t v) { b[0] = (uint8_t)v; b[1] = (uint8_t)(v >> 8); }
-```
-
-Note the casts to `uint32_t` before shifting: without them, `b[0]` is promoted to `int`, and `0x80 << 24` overflows a signed int.
-
-**Arm detail:** Arm cores are bi-endian in architecture, but Cortex-M endianness is fixed at chip design (almost always little-endian), and Linux on Arm is almost always little-endian.
+**Interview takeaway:** Endianness is byte order, not bit order. Use explicit conversions such as ntohl/htonl or Linux endian helpers where appropriate.
 
 ### How do you swap the endianness of a 32-bit value? {E}
 **Short answer:** Move each byte to its mirrored position with shifts and masks, or use the compiler built-in `__builtin_bswap32()`, which compiles to a single `REV` instruction on Arm. For network code use `htonl()`/`ntohl()`, which swap only when the host is little-endian.
