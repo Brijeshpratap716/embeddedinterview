@@ -679,40 +679,50 @@ Weak symbols and aliases are toolchain-specific extensions. Multiple strong defi
 **Interview takeaway:** Weak symbols provide overridable defaults, not runtime polymorphism. Verify the final linked symbol when debugging an unexpected default handler.
 
 ### How do you place a variable or function at a specific address or section? {M}
-**Short answer:** Put it in a named section with `__attribute__((section(".name")))` and map that section to the right memory region (or address) in the linker script. For a fixed absolute address, define the section at that address in the script, or (for read-only/hardware addresses) use a pointer to that address instead of a variable.
+Firmware can control object placement through compiler section attributes and linker-script rules. The compiler emits the object into a named input section; the linker assigns its final address.
+
+#### 1. Put a variable in a special section
 
 ```c
-/* code that must run from RAM, e.g. while flash is being erased */
-__attribute__((section(".ramfunc"), noinline, long_call))
-void flash_erase_sector(uint32_t sector) { /* ... */ }
-
-/* data kept across a warm reset (not zeroed at start-up) */
-__attribute__((section(".noinit"))) uint32_t reset_count;
-
-/* firmware header at a fixed offset, read by the bootloader */
-__attribute__((section(".fw_header"), used))
-const struct fw_header hdr = { .magic = 0x46574844u, .version = 0x010200u };
-
-/* DMA buffer in a non-cacheable, DMA-reachable SRAM bank, cache-line aligned */
-__attribute__((section(".dma_buf"), aligned(32))) uint8_t adc_buf[1024];
+__attribute__((section(".dma_buffer"), aligned(64)))
+static unsigned char rx_buf[256];
 ```
+
+This GNU-compatible attribute requests a named section and 64-byte alignment.
+
+#### 2. Linker placement
 
 ```ld
-.ramfunc : { _sramfunc = .; *(.ramfunc*) _eramfunc = .; } > RAM AT> FLASH   /* copied at start-up */
-.noinit (NOLOAD) : { *(.noinit*) } > RAM
-.fw_header 0x08008200 : { KEEP(*(.fw_header)) } > FLASH
-.dma_buf (NOLOAD) : { *(.dma_buf*) } > SRAM_D2
+.dma_buffer (NOLOAD) : ALIGN(64) {
+    KEEP(*(.dma_buffer))
+} > DMA_RAM
 ```
 
-**Why code runs from RAM:** on most MCUs you cannot read (execute from) a flash bank while it is being erased or programmed; the CPU stalls or faults. Placing the flash-programming routine (and everything it calls, and the interrupt handlers that may run) in RAM avoids this. `long_call` makes calls between RAM and flash work when they are further apart than a branch instruction can reach.
+DMA_RAM must be a defined MEMORY region accessible to the device. NOLOAD does not itself initialize the data; the startup code must implement any required initialization.
 
-**Other mechanisms**
+#### 3. Place a function in RAM
 
-- `used` / `KEEP()` stop the compiler and linker from removing data nothing references.
-- IAR uses `@` placement (`int x @ 0x20001000;`) and `#pragma location`; Keil has `__attribute__((at(addr)))` in older versions.
-- For hardware registers, never declare a variable; use a pointer constant: `#define REG (*(volatile uint32_t *)0x40021000u)`.
+```c
+__attribute__((section(".ramfunc")))
+void flash_operation(void)
+{
+    // Device-specific operation
+}
+```
 
-**Verify** in the map file that the symbol landed where you expected.
+Arrange .ramfunc with a RAM execution address and a flash load address; copy it before execution. If flash is inaccessible during programming, called routines, constants and interrupt paths may also need relocation.
+
+#### 4. Access an absolute hardware address
+
+```c
+#define REG (*(volatile uint32_t *)0x40000000U)
+```
+
+This accesses an existing mapped register; it does not allocate a C variable at that address.
+
+Verify final placement with the linker map, readelf or nm. Compiler optimization and section garbage collection can remove unreferenced objects unless retained appropriately.
+
+**Interview takeaway:** Section attributes select sections, not final addresses. The linker script determines placement; alignment, initialization and DMA access are separate requirements.
 
 ### What is a watchdog timer and how should you use it? {E}
 **Short answer:** A watchdog is an independent hardware timer that resets the microcontroller unless software "kicks" (refreshes) it before it expires. It recovers the system from software hangs, infinite loops, deadlocks and runaway code. To be effective, the kick must prove that the **whole** system is healthy, not just that one timer interrupt is still running.
