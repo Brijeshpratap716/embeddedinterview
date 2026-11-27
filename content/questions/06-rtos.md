@@ -335,40 +335,41 @@ Track task progress counters, queue depths, lock owners, blocked durations and e
 **Interview takeaway:** Deadlock is waiting without progress; livelock is activity without progress; starvation is repeated denial of progress to a particular task.
 
 ### What is a message queue and when should you use one? {E}
-**Short answer:** A message queue is a thread-safe FIFO that copies fixed-size items from senders to receivers, with blocking and timeouts on both ends. Queues decouple producers and consumers, absorb bursts, and avoid shared global data and locks. In FreeRTOS, `xQueueSend` **copies** the item into the queue, so for large data send a pointer (and define who owns and frees the buffer).
+A message queue transfers data between tasks or between an ISR and a task through synchronized storage. It lets producers and consumers execute independently.
+
+#### 1. Example using FreeRTOS
 
 ```c
-typedef struct { uint8_t type; int16_t value; uint32_t timestamp; } sensor_msg_t;
-
-QueueHandle_t q = xQueueCreate(16, sizeof(sensor_msg_t));
-
-/* producer task */
-sensor_msg_t m = { .type = 1, .value = read_temp(), .timestamp = xTaskGetTickCount() };
-if (xQueueSend(q, &m, pdMS_TO_TICKS(5)) != pdTRUE) { /* queue full: count/drop/handle */ }
-
-/* consumer task */
-sensor_msg_t r;
-if (xQueueReceive(q, &r, portMAX_DELAY) == pdTRUE) process(&r);
+QueueHandle_t q = xQueueCreate(8, sizeof(uint32_t));
 ```
 
-**When to use a queue**
+After checking that creation succeeded, a producer can send a value:
 
-- One or more producers send data/commands to a task that owns a resource (e.g. all display updates go to the display task).
-- Interrupts hand data to tasks (`xQueueSendFromISR`).
-- You want **back-pressure**: a full queue blocks or fails the sender instead of losing data silently.
+```c
+uint32_t sample = 123;
+if (xQueueSend(q, &sample, pdMS_TO_TICKS(10)) != pdPASS)
+    handle_queue_full();
+```
 
-**Design points**
+Consumer:
 
-- **Sizing:** depth = worst-case burst rate × worst-case consumer delay, plus margin. Monitor the high-water mark (`uxQueueMessagesWaiting`).
-- **Copy vs reference:** copying small items (≤ 16–32 bytes) is simple and safe; for large buffers, send pointers from a pool and pass ownership.
-- **Timeouts:** always choose a timeout and handle failure.
-- **Queue sets** (FreeRTOS) or `k_poll` (Zephyr) let one task wait on several queues/semaphores.
+```c
+uint32_t value;
+if (xQueueReceive(q, &value, portMAX_DELAY) == pdPASS)
+    process_sample(value);
+```
 
-**Related FreeRTOS objects**
+FreeRTOS copies the configured item size into/out of queue storage.
 
-- **Stream buffers:** a byte stream (like a pipe) for one writer and one reader, efficient for UART data.
-- **Message buffers:** variable-length messages built on stream buffers.
-- **Mailbox:** a queue of length 1 that is overwritten (`xQueueOverwrite`) to always hold the latest value.
+#### 2. Queueing pointers
+
+For large buffers, a queue may carry a pointer or descriptor instead of copying the payload. Define who owns the buffer before and after sending, and what happens if the queue is full. Do not queue the address of an automatic object that may expire before consumption.
+
+#### 3. Capacity
+
+Size the queue for burst rate, service time and permitted backlog. Define whether overflow drops, blocks, overwrites or triggers recovery.
+
+**Interview takeaway:** Queues provide synchronized data transfer and buffering. Use ISR-safe variants in interrupts and explicitly manage ownership when sending pointers.
 
 ### What are stream buffers and message buffers, and when are they better than queues? {M}
 **Short answer:** FreeRTOS **stream buffers** pass a continuous stream of bytes from exactly one writer to exactly one reader (like a pipe), and the reader can block until a trigger level of bytes is available. **Message buffers** are built on stream buffers and pass variable-length messages (each with a length prefix). Both are lighter than queues because they assume a single writer and single reader (no locking among multiple writers), and they copy only as many bytes as needed rather than fixed-size items.
