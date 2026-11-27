@@ -1128,6 +1128,10 @@ Result: `"progamin"`.
 
 **Complexity:** O(n) time, O(1) space (fixed table).
 
+#### Memory-constrained variant
+
+For an eight-bit-byte system, a 256-bit bitmap needs only 32 bytes instead of a 256-byte Boolean table. The byte index is c >> 3, and its mask is 1U << (c & 7). Test the bit before copying and set it after accepting the character. For "banana", first occurrences produce "ban". Preserve original order by scanning the source once and maintaining a write index.
+
 ### Compress a string with run-length encoding (aaabb → a3b2). {E}
 **Short answer:** Scan the input in runs of identical characters. For each run, write the character followed by the run length, then continue after the run. Always check the remaining output space, because counts can have several digits and the 'compressed' string can be longer than the input.
 
