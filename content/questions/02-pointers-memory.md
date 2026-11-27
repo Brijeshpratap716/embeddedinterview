@@ -874,51 +874,58 @@ An unconditional byte swap always reverses the bytes. A host-to-network conversi
 **Interview takeaway:** Use unsigned fixed-width types for bit manipulation. Prefer platform conversion APIs for protocol fields and a byte-swap builtin when unconditional reversal is required.
 
 ### What is strict aliasing? {H}
-**Short answer:** The strict aliasing rule says that an object may only be accessed through an expression of its own type (or a compatible type, its signed/unsigned variant, a qualified version, an aggregate or union containing it), or through a character type (`char`, `unsigned char`). The compiler uses this rule to assume that pointers to different types do not point to the same memory, so it can keep values in registers and reorder loads and stores. Breaking the rule is undefined behaviour.
+Strict aliasing refers to C's rules restricting which lvalue types may access an object's stored value. These rules allow compilers to assume certain incompatible typed pointers do not refer to the same object.
+
+#### 1. Incorrect type punning
+
+```c
+float f = 1.0f;
+uint32_t bits = *(uint32_t *)&f; // Not portable
+```
+
+Casting the pointer does not make accessing a float through a uint32_t lvalue valid. It may violate effective-type rules, and alignment and size can also differ.
+
+#### 2. Correct representation copy
 
 ```c
 #include <stdint.h>
 #include <string.h>
 
-uint32_t float_bits_bad(float f)
+uint32_t float_bits(float f)
 {
-    return *(uint32_t *)&f;               /* UB: accessing a float through a uint32_t lvalue */
-}
+    uint32_t bits;
+    _Static_assert(sizeof bits == sizeof f,
+                   "Different object sizes");
 
-uint32_t float_bits_ok(float f)
-{
-    uint32_t u;
-    memcpy(&u, &f, sizeof u);             /* defined; compiles to a single register move */
-    return u;
+    memcpy(&bits, &f, sizeof bits);
+    return bits;
 }
 ```
 
-**How it breaks code in practice**
+This copies bytes into an object of the correct declared type. The resulting representation still depends on the floating-point format and byte ordering. Compilers often optimize such small copies into register moves.
+
+#### 3. Why the compiler cares
 
 ```c
-int foo(int *i, float *f)
+int update(int *a, float *b)
 {
-    *i = 1;
-    *f = 2.0f;           /* compiler assumes f cannot point to the same object as i */
-    return *i;           /* so it returns 1 without reloading, even if i and f alias */
+    *a = 10;
+    *b = 2.0f;
+    return *a;
 }
 ```
 
-Code like this often works at `-O0` and silently changes behaviour at `-O2`.
+For valid calls, the write through b cannot modify the int object through an incompatible access. The compiler can often return 10 without reloading *a.
 
-**Allowed ways to reinterpret bytes**
+#### 4. Permitted aliases
 
-- `memcpy` into an object of the target type (the standard, recommended way; free after optimisation).
-- Reading through `unsigned char *` / `uint8_t *` (character types may alias anything).
-- A union (allowed in C; undefined in C++, where `std::bit_cast` in C++20 is the tool).
+C allows access through compatible types, certain corresponding signed/unsigned types and qualified versions, applicable aggregate/union types and character types. For examining raw memory bytes, unsigned char * is particularly useful.
 
-**Embedded situations where it appears**
+#### 5. Embedded impact
 
-- Casting a received `uint8_t` buffer to a struct pointer (`struct hdr *h = (struct hdr *)buf;`), which is also an alignment risk. Copy into a struct with `memcpy`, or parse field by field.
-- Treating a `uint32_t` array as `float` samples.
-- Checksums computed by reading a struct as `uint32_t` words.
+Avoid arbitrary pointer casts when parsing packet buffers or examining floating-point representations. Use memcpy, explicit byte decoding or documented platform-specific mechanisms. A compiler flag disabling strict-aliasing optimization does not fix unrelated alignment or lifetime problems.
 
-**Escape hatch:** `-fno-strict-aliasing` disables the optimisation; the Linux kernel and many embedded projects build with it. That makes such code work with GCC, but it is still non-portable C and gives up some optimisation, so prefer `memcpy` in new code. GCC's `-Wstrict-aliasing` catches some violations.
+**Interview takeaway:** A pointer cast changes the pointer type, not the actual object's type. Access memory only through permitted types.
 
 ### How do you access a memory-mapped register at a fixed address? {E}
 **Short answer:** Convert the register's address into a pointer to a `volatile` fixed-width integer and dereference it. The `volatile` makes the compiler perform every read and write exactly as written. Vendor headers (CMSIS) do the same with a struct that overlays a whole peripheral's registers.
