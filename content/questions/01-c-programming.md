@@ -2258,32 +2258,64 @@ The additional const after the asterisk prevents changing the pointer itself.
 **Interview takeaway:** Const means read-only through a particular qualified access, not necessarily that the underlying value can never change. Const volatile is commonly used for read-only MMIO status registers.
 
 ### What does the restrict keyword mean? {H}
-**Short answer:** `restrict` (C99) applies to a pointer and is a promise from the programmer that, for the lifetime of that pointer, the object it points to is accessed **only through that pointer** (or pointers derived from it). This lets the compiler assume no aliasing, keep values in registers and vectorise loops. If the promise is broken, the behaviour is undefined.
+The C99 `restrict` qualifier expresses an **aliasing contract** for pointer-based accesses. It allows the compiler to optimize memory operations when accesses to modified objects follow the required restricted pointer association.
+
+#### 1. Why aliasing matters
 
 ```c
-void add(int *restrict dst, const int *restrict a, const int *restrict b, size_t n)
+void update(int *a, int *b)
 {
-    for (size_t i = 0; i < n; i++)
-        dst[i] = a[i] + b[i];
+    *a = 10;
+    *b = 20;
+    printf("%d", *a);
 }
 ```
 
-**Why it helps**
+If a and b point to the same int, the output is 20. Otherwise, it is 10. The compiler must account for this possible overlap.
 
-Without `restrict`, the compiler must assume `dst` might overlap `a` or `b`. After every store to `dst[i]`, it has to reload `a` and `b` from memory, and it cannot safely load several elements at once with SIMD (Neon/Helium) instructions. With `restrict`, it can.
-
-A smaller example of the effect:
+#### 2. Using restrict
 
 ```c
-int f(int *p, int *q) { *p = 1; *q = 2; return *p; }        /* must reload *p: q may equal p */
-int g(int *restrict p, int *restrict q) { *p = 1; *q = 2; return *p; }   /* returns 1 directly */
+void update(int *restrict a, int *restrict b)
+{
+    *a = 10;
+    *b = 20;
+    printf("%d", *a);
+}
 ```
 
-**Standard library uses:** `memcpy(void *restrict dst, const void *restrict src, size_t n)` is declared with `restrict`, which is the formal reason overlapping buffers are undefined for `memcpy` (and why `memmove`, without `restrict`, must exist). `printf`, `strcpy` and `sprintf` use it too.
+For this function, the accessed objects must be distinct. With valid calls, the compiler can avoid reloading *a because the write through b cannot change it.
 
-**When to use it:** performance-critical loops in DSP code (filters, FFT, image processing) on Cortex-M4/M7/M55 and Cortex-A, where you know the buffers never overlap. Check the generated assembly to confirm it helped.
+```c
+int x, y;
+update(&x, &y);  // Valid
+// update(&x, &x); // Undefined behaviour
+```
 
-**Notes:** C++ has no `restrict` keyword (compilers offer `__restrict__`/`__restrict`). It only matters for optimisation; removing it never changes the meaning of a correct program.
+#### 3. Practical buffer example
+
+```c
+void add_buffers(int *restrict out,
+                 const int *a,
+                 const int *b,
+                 size_t n)
+{
+    for (size_t i = 0; i < n; i++)
+        out[i] = a[i] + b[i];
+}
+```
+
+The output region must not overlap either input region accessed by the function. The two read-only inputs may overlap each other. Assuming valid buffers and representable sums, the compiler may vectorize or reorder operations more easily.
+
+#### 4. Comparison with other qualifiers
+
+| Qualifier | Main purpose |
+|---|---|
+| const | Restricts modification through an lvalue |
+| volatile | Preserves required observable accesses |
+| restrict | Promises restricted aliasing for relevant accesses |
+
+**Interview takeaway:** Restrict is a promise, not a runtime check. Violating its contract causes undefined behaviour. It does not mean every pointer in a program must have a different address; the rules concern accesses to objects, particularly objects modified during the relevant block execution.
 
 ### What is the difference between exit() and return from main? {E}
 **Short answer:** In a hosted program, returning from `main` is equivalent to calling `exit()` with the returned value: functions registered with `atexit()` run, open `FILE` streams are flushed and closed, and temporary files are removed. `_Exit()` / `_exit()` terminate immediately **without** that cleanup. On a bare-metal microcontroller there is nobody to return to, so `main` should never return.
