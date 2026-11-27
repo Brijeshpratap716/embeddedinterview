@@ -714,36 +714,35 @@ Polling wastes cycles during long waits but can be simple and predictable for sh
 **Interview takeaway:** Choose based on transfer size, latency, event frequency and CPU overhead. DMA does not eliminate synchronization or error handling.
 
 ### What is a system call and how does it work? {M}
-**Short answer:** A system call is the controlled entry point from a user program into the kernel, used whenever the program needs something only the kernel may do (I/O, memory, creating processes). The C library puts the syscall number and arguments in registers and executes a trap instruction (`svc #0` on ARM64, `syscall` on x86-64). The CPU switches to kernel mode at a fixed entry point; the kernel checks the arguments, runs the handler from the syscall table and returns the result. Negative return values become `errno` in libc.
+A system call is a controlled interface through which a userspace program requests a kernel service, such as reading a file, mapping memory or creating a process.
 
-**ARM64 example (what `write(1, "hi\n", 3)` becomes)**
+#### 1. ARM64 Linux example
 
 ```asm
-mov  x8, #64          // __NR_write on arm64
-mov  x0, #1           // fd
-adr  x1, msg          // buffer
-mov  x2, #3           // count
-svc  #0               // trap to EL1
-// x0 now holds the result (bytes written, or -errno)
+MOV X8, #172 // Linux AArch64 getpid syscall
+SVC #0
+// X0 contains the return value
 ```
 
-**Inside the kernel (ARM64):** the `SVC` exception goes to the EL1 vector `el0_sync` → `el0_svc` → `invoke_syscall()`, which indexes `sys_call_table[x8]` and calls, e.g., `__arm64_sys_write()`. User pointers are never dereferenced directly: the kernel uses `copy_from_user()`/`copy_to_user()`, which handle faults safely.
+The AArch64 Linux syscall ABI uses X8 for the syscall number and X0–X5 for up to six arguments. Applications normally call a libc wrapper rather than writing assembly.
 
-**Why system calls exist (the rationale):**
+#### 2. Execution flow
 
-- **Protection:** user code runs at EL0 / ring 3 and cannot touch hardware or other processes' memory. The only way in is through checked entry points.
-- **Abstraction:** programs call `read()` on any file, pipe, socket or device; the kernel handles the details.
-- **Resource management:** the kernel arbitrates between programs (scheduling, quotas, permissions).
+```text
+User function -> syscall ABI -> SVC exception
+    -> kernel entry saves state
+    -> syscall dispatch and argument validation
+    -> subsystem operation
+    -> return result, restore state, ERET
+```
 
-**Effect on scheduling:** a system call is a point where the kernel may switch tasks: blocking calls put the caller to sleep and run another task; on the way out, if a higher-priority task became ready, the kernel reschedules before returning.
+On a normal non-VHE arrangement, SVC from EL0 enters the kernel at EL1. Host virtualization arrangements can differ.
 
-**Cost and how Linux avoids it**
+#### 3. Error handling
 
-- A syscall costs on the order of 100 ns to a few µs (mode switch, mitigations).
-- **vDSO:** `clock_gettime()` and `gettimeofday()` run entirely in user space by reading kernel-maintained data.
-- Batching interfaces: `readv`/`writev`, `sendmmsg`, `io_uring` (submission/completion rings with few or no syscalls).
+Raw Linux syscall errors commonly use negative errno values. libc wrappers typically translate these to -1 and set errno, according to the function's interface.
 
-**Tools:** `strace -f ./prog` lists every syscall with arguments and results; `strace -c` gives counts and times; `ltrace` shows library calls.
+**Interview takeaway:** A syscall crosses a privilege boundary through an architecture-defined exception. It is not an ordinary C function call into arbitrary kernel code.
 
 ### What is thrashing? {E}
 **Short answer:** Thrashing is when the combined working sets of the running processes do not fit in physical memory, so the system spends most of its time moving pages between RAM and swap (or re-reading evicted file pages) instead of doing useful work. CPU utilisation drops, disk I/O is saturated, and everything becomes extremely slow.
