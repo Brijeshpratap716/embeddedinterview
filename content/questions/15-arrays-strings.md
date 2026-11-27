@@ -110,43 +110,23 @@ size_t unique(int a[], size_t n)
 **Complexity:** O(n) time, O(1) space. Sorted input is essential.
 
 ### How do you move all zeros to the end of an array? {E}
-**Short answer:** Keep a write index for the next non-zero position. Walk the array; whenever you see a non-zero value, swap it into the write index and advance it. Zeros end up at the back and the non-zero values keep their original order. O(n) time, O(1) space.
+Preserve nonzero order by compacting nonzero elements, then fill the remainder with zeros.
 
 ```c
-#include <stddef.h>
-
-void move_zeros_to_end(int *arr, size_t n)
+void move_zeros(int a[], size_t n)
 {
-    size_t nz = 0;                         /* next slot for a non-zero value */
-    for (size_t i = 0; i < n; i++) {
-        if (arr[i] != 0) {
-            int t = arr[i];
-            arr[i] = arr[nz];
-            arr[nz] = t;
-            nz++;
-        }
-    }
-}
-/* {0, 8, 0, 1, 11, 0, 10, 0, 1} -> {8, 1, 11, 10, 1, 0, 0, 0, 0} */
-```
-
-**Why it keeps the order:** non-zero values are placed at `nz = 0, 1, 2, ...` in the order they are met. Everything between `nz` and `i` is zero, so the swap only ever moves a zero backward.
-
-**Fewer writes version:** copy non-zeros forward, then fill the tail with zeros. This does at most `n` writes instead of up to `2n`, which matters when writing to slow memory or flash.
-
-```c
-void move_zeros_copy(int *arr, size_t n)
-{
-    size_t nz = 0;
-    for (size_t i = 0; i < n; i++)
-        if (arr[i] != 0) arr[nz++] = arr[i];
-    while (nz < n) arr[nz++] = 0;
+    size_t w = 0;
+    for (size_t r = 0; r < n; ++r)
+        if (a[r] != 0)
+            a[w++] = a[r];
+    while (w < n)
+        a[w++] = 0;
 }
 ```
 
-**Edge cases:** all zeros (nothing moves), no zeros (each element swaps with itself; add `if (i != nz)` to skip self-swaps), empty array.
+[0, 3, 0, 1, 8] → [3, 1, 8, 0, 0]. The write index never exceeds the read index during compaction, so unread data is safe.
 
-**Related problems with the same pattern:** remove all occurrences of a value, partition even and odd numbers, and the partition step of quicksort. They are all "two pointers: one reads, one writes".
+**Complexity:** O(n) time, O(1) space; stable for nonzero values.
 
 ### How do you rotate an array by d positions? {M}
 **Short answer:** Use the reversal algorithm. To rotate left by `d`: reverse the first `d` elements, reverse the rest, then reverse the whole array. It runs in O(n) time with O(1) extra memory. Reduce `d` with `d %= n` first.
