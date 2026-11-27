@@ -9,36 +9,55 @@ desc: volatile, ISRs, registers, critical sections, start-up code, linker script
 Embedded C is ordinary C plus the rules that come from sharing memory with hardware and interrupts. These are the questions that decide most firmware interviews. Each answer gives the short version you should say first, then the details, code, and the follow-up questions you are likely to get.
 
 ### What is volatile and when must you use it? {E}
-**Short answer:** `volatile` tells the compiler that a variable can change, or that accessing it has side effects, in ways the compiler cannot see in the code. The compiler must preserve volatile accesses according to the implementation's rules and C sequencing requirements. It cannot simply eliminate a required volatile access. Volatile does not impose an order on unrelated ordinary memory accesses.
+The `volatile` qualifier tells the compiler that accesses through a volatile-qualified lvalue are observable and must be performed according to the target's volatile semantics. It is particularly important when hardware changes a value independently of the program.
 
-**Use it for**
-
-1. **Memory-mapped peripheral registers** (status registers change by themselves; writing a data register sends a byte).
-2. **Variables shared between an ISR and the main code** (flags, indexes of a ring buffer).
-3. **Hardware-updated memory:** volatile may be useful for polling an implementation-defined hardware-visible location, but DMA requires ownership, cache maintenance and ordering; CPU threads must use atomics or locks.
-4. **Local variables modified between `setjmp` and `longjmp`**.
-5. Variables you want to observe or change from a debugger while code runs (e.g. a test loop counter).
+#### 1. Hardware register example
 
 ```c
-static volatile bool g_rx_ready;           /* set in the ISR */
+#include <stdint.h>
+#define STATUS (*(volatile uint32_t *)0x40000000U)
+#define READY  (1U << 0)
 
-void USART2_IRQHandler(void)
-{
-    (void)USART2->DR;                      /* read clears the flag */
-    g_rx_ready = true;
-}
-
-int main(void)
-{
-    while (!g_rx_ready) { }               /* without volatile, -O2 may read once and loop forever */
+while (!(STATUS & READY)) {
+    // Wait for the device.
 }
 ```
 
-**What goes wrong without it:** the optimiser sees that nothing inside the loop changes `g_rx_ready`, loads it once, and turns the loop into `if (!g_rx_ready) for (;;);`. Similarly, writes to a register in a sequence (`CTRL = 1; CTRL = 0;`) may be merged into only the last write.
+Assume this is a documented 32-bit status register. Each evaluation reads the register again. Without volatile, an optimizer could reuse an earlier value instead of observing subsequent hardware changes.
 
-**What volatile does not do:** it does not make `count++` atomic, does not make 64-bit accesses atomic on a 32-bit CPU, and does not insert CPU memory barriers. See the next question.
+#### 2. Interrupt-shared flag
 
-**Cost:** volatile accesses cannot be optimised, so mark only what needs it; copy a volatile into a local variable when you use it several times in one calculation.
+```c
+static volatile unsigned int done;
+
+void Timer_IRQHandler(void)
+{
+    // Acknowledge the timer interrupt first.
+    done = 1;
+}
+
+void wait_for_timer(void)
+{
+    while (!done) {
+    }
+}
+```
+
+This simple bare-metal example assumes the target supports indivisible accesses to the flag and the required ISR semantics. Real firmware should use a timeout and an ISR-safe synchronization mechanism for more complex data.
+
+#### 3. What volatile does not do
+
+| Property | Guaranteed? |
+|---|---|
+| Required volatile accesses | Yes, under implementation rules |
+| Atomic increment | No |
+| Thread synchronization | No |
+| CPU memory ordering | No |
+| DMA cache coherency | No |
+
+In Linux drivers use readl/writel for MMIO and appropriate atomics, locks or READ_ONCE/WRITE_ONCE as part of a correct synchronization protocol.
+
+**Interview takeaway:** Volatile controls compiler-visible accesses; it is not a general synchronization primitive.
 
 ### Does volatile make a variable thread-safe or atomic? {M}
 **Short answer:** No. `volatile` only stops the **compiler** from caching, merging or removing accesses. It does not make read-modify-write operations atomic, does not make multi-word accesses atomic, and does not stop the **CPU** (or other cores, caches and bus) from reordering memory accesses.
