@@ -895,43 +895,41 @@ The CPU prepares a buffer and configures source, destination, length and directi
 **Interview takeaway:** Use polling for simple bounded waits, interrupts for asynchronous events and DMA for bulk transfers. DMA is not automatically faster for very small transfers.
 
 ### What are the cache coherency problems with DMA? {H}
-**Short answer:** On CPUs with a data cache (Cortex-M7, Cortex-A, some Cortex-M55/M85 systems), the CPU reads and writes through its cache, but most DMA controllers on MCUs access main memory directly. The two can see different data: DMA may transmit stale data still waiting in the cache, and the CPU may read stale cached data after the DMA has written new data to memory. You must **clean** dirty cache lines before DMA reads memory. For DMA writes, prepare dedicated cache-line-aligned buffers before handing them to the device and invalidate stale lines after completion, following the platform's DMA and cache rules.
+DMA can access memory independently of the CPU. On a non-coherent system, CPU caches may contain data that has not reached RAM, or data that is stale after DMA writes.
 
-**The two cases**
+#### 1. Transmit: CPU to device
 
-| Direction | Problem | Fix |
-|---|---|---|
-| CPU writes buffer → DMA sends it (TX) | new data is in the (write-back) cache, not yet in RAM | **clean** (write back) the buffer's lines before starting DMA |
-| DMA writes buffer → CPU reads it (RX) | the CPU's cache holds old data for those addresses | **invalidate** the lines after DMA completes (and also before starting, if the CPU might write-back dirty lines over the DMA data) |
+The CPU writes a buffer. The new value may exist only in dirty cache lines. A non-coherent DMA master could read older RAM contents. Clean or synchronize the buffer before transferring ownership to the device.
 
-```c
-/* Cortex-M7 with CMSIS */
-SCB_CleanDCache_by_Addr((uint32_t *)tx_buf, sizeof tx_buf);
-start_dma_tx(tx_buf, sizeof tx_buf);
+#### 2. Receive: device to CPU
 
-/* Before RX: dedicate whole cache lines; clean/invalidate as required. */
-SCB_CleanInvalidateDCache_by_Addr((uint32_t *)rx_buf, sizeof rx_buf);
-start_dma_rx(rx_buf, sizeof rx_buf);
-/* ... RX complete interrupt; device has stopped writing ... */
-SCB_InvalidateDCache_by_Addr((uint32_t *)rx_buf, sizeof rx_buf);
-process(rx_buf);
-```
+DMA writes RAM while the CPU may still cache an old copy. Prepare the receive buffer before DMA, then invalidate or synchronize the appropriate cache lines after completion and before CPU access.
 
-**Alignment rule:** cache operations work on whole lines (32 bytes on Cortex-M7, 64 bytes on most Cortex-A). If a DMA buffer shares a cache line with another variable, invalidating the buffer also discards recent writes to that variable, and cleaning it writes stale data over DMA results. Align DMA buffers to the cache line size and round their size up to a multiple of it:
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 184" width="100%" role="img" aria-label="Non-coherent transmit requires CPU cache clean; receive requires synchronization before CPU reads">
+<text x="8" y="18" font-size="11" font-weight="600" fill="currentColor">TX: clean before device ownership</text><rect x="8" y="30" width="100" height="38" rx="5" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/><text x="58" y="53" font-size="10" text-anchor="middle" fill="currentColor">CPU cache: new</text><path d="M108 49 h12 m-4-3 4 3-4 3" stroke="currentColor" fill="none"/><rect x="120" y="30" width="100" height="38" rx="5" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/><text x="170" y="53" font-size="10" text-anchor="middle" fill="currentColor">RAM: new</text><path d="M220 49 h12 m-4-3 4 3-4 3" stroke="currentColor" fill="none"/><rect x="232" y="30" width="100" height="38" rx="5" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/><text x="282" y="53" font-size="10" text-anchor="middle" fill="currentColor">DMA reads</text><text x="8" y="108" font-size="11" font-weight="600" fill="currentColor">RX: synchronize before CPU ownership</text><rect x="8" y="120" width="100" height="38" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="58" y="143" font-size="10" text-anchor="middle" fill="currentColor">DMA writes</text><path d="M108 139 h12 m-4-3 4 3-4 3" stroke="currentColor" fill="none"/><rect x="120" y="120" width="100" height="38" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="143" font-size="10" text-anchor="middle" fill="currentColor">RAM: new</text><path d="M220 139 h12 m-4-3 4 3-4 3" stroke="currentColor" fill="none"/><rect x="232" y="120" width="100" height="38" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="282" y="143" font-size="10" text-anchor="middle" fill="currentColor">CPU reads new</text></svg></div>
+
+#### 3. Linux streaming DMA example
 
 ```c
-__attribute__((aligned(32))) static uint8_t rx_buf[ALIGN_UP(RX_LEN, 32)];
+dma_addr_t addr = dma_map_single(dev, buf, len,
+                                DMA_TO_DEVICE);
+if (dma_mapping_error(dev, addr))
+    return -EIO;
+
+/* Program hardware using addr, then wait for completion. */
+
+dma_unmap_single(dev, addr, len, DMA_TO_DEVICE);
 ```
 
-**Alternatives**
+The DMA API handles platform-specific mapping and cache synchronization. Use suitable DMA-mappable memory, not arbitrary stack or vmalloc addresses.
 
-- **Non-cacheable region:** use the MPU to make a RAM area non-cacheable (or write-through for TX-only buffers) and put DMA buffers there.
-- **TCM memory** (DTCM on Cortex-M7) is not cached; check that the DMA controller can access it (on STM32H7, some DMAs cannot reach DTCM).
-- **Hardware coherency:** Cortex-A systems with an ACP or CCI/CMN interconnect can make some DMA masters cache-coherent.
+For reusable streaming mappings, dma_sync_single_for_cpu and dma_sync_single_for_device transfer access ownership as required. Do not access the buffer while the device owns it.
 
-**Linux:** drivers never do this manually; the DMA API does it: `dma_map_single()`/`dma_unmap_single()` (streaming, does the clean/invalidate), and `dma_alloc_coherent()` (memory that is uncached or hardware-coherent).
+#### 4. Coherent systems
 
-**Symptom:** "DMA works with the cache disabled but returns old/corrupted data with the cache enabled" is a strong clue to investigate cache maintenance, buffer ownership and DMA addressability.
+Coherent DMA allocations simplify visibility, but descriptor publication and ownership ordering may still require dma_wmb/dma_rmb or other documented synchronization. A CPU virtual address is not necessarily the device's DMA address.
+
+**Interview takeaway:** Cache coherency, memory ordering and buffer ownership are different problems. Use the platform DMA API and protect full cache lines on non-coherent systems.
 
 ### What is a memory barrier and why would firmware need one? {H}
 **Short answer:** A memory barrier forces an ordering between memory operations that the CPU, its write buffers or the bus would otherwise be allowed to reorder or delay. Arm has three barrier instructions: **`DMB`** (memory accesses before it are observed before those after it), **`DSB`** (waits for required completion of relevant preceding operations within the specified scope before subsequent instructions execute), and **`ISB`** (flush the pipeline so later instructions are fetched and decoded with the new context).
