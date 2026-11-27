@@ -766,28 +766,37 @@ Select endpoints according to device class, bandwidth, latency and data-integrit
 **Interview takeaway:** Choose transfer type based on timing versus reliability. USB transfer type is distinct from endpoint direction and device class.
 
 ### What happens during USB enumeration? {H}
-**Short answer:** When a device is plugged in, the host detects it, resets it, reads its device descriptor at address 0 to learn the control endpoint's maximum packet size, assigns it a unique address, reads all its descriptors (device, configuration, interfaces, endpoints, strings), chooses a driver based on class or vendor/product ID, and selects a configuration. Only then can the device's other endpoints be used.
+USB enumeration is the host process that discovers, identifies, addresses and configures a connected USB device. The exact sequence depends on USB version, host stack and device speed.
 
-**Step by step**
+#### 1. Typical USB 2.0 enumeration
 
-1. **Attach:** the device connects a pull-up on D+ (full/high speed) or D− (low speed); the host sees the line change.
-2. **Reset:** the host drives SE0 for at least 10 ms; a high-speed-capable device performs the **chirp** handshake to switch to 480 Mbps.
-3. **GET_DESCRIPTOR (device)** to address 0, often only the first 8 bytes, to learn `bMaxPacketSize0`.
-4. **SET_ADDRESS:** the device must switch to the new address **after** the status stage of this request (a common firmware bug).
-5. **GET_DESCRIPTOR (device)** again (full 18 bytes): VID, PID, class, number of configurations.
-6. **GET_DESCRIPTOR (configuration)**: first 9 bytes for `wTotalLength`, then the full configuration with all interface and endpoint descriptors.
-7. **String descriptors** (manufacturer, product, serial number), optionally.
-8. **Driver binding:** the host OS matches class/subclass/protocol or VID/PID to a driver.
-9. **SET_CONFIGURATION:** the device becomes "configured" and its endpoints active. Class-specific requests follow (e.g. HID report descriptor, CDC line coding).
+```text
+Device attach detected
+        |
+Port reset / speed detection
+        |
+Default address 0, endpoint 0
+        |
+Read descriptors; assign unique address
+        |
+Read configuration/interface/endpoint descriptors
+        |
+Select configuration; bind suitable driver
+```
 
-**Common failure causes**
+The host may issue requests in a different order or repeat some descriptor reads.
 
-- Descriptor errors (wrong lengths, `wTotalLength` mismatch, wrong endpoint addresses).
-- Slow responses to control requests (the host has timeouts, e.g. 500 ms for some stages).
-- Wrong USB clock accuracy (full speed needs ±0.25%; internal RC oscillators need clock recovery via SOF packets).
-- Missing pull-up or VBUS sensing configuration.
+#### 2. Standard control requests
 
-**Debugging:** `dmesg` and `lsusb -v` on Linux, USBView on Windows, Wireshark with usbmon, or a hardware USB protocol analyser.
+GET_DESCRIPTOR obtains information such as device, configuration and string descriptors. SET_ADDRESS assigns the device address; SET_CONFIGURATION selects a configuration. Endpoint 0 supports control transfers.
+
+#### 3. Debugging enumeration failure
+
+Check power, cable, connector, PHY clock/reset, speed detection and endpoint-zero responses. Inspect host logs and capture transactions using a USB analyzer or host-side tracing (for example usbmon on Linux).
+
+Incorrect descriptor lengths, invalid endpoint configuration or timing failures can prevent driver binding.
+
+**Interview takeaway:** Enumeration is a host-driven control-transfer process. A device must implement its default control endpoint correctly before ordinary data endpoints are useful.
 
 ### What is Modbus? {E}
 **Short answer:** Modbus is a simple request/response protocol widely used in industrial automation. A **client** (master) sends a function code and a register address to a **server** (slave), which replies with data or an exception. **Modbus RTU** runs over RS-485 (or RS-232) with compact binary frames, a 1-byte server address and a CRC-16, with frames separated by 3.5 character times of silence. **Modbus TCP** carries the same function codes over TCP port 502 with an MBAP header instead of the address and CRC.
