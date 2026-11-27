@@ -343,38 +343,28 @@ Construct objects in fixed pools, statically reserved memory or custom arenas. H
 **Interview takeaway:** Placement new is construction, not allocation. Do not call ordinary delete on an object constructed in a raw static buffer.
 
 ### What does volatile mean in C++ and what changed in C++20? {H}
-**Short answer:** As in C, `volatile` tells the compiler that every read and write of the object is an observable side effect (e.g. a hardware register), so it must not optimise accesses away, merge them, or reorder them relative to other volatile accesses. It does **not** make operations atomic and does not provide memory ordering for multi-threaded code — use `std::atomic` for that. C++20 **deprecated** compound operations on volatile objects (`++`, `--`, `+=`, `|=` ...), volatile function parameters and return types, because they suggest an atomic read-modify-write that does not exist; write explicit loads and stores instead.
+C++ volatile, like C volatile, marks accesses whose observable behavior must be preserved according to the implementation. It is useful for platform-defined MMIO, not general thread synchronization.
+
+#### 1. Example
 
 ```cpp
-#include <cstdint>
-
-struct GpioRegs { volatile uint32_t ODR; volatile uint32_t BSRR; };
-
-void toggle(GpioRegs *gpio, uint32_t pin_mask)
-{
-    // gpio->ODR ^= pin_mask;            // deprecated in C++20: hides a read-modify-write
-    uint32_t v = gpio->ODR;              // explicit read
-    gpio->ODR = v ^ pin_mask;            // explicit write (still not atomic w.r.t. interrupts)
-}
-
-void set_atomic(GpioRegs *gpio, uint32_t pin_mask)
-{
-    gpio->BSRR = pin_mask;               // hardware set/reset register: a single write, no RMW race
-}
+auto* reg = reinterpret_cast<volatile uint32_t*>(0x40000000u);
+uint32_t value = *reg;
 ```
 
-**C++23 note:** after feedback from the embedded community, C++23 un-deprecated the bitwise compound assignments (`|=`, `&=`, `^=`) on volatile, because they are so common in register code; `++`, `--`, `+=` and the other cases remain deprecated.
+This assumes a valid bare-metal register mapping and access width.
 
-**volatile vs atomic**
+#### 2. C++20 changes
 
-| | `volatile` | `std::atomic<T>` |
-|---|---|---|
-| Prevents optimising accesses away | yes | yes (for the atomic object) |
-| Atomic read-modify-write | no | yes (`fetch_add`, `compare_exchange`) |
-| Memory ordering with other variables | no | yes (`memory_order_*`) |
-| Use for | MMIO registers, variables changed by hardware | data shared between threads/ISRs |
+C++20 deprecated several volatile-related constructs, including certain compound assignments and increment/decrement operations on volatile-qualified scalar objects, and certain volatile-qualified function parameter/return types. Exact rules and subsequent revisions matter; the volatile qualifier itself remains available.
 
-**Embedded rule:** registers → volatile; flags shared between an ISR and the main loop on a single-core MCU → `std::atomic` (lock-free for word sizes on Cortex-M3+; on Cortex-M0 check `is_lock_free()`) or volatile plus a critical section for multi-step updates.
+A clearer MMIO RMW expression is a separate read and write when the hardware permits it. Separating the operations does not make them atomic.
+
+#### 3. Synchronization
+
+Use std::atomic, mutexes or platform primitives for concurrent shared memory. Confirm atomics are suitable for the execution context; device memory is not ordinary C++ atomic storage.
+
+**Interview takeaway:** Volatile preserves required accesses; it is not a memory fence or lock. Follow the target MMIO semantics and language version.
 
 ### How do you model a hardware register in type-safe C++? {H}
 **Short answer:** Wrap register addresses and fields in types so misuse becomes a compile error: put the address and access type (read-only, write-only, read-write) in a template, model fields with compile-time offset and width, and use `enum class` for field values. Everything resolves to the same single load or store as hand-written C (`*(volatile uint32_t*)addr`), but writing to a read-only register or putting a value in the wrong field no longer compiles.
