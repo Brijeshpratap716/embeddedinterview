@@ -430,43 +430,36 @@ Hardware already saves the basic exception frame. The port handles other registe
 **Interview takeaway:** SVC is synchronous service entry; PendSV is deferred exception processing commonly used for task switching. SysTick may trigger scheduling but need not perform the entire switch itself.
 
 ### What is the MPU and how is it used? {M}
-**Short answer:** The Memory Protection Unit lets software define a small number of memory regions (typically 8 or 16) with access permissions (privileged/unprivileged read, write, execute-never) and memory attributes (cacheable, bufferable, shareable, device). An access that violates the rules raises a MemManage fault instead of silently corrupting memory. It does not translate addresses (no virtual memory).
+An MPU (Memory Protection Unit) enforces access permissions and memory attributes for configured address regions. Unlike a conventional MMU, an MPU does not provide general virtual-to-physical page translation.
 
-**Uses**
+#### 1. Example region configuration
 
-- **Stack overflow detection:** a no-access guard region just below each stack.
-- **NULL pointer detection:** a no-access region at address 0 (after relocating the vector table).
-- **Execute-never RAM** and read-only flash, which stops many code-injection and accidental-overwrite bugs.
-- **Task isolation:** unprivileged tasks can access only their own stack/data and the peripherals they need (FreeRTOS-MPU, Zephyr user mode, safety RTOSes).
-- **Cache control on Cortex-M7:** make DMA buffers non-cacheable or write-through, and mark external memory and peripheral regions correctly.
+| Region | Typical permissions |
+|---|---|
+| Firmware flash | Read/execute |
+| RAM data | Read/write, execute-never |
+| Peripheral MMIO | Device memory, appropriate access |
+| Task stack guard | No access |
 
-**Region rules**
+Actual regions depend on the MPU version, alignment/granularity rules and privileged background mapping configuration.
 
-| | Armv7-M (M3/M4/M7) | Armv8-M (M23/M33/M55/M85) |
-|---|---|---|
-| Region definition | base + size | base + limit |
-| Size | power of two, 32 B to 4 GB, base aligned to size | any multiple of 32 bytes |
-| Subregions | 8 subregions per region can be disabled | none |
-| Overlap | allowed; higher region number wins | not allowed |
-| Attributes | TEX/C/B/S bits | index into `MAIR` attribute registers |
+#### 2. How it works
 
-**Example (Armv7-M): make a 32-byte guard at the bottom of a task stack**
+When the CPU fetches an instruction or accesses data, the MPU checks the relevant region attributes and permissions. A prohibited access generates a fault according to the processor configuration. Correctly configured execute-never regions can prevent execution from data buffers.
 
-```c
-MPU->RNR  = 7;                                   /* region 7 */
-MPU->RBAR = (uint32_t)task_stack;                /* must be 32-byte aligned */
-MPU->RASR = (0u << MPU_RASR_AP_Pos)              /* no access */
-          | MPU_RASR_XN_Msk
-          | (4u << MPU_RASR_SIZE_Pos)            /* size = 2^(4+1) = 32 bytes */
-          | MPU_RASR_ENABLE_Msk;
-MPU->CTRL = MPU_CTRL_ENABLE_Msk | MPU_CTRL_PRIVDEFENA_Msk;  /* default map for privileged code */
-__DSB();
-__ISB();
-```
+#### 3. RTOS application
 
-**PRIVDEFENA** keeps the default memory map for privileged code, so you only need regions for what you want to restrict.
+An MPU-aware RTOS may reprogram task-specific regions during a context switch, restricting unprivileged tasks to their own stack, buffers and approved peripherals. The OS must validate requests to privileged services.
 
-**Limitations:** few regions (an RTOS reprograms some on every context switch), the v7-M alignment rules waste memory, and MPU programming is easy to get subtly wrong, so test violations deliberately.
+#### 4. MPU vs MMU
+
+| MPU | MMU |
+|---|---|
+| Region-based protection | Page-based translation and protection common |
+| No general address translation | Virtual-to-physical mapping |
+| Common in MCU systems | Common in rich OS systems |
+
+**Interview takeaway:** An MPU can improve isolation and fault detection, but its protection is only as good as the configured regions and privilege model. It does not automatically isolate DMA masters.
 
 ### What is TrustZone for Cortex-M? {H}
 **Short answer:** TrustZone for Armv8-M (Cortex-M23/M33/M35P/M55/M85) splits the system into a **Secure** world and a **Non-secure** world on the same core. Memory, peripherals and interrupts are assigned to one world; Non-secure code cannot access Secure resources, and can call Secure code only through defined entry points. It protects keys, secure boot, cryptographic services and firmware update logic from bugs or attacks in the application.
