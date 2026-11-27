@@ -606,6 +606,29 @@ A linker map also identifies object files, symbol addresses and memory usage.
 
 **Interview takeaway:** The compiler creates sections; the linker script places them. Startup code and hardware memory configuration must agree with the script.
 
+#### 4. Important GNU linker commands
+
+| Command | Purpose |
+|---|---|
+| `ENTRY(Reset_Handler)` | Sets the ELF entry point; Cortex-M hardware actually boots using the reset vector |
+| `MEMORY` | Defines regions, origin addresses and lengths |
+| `SECTIONS` | Maps input sections into output sections |
+| `KEEP(*(.isr_vector))` | Prevents garbage collection of the vector table |
+| `ALIGN(4)` | Computes an aligned address; assigning it to the location counter advances placement |
+| `AT> FLASH` | Places the load image in flash while the VMA may be RAM |
+| `LOADADDR(.data)` | Returns the load address of initialized data |
+
+Example stack symbol for the downward-growing Cortex-M stack:
+
+```ld
+_estack = ORIGIN(RAM) + LENGTH(RAM);
+ENTRY(Reset_Handler)
+```
+
+The initial stack pointer is normally the aligned address immediately above the RAM region (not the last byte). Ensure actual stack space is reserved and does not overlap other sections. Pass a custom script using `arm-none-eabi-gcc -T firmware.ld ...`.
+
+**Important:** .data initial values are copied from flash to RAM; .bss is cleared in RAM, not copied. The GNU linker resolves symbols, relocates and places sections in one link operation; a separate locator executable is not required. Linker memory attributes do not configure hardware permissions.
+
 ### What is the vector table? {E}
 A vector table contains the information needed to enter exception and interrupt handlers. Its format depends on the architecture.
 
@@ -629,6 +652,19 @@ On cores supporting VTOR, privileged firmware can select another correctly align
 AArch64 uses exception vector instruction slots at offsets from VBAR_ELx rather than a Cortex-M-style array of handler pointers.
 
 **Interview takeaway:** The vector table is an architecture-defined interface between hardware exception entry and software handlers. Its placement, alignment and entry format must match the target.
+
+#### 5. Calculate a handler address
+
+For Cortex-M, the address of the vector entry is:
+
+```text
+Vector entry address = vector_base + 4 * exception_number
+External IRQ n      = exception number (16 + n)
+```
+
+For example, IRQ 5 uses exception number 21 and offset 0x54. The CPU reads the handler pointer from that entry; the entry address itself is not the ISR address. Handler pointers have bit 0 set to indicate Thumb state. SysTick is exception 15 (offset 0x3C). Entry 0 is the initial MSP, not a handler. Reserved entries and the number of external IRQs depend on the core and MCU.
+
+Reference: [Arm CMSIS interrupt and exception vectors](https://arm-software.github.io/CMSIS_6/latest/Core/group__NVIC__gr.html).
 
 ### What are weak symbols? {M}
 A weak symbol is a linker symbol that can be overridden by a suitable strong definition. It is widely used for default firmware handlers and board hooks.
@@ -1561,3 +1597,54 @@ Compare generated assembly, enable warnings and static analysis, use sanitizers 
 
 **Interview takeaway:** Optimization does not make invalid C correct. Fix the language or hardware-interface violation rather than permanently disabling optimization.
 
+### How do you access memory-mapped peripheral registers using pointers in Embedded C? {E}
+Memory-mapped I/O (MMIO) assigns peripheral registers addresses in the CPU address space. A load or store at such an address communicates with a peripheral rather than ordinary RAM.
+
+#### 1. Access through a pointer
+
+```c
+#include <stdint.h>
+
+volatile uint32_t *const reg = (volatile uint32_t *)0x40025400u;
+
+void configure(void)
+{
+    *reg = 0xF0u;           // write
+    uint32_t value = *reg;  // read
+    (void)value;
+}
+```
+
+Here 0x40025400 is the GPIO Port F direction register on the TM4C123 using its APB mapping. Enable the GPIO clock and follow the device manual first. The address is device-specific.
+
+#### 2. Access through a macro
+
+```c
+#define GPIOF_DIR (*(volatile uint32_t *)0x40025400u)
+
+void set_pin4_output(void)
+{
+    GPIOF_DIR |= (1u << 4);
+}
+```
+
+Both forms use the same MMIO access. A constant pointer need not occupy SRAM: a compiler can optimize it into an immediate address. The macro is not inherently faster.
+
+#### 3. Why volatile?
+
+The peripheral can change register values independently of the CPU. Volatile tells the compiler to perform the specified accesses instead of eliminating or caching them. It does not make a read-modify-write atomic, provide thread synchronization or guarantee hardware ordering. Use the register's required width, alignment, access semantics and barriers when required.
+
+#### 4. Cortex-M memory map (architectural regions)
+
+| Address range | Typical use |
+|---|---|
+| 0x00000000-0x1FFFFFFF | Code / flash |
+| 0x20000000-0x3FFFFFFF | SRAM |
+| 0x40000000-0x5FFFFFFF | Peripherals |
+| 0x60000000-0x9FFFFFFF | External RAM |
+| 0xA0000000-0xDFFFFFFF | External devices |
+| 0xE0000000-0xFFFFFFFF | System / vendor-specific |
+
+The 32-bit address space spans 4 GiB, but most addresses are not necessarily backed by physical memory; some are reserved or protected. CPU general-purpose registers are accessed by instructions, not MMIO; some system control registers are memory-mapped.
+
+**Interview takeaway:** For write-one-to-clear status bits use a direct mask write, not `|=`. Use vendor CMSIS register definitions where available.
