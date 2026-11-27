@@ -518,6 +518,7 @@ typedef struct hdr { uint32_t magic; uint32_t size; } hdr_t;
 extern uint8_t heap[], heap_end[];
 void fault(const char *why);
 
+/* Illustrates header checks only after exact block-start validation. */
 void checked_free(void *p)
 {
     if (p == NULL) return;
@@ -551,6 +552,12 @@ void checked_free(void *p)
 **What `fault()` should do in firmware:** log the caller address (`__builtin_return_address(0)`), the block address and size, then assert/reset in debug builds; in production at least record the event.
 
 **Limit:** if the freed block was reused by a later allocation, its magic is USED again, so a stale double free can look valid. Quarantining freed blocks for a while (as ASan does) catches more.
+
+#### Robust validation before header access
+
+For a fixed pool, convert the address to the platform's integer address representation, check that it is inside the pool, check that its offset is an exact multiple of slot size, then check an allocation bitmap for that slot. Do not compute or dereference an arbitrary preceding header before verifying the pointer. For a variable-size heap, consult a trusted allocation table or walk verified allocator metadata to establish that the address is an exact live block start.
+
+A magic number is useful corruption evidence but does not prove ownership. Synchronize validation and freeing as one operation. Stale pointers to reused addresses remain fundamentally ambiguous without generation-aware handles.
 
 ### How do you detect memory leaks with an allocation table? {M}
 **Short answer:** Wrap `malloc` and `free` in debug versions that record each live allocation (pointer, size, file and line) in a table and remove the entry when it is freed. At a checkpoint — end of a test, shutdown, or periodically — print every entry still in the table: those are leaks, with the exact line that allocated them.
