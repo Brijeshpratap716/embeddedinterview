@@ -82,25 +82,23 @@ A 10 kΩ upper resistor and 20 kΩ lower resistor divide 5 V to about 3.33 V, as
 **Interview takeaway:** Check tolerance when either device is unpowered, power sequencing, propagation delay and contention. Do not rely on protection diodes to absorb continuous overvoltage.
 
 ### What is a decoupling capacitor and where should it be placed? {E}
-**Short answer:** A decoupling (bypass) capacitor is placed between a chip's supply pin and ground, **as close to the pin as possible**, to supply the short bursts of current the chip draws when its transistors switch. Without it, those current spikes flowing through the inductance of the power traces cause the supply voltage at the pin to dip and ring, leading to resets, data errors and noise. The usual practice is 100 nF ceramic per supply pin, plus 1–10 µF bulk capacitance per chip or power domain.
+A decoupling capacitor supplies transient current locally and reduces supply disturbances caused by rapidly switching circuits.
 
-**Why close to the pin:** a trace has roughly 1 nH per mm of inductance; V = L × di/dt, so even a few nH with fast current edges creates significant voltage drops. The capacitor must be in a small loop: pin → capacitor → ground via → ground plane, with the via right next to the pad.
+```text
+Power rail ----+---- IC VDD
+               |
+             100 nF
+               |
+Ground --------+---- IC GND
+```
 
-**Choosing capacitors**
+#### Placement
+Place the high-frequency ceramic capacitor close to the supply and ground pins with a short, low-inductance loop. Larger bulk capacitors help with slower load changes; exact values and ESR must follow the IC or regulator datasheet.
 
-| Value | Role |
-|---|---|
-| 10–100 nF ceramic (X7R/X5R) at each pin | high-frequency current |
-| 1–10 µF ceramic per chip/rail | mid-frequency, local reservoir |
-| 10–100+ µF (ceramic, tantalum, polymer) at the regulator / board input | bulk, low-frequency load steps |
-| Ferrite bead + capacitors | isolate analog supplies (AVDD, VREF+) from digital noise |
+#### Example
+A processor switching many outputs simultaneously can cause supply droop. Local capacitors reduce the transient current that must travel through long PCB traces.
 
-**Details interviewers like**
-
-- Ceramic capacitors lose capacitance with DC bias and temperature (a 10 µF 6.3 V 0603 part may give only 3–5 µF at 3.3 V).
-- Each capacitor has a self-resonant frequency set by its ESL; above it the capacitor behaves like an inductor, which is why several values or many small capacitors are used in parallel.
-- Many MCUs require specific capacitors on internal regulator pins (e.g. VCAP on STM32F4: 2.2 µF low-ESR) — missing them causes the MCU not to start or crash randomly.
-- Firmware symptom of poor decoupling: random resets or hard faults when radios transmit, motors start or the CPU frequency increases.
+**Interview takeaway:** Capacitance, ESR, ESL and layout all matter. A large capacitor far from the chip cannot replace proper local decoupling.
 
 ### What is the difference between a linear regulator (LDO) and a switching regulator? {M}
 **Short answer:** A **linear regulator (LDO)** drops the excess voltage across a pass transistor, so it is simple, cheap, small and has very low output noise, but its efficiency is roughly V_out / V_in and the difference is wasted as heat: P_loss = (V_in − V_out) × I. A **switching regulator** (buck to step down, boost to step up, buck-boost both) rapidly switches a transistor and stores energy in an inductor, reaching 85–95% efficiency at the cost of switching noise (ripple and EMI), more components and layout care.
