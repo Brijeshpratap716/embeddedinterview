@@ -172,6 +172,7 @@ If A → B → C, and only B is supplied, copy C's payload into B, set B->next t
 /* returns the nth node from the end (n = 1 is the last), or NULL */
 node_t *nth_from_end(node_t *head, unsigned n)
 {
+    if (n == 0) return NULL;
     node_t *lead = head, *trail = head;
     for (unsigned i = 0; i < n; i++) {
         if (!lead) return NULL;                   /* list shorter than n */
@@ -183,6 +184,7 @@ node_t *nth_from_end(node_t *head, unsigned n)
 
 void remove_nth_from_end(node_t **head, unsigned n)
 {
+    if (n == 0) return;
     node_t **pp = head, *lead = *head;
     for (unsigned i = 0; i < n; i++) { if (!lead) return; lead = lead->next; }
     while (lead) { lead = lead->next; pp = &(*pp)->next; }
@@ -209,6 +211,10 @@ void remove_nth_from_end(node_t **head, unsigned n)
 **Two-pass alternative:** count the length L, then walk to node L − n. Equally O(n), but it reads the list twice; interviewers usually want the one-pass version.
 
 **Related problems using the same "gap" idea:** find the middle (fast moves 2, slow moves 1), rotate a list right by k (find the k-th from the end, cut and reconnect), and check if a list has at least k nodes.
+
+#### Maintain a fixed gap
+
+For 10 → 20 → 30 → 40 → 50 and n=2, advance lead twice to node 30. Move both pointers together until lead becomes NULL; trail points to node 40. To remove it, maintain a pointer to the link that refers to trail so the head case needs no special handling. Require n>=1; n=0 is invalid. Test n=1, n=list length, n>length, and empty input.
 
 ### Merge two sorted linked lists. {E}
 **Short answer:** Use a dummy node and a tail pointer. Repeatedly compare the heads of the two lists, link the smaller node after the tail and advance in that list; when one list runs out, link the rest of the other list. No new nodes are allocated — the existing nodes are relinked. O(n + m) time, O(1) space.
