@@ -6,7 +6,7 @@ level: Intermediate
 order: 24
 desc: AArch64 registers, instructions, exception levels, MMU, TLB, cache coherency, barriers, interrupts, TrustZone, virtualization and boot flow.
 ---
-Quick ARM architecture interview revision for embedded Linux, BSP, firmware and systems engineers. Each question includes a short answer, a visual explanation and a small code example. Assembly examples target AArch64; privileged examples require the appropriate exception level and platform configuration.
+Quick ARM architecture interview revision for embedded Linux, BSP, firmware and systems engineers. Each question includes a short answer, step-by-step explanations, visual diagrams, code examples and interview takeaways. Assembly examples target AArch64; privileged examples require the appropriate exception level and platform configuration.
 
 ### What is ARM architecture and how do Cortex-A, R and M differ? {E}
 **Short answer:** Arm is a family of instruction set architectures. Cortex-A targets application processors with an MMU, Cortex-R targets real-time systems, and Cortex-M targets microcontrollers.
@@ -16,6 +16,20 @@ Quick ARM architecture interview revision for embedded Linux, BSP, firmware and 
 ```asm
 ADD X0, X1, X2 // AArch64 example
 ```
+
+**1. Architecture vs processor**
+
+The ISA defines instructions, registers and the programmer-visible behavior. A processor implementation defines its pipeline, cache sizes and performance. Two cores implementing the same ISA may have very different hardware.
+
+| Profile | Typical use | Example |
+|---|---|---|
+| Cortex-A | Linux, Android, applications | Cortex-A55 |
+| Cortex-R | Predictable real-time control | Cortex-R52 |
+| Cortex-M | Low-power firmware and RTOS | Cortex-M4 |
+
+**2. Practical example:** An Android display driver typically runs on Cortex-A; a motor controller might use Cortex-M. Cortex-R often appears in safety-critical controllers. The profiles are alternatives, not sequential stages.
+
+**Interview takeaway:** Arm architecture is the software-visible contract; Cortex is a family of processor designs.
 
 ### What is AArch64 versus AArch32? {E}
 **Short answer:** AArch64 is the 64-bit execution state using A64 instructions. AArch32 is the 32-bit state using A32 or T32 instructions, where supported. AArch64 instructions are 32 bits wide.
@@ -27,6 +41,20 @@ ADD W0, W1, W2 // 32-bit operation in AArch64
 ADD X0, X1, X2 // 64-bit operation
 ```
 
+**1. Register and instruction differences**
+
+| Feature | AArch32 | AArch64 |
+|---|---|---|
+| General registers | R0–R12 plus SP, LR, PC | X0–X30 plus SP |
+| Instruction sets | A32, T32 | A64 |
+| Integer register width | 32 bits | 64 bits |
+
+**2. Example:** X1 = 0x1234567800000001. Reading W1 returns 1. Writing W1 = 2 makes X1 = 2, because a W-register write clears the upper half.
+
+**3. Compatibility:** A 64-bit CPU need not implement AArch32 at every exception level. Running 32-bit applications also requires kernel and userspace support.
+
+**Interview takeaway:** Execution state determines the instruction set and register model; it does not by itself determine physical address width.
+
 ### Do ARM64 registers contain data or addresses? {E}
 **Short answer:** Both. X0–X30 hold 64-bit values; instructions determine whether those bits represent data or an address. Writing Wn zeroes the upper 32 bits of Xn.
 
@@ -37,6 +65,26 @@ MOV X1, #0x1000
 LDR X2, [X1] // assuming valid readable address
 ADD X3, X2, #1
 ```
+
+**1. Actual data:** MOV X1, #10 puts the number 10 directly in X1. ADD operates on register values without reading data memory.
+
+**2. Address:** LDR X2, [X1] interprets X1 as an address and loads eight bytes. If the MMU is enabled, the address is translated before accessing memory.
+
+```c
+long a = 50;
+long *p = &a;
+long b = *p;
+```
+
+Conceptually X1 holds p and X2 holds b on typical ARM64 Linux.
+
+| Instruction | Meaning |
+|---|---|
+| MOV X2, X1 | Copy bits |
+| LDR X2, [X1] | Read pointed-to memory |
+| STR X2, [X1] | Write pointed-to memory |
+
+**Interview takeaway:** Registers are not inherently typed as pointers or integers; the instruction decides how to use their bits.
 
 ### What are SP, PC, LR and PSTATE? {E}
 **Short answer:** SP is the stack pointer, PC tracks instruction execution, X30 is the conventional link register, and PSTATE holds execution state including NZCV flags and interrupt masks. PC is not an ordinary general-purpose register in A64.
@@ -50,6 +98,21 @@ function:
     RET
 ```
 
+**1. Special register roles**
+
+| Register | Purpose |
+|---|---|
+| SP | Current stack location |
+| PC | Address associated with instruction execution |
+| X30 / LR | Return address after BL |
+| PSTATE | Flags, interrupt masks and execution state |
+
+**2. Function call:** BL places the next instruction address in X30 and branches to the function. RET normally branches to X30. A nested call overwrites LR, so a non-leaf function generally saves it if it needs it later.
+
+**3. Practical note:** AArch64 does not expose PC as an ordinary general-purpose register. ADR and ADRP can compute PC-relative addresses.
+
+**Interview takeaway:** SP manages stack storage, LR supports returns, PC controls execution and PSTATE records processor state.
+
 ### What is a load-store architecture? {E}
 **Short answer:** Arithmetic normally uses registers; explicit loads and stores transfer data between registers and memory.
 
@@ -61,6 +124,18 @@ ADD W0, W0, #1
 STR W0, [X1]
 ```
 
+**1. How an increment works:** Assume X1 points to a 32-bit integer containing 10. LDR reads 10 into W0; ADD produces 11; STR writes 11 back. The arithmetic instruction does not directly modify RAM.
+
+```c
+(*p)++;
+```
+
+**2. Access size:** LDRB reads one byte, LDRH two bytes, LDR Wn four bytes and LDR Xn eight bytes. Stores have corresponding variants.
+
+**3. Concurrency:** A load, add and store sequence is not atomic. Two cores can read the same old value and lose one update. Use an atomic operation when required.
+
+**Interview takeaway:** Explicit load/store instructions move data between memory and registers, while the ALU normally operates on registers.
+
 ### What are ARM exception levels EL0 to EL3? {M}
 **Short answer:** EL0 runs applications, EL1 normally runs the OS kernel, EL2 supports virtualization, and EL3 supports secure monitor functions. Availability depends on implementation.
 
@@ -69,6 +144,21 @@ STR W0, [X1]
 ```asm
 MRS X0, CurrentEL // privileged code
 ```
+
+**1. Privilege levels**
+
+| Level | Typical software |
+|---|---|
+| EL0 | Application |
+| EL1 | Linux kernel and drivers |
+| EL2 | Hypervisor |
+| EL3 | Secure monitor |
+
+**2. Transition example:** A userspace syscall executes SVC, normally entering EL1. The kernel validates arguments, performs work and returns with ERET. A guest may encounter traps routed to EL2.
+
+**3. Why isolation matters:** EL0 cannot freely program privileged system registers or access kernel-only mappings. An illegal operation can cause an exception.
+
+**Interview takeaway:** Exception levels provide privilege separation. Higher ELs are not stages that every instruction passes through; routing depends on configuration.
 
 ### How does a system call work on ARM64 Linux? {M}
 **Short answer:** Userspace puts the syscall number in X8 and arguments in X0–X5, then executes SVC. The kernel handles the synchronous exception and returns a result in X0.
@@ -80,6 +170,19 @@ MOV X8, #172 // Linux arm64 getpid
 SVC #0       // X0 = result
 ```
 
+**1. Userspace preparation:** libc follows the Linux AArch64 syscall ABI: X8 contains the syscall number, X0–X5 contain up to six arguments.
+
+**2. Kernel entry:** SVC raises a synchronous exception. Hardware saves return state; the kernel entry code saves registers and dispatches the syscall.
+
+**3. Return:** The kernel places a result in X0 and restores userspace execution. Raw Linux syscall failures are negative error numbers; libc typically converts these into -1 and sets errno.
+
+```c
+#include <unistd.h>
+pid_t pid = getpid();
+```
+
+**Interview takeaway:** A syscall is a controlled privilege transition, not an ordinary function call into kernel memory.
+
 ### What happens when an ARM64 exception occurs? {M}
 **Short answer:** Hardware saves the return address and prior PSTATE in ELR_ELx and SPSR_ELx, selects a vector using VBAR_ELx, and transfers control. Software saves needed general registers; ERET restores the saved execution state.
 
@@ -90,6 +193,16 @@ MRS X0, ESR_EL1 // exception syndrome
 MRS X1, ELR_EL1 // exception return address
 ```
 
+**1. Exception types:** Synchronous exceptions include system calls and faults. IRQ and FIQ are interrupt classes; SError reports certain asynchronous errors.
+
+**2. Hardware entry:** The target EL's ELR and SPSR save return address and prior processor state. VBAR identifies the vector table, with the slot determined by exception type and origin.
+
+**3. Software handler:** Kernel entry code saves general registers as required. ESR describes synchronous fault causes; FAR may contain the faulting address when valid.
+
+**4. Return:** ERET restores execution state using ELR and SPSR. Depending on the cause, software may retry, resume elsewhere or terminate the process.
+
+**Interview takeaway:** Hardware saves essential exception state, but software is responsible for preserving general-purpose registers as needed.
+
 ### What is the MMU? {M}
 **Short answer:** The MMU translates virtual addresses into physical addresses using translation tables and enforces access permissions and memory attributes.
 
@@ -98,6 +211,21 @@ MRS X1, ELR_EL1 // exception return address
 ```asm
 MRS X0, TTBR0_EL1 // privileged: table base
 ```
+
+**1. Why translation is needed:** Two processes can use the same virtual address while mapping to different physical pages. The MMU also enforces user/kernel access, read/write and execute permissions.
+
+**2. Example:** With a 4 KiB page, virtual address 0x1234 has offset 0x234. If its virtual page maps to physical base 0x8000, the resulting physical address is 0x8234.
+
+| System register | Role at EL1 |
+|---|---|
+| TTBR0_EL1 / TTBR1_EL1 | Translation table bases |
+| TCR_EL1 | Translation configuration |
+| MAIR_EL1 | Memory attribute encodings |
+| SCTLR_EL1 | Controls including MMU enable |
+
+**3. Failure:** An invalid mapping or permission violation raises a fault. Linux may resolve a valid demand-page fault or signal the process.
+
+**Interview takeaway:** The MMU provides translation, isolation and memory attributes; the TLB accelerates translation.
 
 ### What is a TLB and what happens on a TLB miss? {M}
 **Short answer:** The TLB caches address translations. On a miss, hardware normally walks translation tables; a valid translation can refill the TLB. Invalid mappings or permission violations can cause a fault.
@@ -108,6 +236,21 @@ MRS X0, TTBR0_EL1 // privileged: table base
 LDR X0, [X1] // translation performed if needed
 ```
 
+**1. TLB hit:** The CPU finds a cached translation and permissions, avoiding a page-table walk.
+
+**2. TLB miss:** The hardware walks translation tables in memory. If a valid entry is found, it can cache the translation and proceed. A TLB miss alone is not a page fault.
+
+**3. Page fault:** A missing or forbidden mapping can trigger a synchronous exception. Linux handles legitimate demand paging or rejects illegal access.
+
+| TLB | CPU data cache |
+|---|---|
+| Stores address translations | Stores memory contents |
+| Avoids table walks | Avoids slower data accesses |
+
+**4. Context switches:** Address Space Identifiers (ASIDs) help distinguish translations belonging to different processes. Kernel mapping changes may require TLB invalidation.
+
+**Interview takeaway:** TLB miss means translation is not cached; page fault means the access cannot proceed with the current translation state.
+
 ### How does a memory access travel from CPU to DRAM? {M}
 **Short answer:** A load uses an address in a register, translates it through the MMU, and checks caches. A cache miss can reach the coherent interconnect, memory controller and DRAM. Exact cache organization varies.
 
@@ -116,6 +259,18 @@ LDR X0, [X1] // translation performed if needed
 ```asm
 LDR X2, [X1] // X1 = virtual address
 ```
+
+**1. Instruction:** LDR computes an effective virtual address from X1 and any offset.
+
+**2. Translation:** The MMU checks the TLB; a miss can trigger a page-table walk. Permissions and memory attributes are checked.
+
+**3. Cache lookup:** The CPU searches its cache hierarchy. Translation and cache lookup may overlap depending on implementation.
+
+**4. Cache miss:** The coherent interconnect can obtain data from another core or a shared cache. If no cached copy supplies it, the memory controller accesses DRAM and returns the cache line.
+
+**5. Result:** The requested bytes are delivered to X2. For stores, a write-back cache may retain dirty data without immediately updating DRAM.
+
+**Interview takeaway:** Not every load reaches DRAM. Registers, translation, caches, coherency fabric and memory controller all participate as needed.
 
 ### What happens when malloc(4 KB) is called on ARM64 Linux? {M}
 **Short answer:** The allocator may reuse a free chunk or obtain virtual memory via brk/mmap. A first write to an unbacked anonymous page can fault, causing Linux to allocate a physical page and update the mapping. Allocation is not necessarily page-aligned.
@@ -126,6 +281,25 @@ LDR X2, [X1] // X1 = virtual address
 char *p = malloc(4096);
 if (p) { p[0] = 'A'; free(p); }
 ```
+
+**1. Allocator:** malloc is a libc function, not a syscall. It checks existing free chunks and may return a pointer without entering the kernel.
+
+**2. Virtual memory:** If needed, glibc obtains more space through brk or mmap. The kernel creates or extends virtual mappings.
+
+**3. First write:** A store to an unbacked anonymous page can trigger a page fault. Linux checks the VMA, allocates and zeroes physical memory as needed, updates page tables and retries the instruction.
+
+```asm
+MOV X0, #4096
+BL malloc
+CBZ X0, failed
+MOV W1, #65
+STRB W1, [X0]
+failed:
+```
+
+**4. Important details:** ARM64 Linux may use 4, 16 or 64 KiB base pages. A 4096-byte allocation need not be page-aligned, and allocator metadata can touch pages before the application does. free may retain memory in the allocator.
+
+**Interview takeaway:** Virtual allocation and physical backing are separate; demand paging often defers physical allocation until access.
 
 ### What is cache coherency? {M}
 **Short answer:** Hardware keeps coherent copies of a cache line consistent across cores. A writer typically obtains ownership and invalidates other copies; a later coherent reader obtains the updated value. DRAM need not be updated immediately.
@@ -138,6 +312,25 @@ smp_store_release(&flag, 1);
 /* Other CPU: smp_load_acquire(&flag) */
 ```
 
+**1. Without coherency:** Core 0 and Core 1 both cache a = 10. Core 0 writes 20; without coordination, Core 1 could keep reading stale 10.
+
+**2. With coherency:** Core 0 requests write ownership, other copies are invalidated, and a later coherent read obtains 20 from the appropriate cache or memory. This works at cache-line granularity.
+
+| MESI state | Meaning |
+|---|---|
+| M | Modified, dirty and exclusive |
+| E | Exclusive and clean |
+| S | Shared and clean |
+| I | Invalid |
+
+MESI is an illustrative protocol; real Arm implementations vary.
+
+**3. CPU vs DMA:** Non-coherent DMA may require cleaning before a device reads CPU-written buffers and invalidating stale CPU copies before reading device-written data. Linux DMA APIs manage these transitions.
+
+**4. Limitation:** Coherency does not make a++ atomic or enforce ordering between different addresses.
+
+**Interview takeaway:** Coherency keeps cached copies consistent; synchronization and memory barriers solve separate ordering and atomicity problems.
+
 ### What is a memory barrier? {M}
 **Short answer:** A barrier constrains memory ordering. On ARM, DMB orders relevant accesses, DSB also waits for required completion, and ISB synchronizes instruction execution after context changes.
 
@@ -149,6 +342,69 @@ DMB ISHST
 STR W2, [X3]
 ```
 
+**1. Without a memory barrier**
+
+Consider two CPU cores sharing data and flag, initially zero. The following is conceptual pseudocode, not safe portable C concurrency:
+
+```c
+// CPU Core 0
+data = 100;
+flag = 1;
+
+// CPU Core 1
+if (flag == 1)
+    value = data;
+```
+
+On weakly ordered ARM systems, Core 1 may observe flag = 1 before data = 100 and obtain the old value 0.
+
+**2. With a memory barrier (Linux kernel)**
+
+```c
+// CPU Core 0
+WRITE_ONCE(data, 100);
+smp_wmb();
+WRITE_ONCE(flag, 1);
+
+// CPU Core 1
+if (READ_ONCE(flag) == 1) {
+    smp_rmb();
+    value = READ_ONCE(data);
+}
+```
+
+<div style="max-width:600px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 260" width="100%" role="img" aria-label="Producer writes data then write barrier then flag. Consumer reads flag then read barrier then data." font-family="system-ui,sans-serif" text-anchor="middle"><g fill="#dbeafe" stroke="#2563eb"><rect x="15" y="10" width="260" height="35" rx="6"/><rect x="325" y="10" width="260" height="35" rx="6"/></g><g fill="#172554" font-size="15" font-weight="600"><text x="145" y="33">CPU Core 0</text><text x="455" y="33">CPU Core 1</text></g><g fill="#dcfce7" stroke="#15803d"><rect x="15" y="60" width="260" height="40" rx="6"/><rect x="325" y="60" width="260" height="40" rx="6"/><rect x="15" y="190" width="260" height="40" rx="6"/><rect x="325" y="190" width="260" height="40" rx="6"/></g><g fill="#fef3c7" stroke="#a16207"><rect x="15" y="125" width="260" height="40" rx="6"/><rect x="325" y="125" width="260" height="40" rx="6"/></g><g fill="#172554" font-size="14"><text x="145" y="85">Write data = 100</text><text x="455" y="85">Read flag = 1</text><text x="145" y="150">Write barrier</text><text x="455" y="150">Read barrier</text><text x="145" y="215">Write flag = 1</text><text x="455" y="215">Read data = 100</text></g><g stroke="#64748b" stroke-width="2" fill="none"><path d="M145 100v25m-5-6 5 6 5-6 M145 165v25m-5-6 5 6 5-6 M455 100v25m-5-6 5 6 5-6 M455 165v25m-5-6 5 6 5-6"/></g></svg></div>
+
+When the consumer observes the published flag, the paired barriers ensure it can read the earlier data in this one-time publication example.
+
+**3. ARM barrier instructions**
+
+| Instruction | Purpose |
+|---|---|
+| DMB | Orders relevant memory accesses |
+| DSB | Also waits for required completion |
+| ISB | Synchronizes subsequent instruction execution after context changes |
+
+**4. Linux kernel APIs**
+
+| API | Purpose |
+|---|---|
+| smp_rmb() | Orders reads |
+| smp_wmb() | Orders writes |
+| smp_mb() | Orders reads and writes |
+| barrier() | Compiler ordering only |
+| smp_store_release() | Store with release ordering |
+| smp_load_acquire() | Load with acquire ordering |
+
+**5. Coherency vs barrier**
+
+| Cache coherency | Memory barrier |
+|---|---|
+| Consistency of cached copies | Ordering across memory accesses |
+| Usually hardware-managed | Explicit ordering where needed |
+
+**Interview takeaway:** Barriers enforce memory ordering across CPUs or devices, not atomicity or automatic cache writeback. Device drivers need appropriate DMA/MMIO ordering APIs; portable userspace C uses atomics.
+
 ### What is acquire and release ordering? {M}
 **Short answer:** Release orders earlier accesses before publication; acquire orders later accesses after observing publication. Together they support safe producer-consumer communication.
 
@@ -158,6 +414,24 @@ STR W2, [X3]
 STLR W0, [X1] // release store
 LDAR W2, [X1] // acquire load
 ```
+
+**1. Producer:** Write the payload first, then publish the flag with release ordering.
+
+**2. Consumer:** Load the flag with acquire ordering. If it observes the release publication, subsequent reads can safely access the payload in this one-time publication pattern.
+
+```c
+// Linux kernel; initially flag = 0
+WRITE_ONCE(data, 100);
+smp_store_release(&flag, 1);
+
+// Other CPU
+if (smp_load_acquire(&flag))
+    value = READ_ONCE(data);
+```
+
+**3. Difference from full barriers:** Release primarily orders preceding accesses before publication; acquire orders following accesses after observation. A full barrier is stronger in other ordering directions.
+
+**Interview takeaway:** Acquire/release is a common efficient building block for locks, queues and producer-consumer synchronization.
 
 ### How do LDAXR and STLXR implement atomic operations? {H}
 **Short answer:** An exclusive load establishes a reservation. An exclusive store succeeds only if the reservation remains valid; otherwise retry. Acquire/release forms provide ordering.
@@ -171,6 +445,21 @@ LDAR W2, [X1] // acquire load
    CBNZ W2, 1b
 ```
 
+**1. Why normal increment fails:** Two cores can both load 10, add 1 and store 11, losing an increment.
+
+**2. Exclusive sequence:** LDAXR reads and establishes an exclusive reservation. STLXR attempts the write and returns zero on success or nonzero on failure. Interference or other events can invalidate the reservation.
+
+**3. Retry:** CBNZ repeats the sequence until a store succeeds. LDAXR has acquire semantics and STLXR release semantics.
+
+```c
+// Linux kernel alternative
+atomic_inc(&counter);
+```
+
+**4. Modern ARM:** LSE-capable cores also support single-instruction atomic read-modify-write operations, such as LDADD.
+
+**Interview takeaway:** Exclusives make the update conditional on reservation validity; ordering semantics and atomicity are distinct.
+
 ### What is the difference between normal and device memory? {M}
 **Short answer:** Normal memory is suitable for RAM and may be cacheable. Device memory has stricter access attributes suitable for MMIO registers. Linux drivers use ioremap and appropriate I/O accessors.
 
@@ -182,6 +471,20 @@ void __iomem *base = ioremap(phys, size);
 writel(1, base);
 ```
 
+**1. Normal memory:** Used for program code, heap and buffers. Depending on attributes, it can be cached, speculatively accessed and reordered.
+
+**2. Device memory:** Used for registers whose reads or writes can have side effects. Device attributes restrict gathering, reordering and early acknowledgement to varying degrees.
+
+| Normal | Device |
+|---|---|
+| RAM | Peripheral MMIO |
+| Often cacheable | Not ordinary cacheable RAM |
+| Speculation allowed as appropriate | Restricted access behavior |
+
+**3. Linux driver:** Use ioremap or managed resource mapping, then readl/writel. Check mapping errors and release unmanaged mappings. Do not treat MMIO as an ordinary pointer or assume volatile supplies hardware ordering.
+
+**Interview takeaway:** Memory attributes tell the CPU how accesses may behave; driver accessors enforce the appropriate semantics.
+
 ### How does DMA interact with CPU caches? {M}
 **Short answer:** A coherent device can participate in hardware coherency. Non-coherent DMA requires cache maintenance and ownership transitions; use Linux DMA mapping APIs to handle this.
 
@@ -191,6 +494,22 @@ writel(1, base);
 dma_addr_t a = dma_map_single(dev, buf, len, DMA_TO_DEVICE);
 /* Check dma_mapping_error; unmap after DMA completes. */
 ```
+
+**1. CPU to device:** CPU writes a buffer. On a non-coherent system, dirty cache lines may hold newer bytes than RAM. Mapping or syncing for the device performs required maintenance.
+
+**2. Device to CPU:** DMA writes memory. The CPU may retain stale cached bytes, so syncing for CPU access or unmapping is necessary before reading.
+
+| Linux API | Use |
+|---|---|
+| dma_alloc_coherent | Coherent allocation |
+| dma_map_single | Streaming mapping |
+| dma_sync_single_for_cpu | Return ownership to CPU |
+| dma_sync_single_for_device | Return ownership to device |
+| dma_unmap_single | End streaming mapping |
+
+**3. Important:** Check dma_mapping_error, obey DMA direction and ownership, and use the returned DMA address, not a cast CPU pointer. Coherent allocation still needs ordering where appropriate.
+
+**Interview takeaway:** The DMA API abstracts cache maintenance and address mapping, including IOMMUs.
 
 ### What is ARM GIC? {M}
 **Short answer:** The Generic Interrupt Controller routes and prioritizes interrupts. GICv3 uses a distributor, redistributors and CPU interfaces; an interrupt handler acknowledges and completes interrupts.
@@ -203,6 +522,22 @@ MRS X0, ICC_IAR1_EL1 // acknowledge Group 1
 MSR ICC_EOIR1_EL1, X0 // end priority
 ```
 
+**1. Interrupt path:** A peripheral asserts an interrupt. The GIC decides its priority and target CPU. The CPU receives an IRQ exception if permitted.
+
+**2. GICv3 components**
+
+| Component | Role |
+|---|---|
+| Distributor | Configures shared peripheral interrupts |
+| Redistributor | Per-core interrupt configuration |
+| CPU interface | Acknowledge, prioritize and signal completion |
+
+**3. Interrupt classes:** SGIs support interprocessor signaling; PPIs are private to a CPU; SPIs are shared peripheral interrupts.
+
+**4. Handler:** Acknowledge the interrupt, service its source, then signal end of interrupt. Depending on configuration, a separate deactivate operation is required. Linux normally handles these details via its IRQ subsystem.
+
+**Interview takeaway:** The GIC routes and prioritizes interrupts; the device driver handles the interrupt source.
+
 ### What is TrustZone? {M}
 **Short answer:** TrustZone provides hardware-backed security state separation. A typical system has a normal world and a secure world, with controlled transitions and protected resources.
 
@@ -212,6 +547,19 @@ MSR ICC_EOIR1_EL1, X0 // end priority
 SMC #0 // monitor call, where permitted
 ```
 
+**1. Normal world:** Runs the ordinary OS and applications, with access limited to non-secure resources.
+
+**2. Secure world:** Runs trusted firmware or a trusted OS and can protect keys or sensitive services through platform security controls.
+
+**3. Transition:** An SMC may enter the secure monitor (depending on routing/configuration), which validates the request and coordinates world switching. Memory controllers and peripheral firewalls enforce resource separation.
+
+| TrustZone | Virtualization |
+|---|---|
+| Security state separation | Guest isolation and resource control |
+| Secure monitor typically EL3 | Hypervisor typically EL2 |
+
+**Interview takeaway:** TrustZone is hardware-assisted isolation, not automatic security for every application; secure firmware and platform configuration matter.
+
 ### What is ARM virtualization at EL2? {H}
 **Short answer:** EL2 lets a hypervisor control guest execution and traps. Stage-1 translation maps guest VA to IPA; stage-2 maps IPA to host PA.
 
@@ -220,6 +568,16 @@ SMC #0 // monitor call, where permitted
 ```asm
 MRS X0, VTTBR_EL2 // stage-2 table base
 ```
+
+**1. Guest stage 1:** Guest Linux translates its virtual address using its own page tables to an intermediate physical address (IPA).
+
+**2. Hypervisor stage 2:** EL2 controls translation from IPA to host physical address. This allows a hypervisor to restrict guest memory without modifying guest page tables.
+
+**3. Traps:** Selected privileged operations, device accesses or faults can trap to EL2 for handling. Hardware virtualization allows many guest instructions to execute directly.
+
+**4. Linux example:** KVM on an ARM64 host uses EL2 facilities; QEMU can provide userspace device emulation. An x86 host cannot directly execute ARM guest instructions with KVM and typically needs QEMU TCG for cross-ISA emulation.
+
+**Interview takeaway:** Stage-2 translation and configurable traps let EL2 isolate and manage guests.
 
 ### What is the ARM64 calling convention? {M}
 **Short answer:** AAPCS64 passes ordinary integer/pointer arguments in X0–X7 and returns simple integer results in X0. X19–X28 are callee-saved; SP must be 16-byte aligned at public interfaces.
@@ -231,6 +589,22 @@ add_two:
     ADD X0, X0, X1
     RET
 ```
+
+**1. Register rules (AAPCS64)**
+
+| Registers | Role |
+|---|---|
+| X0–X7 | Ordinary integer/pointer arguments |
+| X0 | Typical scalar result |
+| X19–X28 | Callee-saved |
+| X29 / X30 | Frame pointer convention / link register |
+| SP | 16-byte aligned at public interfaces |
+
+**2. Example:** Calling add_two(10, 20) passes 10 in X0 and 20 in X1. ADD leaves 30 in X0 and RET returns to the caller.
+
+**3. Extra arguments:** Additional ordinary arguments may be passed on the stack. Floating-point and aggregate arguments follow additional ABI rules. X18 is platform-specific.
+
+**Interview takeaway:** The ABI lets independently compiled functions agree on arguments, results and register preservation.
 
 ### What is a stack frame in ARM64? {M}
 **Short answer:** A function may save its frame pointer X29 and link register X30 on the stack. Leaf functions may not require a frame.
@@ -245,6 +619,21 @@ LDP X29, X30, [SP], #16
 RET
 ```
 
+**1. Entry:** STP with pre-index addressing subtracts 16 from SP and stores X29 and X30. MOV sets the frame pointer to the new SP.
+
+**2. Body:** A function may reserve more aligned stack space for local variables, saved registers or outgoing arguments.
+
+**3. Exit:** LDP restores the saved registers and increments SP by 16. RET branches to the saved return address.
+
+| Before frame | After allocation |
+|---|---|
+| SP points to caller stack top | SP points to saved X29 |
+| LR contains return address | Saved X30 is at SP + 8 |
+
+**4. Optimization:** Leaf functions may omit stack frames and some platforms permit frame-pointer omission.
+
+**Interview takeaway:** The stack frame preserves call state and local storage; the stack grows toward lower addresses in the usual AArch64 ABI.
+
 ### What is WFI versus WFE? {M}
 **Short answer:** WFI waits for an interrupt or another permitted wake condition. WFE waits for an event or other permitted wake condition; SEV sends an event. Neither is a synchronization primitive by itself.
 
@@ -256,6 +645,19 @@ WFE // event wait hint
 SEV // send event
 ```
 
+**1. WFI:** A CPU idle loop may use Wait For Interrupt so the processor can reduce activity until a wake condition occurs.
+
+**2. WFE:** Wait For Event can be used in a waiting loop. SEV sends an event; a previously recorded event may make WFE return immediately.
+
+**3. Practical pattern:** Always recheck the shared condition after waking. Wakeups can be unrelated to the expected event, and ordering must be supplied separately.
+
+| WFI | WFE |
+|---|---|
+| Common in idle paths | Common in event-based wait loops |
+| Interrupt-related wakeup | Event or other allowed wakeup |
+
+**Interview takeaway:** These are architectural hints, not locks or guarantees that the core sleeps for a particular duration.
+
 ### What is the difference between a cache clean and invalidate? {M}
 **Short answer:** Cleaning writes dirty data toward the required coherency point; invalidation discards cached copies. Incorrect invalidation can lose dirty data. Use platform APIs for DMA.
 
@@ -266,6 +668,20 @@ DC CVAC, X0 // clean by VA to PoC
 DSB SY      // wait for completion; illustrative
 ```
 
+**1. Clean:** A dirty cache line is written toward the specified coherency point, allowing required observers to obtain updated contents.
+
+**2. Invalidate:** A cached copy is discarded so later access must obtain a valid copy again. Discarding dirty data without correct handling may lose updates.
+
+| Operation | Typical ARM instruction |
+|---|---|
+| Clean by VA to PoC | DC CVAC |
+| Invalidate by VA to PoC | DC IVAC |
+| Clean and invalidate by VA to PoC | DC CIVAC |
+
+**3. Practical notes:** Maintenance applies to cache lines; alignment, scope and barriers matter. PoC is the point of coherency, not necessarily DRAM. Privilege and cache configuration affect permitted instructions.
+
+**Interview takeaway:** Clean makes dirty data available as required; invalidate removes cached copies. Prefer Linux DMA APIs in drivers.
+
 ### What is endianness in ARM? {E}
 **Short answer:** Endianness determines the byte order of multi-byte values in memory. AArch64 supports little-endian data and implementation-dependent big-endian support; Linux commonly uses little-endian.
 
@@ -274,6 +690,26 @@ DSB SY      // wait for completion; illustrative
 ```asm
 REV W0, W1 // reverse byte order
 ```
+
+**1. Example:** Store 0x12345678 at address 0x1000.
+
+| Address | Little endian | Big endian |
+|---|---|---|
+| 0x1000 | 78 | 12 |
+| 0x1001 | 56 | 34 |
+| 0x1002 | 34 | 56 |
+| 0x1003 | 12 | 78 |
+
+**2. C example**
+
+```c
+uint32_t x = 1;
+bool little = *(unsigned char *)&x == 1;
+```
+
+**3. Drivers:** Protocols and device registers may define their own byte order. Use conversions such as cpu_to_le32 or be32_to_cpu where appropriate.
+
+**Interview takeaway:** Endianness changes byte layout in memory, not the numerical meaning of an integer held in a register.
 
 ### What are NZCV condition flags? {E}
 **Short answer:** N is negative, Z is zero, C is carry (or no borrow for subtraction), and V is signed overflow. Flag-setting instructions and conditional branches use them.
@@ -285,6 +721,27 @@ CMP X0, #0
 B.EQ is_zero
 ```
 
+**1. Flags**
+
+| Flag | Meaning |
+|---|---|
+| N | Result sign bit |
+| Z | Result is zero |
+| C | Unsigned carry / no borrow |
+| V | Signed overflow |
+
+**2. Example:** CMP X0, #0 performs a subtraction for flags without storing the result. If X0 is zero, Z becomes 1 and B.EQ branches.
+
+**3. Signed vs unsigned:** B.LT checks signed less-than (N differs from V); B.LO checks unsigned lower (C is clear). Choosing the wrong condition causes bugs.
+
+```asm
+CMP X0, X1
+B.LO unsigned_lower
+B.LT signed_lower
+```
+
+**Interview takeaway:** NZCV records arithmetic conditions and supports conditional execution and branching.
+
 ### What is the ARM64 boot flow? {M}
 **Short answer:** Platform firmware initializes hardware and loads the next stage. A typical Linux flow is Boot ROM, platform firmware/bootloader, kernel entry, MMU setup and userspace init. Exact stages vary by SoC.
 
@@ -294,3 +751,14 @@ B.EQ is_zero
 // Linux arm64 boot protocol: X0 = DTB physical address
 // X1–X3 = 0 at kernel entry
 ```
+
+**1. Boot ROM:** Executes platform-defined immutable startup code and locates the next boot stage.
+
+**2. Firmware / bootloader:** Initializes required clocks, DDR and devices, configures security state, and loads the kernel and DTB. Some platforms use TF-A, U-Boot SPL or U-Boot proper.
+
+**3. Kernel entry:** Bootloader passes the DTB physical address in X0 according to the ARM64 Linux boot protocol. Linux performs early architecture setup, builds translation tables, enables the MMU and initializes drivers.
+
+**4. Userspace:** The kernel mounts or prepares the root filesystem and executes the initial userspace program, typically systemd, /sbin/init or Android /init.
+
+**Interview takeaway:** Boot flow progresses from platform firmware to kernel initialization to PID 1. Exact stages, exception levels and DDR initialization vary by SoC.
+
