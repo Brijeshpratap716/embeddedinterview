@@ -202,26 +202,31 @@ Page-table permissions restrict read, write and execution. Invalid access may ge
 **Interview takeaway:** Virtual memory is not synonymous with swap. Address translation and protection remain useful even when no swap is configured.
 
 ### What is paging and what is a page fault? {M}
-**Short answer:** Paging splits virtual and physical memory into fixed-size blocks (pages and frames, usually 4 KB). The page table maps each virtual page to a physical frame with permission bits. A **page fault** is the exception the MMU raises when an access finds no valid mapping or not enough permission. The kernel either fixes it (allocate a page, read it from a file or swap, copy-on-write) and retries the instruction, or sends the process `SIGSEGV` if the access was invalid.
+Paging divides virtual memory into fixed-size pages and maps them to physical page frames using translation tables. A page fault occurs when an access cannot proceed under the current translation or permissions.
 
-**Address split (32-bit, 4 KB pages):** `virtual address = [ 20-bit page number | 12-bit offset ]`. The page number indexes the page table; the offset (0–4095) is copied directly into the physical address.
+#### 1. Example
 
-**Kinds of page fault**
+For a 4 KiB page, the lowest 12 address bits are the page offset. If VA 0x40001234 maps its virtual page to physical base 0x80000000, the resulting PA is 0x80000234.
 
-| Kind | Cause | Kernel action |
-|---|---|---|
-| Minor (soft) | page is in RAM but not mapped yet: first touch of anonymous memory, shared library page already in the page cache | map a zero page or existing page; no disk I/O |
-| Major (hard) | page must be read from disk: swapped out, or a file-backed page not in cache | start I/O, block the process, map when done |
-| Copy-on-write | write to a page shared after `fork()` | copy the page, map the copy writable |
-| Invalid | address not in any mapping (NULL, freed memory), or permission violation (write to read-only, execute non-executable) | send `SIGSEGV` (or `SIGBUS`) |
+#### 2. Fault handling
 
-**What the hardware provides:** the faulting address (`FAR_EL1` on ARM64, `CR2` on x86) and the reason (`ESR_EL1` on ARM64: translation fault, permission fault, read or write, at which level).
+```text
+CPU memory access -> TLB/page-table lookup
+                         |
+                  invalid / permission fault
+                         |
+                kernel checks access and VMA
+                |                           |
+        establish valid mapping       signal/error
+```
 
-**Page table entries contain:** physical frame number, valid bit, read/write/execute permissions, user/kernel bit, accessed and dirty bits (used for page replacement and write-back), and memory type (normal cacheable vs device memory on ARM).
+Demand allocation, copy-on-write and loading a file-backed page can be normal faults. An illegal access may be unrecoverable.
 
-**Measuring:** `/usr/bin/time -v ./prog` (major and minor faults), `perf stat -e page-faults`, `/proc/<pid>/stat` fields `minflt`/`majflt`.
+#### 3. TLB miss
 
-**Real-time relevance:** a major fault can block for milliseconds. Real-time Linux applications call `mlockall(MCL_CURRENT | MCL_FUTURE)` and touch their stack and heap at start-up ("prefaulting") so no faults happen in the time-critical loop.
+A TLB miss can trigger a hardware table walk and refill without any page fault. It is not equivalent to a missing mapping.
+
+**Interview takeaway:** A page fault is an exception requiring fault handling, not necessarily a bug. Distinguish translation-cache misses, demand faults and invalid accesses.
 
 ### How do multi-level page tables work? Calculate the size of the page tables. {M}
 **Short answer:** A single flat page table for a large address space is huge and mostly empty, so the virtual page number is split into several indexes. The first index selects an entry in a top-level table, which points to a second-level table, and so on; the last level gives the physical frame. Tables for unused parts of the address space are simply not allocated, which saves most of the memory.
