@@ -112,37 +112,50 @@ On a target using arithmetic right shift, -3 >> 1 commonly gives -2. In C99 and 
 **Interview takeaway:** Use unsigned types for portable logical shifts. Do not assume negative signed shifts are equivalent to division, and never use out-of-range shift counts.
 
 ### How do you check if a number is a power of two? {E}
-**Short answer:** `x && !(x & (x - 1))`. A power of two has exactly one bit set, and `x & (x - 1)` clears the lowest set bit, so the result is zero only when there was a single bit.
+A positive power of two contains exactly one set bit. Clearing its lowest set bit therefore produces zero.
+
+#### 1. C implementation
 
 ```c
-#include <stdbool.h>
 #include <stdint.h>
+#include <stdbool.h>
 
-bool is_pow2(uint32_t x)
+bool is_power_of_two(uint32_t n)
 {
-    return x != 0 && (x & (x - 1)) == 0;
+    return n != 0 && (n & (n - 1)) == 0;
 }
 ```
 
-**Why `x - 1` works:** subtracting 1 turns the lowest set bit into 0 and every bit below it into 1. Bits above it do not change.
+#### 2. Why it works
 
+```text
+n     = 00001000 (8)
+n - 1 = 00000111 (7)
+AND   = 00000000
+
+n     = 00001010 (10)
+n - 1 = 00001001 (9)
+AND   = 00001000
 ```
-x       = 0b0100_0000   (64)
-x - 1   = 0b0011_1111
-x&(x-1) = 0b0000_0000   -> power of two
 
-x       = 0b0101_0000   (80)
-x - 1   = 0b0100_1111
-x&(x-1) = 0b0100_0000   -> not a power of two
-```
+Subtracting one clears the lowest set bit and sets every lower bit. AND removes that lowest set bit while preserving higher set bits.
 
-**Why `x != 0`:** for `x = 0`, `x - 1` wraps to `0xFFFFFFFF` and the AND is 0, so without the check 0 would wrongly count as a power of two.
+#### 3. Edge cases
 
-**Alternatives:** `__builtin_popcount(x) == 1`, or C23 `stdc_has_single_bit(x)`.
+| n | Result |
+|---:|---|
+| 0 | False |
+| 1 | True |
+| 8 | True |
+| 10 | False |
 
-**Where it is used:** checking that a ring-buffer size, DMA block size or alignment is a power of two before using `& (size - 1)` instead of `% size`.
+Zero must be explicitly rejected because zero AND any value is zero.
 
-**Follow-up:** "Check if `x` is a power of four?" It must be a power of two **and** the bit must be in an even position: `is_pow2(x) && (x & 0x55555555u)`.
+#### 4. Embedded use
+
+Power-of-two sizes are useful for ring buffers, cache alignment and hardware resource sizes. For a nonzero power-of-two ring size N, an unsigned index can wrap using index & (N - 1).
+
+**Interview takeaway:** The test is O(1), uses no loop and requires a nonzero unsigned input.
 
 ### How do you clear the rightmost (lowest) set bit, and what other tricks use n & (n - 1)? {E}
 **Short answer:** `n & (n - 1)` turns off the lowest set bit. It is the building block for the power-of-two test, Kernighan's bit count and several other classic tricks.
