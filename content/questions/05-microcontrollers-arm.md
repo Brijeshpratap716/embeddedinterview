@@ -295,28 +295,38 @@ Both mechanisms reduce unnecessary entry/exit overhead and improve interrupt res
 **Interview takeaway:** Tail-chaining optimizes ISR-to-ISR transitions. Late arrival allows a higher-priority request to take precedence during exception entry.
 
 ### How do interrupt priorities work on Cortex-M? Lower number means? {M}
-**Short answer:** On Cortex-M a **lower priority number means higher urgency**. Reset (−3), NMI (−2) and HardFault (−1) have fixed negative priorities and are the most urgent; configurable exceptions and interrupts have priorities from 0 (most urgent) upward. A higher-priority (lower-number) interrupt can pre-empt a running lower-priority handler; equal priorities never pre-empt each other.
+On Cortex-M, a lower numerical interrupt-priority value represents higher urgency. Priority determines which eligible interrupt is serviced first and which handlers can preempt others.
 
-**Implemented bits:** the priority field is 8 bits, but chips implement only the **top** few bits (e.g. 4 bits on STM32 → 16 levels, written as `level << 4`). CMSIS `NVIC_SetPriority(IRQn, 5)` does the shift for you using `__NVIC_PRIO_BITS`; writing raw registers you must shift yourself. Unimplemented low bits read as zero.
+#### 1. Example
 
-**Priority grouping (Armv7-M and Armv8-M Mainline)**
+| Interrupt | Configured priority | Urgency |
+|---|---:|---|
+| Timer | 1 | Highest of these |
+| UART | 3 | Medium |
+| GPIO | 5 | Lowest of these |
 
-The priority value can be split into **group (pre-emption) priority** and **sub-priority** with `NVIC_SetPriorityGrouping()` (the `PRIGROUP` field in `SCB->AIRCR`):
+If GPIO is running and Timer becomes pending, Timer can preempt it if their preemption priorities differ and masking permits it.
 
-- Only the **group** priority decides whether one interrupt can pre-empt another.
-- The **sub-priority** only decides the order in which **pending** interrupts with the same group priority are serviced.
-- If both are equal, the lower exception number goes first.
+#### 2. Priority grouping
 
-Example with 4 implemented bits and grouping "2 bits group, 2 bits sub": priorities 0x40 and 0x50 have the same group (1) and different sub-priorities, so neither pre-empts the other.
+On implementations supporting priority grouping, priority bits may be split into preemption priority and subpriority. Preemption priority determines nesting; subpriority helps select between pending exceptions that have equal preemption priority.
 
-**Practical guidance**
+#### 3. CMSIS usage
 
-- Give the most time-critical, short ISRs the highest priority (lowest numbers).
-- With FreeRTOS, ISRs that call RTOS APIs must have a numeric priority **≥** `configMAX_SYSCALL_INTERRUPT_PRIORITY` (i.e. *less* urgent); more urgent ISRs must never call RTOS functions. This trips up many people because of the inverted numbering.
-- PendSV should be the lowest priority (largest number), SysTick usually low as well.
-- Keep the grouping simple (all bits as pre-emption priority is common, and what FreeRTOS recommends).
+```c
+NVIC_SetPriority(TIM2_IRQn, 1);
+NVIC_SetPriority(USART1_IRQn, 3);
+NVIC_EnableIRQ(TIM2_IRQn);
+NVIC_EnableIRQ(USART1_IRQn);
+```
 
-**Armv6-M (M0/M0+):** only 2 implemented bits (4 levels), no grouping, no BASEPRI.
+These values assume the device implements enough priority levels. CMSIS handles the priority-bit positioning; do not manually shift values passed to NVIC_SetPriority.
+
+#### 4. RTOS requirement
+
+FreeRTOS ports may prohibit high-urgency interrupts from using RTOS APIs above a configured syscall priority threshold. Follow the port's priority encoding and configuration rules.
+
+**Interview takeaway:** Lower number means higher urgency, but preemption grouping, interrupt masks and RTOS constraints determine whether an interrupt can actually preempt another.
 
 ### What is the difference between PRIMASK, FAULTMASK and BASEPRI? {H}
 **Short answer:** All three are special registers that mask (block) exceptions. **PRIMASK** = 1 blocks every exception with configurable priority, leaving only NMI and HardFault; `__disable_irq()` sets it. **FAULTMASK** = 1 also blocks HardFault (only NMI remains); it is meant for fault handlers and is cleared automatically on exception return. **BASEPRI** = n blocks only exceptions whose priority value is ≥ n, so more urgent interrupts still run.
