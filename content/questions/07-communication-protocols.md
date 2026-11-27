@@ -166,27 +166,33 @@ Software flow control uses in-band control characters such as XON/XOFF, which ma
 **Interview takeaway:** Flow control prevents overflow by coordinating sender and receiver, not by increasing UART speed. Configure signal polarity and account for in-flight bytes.
 
 ### How does RS-232 differ from RS-485 and TTL UART? {M}
-**Short answer:** They are different **physical layers** for the same UART framing. **TTL/CMOS UART** uses logic levels (0/3.3 V or 0/5 V) for short board-level connections. **RS-232** uses single-ended, inverted ±3 to ±15 V signals, point-to-point, up to about 15 m. **RS-485** uses a differential pair (A/B), is very noise-immune, supports multi-drop buses of 32 unit loads (more with fractional-load transceivers) over up to 1200 m, usually half duplex, and needs termination and driver-enable control.
+UART describes asynchronous serial framing. TTL/CMOS UART, RS-232 and RS-485 describe different electrical signaling arrangements that can carry UART-framed data.
 
-| | TTL UART | RS-232 | RS-485 |
-|---|---|---|---|
-| Signalling | single-ended logic level | single-ended, ±3 to ±15 V, inverted | differential (A−B > +200 mV = 1) |
-| Topology | point to point | point to point | multi-drop bus |
-| Distance | cm to < 1 m | ~15 m (depends on baud) | up to 1200 m (at lower rates) |
-| Speed | MCU-limited | ~115 kbps typical | up to 10–50 Mbps at short distance |
-| Duplex | full | full | half (2-wire) or full (4-wire RS-422 style) |
-| Noise immunity | low | moderate | high (common-mode rejection) |
-| Transceiver | none | MAX3232-style | MAX485/THVD-style |
+| Interface | Electrical signaling | Typical topology |
+|---|---|---|
+| MCU UART | Single-ended logic-level signals | Short board-level link |
+| RS-232 | Bipolar single-ended signaling | Point-to-point |
+| RS-485 | Differential signaling | Multipoint bus possible |
 
-**RS-485 design points**
+#### 1. Hardware example
 
-- **Termination:** 120 Ω at both ends of the bus to stop reflections; **fail-safe biasing** resistors keep the idle bus at a defined level when no driver is active.
-- **Direction control:** in half duplex, the MCU enables the driver (DE) before sending and disables it after the **last stop bit has left the shift register** (wait for the UART "transmission complete" flag, not just "TX empty"), otherwise the last byte is cut off. Many MCUs can drive DE automatically.
-- **Topology:** a daisy-chained bus with short stubs, not a star.
-- **Ground:** RS-485 tolerates ground offsets (−7 V to +12 V common mode) but still needs a reference ground or isolation.
-- **Protocols on top:** Modbus RTU, PROFIBUS, DMX512, BACnet MS/TP, many proprietary protocols.
+```text
+MCU UART TX/RX --> RS-485 transceiver --> twisted pair
+                       |
+                  DE / RE control
+```
 
-**Interview catch:** "Can you connect an MCU's UART directly to an RS-232 port?" No: RS-232 levels are inverted and up to ±15 V; you need a level-shifting transceiver.
+A half-duplex RS-485 transceiver may require driver-enable timing: enable before transmitting and release only after the final bit has completed.
+
+#### 2. Electrical caution
+
+Do not connect an RS-232 signal directly to a 3.3 V MCU pin. Use a suitable transceiver. For RS-485, termination and biasing must match the bus topology and transceiver requirements.
+
+#### 3. Protocol distinction
+
+RS-485 does not define application addressing or error checking. Modbus RTU is a common higher-level protocol carried over it.
+
+**Interview takeaway:** UART is the framing mechanism; RS-232 and RS-485 are electrical standards. Choose the transceiver and topology separately from the serial protocol.
 
 ### What are the SPI modes (CPOL and CPHA)? {M}
 **Short answer:** **CPOL** (clock polarity) sets the idle level of SCLK: 0 = idle low, 1 = idle high. **CPHA** (clock phase) sets which edge samples data: 0 = sample on the first (leading) edge, 1 = sample on the second (trailing) edge. The four combinations are SPI modes 0–3, and the controller must use the mode the device's datasheet specifies.
