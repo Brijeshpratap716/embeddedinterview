@@ -627,28 +627,27 @@ Each CPU has scheduling state, with load balancing, affinity and wakeup placemen
 **Interview takeaway:** CFS and EEVDF are fair-scheduling concepts, not strict deadline guarantees. Distinguish virtual deadlines in the fair scheduler from SCHED_DEADLINE's real-time scheduling interface.
 
 ### What is the difference between SCHED_FIFO, SCHED_RR and SCHED_DEADLINE in Linux? {M}
-**Short answer:** All three are real-time policies that always pre-empt normal tasks. **SCHED_FIFO** runs the highest-priority task until it blocks, yields or is pre-empted by a higher priority; tasks of equal priority wait their turn. **SCHED_RR** is the same but adds a time slice so equal-priority tasks rotate. **SCHED_DEADLINE** schedules by deadlines (EDF) using a declared runtime, deadline and period, and the kernel admits a task only if the total load is feasible.
+Linux provides real-time scheduling policies for workloads needing different execution guarantees or priority behavior.
 
-| | SCHED_FIFO | SCHED_RR | SCHED_DEADLINE |
-|---|---|---|---|
-| Priority | static 1–99 | static 1–99 | not priority-based; earliest deadline first |
-| Equal priority | runs until it blocks/yields | time slice (default 100 ms), then rotates | – |
-| Parameters | priority | priority | runtime, deadline, period |
-| Admission control | no | no | yes (rejects overload) |
-| Protection from overrun | no | no | yes: throttled when it exceeds its runtime |
+| Policy | Selection behavior |
+|---|---|
+| SCHED_FIFO | Highest-priority runnable RT task; no ordinary time slice among equals |
+| SCHED_RR | Similar fixed-priority rules, with round-robin quantum among equals |
+| SCHED_DEADLINE | Deadline-based scheduling with runtime budget and admission control |
 
-```bash
-chrt -f 80 ./control_loop            # SCHED_FIFO priority 80
-chrt -r 50 ./worker                  # SCHED_RR priority 50
-chrt -d --sched-runtime 2000000 --sched-deadline 5000000 --sched-period 10000000 0 ./task
-```
+#### 1. FIFO versus RR
 
-**Dangers and safeguards**
+A FIFO task continues until it blocks, yields, is preempted by higher-priority work or is otherwise constrained by kernel policy. RR rotates equal-priority runnable tasks at quantum expiration.
 
-- A runaway `SCHED_FIFO` task at a high priority starves everything else on its CPU, including shells you would use to fix it. Linux reserves 5% of CPU for non-RT tasks by default (`/proc/sys/kernel/sched_rt_runtime_us` = 950000 out of 1000000), which keeps the system usable but adds latency to RT tasks when it kicks in.
-- RT priority does not help if the task blocks on a page fault, a lock held by a normal task, or slow I/O: lock memory with `mlockall()`, use priority-inheritance mutexes, and pre-allocate.
+#### 2. Deadline parameters
 
-**Soft vs hard real time on Linux:** standard Linux gives soft real-time behaviour: worst-case latencies of hundreds of µs to ms are possible. **PREEMPT_RT** (fully merged into mainline in 6.12) makes almost all kernel code pre-emptible, runs interrupt handlers in threads and turns spinlocks into sleeping, priority-inheriting locks, giving worst-case latencies of tens of µs on good hardware. Measure with `cyclictest`. For hard real time with guaranteed deadlines, many products still use an MCU or a separate core running an RTOS next to Linux.
+SCHED_DEADLINE uses runtime, deadline and period parameters. For example, a task may request a runtime budget of 2 ms in every 10 ms period, with a 10 ms relative deadline. The kernel enforces its budget and applies admission rules.
+
+#### 3. Practical constraints
+
+Setting these policies may require privileges or resource limits. An uncontrolled high-priority task can starve ordinary tasks; kernel throttling and other system constraints may affect behavior.
+
+**Interview takeaway:** FIFO/RR are priority-based RT policies; DEADLINE uses explicit timing budgets and deadline scheduling. A policy alone does not prove end-to-end real-time correctness.
 
 ### What is processor affinity, and when should you control it? {M}
 **Short answer:** Processor (CPU) affinity is the set of CPU cores a thread is allowed to run on. By default the scheduler may move a thread to any core; pinning it to one core or a group keeps its caches warm, avoids migration costs, and isolates time-critical work from the rest of the system.
