@@ -662,45 +662,44 @@ Managed release does not automatically stop hardware DMA, cancel arbitrary workq
 **Interview takeaway:** devm simplifies cleanup, but resource dependencies and asynchronous device lifetime still require explicit design.
 
 ### What is pinctrl, and how do GPIO, clock and regulator frameworks work in drivers? {M}
-**Short answer:** These frameworks let drivers request board resources by name from the device tree instead of programming SoC registers directly. **pinctrl** sets pin multiplexing and electrical settings (pull-ups, drive strength) for named states (`default`, `sleep`), applied automatically before `probe`. The **GPIO** consumer API (`devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH)`, `gpiod_set_value_cansleep()`) handles active-low polarity from the DT. The **clock** framework (`devm_clk_get`, `clk_prepare_enable`, `clk_set_rate`) manages clock trees and reference counts. The **regulator** framework (`devm_regulator_get`, `regulator_enable`, `regulator_set_voltage`) controls power rails.
+Linux drivers use common resource frameworks to configure board pins, control GPIO signals, enable clocks and manage power supplies.
 
-**Device tree side**
+#### 1. Resource roles
 
-```dts
-panel@0 {
-    compatible = "acme,panel";
-    reset-gpios = <&gpio3 7 GPIO_ACTIVE_LOW>;
-    vdd-supply = <&ldo3>;
-    clocks = <&ccu CLK_DSI>;
-    clock-names = "pixel";
-    pinctrl-names = "default", "sleep";
-    pinctrl-0 = <&panel_pins_default>;
-    pinctrl-1 = <&panel_pins_sleep>;
-};
-```
+| Framework | Purpose |
+|---|---|
+| pinctrl | Select pin multiplexing and electrical settings |
+| GPIO descriptor | Control or read a GPIO using logical active state |
+| Clock | Get/enable/configure a clock |
+| Regulator | Manage a device power supply |
 
-**Driver side (power-on sequence)**
+#### 2. Probe example
 
 ```c
-d->vdd   = devm_regulator_get(dev, "vdd");                       /* matches vdd-supply */
-d->reset = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);         /* asserted (logical 1) */
-d->clk   = devm_clk_get(dev, "pixel");
+reset = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
+if (IS_ERR(reset))
+    return dev_err_probe(dev, PTR_ERR(reset),
+                         "reset GPIO unavailable\n");
 
-ret = regulator_enable(d->vdd);
-usleep_range(10000, 11000);                 /* datasheet: power stable before reset release */
-ret = clk_prepare_enable(d->clk);
-gpiod_set_value_cansleep(d->reset, 0);      /* logical deassert; framework handles ACTIVE_LOW */
-msleep(120);
+clk = devm_clk_get(dev, NULL);
+if (IS_ERR(clk))
+    return dev_err_probe(dev, PTR_ERR(clk),
+                         "clock unavailable\n");
+
+ret = clk_prepare_enable(clk);
+if (ret)
+    return ret;
 ```
 
-**Points interviewers check**
+A real driver must disable/unprepare the clock when appropriate, including later failure paths. GPIOD_OUT_HIGH represents logical active-high value 1; descriptor polarity handles active-low wiring.
 
-- GPIO descriptor values are **logical**: 1 = active, regardless of the physical polarity, which the DT defines.
-- `_cansleep` variants are needed for GPIOs on I2C expanders.
-- `clk_prepare` may sleep, `clk_enable` may not: hence `clk_prepare_enable` in process context.
-- Regulators and clocks are reference-counted: balance every enable with a disable.
-- Missing providers make `devm_*_get` return `-EPROBE_DEFER`; return it from `probe` and the core retries.
-- Debug: `/sys/kernel/debug/pinctrl/`, `/sys/kernel/debug/gpio`, `/sys/kernel/debug/clk/clk_summary`, `/sys/kernel/debug/regulator/regulator_summary`.
+#### 3. Bring-up sequence
+
+Follow the device's timing requirements: configure pins, enable supplies and clocks, assert/deassert reset as specified, then access registers. Shutdown usually reverses required dependencies.
+
+GPIO access may sleep if the controller is behind a sleeping bus; use gpiod_set_value_cansleep in an appropriate context when required.
+
+**Interview takeaway:** These frameworks abstract resource ownership and board-specific wiring. A successful get operation does not necessarily power or enable the resource.
 
 ### What is deferred probing (-EPROBE_DEFER)? {M}
 **Short answer:** If a driver's `probe()` needs a resource from another driver that has not probed yet (a clock, regulator, GPIO controller, PHY, interrupt controller, I2C bus), the `get` function returns `-EPROBE_DEFER`. The driver returns that code, and the driver core puts the device on a deferred list and retries it whenever another driver binds successfully. This handles arbitrary probe ordering without hard-coded init sequences.
