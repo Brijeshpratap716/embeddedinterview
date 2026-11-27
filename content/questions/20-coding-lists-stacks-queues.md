@@ -68,6 +68,21 @@ void free_list(node_t **head)
 
 **Insert after a given node** is O(1): `n->next = pos->next; pos->next = n;` — order matters, otherwise the rest of the list is lost.
 
+#### Complete list lifetime
+
+```c
+void destroy_list(node_t **head)
+{
+    while (*head) {
+        node_t *dead = *head;
+        *head = dead->next;
+        free(dead);
+    }
+}
+```
+
+Starting with NULL, push_front(10), push_back(20), push_front(5) produces 5 → 10 → 20 → NULL. Destroying the list leaves head equal to NULL. If a tail is maintained for O(1) appending, deletion of the last node must also update it. Nodes must be exclusively owned by the list or follow a documented sharing protocol.
+
 ### Delete a node with a given value from a singly linked list. {E}
 **Short answer:** Walk the list with a pointer to the link that points at the current node (`node_t **pp`). When `(*pp)->val` matches, make the link skip the node (`*pp = node->next`) and free the node. Using the pointer-to-pointer means deleting the head needs no special case. O(n) time, O(1) space.
 
