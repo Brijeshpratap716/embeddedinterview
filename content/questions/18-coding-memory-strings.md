@@ -816,6 +816,20 @@ Because dereferencing NULL is undefined behaviour, the optimiser is allowed to a
 - On many Cortex-M parts, address 0 is the start of flash (the vector table), so a NULL read returns the initial stack pointer value instead of crashing. A NULL **function pointer** call jumps into garbage. Configure an MPU region at 0 (no access) during development to trap NULL dereferences.
 - In Linux kernel code, functions often return `ERR_PTR(-ENOMEM)` instead of NULL: check with `IS_ERR()`, not just `!= NULL`.
 
+#### Null checking is only one part of pointer safety
+
+```c
+bool read_value(const int *p, int *out)
+{
+    if (p == NULL || out == NULL)
+        return false;
+    *out = *p;
+    return true;
+}
+```
+
+The caller must still provide live, correctly aligned objects with the required access permissions. A dangling pointer can be non-null; checking it cannot restore lifetime. In concurrent code, protect object ownership across the entire check and use, not just at the moment of comparison.
+
 ### Write code that shows a dangling pointer and a wild pointer, and how to fix them. {E}
 **Short answer:** A **dangling pointer** points to memory whose lifetime has ended — freed heap memory, a local variable of a function that returned, or a buffer that was reallocated. A **wild pointer** was never initialised, so it holds a random address. Fix them by initialising every pointer (NULL if nothing else), setting pointers to NULL after `free`, and never returning the address of a local variable.
 
