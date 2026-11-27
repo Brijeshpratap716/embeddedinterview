@@ -144,30 +144,37 @@ Linux has no-MMU configurations on supported architectures/platforms, so absence
 **Interview takeaway:** Select a profile based on workload and timing requirements. Don't equate all Cortex-M cores or all Cortex-R cores with one memory-protection configuration.
 
 ### What are the Cortex-M core registers? {M}
-**Short answer:** Cortex-M has 16 core registers: `R0`–`R12` general purpose, `R13` the stack pointer (banked as MSP and PSP), `R14` the link register, `R15` the program counter, plus the program status register `xPSR` and the special registers `PRIMASK`, `FAULTMASK`, `BASEPRI` (interrupt masking) and `CONTROL` (privilege and stack selection). Cores with an FPU add `S0`–`S31` and `FPSCR`.
+Cortex-M exposes general-purpose registers, stack pointers, program control registers and exception-mask registers.
 
-| Register | Role |
+#### 1. Core register groups
+
+| Register | Purpose |
 |---|---|
-| R0–R3 | arguments and return values (AAPCS), scratch |
-| R4–R11 | callee-saved variables |
-| R12 | scratch (IP, intra-procedure call) |
-| R13 (SP) | stack pointer: **MSP** (main) or **PSP** (process), selected by mode and `CONTROL.SPSEL` |
-| R14 (LR) | return address after `BL`; inside an exception holds an `EXC_RETURN` value (e.g. `0xFFFFFFF9`) |
-| R15 (PC) | program counter |
-| xPSR | combined APSR (N, Z, C, V, Q flags, GE bits), IPSR (current exception number), EPSR (Thumb bit, IT/ICI state) |
-| PRIMASK | 1 = mask all configurable-priority interrupts |
-| FAULTMASK | 1 = also mask HardFault (not on v6-M) |
-| BASEPRI | mask interrupts at or below a priority (not on v6-M) |
-| CONTROL | bit 0 nPRIV (unprivileged thread mode), bit 1 SPSEL (use PSP in thread mode), bit 2 FPCA (FP context active) |
-| MSPLIM, PSPLIM | stack limits (Armv8-M) |
+| R0–R12 | General-purpose values and addresses |
+| R13 (SP) | Current stack pointer |
+| R14 (LR) | Link register / exception-return information |
+| R15 (PC) | Program counter |
+| xPSR | Application flags, exception number and execution state |
+| MSP / PSP | Main and Process Stack Pointer |
+| CONTROL | Thread privilege and stack selection, as supported |
+| PRIMASK / BASEPRI / FAULTMASK | Exception masking, depending on core |
 
-**Reading special registers from C (CMSIS):** `__get_IPSR()`, `__get_CONTROL()`, `__set_BASEPRI()`, `__get_MSP()`, `__get_PSP()`.
+#### 2. Function-call example
 
-**Why these matter in interviews**
+```asm
+MOVS R0, #5
+MOVS R1, #7
+BL   add
+// R0 contains result
+```
 
-- The **IPSR** tells you whether code is running in an ISR (non-zero) and which one; RTOS code uses this to choose between normal and `FromISR` APIs.
-- **EXC_RETURN in LR** tells a fault handler which stack held the faulting context (bit 2: 0 = MSP, 1 = PSP).
-- The **Thumb bit** (EPSR.T) must always be 1 on Cortex-M; branching to an address with bit 0 clear causes a UsageFault (INVSTATE), a classic bug with hand-built function pointers.
+AAPCS32 commonly uses R0–R3 for initial integer arguments and R0 for a simple integer return. Callee-saved registers must be preserved according to the ABI.
+
+#### 3. Exception behavior
+
+On standard Cortex-M exception entry, hardware stacks R0–R3, R12, LR, PC and xPSR, with additional state possible. The handler uses LR's EXC_RETURN encoding to initiate architectural exception return.
+
+**Interview takeaway:** R0–R12 hold untyped bits; the instruction determines whether they represent data or addresses. Optional registers and features vary between Cortex-M cores.
 
 ### What are MSP and PSP and why are there two stack pointers? {M}
 **Short answer:** Cortex-M has two banked stack pointers. The **Main Stack Pointer (MSP)** is used after reset, by all exception handlers, and by bare-metal code. The **Process Stack Pointer (PSP)** can be used by code in Thread mode (when `CONTROL.SPSEL = 1`). An RTOS gives each task its own stack through PSP, while all interrupts run on the single main stack.
