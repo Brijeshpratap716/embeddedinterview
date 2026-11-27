@@ -138,6 +138,19 @@ int main(void)
 | Two singles, others twice | XOR all → `x`; split numbers by the lowest set bit of `x`; XOR each group |
 | Missing number in 0..n | XOR indices and values, or `n(n+1)/2 − sum` |
 
+#### State machine for each bit
+
+Each bit independently cycles through these states on receiving a 1:
+
+| Count modulo 3 | ones | twos |
+|---|---:|---:|
+| 0 | 0 | 0 |
+| 1 | 1 | 0 |
+| 2 | 0 | 1 |
+| 0 again | 0 | 0 |
+
+A zero input bit leaves its state unchanged. The second assignment must use the newly updated ones value. For [2,2,3,2], the repeated 2 contributes zero modulo three and the remaining pattern is 3. For a portable unsigned interface, return uint32_t; conversion of an unrepresentable unsigned value to int32_t has implementation-dependent behavior in older C standards. The algorithm assumes exactly one singleton and all other values occur three times.
+
 ### Implement a bitmap allocator with find-first-zero. {M}
 **Short answer:** Represent N equal-sized blocks with N bits (1 = used, 0 = free) packed into 32-bit words. To allocate, scan the words for one that is not all ones (`word != 0xFFFFFFFF`), find its first zero bit with `__builtin_ctz(~word)`, set that bit and return `word_index * 32 + bit`. To free, check the bit is set (to catch double frees) and clear it.
 
