@@ -1419,43 +1419,62 @@ When the expression result is unused, `++i;` and `i++;` perform the same update 
 **Interview takeaway:** Prefix produces the new value, postfix produces the old value. Avoid expressions such as `i++ + ++i`, which contain unsequenced modifications and cause undefined behaviour.
 
 ### What is the difference between a structure and a union? {E}
-**Short answer:** In a `struct`, every member has its own storage, so all members hold values at the same time and the size is at least the sum of the members (plus padding). In a `union`, all members **share the same storage**; the size is that of the largest member (plus padding), and only the member last written holds a meaningful value.
+A **structure** stores each member in a separate region of memory, while a **union** overlays its members in the same storage.
+
+#### 1. Structure
 
 ```c
-struct s { uint8_t a; uint32_t b; };   /* 8 bytes on 32-bit Arm: a, 3 padding, b */
-union  u { uint8_t a; uint32_t b; };   /* 4 bytes: a and b overlap */
+struct Data {
+    int a;
+    char b;
+};
+
+struct Data d = {100, 'X'};
 ```
 
-**Uses of unions**
+Both members hold their own values simultaneously. On a typical ABI with four-byte int alignment, sizeof(struct Data) is 8 bytes.
 
-1. **Variant types (tagged unions):** one value that can be one of several types, with an enum saying which.
+#### 2. Union
 
 ```c
-typedef enum { MSG_TEMP, MSG_ACCEL } msg_type_t;
-typedef struct {
-    msg_type_t type;
+union Data {
+    int a;
+    char b;
+};
+
+union Data u;
+u.a = 100;
+u.b = 'X';
+```
+
+Writing b changes part of the storage also occupied by a. Do not expect a to retain its original independent value. Typical size is 4 bytes.
+
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 340 183" role="img" aria-label="Typical structure uses separate member storage, union members overlap" font-family="system-ui,sans-serif"><text x="8" y="18" font-size="11" fill="currentColor">Structure: 8 bytes (P = padding)</text><rect x="8" y="24" width="27" height="25" fill="#16a34a" fill-opacity=".6" stroke="currentColor" stroke-width=".5"/><text x="21.5" y="41" font-size="12" text-anchor="middle" fill="currentColor">a</text><rect x="35" y="24" width="27" height="25" fill="#16a34a" fill-opacity=".6" stroke="currentColor" stroke-width=".5"/><text x="48.5" y="41" font-size="12" text-anchor="middle" fill="currentColor">a</text><rect x="62" y="24" width="27" height="25" fill="#16a34a" fill-opacity=".6" stroke="currentColor" stroke-width=".5"/><text x="75.5" y="41" font-size="12" text-anchor="middle" fill="currentColor">a</text><rect x="89" y="24" width="27" height="25" fill="#16a34a" fill-opacity=".6" stroke="currentColor" stroke-width=".5"/><text x="102.5" y="41" font-size="12" text-anchor="middle" fill="currentColor">a</text><rect x="116" y="24" width="27" height="25" fill="#3b82f6" fill-opacity=".6" stroke="currentColor" stroke-width=".5"/><text x="129.5" y="41" font-size="12" text-anchor="middle" fill="currentColor">b</text><rect x="143" y="24" width="27" height="25" fill="#94a3b8" fill-opacity=".2" stroke="currentColor" stroke-width=".5"/><text x="156.5" y="41" font-size="12" text-anchor="middle" fill="currentColor">P</text><rect x="170" y="24" width="27" height="25" fill="#94a3b8" fill-opacity=".2" stroke="currentColor" stroke-width=".5"/><text x="183.5" y="41" font-size="12" text-anchor="middle" fill="currentColor">P</text><rect x="197" y="24" width="27" height="25" fill="#94a3b8" fill-opacity=".2" stroke="currentColor" stroke-width=".5"/><text x="210.5" y="41" font-size="12" text-anchor="middle" fill="currentColor">P</text><text x="8" y="75" font-size="11" fill="currentColor">Union viewed as int member</text><rect x="8" y="81" width="27" height="25" fill="#16a34a" fill-opacity=".6" stroke="currentColor" stroke-width=".5"/><text x="21.5" y="98" font-size="12" text-anchor="middle" fill="currentColor">a</text><rect x="35" y="81" width="27" height="25" fill="#16a34a" fill-opacity=".6" stroke="currentColor" stroke-width=".5"/><text x="48.5" y="98" font-size="12" text-anchor="middle" fill="currentColor">a</text><rect x="62" y="81" width="27" height="25" fill="#16a34a" fill-opacity=".6" stroke="currentColor" stroke-width=".5"/><text x="75.5" y="98" font-size="12" text-anchor="middle" fill="currentColor">a</text><rect x="89" y="81" width="27" height="25" fill="#16a34a" fill-opacity=".6" stroke="currentColor" stroke-width=".5"/><text x="102.5" y="98" font-size="12" text-anchor="middle" fill="currentColor">a</text><text x="8" y="132" font-size="11" fill="currentColor">Same union storage viewed as char member</text><rect x="8" y="138" width="27" height="25" fill="#3b82f6" fill-opacity=".6" stroke="currentColor" stroke-width=".5"/><text x="21.5" y="155" font-size="12" text-anchor="middle" fill="currentColor">b</text><rect x="35" y="138" width="27" height="25" fill="#94a3b8" fill-opacity=".2" stroke="currentColor" stroke-width=".5"/><text x="48.5" y="155" font-size="12" text-anchor="middle" fill="currentColor">P</text><rect x="62" y="138" width="27" height="25" fill="#94a3b8" fill-opacity=".2" stroke="currentColor" stroke-width=".5"/><text x="75.5" y="155" font-size="12" text-anchor="middle" fill="currentColor">P</text><rect x="89" y="138" width="27" height="25" fill="#94a3b8" fill-opacity=".2" stroke="currentColor" stroke-width=".5"/><text x="102.5" y="155" font-size="12" text-anchor="middle" fill="currentColor">P</text></svg></div>
+
+For the union's char view, P denotes bytes outside the char member, not necessarily ordinary structure padding.
+
+#### 3. Embedded use case: tagged data
+
+```c
+enum Kind { TEMPERATURE, RAW };
+struct Message {
+    enum Kind kind;
     union {
-        int16_t temp_c10;                 /* used when type == MSG_TEMP */
-        struct { int16_t x, y, z; } acc;  /* used when type == MSG_ACCEL */
-    } u;
-} msg_t;                                  /* size of the largest variant, not the sum */
+        float temp;
+        uint32_t raw;
+    } value;
+};
 ```
 
-2. **Saving RAM** when different data is never needed at the same time.
+The tag identifies which union member contains the meaningful value. This is useful when messages carry one of several payload types.
 
-3. **Viewing the same bytes differently** (type punning):
+| Feature | Structure | Union |
+|---|---|---|
+| Member storage | Separate | Shared |
+| Size | All members plus padding | Largest member plus required padding |
+| Independent values | All members | Not simultaneous independent storage |
 
-```c
-typedef union {
-    uint32_t word;
-    uint8_t  byte[4];
-    float    f;
-} reg32_t;
-```
-
-**Type punning rules:** in C (C99 TC3 onward) reading a different member than the one written is allowed and reinterprets the bytes. In C++ it is undefined behaviour (use `memcpy` or `std::bit_cast`). The **byte order** you see in `byte[]` depends on endianness, and the result is not portable between little- and big-endian systems.
-
-**Do not use unions or structs to map network or file formats directly** unless you control padding, packing and endianness; serialise field by field instead.
+**Interview takeaway:** Use structures for related fields and unions when alternative representations share storage. Union type-punning has representation-dependent results; use explicit conversions for portable protocol handling.
 
 ### What is structure padding and how do you avoid it? {M}
 **Short answer:** The compiler inserts unused **padding bytes** between members (and at the end) so that each member starts at an address that is a multiple of its alignment, and so that arrays of the struct keep every element aligned. To reduce padding, order members from largest alignment to smallest. To remove it entirely, use `__attribute__((packed))` or `#pragma pack(1)`, but packed members may be accessed unaligned, which is slower and can fault on some cores.
