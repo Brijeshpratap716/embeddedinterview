@@ -461,49 +461,34 @@ Average lookup can be O(1), but worst case O(n). Fixed capacity avoids resizing 
 **Interview takeaway:** A hash function does not eliminate collisions. Bound probes and capacity when timing predictability matters.
 
 ### What are binary search trees, and why use a balanced tree? {M}
-**Short answer:** In a binary search tree (BST), every node's left subtree has smaller keys and its right subtree larger keys, so search, insert and delete follow one path from the root: O(height). If keys arrive in sorted order, a plain BST degenerates into a linked list (height n, O(n) operations). **Self-balancing trees** (red-black, AVL) restructure with rotations to keep the height O(log n) in the worst case, and they keep keys in order (unlike hash tables), supporting in-order traversal and range queries.
+A binary search tree (BST) keeps keys in ordered subtrees: keys smaller than a node are on its left, larger keys on its right, with a chosen duplicate policy.
 
-```c
-#include <stdio.h>
-#include <stddef.h>
+#### 1. Example
 
-struct tnode { int key; struct tnode *left, *right; };
-
-struct tnode *bst_insert(struct tnode *root, struct tnode *n)    /* n comes from a pool */
-{
-    struct tnode **p = &root;
-    while (*p) p = (n->key < (*p)->key) ? &(*p)->left : &(*p)->right;   /* iterative: no recursion */
-    n->left = n->right = NULL;
-    *p = n;
-    return root;
-}
-
-struct tnode *bst_find(struct tnode *r, int key)
-{
-    while (r && r->key != key) r = (key < r->key) ? r->left : r->right;
-    return r;
-}
-
-static void inorder(const struct tnode *r) { if (!r) return; inorder(r->left); printf("%d ", r->key); inorder(r->right); }
-
-int main(void)
-{
-    static struct tnode pool[6];
-    int keys[] = { 50, 30, 70, 20, 40, 60 };
-    struct tnode *root = NULL;
-    for (int i = 0; i < 6; i++) { pool[i].key = keys[i]; root = bst_insert(root, &pool[i]); }
-    inorder(root); printf("| found 40: %s\n", bst_find(root, 40) ? "yes" : "no");   /* 20 30 40 50 60 70 | yes */
-    return 0;
-}
+```text
+       8
+      / \
+     3   12
+    / \    \
+   1   5    15
 ```
 
-**Where balanced trees appear in systems software**
+In-order traversal produces sorted keys. Searching for 5 follows 8 -> 3 -> 5.
 
-- Linux: red-black trees (`rbtree`) for the CFS/EEVDF run queue, hrtimers, virtual memory areas (now a maple tree), epoll; Zephyr's scalable scheduler queue.
-- Interval trees for overlapping ranges (memory regions, IOMMU mappings).
-- B-trees and B+ trees for filesystems and databases on flash (high fan-out, fewer reads).
+#### 2. Why balance?
 
-**Traversals:** in-order (sorted output), pre-order (copy/serialise a tree), post-order (free a tree), level-order (BFS with a queue). For embedded code, avoid deep recursion on unbalanced trees; use iterative traversals with an explicit stack.
+An ordinary BST can become a chain if sorted keys are inserted, giving O(n) lookup. Balanced trees such as AVL and red-black trees maintain logarithmic height through rotations and metadata.
+
+| Tree | Typical search worst case |
+|---|---|
+| Unbalanced BST | O(n) |
+| Balanced BST | O(log n) |
+
+#### 3. Embedded use
+
+Use a balanced tree for ordered timer deadlines, address ranges or dynamic ordered records when iteration and predecessor/successor lookup are needed. Linux uses red-black trees in various subsystems.
+
+**Interview takeaway:** A BST provides ordering, not guaranteed logarithmic performance unless its height is bounded. A heap is preferable when only the minimum/maximum is needed.
 
 ### How do BFS and DFS work, and where are graphs used in embedded software? {M}
 **Short answer:** **Breadth-first search (BFS)** visits nodes level by level using a queue, and finds the shortest path in an unweighted graph. **Depth-first search (DFS)** goes as deep as possible along each branch before backtracking, using a stack or recursion, and is used for cycle detection, topological ordering and connectivity. Both are O(V + E). Embedded uses include dependency ordering (initialising drivers after their dependencies), deadlock detection (cycles in a lock or wait-for graph), routing in mesh networks, and state machines.
