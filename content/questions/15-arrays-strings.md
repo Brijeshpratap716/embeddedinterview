@@ -70,44 +70,26 @@ bool sorted(const int a[], size_t n)
 **Complexity:** O(n) time, O(1) space; exits early on the first inversion.
 
 ### How do you reverse an array in place? {E}
-**Short answer:** Use two indices, `low` at the start and `high` at the end. Swap the elements, move `low` up and `high` down, and stop when they meet. O(n) time, O(1) extra space.
+Swap elements from the two ends and move toward the middle.
 
 ```c
-#include <stddef.h>
-
-void reverse_array(int *arr, size_t n)
+void reverse(int a[], size_t n)
 {
-    if (n < 2) return;
-    size_t low = 0, high = n - 1;
-    while (low < high) {
-        int tmp = arr[low];
-        arr[low] = arr[high];
-        arr[high] = tmp;
-        low++;
-        high--;
-    }
-}
-/* {1, 3, 5, 7, 8, 9} -> {9, 8, 7, 5, 3, 1} */
-```
-
-**Dry run for {1, 3, 5, 7, 8, 9}:** swap (0,5) → 9 3 5 7 8 1; swap (1,4) → 9 8 5 7 3 1; swap (2,3) → 9 8 7 5 3 1; `low = 3`, `high = 2`, stop. Three swaps for six elements: `n/2` swaps.
-
-**Why `n < 2` first:** with `size_t` (unsigned), `n - 1` for an empty array wraps to `SIZE_MAX` and `high` points far outside the array. Hard-coding `high = 5` in `main` hides this problem; pass the length in.
-
-**Why `low < high` and not `low <= high`:** when they are equal (odd length), the middle element would be swapped with itself, which is harmless but wasted work.
-
-**Pointer version:**
-
-```c
-void reverse_ptr(int *first, int *last)   /* last points at the final element */
-{
-    while (first < last) {
-        int t = *first; *first++ = *last; *last-- = t;
+    for (size_t i = 0; i < n / 2; ++i) {
+        int t = a[i];
+        a[i] = a[n - 1 - i];
+        a[n - 1 - i] = t;
     }
 }
 ```
 
-**Where reversal is used:** as the building block for rotating an array, reversing words in a string, and converting between byte orders in a buffer.
+```text
+1 2 3 4 5
+5 2 3 4 1   swap ends
+5 4 3 2 1   swap inner pair
+```
+
+**Complexity:** O(n) time, O(1) space. No unsigned underflow for n=0.
 
 ### How do you remove duplicates from a sorted array in place? {E}
 **Short answer:** Because the array is sorted, duplicates are next to each other. Keep a write index `k` pointing at the last unique value; for each new element that differs from `arr[k]`, increment `k` and copy it there. The new length is `k + 1`.
