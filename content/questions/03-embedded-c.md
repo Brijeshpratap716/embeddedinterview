@@ -1207,44 +1207,57 @@ Build a state/event transition table and test each defined transition, error pat
 **Interview takeaway:** Keep state transitions explicit and actions bounded. State machines make asynchronous firmware easier to reason about than implicit combinations of flags.
 
 ### How do you design error handling in firmware? {M}
-**Short answer:** Combine several layers: functions return explicit status codes that callers must check; `assert`-style checks catch programming errors during development; peripherals and communication have timeouts and retries; hardware faults (HardFault, bus errors) are caught by fault handlers that record diagnostic data; and the system has a defined recovery strategy (retry, degrade, safe state, reset) plus a watchdog as the last line of defence. Errors are logged so field failures can be analysed.
+Firmware error handling must detect failures, keep the system in a defined state and provide useful diagnostic information. The recovery strategy depends on the device's functional and safety requirements.
 
-**1. Status codes**
+#### 1. Detect and propagate errors
 
 ```c
-typedef enum {
-    ERR_OK = 0, ERR_TIMEOUT, ERR_BUSY, ERR_CRC, ERR_PARAM, ERR_NO_MEM, ERR_HW
-} err_t;
+int read_sensor(int *value)
+{
+    if (!value)
+        return -EINVAL;
 
-err_t sensor_read(int16_t *out) __attribute__((warn_unused_result));
+    int ret = bus_read_sensor(value);
 
-err_t e = sensor_read(&t);
-if (e != ERR_OK) { log_error(MOD_SENSOR, e); return e; }   /* propagate */
+    if (ret < 0)
+        return ret;
+
+    return 0;
+}
 ```
 
-**2. Classify errors and choose a response**
+This illustrates an errno-style interface; actual return values depend on the platform. Specify whether output values are valid on failure.
 
-| Class | Example | Response |
-|---|---|---|
-| Transient | I2C NACK, CRC error on a message | retry with a limit and back-off |
-| Recoverable hardware | sensor not responding | re-initialise the peripheral, bus recovery, mark data invalid |
-| Persistent | sensor dead, flash wear-out | degrade: use a default, disable the feature, report it |
-| Programming error | NULL argument, impossible state | `assert` → fault handler → safe state/reset (do not continue with corrupted logic) |
-| Fatal | stack overflow, HardFault | record context in `.noinit`, enter safe state, reset |
+#### 2. Use bounded retries
 
-**3. Fault handlers:** implement `HardFault_Handler` (and MemManage/Bus/Usage faults) to save the stacked PC, LR, fault status registers (`CFSR`, `HFSR`, `MMFAR`, `BFAR`) into a `.noinit` area, put outputs into a safe state (motors off, valves closed), then reset. After reboot, read and report the record.
+```c
+int ret;
+for (unsigned i = 0; i < 3; i++) {
+    ret = read_sensor(&value);
+    if (ret == 0)
+        break;
+    if (!is_retryable(ret))
+        break;
+}
 
-**4. Timeouts everywhere:** no `while (!(SR & FLAG));` without an escape; a missing hardware response should not hang the system.
+if (ret < 0)
+    handle_sensor_failure(ret);
+```
 
-**5. Safe state:** define what "safe" means for the product (e.g. heater off, actuators de-energised), and make sure every fatal path goes there quickly.
+Retries should have a deadline and must not repeat operations that are unsafe to repeat. Backoff and bus recovery may be necessary.
 
-**6. Watchdog** for errors you did not anticipate, plus a reset counter to detect boot loops and switch to a recovery/safe mode.
+#### 3. Recovery levels
 
-**7. Logging and telemetry:** a small ring buffer of error codes with timestamps, kept in RAM (`.noinit`) or flash, readable over a debug interface or sent to the cloud.
+| Failure | Possible response |
+|---|---|
+| Transient communication error | Limited retry |
+| Peripheral stuck | Controlled reinitialization |
+| Invalid input | Reject and report |
+| Critical subsystem fault | Enter system-defined safe state |
 
-**8. Defensive input handling:** validate all external input (message lengths, ranges, enum values); never trust data from the outside.
+Record relevant state, error codes, counters and reset causes. Avoid flooding logs or blocking a critical path.
 
-**What interviewers want to hear:** errors are expected and handled by design, not ignored; programming errors fail fast and loud in development; production devices recover on their own and leave evidence behind.
+**Interview takeaway:** Never ignore error returns or wait forever on unreliable hardware. Recovery must be bounded, observable and consistent with the system's safety requirements.
 
 ### What does the inline assembly __asm volatile("" ::: "memory") do? {H}
 **Short answer:** It is a **compiler barrier**. The empty assembly statement with a `"memory"` clobber tells the compiler that the (empty) code might read or write any memory, so it must not move memory accesses across this point, must write out values it is holding in registers before it, and must reload values from memory after it. It emits **no instruction**, so it does not stop the CPU or the bus from reordering anything.
