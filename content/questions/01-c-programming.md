@@ -55,36 +55,80 @@ Actual placement depends on the compiler and linker.
 C11 introduced `_Thread_local`. The `typedef` keyword is also grammatically a storage-class specifier, but it creates a type alias rather than allocating storage.
 
 ### What does the static keyword do in different contexts? {E}
-**Short answer:** `static` has two different meanings. **Inside a function**, it makes a local variable keep its value between calls (static storage duration, initialised once). **At file scope**, on a global variable or a function, it gives **internal linkage**: the name is visible only inside that `.c` file, which is how C makes things "private".
+The `static` keyword in C controls the **lifetime and linkage** of variables and functions. Its behaviour depends on where it is used.
+
+#### 1. Static local variable
+
+A static local variable retains its value between function calls and is initialized only once.
 
 ```c
-static int counter;              /* file-private global: other .c files cannot see it */
-
-static void helper(void) { }     /* file-private function */
-
-int next_id(void)
+void fun(void)
 {
-    static int id = 100;         /* initialised once, before main(); keeps its value */
-    return id++;                 /* 100, 101, 102, ... */
+    static int count = 0;
+    count++;
+    printf("%d ", count);
+}
+
+int main(void)
+{
+    fun();
+    fun();
+    fun();
+    return 0;
 }
 ```
 
-**Details**
+**Output:** `1 2 3`
 
-- A static local is initialised only once, and only with a constant expression in C (C++ allows run-time initialisation on first call).
-- Its lifetime is the whole program, but its scope is still the function body.
-- File-scope `static` prevents name clashes: two files can each have a `static int count;` without a "multiple definition" link error.
+Without `static`, the output would be `1 1 1`.
 
-**Embedded uses**
+#### 2. Static global variable
 
-- Driver state that only the driver may touch: `static uint8_t rx_buf[64]; static volatile uint16_t rx_head;` in `uart.c`, with public functions as the only interface. This is C's equivalent of encapsulation.
-- Keeping state in callbacks or state machines between calls.
+A static global variable has internal linkage, meaning it cannot be accessed by name from another source file.
 
-**Pitfalls**
+```c
+// file1.c
+static int count = 10;
 
-- Mutable static local state can make a function **non-reentrant**: two tasks or an ISR calling it at the same time share the variable. Read-only static data does not inherently prevent reentrancy.
-- `static` in a header file gives every `.c` file that includes it its own private copy, which wastes memory and is rarely what you want (except for `static inline` functions, which is the normal idiom).
-- (C99) `static` inside array parameter brackets, `void f(int a[static 4])`, means "the caller passes at least 4 elements"; a third, rarely used meaning.
+// file2.c
+extern int count;  // Cannot link to file1's count
+```
+
+It is useful for hiding module-specific data.
+
+#### 3. Static function
+
+A static function has internal linkage and can only be called by name within the same translation unit.
+
+```c
+static void driver_init(void)
+{
+    printf("Driver initialized");
+}
+```
+
+It is commonly used in embedded software and Linux device drivers to hide internal helper functions.
+
+#### 4. Memory location
+
+| Declaration | Typical memory location |
+|---|---|
+| `static int a = 10;` | `.data` |
+| `static int a = 0;` | `.bss` |
+| `static int a;` | `.bss` |
+| Static function | `.text` |
+
+Static variables exist throughout the program's lifetime.
+
+#### 5. Summary
+
+| Context | Purpose |
+|---|---|
+| Static local variable | Retains value between function calls |
+| Static global variable | Restricts linkage to the current translation unit |
+| Static function | Restricts linkage to the current translation unit |
+
+**Interview takeaway:** A static local variable changes its storage duration, whereas a static global variable or function restricts its linkage. Static variables are not automatically thread-safe.
 
 ### What is the difference between declaration and definition? {E}
 **Short answer:** A **declaration** tells the compiler that a name exists and what its type is. A **definition** is a declaration that also creates the thing: it allocates storage for a variable or provides the body of a function. Compatible declarations can be repeated. An externally linked object or function that is used generally requires exactly one external definition; internal-linkage entities are separate per translation unit.
