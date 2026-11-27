@@ -673,57 +673,31 @@ Starting at the last digit, change trailing 9s to 0 and increment the first non-
 **Complexity:** Linear time; output storage proportional to result length.
 
 ### How do you implement atoi() and itoa() in C? {M}
-**Short answer:** **atoi:** skip leading spaces, read an optional sign, then for each digit compute `value = value * 10 + (c - '0')`, checking for overflow **before** multiplying; stop at the first non-digit. **itoa:** repeatedly take `value % base` as the next digit (from the least significant end) and divide by the base, then reverse the digits; handle zero and negative numbers (including `INT_MIN`) carefully.
+atoi converts decimal text to int but lacks useful error reporting. itoa is a common nonstandard extension. For robust code prefer strtol and snprintf.
 
 ```c
-#include <ctype.h>
-#include <limits.h>
-#include <stdbool.h>
-
-/* returns false on overflow or if there are no digits */
-bool my_atoi(const char *s, int *out)
+bool parse_int(const char *s,int *out)
 {
-    while (isspace((unsigned char)*s)) s++;
-    bool neg = false;
-    if (*s == '+' || *s == '-') neg = (*s++ == '-');
-    if (!isdigit((unsigned char)*s)) return false;
-
-    unsigned limit = neg ? (unsigned)INT_MAX + 1u : (unsigned)INT_MAX;
-    unsigned v = 0;
-    while (isdigit((unsigned char)*s)) {
-        unsigned d = (unsigned)(*s++ - '0');
-        if (v > (limit - d) / 10u) return false;     /* v * 10 + d would exceed limit */
-        v = v * 10u + d;
-    }
-    *out = neg ? (int)(0u - v) : (int)v;             /* well-defined for INT_MIN on two's complement */
+    char *end;
+    errno=0;
+    long x=strtol(s,&end,10);
+    if(end==s || *end || errno==ERANGE ||
+       x<INT_MIN || x>INT_MAX) return false;
+    *out=(int)x;
     return true;
 }
-
-/* buf needs at least 34 bytes for base 2; base 2..16 */
-char *my_itoa(int value, char *buf, unsigned base)
+bool format_int(int x,char *buf,size_t cap)
 {
-    static const char digits[] = "0123456789abcdef";
-    unsigned u = (value < 0 && base == 10) ? 0u - (unsigned)value : (unsigned)value;
-    char *p = buf;
-    do {                                   /* do-while: value 0 still prints "0" */
-        *p++ = digits[u % base];
-        u /= base;
-    } while (u);
-    if (value < 0 && base == 10) *p++ = '-';
-    *p = '\0';
-    for (char *l = buf, *r = p - 1; l < r; l++, r--) {   /* reverse in place */
-        char t = *l; *l = *r; *r = t;
-    }
-    return buf;
+    int n=snprintf(buf,cap,"%d",x);
+    return n>=0 && (size_t)n<cap;
 }
-/* my_atoi("  -42abc") -> -42, my_itoa(-2147483648, buf, 10) -> "-2147483648" */
 ```
+Headers: stdlib.h, errno.h, limits.h, stdio.h, stdbool.h. strtol accepts leading whitespace and optional sign; this wrapper rejects trailing characters.
 
-**Edge cases interviewers test:** leading spaces, `"+"` or `"-"` alone, `"42abc"` (stop at the first non-digit), overflow (`"99999999999"`), `INT_MIN` (its absolute value does not fit in `int`, which is why the conversion uses `unsigned`), and `0`.
+#### Manual implementation
+Skip whitespace, parse sign, accumulate digits with value = value×10+digit, checking range before each step. For output, extract digits from an unsigned magnitude, reverse them and prepend a minus sign. Avoid directly negating INT_MIN.
 
-**Why not the standard functions?** `atoi()` has no error reporting (overflow is undefined behaviour); use `strtol()` and check `errno` and the end pointer. `itoa()` is not standard C at all; use `snprintf()`. On small MCUs, `printf`-family code can cost several KB of flash, which is why hand-written conversion routines are common.
-
-**Embedded follow-up:** converting a 32-bit value to decimal on a Cortex-M0 (no divide instruction) — the repeated `/ 10` becomes a library call. A multiply-by-reciprocal trick (`(x * 0xCCCCCCCDull) >> 35` for division by 10) is what compilers generate on cores with a fast multiplier.
+**Interview takeaway:** Define overflow, invalid-input and output-capacity behavior explicitly.
 
 ### How do you implement read(n) using a read4() API that returns 4 bytes at a time? {M}
 **Short answer:** Call `read4()` into a small 4-byte temporary buffer and copy into the caller's buffer until you have `n` bytes or `read4()` returns fewer than 4 (end of file). If the function is called several times, keep the **leftover** bytes from the last `read4()` between calls, so data is not lost when the last chunk was larger than needed.
