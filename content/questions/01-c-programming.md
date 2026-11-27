@@ -1540,34 +1540,51 @@ printf("%zu", offsetof(struct A, b));
 **Interview takeaway:** Rearrange members to reduce padding where ABI compatibility permits. Avoid packing by default; use explicit serialization for protocols and never assume that the C structure layout matches a hardware or wire format.
 
 ### What are bit-fields and what are their drawbacks? {M}
-**Short answer:** Bit-fields let you declare struct members that are a given number of bits wide, so several flags or small values share one word and can be accessed by name. Their drawbacks are that bit order, padding, whether a field can cross a storage unit, and the signedness of plain `int` fields are all implementation-defined, and writing one field is a non-atomic read-modify-write of the whole storage unit.
+Bit-fields allow structure members to occupy a specified number of bits rather than an entire integer member.
+
+#### 1. Example
 
 ```c
-struct status {
-    unsigned ready : 1;
-    unsigned error : 1;
-    unsigned mode  : 3;     /* values 0..7 */
-    unsigned       : 3;     /* unnamed padding bits */
+struct Status {
+    unsigned int ready : 1;
+    unsigned int mode  : 3;
+    unsigned int error : 1;
 };
 
-struct status s = {0};
-s.mode = 5;
-s.ready = 1;
+struct Status s = {1, 5, 0};
 ```
 
-**Advantages:** compact storage (e.g. thousands of flags in a table), readable code, the compiler generates the masks and shifts.
+The ready and error fields store one bit each; mode stores three bits (0–7).
 
-**Drawbacks in detail**
+#### 2. Conceptual representation
 
-- **Layout is not portable:** one compiler puts the first field at the least significant bit, another (or the same compiler on a big-endian target) at the most significant. This makes bit-fields unsuitable for matching hardware registers or network formats across compilers.
-- **Access width:** the compiler may use a byte or halfword access to update a field. Some peripheral registers only accept 32-bit accesses. (GCC's `-fstrict-volatile-bitfields`, the default for Arm EABI, uses the declared type's width for volatile bit-fields, which helps but is still compiler-specific.)
-- **Not atomic:** `s.ready = 1` reads the word, modifies one bit and writes it back. If an ISR modifies `s.error` in between, the update is lost.
-- **No address:** `&s.mode` is not allowed, and there are no arrays of bit-fields.
-- **Signedness:** `int x : 3;` may be signed or unsigned depending on the compiler. Always use `unsigned` (or `_Bool`) explicitly.
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 88" width="100%" role="img" aria-label="One illustrative five-bit field layout, not guaranteed by C">
+<rect x="10" y="23" width="110" height="34" fill="#94a3b8" fill-opacity=".15" stroke="#94a3b8"/><text x="65" y="44" text-anchor="middle" font-size="11" fill="currentColor">Unused / other</text>
+<rect x="120" y="23" width="42" height="34" fill="#a855f7" fill-opacity=".2" stroke="#a855f7"/><text x="141" y="44" text-anchor="middle" font-size="10" fill="currentColor">error</text>
+<rect x="162" y="23" width="126" height="34" fill="#3b82f6" fill-opacity=".2" stroke="#3b82f6"/><text x="225" y="44" text-anchor="middle" font-size="12" fill="currentColor">mode (3 bits)</text>
+<rect x="288" y="23" width="42" height="34" fill="#16a34a" fill-opacity=".2" stroke="#16a34a"/><text x="309" y="44" text-anchor="middle" font-size="10" fill="currentColor">ready</text>
+<text x="170" y="74" text-anchor="middle" font-size="10" fill="currentColor">Illustrative arrangement only; actual layout is implementation-defined.</text>
+</svg></div>
 
-**What most embedded teams do:** use explicit masks and shifts (`#define CTRL_MODE_Pos 2`, `#define CTRL_MODE_Msk (7u << CTRL_MODE_Pos)`) for hardware registers and wire formats, and use bit-fields only for internal data whose layout does not matter.
+#### 3. Drawbacks
 
-**Note:** some vendor headers (e.g. TI C2000, older Microchip) do define registers as bit-field unions; that works because the vendor controls the compiler. Do not copy the pattern to portable code.
+- Allocation order, padding and storage-unit layout depend on the implementation.
+- The address of an individual bit-field cannot be taken.
+- Updating one field may require a read-modify-write of a larger storage unit.
+- Volatile bit-fields do not automatically guarantee the access width or atomicity needed by hardware.
+
+#### 4. Safer alternative for hardware registers
+
+```c
+#define READY_MASK (1u << 0)
+#define MODE_MASK  (7u << 1)
+
+uint32_t value = (5u << 1) | READY_MASK;
+```
+
+Use masks and shifts that match the hardware specification. Read-modify-write must still respect register semantics.
+
+**Interview takeaway:** Bit-fields are useful for compact compiler-managed flags, but masks and shifts usually provide more explicit and portable control of hardware register and protocol layouts.
 
 ### What is an enum and how big is it? {E}
 **Short answer:** An `enum` defines a set of named integer constants. In C the constants have type `int`, but the size of the enum **type** is implementation-defined: it must be able to hold all its values, and most compilers use `int` (4 bytes). Options such as `-fshort-enums` (the default in some Arm bare-metal ABIs and toolchains) make it the smallest type that fits, often 1 byte.
