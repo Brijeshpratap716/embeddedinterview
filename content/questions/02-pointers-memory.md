@@ -107,33 +107,67 @@ Integer address arithmetic adds the byte offset on the assumed platform. If base
 **Interview takeaway:** Pointer arithmetic scales by element size. One-past-end is useful for iteration but cannot be dereferenced. Standard C does not support arithmetic on void pointers.
 
 ### What is a void pointer? {E}
-**Short answer:** `void *` is a generic pointer that can hold the address of any object type. You cannot dereference it or do arithmetic on it directly in standard C; you first convert it to a pointer of the real type. In C it converts implicitly to and from any object pointer type, which is why `malloc` returns `void *` and needs no cast.
+A `void *` is a generic object pointer. It can carry a pointer to an object of any type, but it does not specify the object's type or size.
+
+#### 1. Basic example
 
 ```c
-void *mem = malloc(16);        /* no cast needed in C (needed in C++) */
-uint8_t *bytes = mem;          /* implicit conversion */
+int a = 100;
+void *p = &a;
 
-int cmp_int(const void *a, const void *b)   /* qsort comparator */
-{
-    int x = *(const int *)a, y = *(const int *)b;
-    return (x > y) - (x < y);
+int *q = p;      // Implicit conversion in C
+printf("%d", *q); // 100
+```
+
+You can also read the value using `*(int *)p`. The actual object must have a compatible type and valid lifetime, and the pointer must satisfy its alignment requirements.
+
+#### 2. Why malloc returns void *
+
+```c
+int *buffer = malloc(10 * sizeof *buffer);
+
+if (buffer != NULL) {
+    buffer[0] = 42;
+    free(buffer);
 }
 ```
 
-**Where it is used**
+The allocator provides storage without knowing which object type the caller will use. A cast from void * is not required in C.
 
-- Generic memory functions: `memcpy(void *dst, const void *src, size_t n)`, `memset`.
-- Generic algorithms: `qsort`, `bsearch`.
-- Callback "context" arguments, so one callback can serve many instances: `void (*cb)(void *ctx)`.
-- RTOS APIs: FreeRTOS task parameters (`void *pvParameters`) and queue items.
-- Opaque handles in APIs.
+#### 3. Generic callback example
 
-**Cautions**
+```c
+struct Device {
+    int id;
+};
 
-- The compiler cannot check the type behind a `void *`; converting it back to the wrong type is a bug the compiler will not catch.
-- Function pointers are **not** guaranteed to convert to `void *` (POSIX `dlsym` relies on it; on most platforms it works).
-- `void *` arithmetic (`p + 1`) is a GCC extension that treats the size as 1; write `(uint8_t *)p + 1` for portable code.
-- When converting `void *` to a type with stricter alignment, the address must actually be suitably aligned.
+void callback(void *context)
+{
+    struct Device *dev = context;
+    printf("%d", dev->id);
+}
+```
+
+A driver or RTOS can pass an instance-specific object as context without changing the callback interface.
+
+#### 4. Limitations
+
+| Operation | Standard C |
+|---|---|
+| Convert object pointer to void * and back | Allowed |
+| Directly dereference void * to read an object | Not allowed |
+| Add an integer to void * | Not allowed |
+| Convert a function pointer to void * | Not guaranteed portable |
+
+For byte-wise access, use unsigned char *:
+
+```c
+unsigned char *bytes = p;
+```
+
+This can inspect an object's representation.
+
+**Interview takeaway:** A void pointer provides a generic interface, not runtime type information. The caller and callee must agree on the actual object type, alignment and lifetime.
 
 ### What is a double pointer and when do you need one? {M}
 **Short answer:** A double pointer (`int **pp`) is a pointer to a pointer. You need one when a function must change **which object the caller's pointer points to** (because C passes the pointer itself by value), and for arrays of pointers such as `char **argv`.
