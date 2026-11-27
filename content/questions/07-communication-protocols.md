@@ -686,30 +686,34 @@ Use a suitable cable, short stubs and the network's required grounding and commo
 **Interview takeaway:** Terminate the two ends of a high-speed CAN trunk, not every node. Termination rules depend on the physical-layer standard and topology.
 
 ### What is a CAN bit time and how are its segments configured? {H}
-**Short answer:** Each CAN bit is divided into **time quanta (tq)** derived from the CAN controller clock through a prescaler. The bit consists of the **Sync segment** (always 1 tq, where edges are expected), the **Propagation segment** (compensates for signal round-trip delays), **Phase segment 1** and **Phase segment 2**. The **sample point** is between phase 1 and phase 2, typically at 75–87.5% of the bit. The **SJW** (synchronisation jump width) limits how much the controller may lengthen phase 1 or shorten phase 2 to resynchronise on edges.
+CAN bit timing divides each nominal bit into time quanta (TQ). The controller derives the time quantum from its clock and baud-rate prescaler, then configures segments around the sample point.
 
+#### 1. Bit segments
+
+```text
+| Sync_Seg | Prop_Seg | Phase_Seg1 | Phase_Seg2 |
+                                    ^
+                               sample point
 ```
-|Sync|  Prop  | Phase 1 | Phase 2 |
- 1 tq          sample point ↑
+
+Sync_Seg is normally one TQ. Controllers often combine Prop_Seg and Phase_Seg1 into TSEG1. SJW limits the permitted resynchronization adjustment.
+
+#### 2. Example calculation
+
+Assume a 40 MHz CAN clock, actual prescaler divisor 4, and 20 TQ per bit.
+
+```text
+TQ clock = 40 MHz / 4 = 10 MHz
+Bit rate = 10 MHz / 20 = 500 kbit/s
 ```
 
-**Worked example: 500 kbps from a 40 MHz CAN clock**
+For TSEG1 = 15 and TSEG2 = 4, the sample point is (1+15)/20 = 80%. Hardware register encodings may store segment values minus one.
 
-- Choose prescaler 5 → tq = 125 ns (8 MHz).
-- Bit time at 500 kbps = 2 µs = 16 tq.
-- Sync 1 + Prop + Phase1 = 13 tq, Phase2 = 2 tq → sample point = (1 + 13) / 16 = **87.5%**.
-- SJW = 2 tq (≤ Phase2).
+#### 3. Configuration constraints
 
-(Many controllers combine Prop and Phase 1 into one "TSEG1" register field: TSEG1 = 13, TSEG2 = 2.)
+Account for cable propagation, transceiver delays, oscillator tolerance, controller limits and desired sample point. For CAN FD, nominal and data-phase timing are configured separately, and transmitter-delay compensation may be needed.
 
-**Guidelines**
-
-- Use the **same sample point** on all nodes, as recommended by your network specification (CiA recommends ~87.5% for classic CAN at most rates; automotive OEMs specify exact values).
-- More tq per bit (e.g. 16–25) gives finer adjustment and better tolerance.
-- Oscillator tolerance: classic CAN typically needs ≤ ±0.5% (depends on bit timing; ±1.58% maximum theoretical with ideal settings); use crystals, not RC oscillators.
-- CAN FD needs separate nominal and data-phase timings plus transceiver delay compensation.
-
-**Tools:** bit-timing calculators (e.g. bittiming.can-wiki.info), and on Linux, `ip -details link show can0` shows the computed segments.
+**Interview takeaway:** CAN bit rate is not determined by the prescaler alone. The number and arrangement of time quanta, SJW and physical network timing all matter.
 
 ### What is LIN, and how is it used alongside CAN? {M}
 **Short answer:** LIN (Local Interconnect Network) is a low-cost, single-wire, UART-based automotive bus (up to 20 kbps) with one commander (master) and up to 15 responders (slaves). The commander sends a **header** (break, sync byte 0x55, protected identifier) and the addressed node responds with 1–8 data bytes plus a checksum. It is used for simple, non-critical body electronics (window motors, seat controls, mirrors, rain sensors, switches) where CAN would be too expensive; a CAN ECU usually acts as the LIN commander and gateway.
