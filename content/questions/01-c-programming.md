@@ -131,32 +131,79 @@ Static variables exist throughout the program's lifetime.
 **Interview takeaway:** A static local variable changes its storage duration, whereas a static global variable or function restricts its linkage. Static variables are not automatically thread-safe.
 
 ### What is the difference between declaration and definition? {E}
-**Short answer:** A **declaration** tells the compiler that a name exists and what its type is. A **definition** is a declaration that also creates the thing: it allocates storage for a variable or provides the body of a function. Compatible declarations can be repeated. An externally linked object or function that is used generally requires exactly one external definition; internal-linkage entities are separate per translation unit.
+A **declaration** introduces the name and type of a variable or function to the compiler, whereas a **definition** provides the actual variable or function body.
+
+#### 1. Variable declaration and definition
 
 ```c
-extern int baud;                         /* declaration only: storage is elsewhere */
-int baud = 115200;                       /* definition (allocates storage) */
-
-int add(int a, int b);                   /* declaration (prototype) */
-int add(int a, int b) { return a + b; }  /* definition */
-
-struct packet;                           /* declaration of an incomplete type */
-struct packet { uint8_t len; uint8_t data[32]; };   /* definition of the type */
+extern int count;  // Declaration
+int count = 10;    // Definition
 ```
 
-**Where they go:** declarations in headers (`uart.h`), definitions in exactly one source file (`uart.c`). Every file that includes the header then agrees on the type, and the linker finds the single definition.
+- **Declaration:** Tells the compiler that `count` exists and is of type `int`.
+- **Definition:** Allocates storage for `count` and initializes it to `10`.
 
-**Tentative definitions (a C quirk):** `int x;` at file scope without an initialiser is a *tentative* definition. Older compilers merged identical tentative definitions from several files into one (the "common" model). GCC 10 changed the default to `-fno-common`, so the same code now fails with "multiple definition of `x`". The fix is the proper pattern: `extern int x;` in the header and `int x;` in one `.c` file.
+#### 2. Function declaration and definition
 
-**Errors you get when you get it wrong**
+```c
+int add(int, int);  // Declaration
 
-| Mistake | Error |
+int add(int a, int b)  // Definition
+{
+    return a + b;
+}
+```
+
+The declaration tells the compiler about the function's name, return type and parameter types. The definition provides its implementation.
+
+#### 3. Example using multiple source files
+
+**file1.c**
+
+```c
+int count = 100;
+```
+
+**file2.c**
+
+```c
+extern int count;
+
+void fun(void)
+{
+    printf("%d", count);
+}
+```
+
+<div style="max-width:680px;margin:16px 0">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 145" width="100%" role="img" aria-label="The linker resolves the count reference in file2.c to the definition in file1.c">
+  <rect x="5" y="8" width="155" height="56" rx="6" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/>
+  <text x="82.5" y="28" font-size="12" font-weight="600" fill="currentColor" text-anchor="middle">file1.c</text>
+  <text x="82.5" y="47" font-size="11" font-family="monospace" fill="currentColor" text-anchor="middle">int count = 100;</text>
+  <rect x="180" y="8" width="155" height="56" rx="6" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/>
+  <text x="257.5" y="28" font-size="12" font-weight="600" fill="currentColor" text-anchor="middle">file2.c</text>
+  <text x="257.5" y="47" font-size="11" font-family="monospace" fill="currentColor" text-anchor="middle">extern int count;</text>
+  <path d="M82.5 64 V82 H170 M257.5 64 V82 H170 V99" stroke="currentColor" stroke-width="1.3" fill="none"/>
+  <path d="M166 94 L170 99 L174 94" stroke="currentColor" fill="none"/>
+  <rect x="80" y="100" width="180" height="37" rx="6" fill="#94a3b8" fill-opacity=".12" stroke="currentColor" stroke-opacity=".5"/>
+  <text x="170" y="115" font-size="12" font-weight="600" text-anchor="middle" fill="currentColor">Linker</text>
+  <text x="170" y="129" font-size="10" text-anchor="middle" fill="currentColor">Resolves count reference</text>
+</svg>
+</div>
+
+The linker resolves the reference in `file2.c` to the definition in `file1.c`.
+
+#### 4. Summary
+
+| Declaration | Definition |
 |---|---|
-| declared but never defined, and used | linker: `undefined reference to 'baud'` |
-| defined in two files | linker: `multiple definition of 'baud'` |
-| declarations with different types in different files | often no error at all, just wrong behaviour (undefined behaviour) |
+| Introduces name and type | Provides the actual object or function body |
+| Can appear multiple times | Normally defined once for an externally linked symbol |
+| Does not necessarily allocate memory | Defines storage for an object |
+| `extern int a;` | `int a = 10;` |
+| `int add(int, int);` | `int add(int a, int b) { return a+b; }` |
 
-The last row is why every `.c` file should include its own header: the compiler then checks that the definition matches the declaration.
+**Interview takeaway:** Every definition is a declaration, but every declaration is not necessarily a definition.
 
 ### What is the use of the extern keyword? {E}
 **Short answer:** `extern` declares a variable or function that is **defined somewhere else** (usually in another `.c` file), so this file can use it and the linker connects the two. Functions are `extern` by default, so the keyword is mainly needed for global variables.
