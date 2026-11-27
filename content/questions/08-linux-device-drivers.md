@@ -1438,47 +1438,31 @@ Use earlycon and UART boot logs to separate bootloader handoff failures from ear
 **Interview takeaway:** Firmware initializes the platform sufficiently to enter Linux; Linux establishes its own memory-management and runtime environment before launching userspace.
 
 ### How do you debug a kernel oops or panic? {M}
-**Short answer:** Read the oops message: it gives the reason (e.g. "Unable to handle kernel NULL pointer dereference at virtual address 0000000000000010"), the faulting instruction (`pc : my_func+0x48/0x120 [mymod]`), registers and the call trace. Translate the offset to a source line with `scripts/faddr2line` or gdb on a debug build, reproduce with debugging options enabled (KASAN, lockdep, KCSAN, `DEBUG_ATOMIC_SLEEP`), and use tracing (ftrace, dynamic debug) to see what led up to it. For crashes that stop the system, capture logs over serial, with pstore/ramoops, or with kdump.
+A kernel oops is a report of a serious kernel fault. Linux may continue after some oops conditions, but a kernel panic stops normal operation because continued execution is unsafe or impossible under the configured policy.
 
-**Reading an oops**
+#### 1. Evidence to collect
 
-```
-Unable to handle kernel NULL pointer dereference at virtual address 0000000000000010
-pc : mydev_irq+0x24/0x80 [mydev]
-lr : __handle_irq_event_percpu+0x5c/0x1e0
-...
-Call trace:
- mydev_irq+0x24/0x80 [mydev]
- handle_irq_event+0x4c/0xa8
- ...
-```
+Capture complete kernel logs, fault type/address, PC/LR, call trace, registers, kernel version, taint information and the exact reproduction steps. Persistent logs, serial console or crash dumps help when the system reboots.
 
-- Address 0x10 → dereferencing a field at offset 16 of a NULL struct pointer.
-- `pc` gives function + offset/size; `lr` the caller.
-- "Tainted: G O" flags show out-of-tree (O) or proprietary (P) modules are loaded.
+#### 2. Resolve the fault
+
+Use the matching unstripped vmlinux and module debug information. For example:
 
 ```sh
-./scripts/faddr2line drivers/misc/mydev.ko mydev_irq+0x24/0x80
-# or
-gdb drivers/misc/mydev.ko -ex 'list *(mydev_irq+0x24)'
-./scripts/decode_stacktrace.sh vmlinux < oops.txt      # decodes a whole trace
+./scripts/decode_stacktrace.sh vmlinux < crash.log
 ```
 
-**Toolbox**
+Adjust arguments for the target kernel script and module files. Account for KASLR and module relocation when resolving raw runtime addresses.
 
-| Problem | Tool |
-|---|---|
-| use-after-free, out-of-bounds | KASAN (`CONFIG_KASAN`), KFENCE (low-overhead, for production) |
-| locking errors, deadlocks | lockdep (`CONFIG_PROVE_LOCKING`) |
-| data races | KCSAN |
-| sleeping in atomic context | `CONFIG_DEBUG_ATOMIC_SLEEP` |
-| memory leaks | kmemleak |
-| hangs | soft/hard lockup and hung task detectors, `echo t > /proc/sysrq-trigger`, `echo l > ...` (backtraces of all CPUs) |
-| understanding flow | ftrace (`function_graph`), tracepoints, `trace-cmd`/KernelShark, `pr_debug` with dynamic debug, bpftrace |
-| crash dumps | kdump + `crash` utility, pstore/ramoops (logs survive reboot) |
-| live debugging | KGDB over serial, JTAG/OpenOCD with `vmlinux` symbols, QEMU + gdb (`-s -S`) |
+#### 3. Common causes
 
-**Method:** make it reproducible, simplify the test case, check recent changes (`git bisect`), and check the obvious: reference counting, missing locking, use after `remove()`, IRQ firing before initialisation completes.
+Invalid pointer access, use-after-free, out-of-bounds writes, incorrect interrupt context, stack corruption, locking bugs and hardware/MMIO faults.
+
+#### 4. Targeted tools
+
+Use KASAN for supported memory-bug detection, KCSAN for certain race detection, lockdep for locking issues, ftrace for execution tracing and kdump where configured. These facilities can change timing and resource usage.
+
+**Interview takeaway:** Diagnose from the first fault and matching symbols. An oops may be a symptom of earlier corruption; continuing after it is not proof that the system is safe.
 
 ### What is the DRM/KMS display stack? {H}
 **Short answer:** The Direct Rendering Manager (DRM) is the Linux graphics and display subsystem; **KMS** (kernel mode setting) is the display part. KMS models the display pipeline as objects: **framebuffers** (memory holding pixels, backed by GEM buffer objects), **planes** (layers that scan out a framebuffer: primary, overlay, cursor, with format, scaling and position), **CRTCs** (the scan-out engines that blend planes and generate timing for one display mode), **encoders** (convert the pixel stream to a signal type: DSI, HDMI, eDP, LVDS) and **connectors** (the outputs with their modes and hot-plug status), plus **bridges** and **panels** for external chips and displays. User space commits a complete new state with the **atomic** API, which is validated (`atomic_check`) and committed by the driver. Normal synchronized page flips typically latch at vblank; asynchronous flips may tear, and modesets can temporarily blank the output.
