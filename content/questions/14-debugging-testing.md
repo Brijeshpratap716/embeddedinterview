@@ -76,37 +76,27 @@ When a variable is corrupted unexpectedly, watch its address rather than breakin
 **Interview takeaway:** CPU watchpoints do not necessarily detect writes from DMA or other bus masters. Check hardware support and comparator limits.
 
 ### What are the essential GDB commands for embedded debugging? {E}
-**Short answer:** Connect to the probe's GDB server with `target extended-remote :3333` (OpenOCD) or `:2331` (J-Link), then `load` to flash the ELF, `monitor reset halt` to reset, `break`/`hbreak` and `watch` to stop, `continue`/`next`/`step`/`finish` to run, `bt` for the call stack, `info registers`, `print`/`p/x` and `x/16wx addr` to inspect data and memory, `frame N` to switch stack frames, and `set var x = 5` to change values.
+GDB lets you inspect a halted target using symbols from the matching ELF file.
 
-```text
-$ arm-none-eabi-gdb build/app.elf
-(gdb) target extended-remote :3333        # OpenOCD GDB server
-(gdb) monitor reset halt
-(gdb) load                                # program flash from the ELF
-(gdb) hbreak main
-(gdb) continue
-(gdb) next / step / finish                # over, into, out of a function
-(gdb) bt                                  # backtrace
-(gdb) frame 2                             # select a caller's frame
-(gdb) info locals
-(gdb) p/x *((GPIO_TypeDef *)0x40020000)   # peripheral registers as a struct
-(gdb) x/8wx 0x20000000                    # 8 words of RAM in hex
-(gdb) watch rx_count                      # stop when written
-(gdb) info registers                      # r0-r15, xPSR
-(gdb) p $pc ; p/x $sp
-(gdb) set var debug_level = 3
-(gdb) display/x status                    # show after every stop
-(gdb) monitor reset                       # probe-specific commands
+```gdb
+target remote localhost:3333
+monitor reset halt
+break main
+continue
+next
+step
+finish
+bt
+info registers
+print variable
+x/16wx 0x20000000
+disassemble /m main
+watch variable
 ```
 
-**Productivity tips**
+The remote server and monitor commands depend on the probe/server implementation. Use backtrace, registers and disassembly together when optimized code makes source-level stepping confusing.
 
-- Build with `-g3` (macros available in GDB) and keep the exact ELF for every release so you can debug field crash dumps.
-- `-Og` or `-O1` makes stepping more predictable than `-O2`; "value optimized out" means the variable lives only in registers at that point.
-- A `.gdbinit` file automates connection and common commands; GDB's Python API can pretty-print RTOS structures.
-- Use RTOS-aware debugging (OpenOCD `-rtos auto`, J-Link RTOS plugins) to list tasks and their stacks.
-- Post-mortem: load a RAM dump into GDB, or analyse a core dump with tools like Memfault or `CrashDebug`.
-- `arm-none-eabi-addr2line -e app.elf 0x0800abcd` converts a crash PC to a source line without a debugger.
+**Interview takeaway:** Compile with debug information and keep the exact ELF for every deployed firmware build. Symbols do not require disabling all optimization.
 
 ### Why can printf debugging change program behaviour? {M}
 **Short answer:** `printf` is slow (formatting plus a blocking UART at 115200 baud takes about 87 µs per character, so a 40-character line costs ~3.5 ms), uses a lot of stack (often 0.5–1 KB or more with floating-point formatting), may allocate memory or take locks, and is usually not safe to call from interrupts. Adding it changes timing, stack usage and memory layout, so race conditions and timing bugs may disappear or new ones may appear (a "Heisenbug").
