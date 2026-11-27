@@ -6,99 +6,117 @@ level: Intermediate
 order: 24
 desc: AArch64 registers, instructions, exception levels, MMU, TLB, cache coherency, barriers, interrupts, TrustZone, virtualization and boot flow.
 ---
-Concise Arm architecture interview notes for firmware, BSP and Linux engineers. Each answer explains the mechanism, illustrates it with a diagram and practical example, and highlights the key limitation. Privileged examples require the appropriate exception level.
+Quick ARM architecture interview revision for embedded Linux, BSP, firmware and systems engineers. Each question includes a short answer, step-by-step explanations, visual diagrams, code examples and interview takeaways. Assembly examples target AArch64; privileged examples require the appropriate exception level and platform configuration.
 
 ### What is ARM architecture and how do Cortex-A, R and M differ? {E}
-**Short answer:** Arm defines the instruction set and programmer-visible behavior; Cortex cores are implementations optimized for different jobs.
+**Short answer:** Arm is a family of instruction set architectures. Cortex-A targets application processors with an MMU, Cortex-R targets real-time systems, and Cortex-M targets microcontrollers.
 
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="Cortex-A / Linux, Cortex-R / Real time, Cortex-M / Firmware" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="116.66666666666667" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Cortex-A / Linux</text><rect x="235.33333333333334" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Cortex-R / Real time</text><rect x="458.6666666666667" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="563.3333333333334" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Cortex-M / Firmware</text></svg></div>
-
-**How it works**
-
-1. Cortex-A targets rich operating systems with virtual memory.
-2. Cortex-R prioritizes predictable response and safety; some models include MMUs.
-3. Cortex-M targets low-power microcontrollers and uses the M-profile exception model.
-
-**Example:** A phone runs Android on Cortex-A; a sensor node uses Cortex-M; a real-time storage controller may use Cortex-R.
-
-**Interview takeaway:** ISA compatibility does not imply identical cache, pipeline or peripheral design.
-
-### What is AArch64 versus AArch32? {E}
-**Short answer:** AArch64 is the 64-bit execution state using A64 instructions; AArch32 is the 32-bit state using A32 or T32 where implemented.
-
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="AArch32: R0–R15, AArch64: X0–X30" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="321" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="172.5" y="49" font-size="12" font-weight="600" fill="#0c4a6e">AArch32: R0–R15</text><rect x="347" y="12" width="321" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="507.5" y="49" font-size="12" font-weight="600" fill="#0c4a6e">AArch64: X0–X30</text></svg></div>
-
-**How it works**
-
-1. A64 instructions are fixed 32-bit encodings.
-2. X0–X30 are 64-bit registers; W0–W30 name their low halves.
-3. Writing Wn clears the upper half of Xn.
-
-**Example:** If X1 = 0x1234567800000001, W1 reads 1; writing W1 = 2 makes X1 = 2.
+<figure style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 164" width="100%" role="img" aria-label="Three processor profiles are alternatives, not stages in a pipeline." font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="10" width="206.66666666666666" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="113.33333333333333" y="39" fill="#0c4a6e" font-size="14" font-weight="600">Cortex-A</text><rect x="236.66666666666666" y="10" width="206.66666666666666" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="39" fill="#0c4a6e" font-size="14" font-weight="600">Cortex-R</text><rect x="463.3333333333333" y="10" width="206.66666666666666" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="566.6666666666666" y="39" fill="#0c4a6e" font-size="14" font-weight="600">Cortex-M</text><rect x="10" y="82" width="206.66666666666666" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="113.33333333333333" y="111" fill="#0c4a6e" font-size="14" font-weight="600">Linux / Android</text><rect x="236.66666666666666" y="82" width="206.66666666666666" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="111" fill="#0c4a6e" font-size="14" font-weight="600">Real-time control</text><rect x="463.3333333333333" y="82" width="206.66666666666666" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="566.6666666666666" y="111" fill="#0c4a6e" font-size="14" font-weight="600">Firmware / RTOS</text></svg><figcaption>Three processor profiles are alternatives, not stages in a pipeline.</figcaption></figure>
 
 ```asm
-ADD W0, W1, W2
-ADD X0, X1, X2
+ADD X0, X1, X2 // AArch64 example
 ```
 
-**Interview takeaway:** A 64-bit processor need not support AArch32, and VA/PA width need not be 64 bits.
+**1. Architecture vs processor**
+
+The ISA defines instructions, registers and the programmer-visible behavior. A processor implementation defines its pipeline, cache sizes and performance. Two cores implementing the same ISA may have very different hardware.
+
+| Profile | Typical use | Example |
+|---|---|---|
+| Cortex-A | Linux, Android, applications | Cortex-A55 |
+| Cortex-R | Predictable real-time control | Cortex-R52 |
+| Cortex-M | Low-power firmware and RTOS | Cortex-M4 |
+
+**2. Practical example:** An Android display driver typically runs on Cortex-A; a motor controller might use Cortex-M. Cortex-R often appears in safety-critical controllers. The profiles are alternatives, not sequential stages.
+
+**Interview takeaway:** Arm architecture is the software-visible contract; Cortex is a family of processor designs.
+
+### What is AArch64 versus AArch32? {E}
+**Short answer:** AArch64 is the 64-bit execution state using A64 instructions. AArch32 is the 32-bit state using A32 or T32 instructions, where supported. AArch64 instructions are 32 bits wide.
+
+<figure style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 164" width="100%" role="img" aria-label="Alternative execution states; support for AArch32 is implementation-dependent." font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="10" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="170" y="39" fill="#0c4a6e" font-size="14" font-weight="600">AArch32: A32 / T32</text><rect x="350" y="10" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="510" y="39" fill="#0c4a6e" font-size="14" font-weight="600">AArch64: A64</text><rect x="10" y="82" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="170" y="111" fill="#0c4a6e" font-size="14" font-weight="600">R0–R15 (32-bit)</text><rect x="350" y="82" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="510" y="111" fill="#0c4a6e" font-size="14" font-weight="600">X0–X30 (64-bit)</text></svg><figcaption>Alternative execution states; support for AArch32 is implementation-dependent.</figcaption></figure>
+
+```asm
+ADD W0, W1, W2 // 32-bit operation in AArch64
+ADD X0, X1, X2 // 64-bit operation
+```
+
+**1. Register and instruction differences**
+
+| Feature | AArch32 | AArch64 |
+|---|---|---|
+| General registers | R0–R12 plus SP, LR, PC | X0–X30 plus SP |
+| Instruction sets | A32, T32 | A64 |
+| Integer register width | 32 bits | 64 bits |
+
+**2. Example:** X1 = 0x1234567800000001. Reading W1 returns 1. Writing W1 = 2 makes X1 = 2, because a W-register write clears the upper half.
+
+**3. Compatibility:** A 64-bit CPU need not implement AArch32 at every exception level. Running 32-bit applications also requires kernel and userspace support.
+
+**Interview takeaway:** Execution state determines the instruction set and register model; it does not by itself determine physical address width.
 
 ### Do ARM64 registers contain data or addresses? {E}
-**Short answer:** General-purpose ARM64 registers contain bits, not typed data or pointers. The instruction determines their interpretation.
+**Short answer:** Both. X0–X30 hold 64-bit values; instructions determine whether those bits represent data or an address. Writing Wn zeroes the upper 32 bits of Xn.
 
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="X1: 0x1000 then Memory[0x1000]: 50 then X2: 50" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="116.66666666666667" y="49" font-size="12" font-weight="600" fill="#0c4a6e">X1: 0x1000</text><path d="M222.33333333333334 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="235.33333333333334" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Memory[0x1000]: 50</text><path d="M445.6666666666667 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="458.6666666666667" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="563.3333333333334" y="49" font-size="12" font-weight="600" fill="#0c4a6e">X2: 50</text></svg></div>
-
-**How it works**
-
-1. MOV copies a value into a register.
-2. LDR treats the base register as an address and reads the indicated memory.
-3. ADD uses the values as arithmetic operands; STR writes a register value to memory.
-
-**Example:** If X1 holds 0x1000 and eight readable bytes there encode 50, LDR X2,[X1] loads 50.
+<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="X1: 0x1000 to Memory: [0x1000] = 50 to X2: 50" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="108.33333333333333" y="36" font-size="13" font-weight="600" fill="#172554">X1</text><text x="108.33333333333333" y="56" font-size="11" fill="#334155">0x1000</text><path d="M209.66666666666666 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="231.66666666666666" y="12" width="196.66666666666666" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="330" y="36" font-size="13" font-weight="600" fill="#172554">Memory</text><text x="330" y="56" font-size="11" fill="#334155">[0x1000] = 50</text><path d="M431.3333333333333 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="453.3333333333333" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="551.6666666666666" y="36" font-size="13" font-weight="600" fill="#172554">X2</text><text x="551.6666666666666" y="56" font-size="11" fill="#334155">50</text></svg></div>
 
 ```asm
 MOV X1, #0x1000
-LDR X2, [X1]
+LDR X2, [X1] // assuming valid readable address
 ADD X3, X2, #1
 ```
 
-**Interview takeaway:** An address must be valid and accessible; with translation enabled it is normally a virtual address.
+**1. Actual data:** MOV X1, #10 puts the number 10 directly in X1. ADD operates on register values without reading data memory.
+
+**2. Address:** LDR X2, [X1] interprets X1 as an address and loads eight bytes. If the MMU is enabled, the address is translated before accessing memory.
+
+```c
+long a = 50;
+long *p = &a;
+long b = *p;
+```
+
+Conceptually X1 holds p and X2 holds b on typical ARM64 Linux.
+
+| Instruction | Meaning |
+|---|---|
+| MOV X2, X1 | Copy bits |
+| LDR X2, [X1] | Read pointed-to memory |
+| STR X2, [X1] | Write pointed-to memory |
+
+**Interview takeaway:** Registers are not inherently typed as pointers or integers; the instruction decides how to use their bits.
 
 ### What are SP, PC, LR and PSTATE? {E}
-**Short answer:** SP identifies the current stack, PC represents the instruction address, LR (X30) conventionally holds a return address, and PSTATE holds execution state.
+**Short answer:** SP is the stack pointer, PC tracks instruction execution, X30 is the conventional link register, and PSTATE holds execution state including NZCV flags and interrupt masks. PC is not an ordinary general-purpose register in A64.
 
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="BL function then X30 = return address then RET" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="116.66666666666667" y="49" font-size="12" font-weight="600" fill="#0c4a6e">BL function</text><path d="M222.33333333333334 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="235.33333333333334" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="49" font-size="12" font-weight="600" fill="#0c4a6e">X30 = return address</text><path d="M445.6666666666667 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="458.6666666666667" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="563.3333333333334" y="49" font-size="12" font-weight="600" fill="#0c4a6e">RET</text></svg></div>
-
-**How it works**
-
-1. BL writes the next instruction address into X30 and branches.
-2. A non-leaf function normally saves LR before calling another function.
-3. RET defaults to X30; PSTATE includes flags and interrupt masks.
-
-**Example:** A function calling another function must preserve its original return address.
+<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="BL: Function call to X30: Return address to RET: Return" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="108.33333333333333" y="36" font-size="13" font-weight="600" fill="#172554">BL</text><text x="108.33333333333333" y="56" font-size="11" fill="#334155">Function call</text><path d="M209.66666666666666 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="231.66666666666666" y="12" width="196.66666666666666" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="330" y="36" font-size="13" font-weight="600" fill="#172554">X30</text><text x="330" y="56" font-size="11" fill="#334155">Return address</text><path d="M431.3333333333333 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="453.3333333333333" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="551.6666666666666" y="36" font-size="13" font-weight="600" fill="#172554">RET</text><text x="551.6666666666666" y="56" font-size="11" fill="#334155">Return</text></svg></div>
 
 ```asm
-BL func
-// execution resumes here
+BL function
 // ...
-func:
+function:
     RET
 ```
 
-**Interview takeaway:** PC is not a general-purpose A64 register; ADR/ADRP form PC-relative addresses.
+**1. Special register roles**
+
+| Register | Purpose |
+|---|---|
+| SP | Current stack location |
+| PC | Address associated with instruction execution |
+| X30 / LR | Return address after BL |
+| PSTATE | Flags, interrupt masks and execution state |
+
+**2. Function call:** BL places the next instruction address in X30 and branches to the function. RET normally branches to X30. A nested call overwrites LR, so a non-leaf function generally saves it if it needs it later.
+
+**3. Practical note:** AArch64 does not expose PC as an ordinary general-purpose register. ADR and ADRP can compute PC-relative addresses.
+
+**Interview takeaway:** SP manages stack storage, LR supports returns, PC controls execution and PSTATE records processor state.
 
 ### What is a load-store architecture? {E}
-**Short answer:** Arm separates data-memory transfers from ordinary arithmetic instructions: loads and stores move data, while arithmetic uses registers.
+**Short answer:** Arithmetic normally uses registers; explicit loads and stores transfer data between registers and memory.
 
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="Load: 10 then ALU: 10 + 1 then Store: 11" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="116.66666666666667" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Load: 10</text><path d="M222.33333333333334 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="235.33333333333334" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="49" font-size="12" font-weight="600" fill="#0c4a6e">ALU: 10 + 1</text><path d="M445.6666666666667 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="458.6666666666667" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="563.3333333333334" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Store: 11</text></svg></div>
-
-**How it works**
-
-1. Load an integer into a register.
-2. Perform an ALU operation.
-3. Store the updated value if memory needs to change.
-
-**Example:** Incrementing *p from 10 to 11 may use three instructions.
+<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="Memory: Load to Registers: ALU operation to Memory: Store" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="108.33333333333333" y="36" font-size="13" font-weight="600" fill="#172554">Memory</text><text x="108.33333333333333" y="56" font-size="11" fill="#334155">Load</text><path d="M209.66666666666666 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="231.66666666666666" y="12" width="196.66666666666666" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="330" y="36" font-size="13" font-weight="600" fill="#172554">Registers</text><text x="330" y="56" font-size="11" fill="#334155">ALU operation</text><path d="M431.3333333333333 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="453.3333333333333" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="551.6666666666666" y="36" font-size="13" font-weight="600" fill="#172554">Memory</text><text x="551.6666666666666" y="56" font-size="11" fill="#334155">Store</text></svg></div>
 
 ```asm
 LDR W0, [X1]
@@ -106,228 +124,333 @@ ADD W0, W0, #1
 STR W0, [X1]
 ```
 
-**Interview takeaway:** This load/add/store sequence is not an atomic read-modify-write.
+**1. How an increment works:** Assume X1 points to a 32-bit integer containing 10. LDR reads 10 into W0; ADD produces 11; STR writes 11 back. The arithmetic instruction does not directly modify RAM.
+
+```c
+(*p)++;
+```
+
+**2. Access size:** LDRB reads one byte, LDRH two bytes, LDR Wn four bytes and LDR Xn eight bytes. Stores have corresponding variants.
+
+**3. Concurrency:** A load, add and store sequence is not atomic. Two cores can read the same old value and lose one update. Use an atomic operation when required.
+
+**Interview takeaway:** Explicit load/store instructions move data between memory and registers, while the ALU normally operates on registers.
 
 ### What are ARM exception levels EL0 to EL3? {M}
-**Short answer:** Exception levels define privilege in A-profile Arm. EL0 is least privileged; EL1 is normally the OS, EL2 the hypervisor and EL3 the secure monitor.
+**Short answer:** EL0 runs applications, EL1 normally runs the OS kernel, EL2 supports virtualization, and EL3 supports secure monitor functions. Availability depends on implementation.
 
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 240" width="100%" role="img" aria-label="EL3: secure monitor, EL2: hypervisor, EL1: OS kernel, EL0: application" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="130" y="8" width="420" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="36" font-size="12" font-weight="600" fill="#0c4a6e">EL3: secure monitor</text><rect x="130" y="64" width="420" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="92" font-size="12" font-weight="600" fill="#0c4a6e">EL2: hypervisor</text><rect x="130" y="120" width="420" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="148" font-size="12" font-weight="600" fill="#0c4a6e">EL1: OS kernel</text><rect x="130" y="176" width="420" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="204" font-size="12" font-weight="600" fill="#0c4a6e">EL0: application</text></svg></div>
-
-**How it works**
-
-1. An exception can transfer execution to its configured target level.
-2. The target has privileged registers and exception vectors.
-3. ERET restores the saved return state; execution need not pass through every EL.
-
-**Example:** A normal Linux userspace system call uses SVC to enter the kernel, usually EL1.
+<figure style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 308" width="100%" role="img" aria-label="Privilege hierarchy. An exception is routed to its configured target; it need not traverse every level." font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="10" width="660" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="39" fill="#0c4a6e" font-size="14" font-weight="600">EL3 — secure monitor (if present)</text><rect x="10" y="82" width="660" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="111" fill="#0c4a6e" font-size="14" font-weight="600">EL2 — hypervisor (if present)</text><rect x="10" y="154" width="660" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="183" fill="#0c4a6e" font-size="14" font-weight="600">EL1 — OS kernel</text><rect x="10" y="226" width="660" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="255" fill="#0c4a6e" font-size="14" font-weight="600">EL0 — application</text></svg><figcaption>Privilege hierarchy. An exception is routed to its configured target; it need not traverse every level.</figcaption></figure>
 
 ```asm
-MRS X0, CurrentEL // privileged read
+MRS X0, CurrentEL // privileged code
 ```
 
-**Interview takeaway:** EL2 and EL3 availability depends on implementation; VHE can run host kernel code at EL2.
+**1. Privilege levels**
+
+| Level | Typical software |
+|---|---|
+| EL0 | Application |
+| EL1 | Linux kernel and drivers |
+| EL2 | Hypervisor |
+| EL3 | Secure monitor |
+
+**2. Transition example:** A userspace syscall executes SVC, normally entering EL1. The kernel validates arguments, performs work and returns with ERET. A guest may encounter traps routed to EL2.
+
+**3. Why isolation matters:** EL0 cannot freely program privileged system registers or access kernel-only mappings. An illegal operation can cause an exception.
+
+**Interview takeaway:** Exception levels provide privilege separation. Higher ELs are not stages that every instruction passes through; routing depends on configuration.
 
 ### How does a system call work on ARM64 Linux? {M}
-**Short answer:** A Linux ARM64 system call is a controlled exception from userspace into the kernel.
+**Short answer:** Userspace puts the syscall number in X8 and arguments in X0–X5, then executes SVC. The kernel handles the synchronous exception and returns a result in X0.
 
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="EL0: SVC then Kernel: dispatch then EL0: return" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="116.66666666666667" y="49" font-size="12" font-weight="600" fill="#0c4a6e">EL0: SVC</text><path d="M222.33333333333334 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="235.33333333333334" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Kernel: dispatch</text><path d="M445.6666666666667 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="458.6666666666667" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="563.3333333333334" y="49" font-size="12" font-weight="600" fill="#0c4a6e">EL0: return</text></svg></div>
-
-**How it works**
-
-1. The syscall ABI uses X8 for the number and X0–X5 for arguments.
-2. SVC #0 triggers a synchronous exception; entry code saves state and dispatches the syscall.
-3. The return value is placed in X0 and ERET resumes userspace.
-
-**Example:** getpid has syscall number 172 on Linux AArch64; libc normally handles this ABI.
+<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="EL0: SVC #0 to EL1: Syscall handler to EL0: ERET / result" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="108.33333333333333" y="36" font-size="13" font-weight="600" fill="#172554">EL0</text><text x="108.33333333333333" y="56" font-size="11" fill="#334155">SVC #0</text><path d="M209.66666666666666 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="231.66666666666666" y="12" width="196.66666666666666" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="330" y="36" font-size="13" font-weight="600" fill="#172554">EL1</text><text x="330" y="56" font-size="11" fill="#334155">Syscall handler</text><path d="M431.3333333333333 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="453.3333333333333" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="551.6666666666666" y="36" font-size="13" font-weight="600" fill="#172554">EL0</text><text x="551.6666666666666" y="56" font-size="11" fill="#334155">ERET / result</text></svg></div>
 
 ```asm
-MOV X8, #172
-SVC #0
+MOV X8, #172 // Linux arm64 getpid
+SVC #0       // X0 = result
 ```
 
-**Interview takeaway:** Raw failures are negative errno values; libc usually returns -1 and sets errno.
+**1. Userspace preparation:** libc follows the Linux AArch64 syscall ABI: X8 contains the syscall number, X0–X5 contain up to six arguments.
+
+**2. Kernel entry:** SVC raises a synchronous exception. Hardware saves return state; the kernel entry code saves registers and dispatches the syscall.
+
+**3. Return:** The kernel places a result in X0 and restores userspace execution. Raw Linux syscall failures are negative error numbers; libc typically converts these into -1 and sets errno.
+
+```c
+#include <unistd.h>
+pid_t pid = getpid();
+```
+
+**Interview takeaway:** A syscall is a controlled privilege transition, not an ordinary function call into kernel memory.
 
 ### What happens when an ARM64 exception occurs? {M}
-**Short answer:** An exception redirects execution to an exception handler and saves the architectural return state.
+**Short answer:** Hardware saves the return address and prior PSTATE in ELR_ELx and SPSR_ELx, selects a vector using VBAR_ELx, and transfers control. Software saves needed general registers; ERET restores the saved execution state.
 
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="Exception then Vector / saved state then Handler then ERET" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="88.75" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Exception</text><path d="M166.5 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="179.5" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="256.25" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Vector / saved state</text><path d="M334 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="347" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="423.75" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Handler</text><path d="M501.5 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="514.5" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="591.25" y="49" font-size="12" font-weight="600" fill="#0c4a6e">ERET</text></svg></div>
-
-**How it works**
-
-1. Hardware saves the return PC and PSTATE in ELR_ELx and SPSR_ELx at the target EL.
-2. The vector comes from VBAR_ELx plus the applicable offset; ESR_ELx can describe synchronous faults.
-3. Software saves general registers as needed, handles the event and returns with ERET if appropriate.
-
-**Example:** An invalid data access can raise a Data Abort; the kernel examines ESR and FAR where valid.
-
-**Interview takeaway:** Hardware does not automatically push all AArch64 general registers onto a stack.
-
-### What is the MMU? {M}
-**Short answer:** The MMU translates virtual addresses, enforces permissions and supplies memory attributes.
-
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="Virtual address then MMU / page tables then Physical address" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="116.66666666666667" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Virtual address</text><path d="M222.33333333333334 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="235.33333333333334" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="49" font-size="12" font-weight="600" fill="#0c4a6e">MMU / page tables</text><path d="M445.6666666666667 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="458.6666666666667" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="563.3333333333334" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Physical address</text></svg></div>
-
-**How it works**
-
-1. The CPU issues a virtual address; the MMU looks for a cached translation.
-2. On a miss it walks translation tables when configured to do so.
-3. A valid descriptor gives the physical mapping and permissions; an invalid or forbidden access raises a fault.
-
-**Example:** VA 0x40001234 mapped to physical page 0x80000000 with 4 KiB pages becomes PA 0x80000234.
-
-**Interview takeaway:** A page fault is not the same as a TLB miss; the mapping may be found without kernel intervention.
-
-### What is a TLB and what happens on a TLB miss? {M}
-**Short answer:** The TLB is a small translation cache that avoids repeatedly walking page tables.
-
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="VA then TLB lookup then Hit: translate" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="116.66666666666667" y="49" font-size="12" font-weight="600" fill="#0c4a6e">VA</text><path d="M222.33333333333334 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="235.33333333333334" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="49" font-size="12" font-weight="600" fill="#0c4a6e">TLB lookup</text><path d="M445.6666666666667 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="458.6666666666667" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="563.3333333333334" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Hit: translate</text></svg></div>
-
-**How it works**
-
-1. Look up the virtual page and relevant address-space tag.
-2. If a valid cached translation exists, use it.
-3. Otherwise a hardware table walk can refill the TLB; translation or permission faults are handled separately.
-
-**Example:** Many loads within one 4 KiB page can reuse the same translation.
-
-**Interview takeaway:** A TLB caches translations and attributes, not the data stored in memory.
-
-### How does a memory access travel from CPU to DRAM? {M}
-**Short answer:** An ordinary load reaches DRAM only when the memory hierarchy cannot supply its data sooner.
-
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="CPU / virtual address then MMU / TLB then Cache hierarchy then Fabric / DRAM if needed" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="88.75" y="49" font-size="12" font-weight="600" fill="#0c4a6e">CPU / virtual address</text><path d="M166.5 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="179.5" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="256.25" y="49" font-size="12" font-weight="600" fill="#0c4a6e">MMU / TLB</text><path d="M334 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="347" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="423.75" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Cache hierarchy</text><path d="M501.5 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="514.5" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="591.25" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Fabric / DRAM if needed</text></svg></div>
-
-**How it works**
-
-1. Decode LDR and calculate the effective virtual address.
-2. Translate through the MMU/TLB and check permissions; a TLB miss may walk tables.
-3. Check caches; a cache miss may be served by a shared cache or another coherent core.
-4. If needed, the memory controller reads DRAM and returns the requested cache line.
-
-**Example:** LDR X2,[X1] may be satisfied entirely by L1. A write-back store may remain dirty in cache.
+<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="Exception: Hardware state save to Vector: VBAR_ELx to Handler: Save GPRs to ERET: Resume" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="141.25" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="80.625" y="36" font-size="13" font-weight="600" fill="#172554">Exception</text><text x="80.625" y="56" font-size="11" fill="#334155">Hardware state save</text><path d="M154.25 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="176.25" y="12" width="141.25" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="246.875" y="36" font-size="13" font-weight="600" fill="#172554">Vector</text><text x="246.875" y="56" font-size="11" fill="#334155">VBAR_ELx</text><path d="M320.5 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="342.5" y="12" width="141.25" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="413.125" y="36" font-size="13" font-weight="600" fill="#172554">Handler</text><text x="413.125" y="56" font-size="11" fill="#334155">Save GPRs</text><path d="M486.75 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="508.75" y="12" width="141.25" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="579.375" y="36" font-size="13" font-weight="600" fill="#172554">ERET</text><text x="579.375" y="56" font-size="11" fill="#334155">Resume</text></svg></div>
 
 ```asm
-LDR X2, [X1]
+MRS X0, ESR_EL1 // exception syndrome
+MRS X1, ELR_EL1 // exception return address
 ```
 
-**Interview takeaway:** Translation and cache lookups may overlap; MMIO follows device-memory rules.
+**1. Exception types:** Synchronous exceptions include system calls and faults. IRQ and FIQ are interrupt classes; SError reports certain asynchronous errors.
+
+**2. Hardware entry:** The target EL's ELR and SPSR save return address and prior processor state. VBAR identifies the vector table, with the slot determined by exception type and origin.
+
+**3. Software handler:** Kernel entry code saves general registers as required. ESR describes synchronous fault causes; FAR may contain the faulting address when valid.
+
+**4. Return:** ERET restores execution state using ELR and SPSR. Depending on the cause, software may retry, resume elsewhere or terminate the process.
+
+**Interview takeaway:** Hardware saves essential exception state, but software is responsible for preserving general-purpose registers as needed.
+
+### What is the MMU? {M}
+**Short answer:** The MMU translates virtual addresses into physical addresses using translation tables and enforces access permissions and memory attributes.
+
+<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="CPU: Virtual address to MMU / TLB: Translation to Memory: Physical address" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="108.33333333333333" y="36" font-size="13" font-weight="600" fill="#172554">CPU</text><text x="108.33333333333333" y="56" font-size="11" fill="#334155">Virtual address</text><path d="M209.66666666666666 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="231.66666666666666" y="12" width="196.66666666666666" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="330" y="36" font-size="13" font-weight="600" fill="#172554">MMU / TLB</text><text x="330" y="56" font-size="11" fill="#334155">Translation</text><path d="M431.3333333333333 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="453.3333333333333" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="551.6666666666666" y="36" font-size="13" font-weight="600" fill="#172554">Memory</text><text x="551.6666666666666" y="56" font-size="11" fill="#334155">Physical address</text></svg></div>
+
+```asm
+MRS X0, TTBR0_EL1 // privileged: table base
+```
+
+**1. Why translation is needed:** Two processes can use the same virtual address while mapping to different physical pages. The MMU also enforces user/kernel access, read/write and execute permissions.
+
+**2. Example:** With a 4 KiB page, virtual address 0x1234 has offset 0x234. If its virtual page maps to physical base 0x8000, the resulting physical address is 0x8234.
+
+| System register | Role at EL1 |
+|---|---|
+| TTBR0_EL1 / TTBR1_EL1 | Translation table bases |
+| TCR_EL1 | Translation configuration |
+| MAIR_EL1 | Memory attribute encodings |
+| SCTLR_EL1 | Controls including MMU enable |
+
+**3. Failure:** An invalid mapping or permission violation raises a fault. Linux may resolve a valid demand-page fault or signal the process.
+
+**Interview takeaway:** The MMU provides translation, isolation and memory attributes; the TLB accelerates translation.
+
+### What is a TLB and what happens on a TLB miss? {M}
+**Short answer:** The TLB caches address translations. On a miss, hardware normally walks translation tables; a valid translation can refill the TLB. Invalid mappings or permission violations can cause a fault.
+
+<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="Virtual address: TLB lookup to Miss: Table walk to Physical address: Access" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="108.33333333333333" y="36" font-size="13" font-weight="600" fill="#172554">Virtual address</text><text x="108.33333333333333" y="56" font-size="11" fill="#334155">TLB lookup</text><path d="M209.66666666666666 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="231.66666666666666" y="12" width="196.66666666666666" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="330" y="36" font-size="13" font-weight="600" fill="#172554">Miss</text><text x="330" y="56" font-size="11" fill="#334155">Table walk</text><path d="M431.3333333333333 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="453.3333333333333" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="551.6666666666666" y="36" font-size="13" font-weight="600" fill="#172554">Physical address</text><text x="551.6666666666666" y="56" font-size="11" fill="#334155">Access</text></svg></div>
+
+```asm
+LDR X0, [X1] // translation performed if needed
+```
+
+**1. TLB hit:** The CPU finds a cached translation and permissions, avoiding a page-table walk.
+
+**2. TLB miss:** The hardware walks translation tables in memory. If a valid entry is found, it can cache the translation and proceed. A TLB miss alone is not a page fault.
+
+**3. Page fault:** A missing or forbidden mapping can trigger a synchronous exception. Linux handles legitimate demand paging or rejects illegal access.
+
+| TLB | CPU data cache |
+|---|---|
+| Stores address translations | Stores memory contents |
+| Avoids table walks | Avoids slower data accesses |
+
+**4. Context switches:** Address Space Identifiers (ASIDs) help distinguish translations belonging to different processes. Kernel mapping changes may require TLB invalidation.
+
+**Interview takeaway:** TLB miss means translation is not cached; page fault means the access cannot proceed with the current translation state.
+
+### How does a memory access travel from CPU to DRAM? {M}
+**Short answer:** A load uses an address in a register, translates it through the MMU, and checks caches. A cache miss can reach the coherent interconnect, memory controller and DRAM. Exact cache organization varies.
+
+<figure style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 350" width="100%" role="img" aria-label="Load uses virtual address; TLB miss triggers page walk; cache miss reaches interconnect and possibly DRAM." font-family="system-ui,sans-serif" text-anchor="middle"><g fill="#e0f2fe" stroke="#0369a1"><rect x="210" y="10" width="260" height="40" rx="7"/><rect x="210" y="75" width="260" height="40" rx="7"/><rect x="500" y="75" width="165" height="40" rx="7"/><rect x="210" y="140" width="260" height="40" rx="7"/><rect x="10" y="140" width="165" height="40" rx="7"/><rect x="210" y="205" width="260" height="40" rx="7"/><rect x="500" y="205" width="165" height="40" rx="7"/><rect x="210" y="270" width="260" height="50" rx="7"/></g><g fill="#0c4a6e" font-size="13"><text x="340" y="35">LDR: virtual address</text><text x="340" y="100">MMU / TLB</text><text x="582" y="100">Page-table walk</text><text x="340" y="165">Cache hierarchy</text><text x="92" y="165">Hit: return bytes</text><text x="340" y="230">Coherent interconnect</text><text x="582" y="230">Peer cache may supply</text><text x="340" y="290">Memory controller</text><text x="340" y="307">DRAM if required</text></g><g stroke="#475569" stroke-width="2" fill="none"><path d="M340 50v25m-5-6 5 6 5-6 M340 115v25m-5-6 5 6 5-6 M340 180v25m-5-6 5 6 5-6 M340 245v25m-5-6 5 6 5-6 M470 95h30m-6-5 6 5-6 5 M210 160h-35m6-5-6 5 6 5 M470 225h30m-6-5 6 5-6 5"/></g><g fill="#475569" font-size="11"><text x="485" y="87">miss</text><text x="192" y="152">hit</text><text x="364" y="195">miss</text></g></svg><figcaption>Conceptual data-access flow; cache and translation lookups can overlap.</figcaption></figure>
+
+```asm
+LDR X2, [X1] // X1 = virtual address
+```
+
+**1. Instruction:** LDR computes an effective virtual address from X1 and any offset.
+
+**2. Translation:** The MMU checks the TLB; a miss can trigger a page-table walk. Permissions and memory attributes are checked.
+
+**3. Cache lookup:** The CPU searches its cache hierarchy. Translation and cache lookup may overlap depending on implementation.
+
+**4. Cache miss:** The coherent interconnect can obtain data from another core or a shared cache. If no cached copy supplies it, the memory controller accesses DRAM and returns the cache line.
+
+**5. Result:** The requested bytes are delivered to X2. For stores, a write-back cache may retain dirty data without immediately updating DRAM.
+
+**Interview takeaway:** Not every load reaches DRAM. Registers, translation, caches, coherency fabric and memory controller all participate as needed.
 
 ### What happens when malloc(4 KB) is called on ARM64 Linux? {M}
-**Short answer:** malloc returns a userspace virtual address to an allocation, not necessarily a fresh physical page.
+**Short answer:** The allocator may reuse a free chunk or obtain virtual memory via brk/mmap. A first write to an unbacked anonymous page can fault, causing Linux to allocate a physical page and update the mapping. Allocation is not necessarily page-aligned.
 
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="malloc then Allocator / VA then First touch if needed then Physical page" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="88.75" y="49" font-size="12" font-weight="600" fill="#0c4a6e">malloc</text><path d="M166.5 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="179.5" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="256.25" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Allocator / VA</text><path d="M334 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="347" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="423.75" y="49" font-size="12" font-weight="600" fill="#0c4a6e">First touch if needed</text><path d="M501.5 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="514.5" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="591.25" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Physical page</text></svg></div>
-
-**How it works**
-
-1. The allocator first checks reusable blocks and may request virtual memory with brk or mmap.
-2. When a previously unbacked page is first written, a page fault may allocate and map physical memory.
-3. The MMU and TLB translate later accesses; free returns the block to the allocator, which may retain it.
-
-**Example:** Writing p[0] after malloc(4096) can trigger a demand fault; reused heap storage may already be mapped.
+<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="malloc: Allocator to brk / mmap: If needed to Page fault: If unbacked to Physical page: Retry" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="141.25" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="80.625" y="36" font-size="13" font-weight="600" fill="#172554">malloc</text><text x="80.625" y="56" font-size="11" fill="#334155">Allocator</text><path d="M154.25 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="176.25" y="12" width="141.25" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="246.875" y="36" font-size="13" font-weight="600" fill="#172554">brk / mmap</text><text x="246.875" y="56" font-size="11" fill="#334155">If needed</text><path d="M320.5 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="342.5" y="12" width="141.25" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="413.125" y="36" font-size="13" font-weight="600" fill="#172554">Page fault</text><text x="413.125" y="56" font-size="11" fill="#334155">If unbacked</text><path d="M486.75 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="508.75" y="12" width="141.25" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="579.375" y="36" font-size="13" font-weight="600" fill="#172554">Physical page</text><text x="579.375" y="56" font-size="11" fill="#334155">Retry</text></svg></div>
 
 ```c
-#include <stdlib.h>
-void demo(void) {
-    unsigned char *p = malloc(4096);
-    if (p) { p[0] = 42; free(p); }
-}
+char *p = malloc(4096);
+if (p) { p[0] = 'A'; free(p); }
 ```
 
-**Interview takeaway:** 4 KiB allocation size does not guarantee page alignment, one page, or a syscall.
+**1. Allocator:** malloc is a libc function, not a syscall. It checks existing free chunks and may return a pointer without entering the kernel.
+
+**2. Virtual memory:** If needed, glibc obtains more space through brk or mmap. The kernel creates or extends virtual mappings.
+
+**3. First write:** A store to an unbacked anonymous page can trigger a page fault. Linux checks the VMA, allocates and zeroes physical memory as needed, updates page tables and retries the instruction.
+
+```asm
+MOV X0, #4096
+BL malloc
+CBZ X0, failed
+MOV W1, #65
+STRB W1, [X0]
+failed:
+```
+
+**4. Important details:** ARM64 Linux may use 4, 16 or 64 KiB base pages. A 4096-byte allocation need not be page-aligned, and allocator metadata can touch pages before the application does. free may retain memory in the allocator.
+
+**Interview takeaway:** Virtual allocation and physical backing are separate; demand paging often defers physical allocation until access.
 
 ### What is cache coherency? {M}
-**Short answer:** Cache coherency keeps participating cached copies of a memory location consistent.
+**Short answer:** Hardware keeps coherent copies of a cache line consistent across cores. A writer typically obtains ownership and invalidates other copies; a later coherent reader obtains the updated value. DRAM need not be updated immediately.
 
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="Core 0 writes 20 then Coherence fabric then Core 1 reads 20" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="116.66666666666667" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Core 0 writes 20</text><path d="M222.33333333333334 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="235.33333333333334" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Coherence fabric</text><path d="M445.6666666666667 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="458.6666666666667" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="563.3333333333334" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Core 1 reads 20</text></svg></div>
-
-**How it works**
-
-1. Both cores can initially cache a line containing 10.
-2. A writer obtains permission to modify the line; other copies are invalidated or updated according to the protocol.
-3. A later coherent reader obtains the current value from the appropriate cache or memory.
-
-**Example:** Core 0 changes a from 10 to 20; after synchronization Core 1 can observe 20 even if DRAM has not been updated.
-
-**Interview takeaway:** Coherency does not provide ordering across different locations, atomic increments or automatic coherence for every DMA device.
-
-### What is a memory barrier? {M}
-**Short answer:** A memory barrier constrains the ordering of memory operations; it does not inherently flush caches or make operations atomic.
-
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="Producer: data → barrier → flag, Consumer: flag → barrier → data" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="321" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="172.5" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Producer: data → barrier → flag</text><rect x="347" y="12" width="321" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="507.5" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Consumer: flag → barrier → data</text></svg></div>
-
-**How it works**
-
-1. Without ordering, a consumer can observe a published flag before the associated data on a weakly ordered system.
-2. The producer writes data, executes a write barrier and publishes the flag.
-3. The consumer reads the flag, executes a read barrier and reads data.
-
-**Example:** One-time Linux kernel publication: data and flag start at 0. If the consumer observes flag = 1 with the paired barriers, it can read the published 100.
+<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="Core 0: a = 20 to Coherency fabric: Invalidate to Core 1: Reload = 20" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="108.33333333333333" y="36" font-size="13" font-weight="600" fill="#172554">Core 0</text><text x="108.33333333333333" y="56" font-size="11" fill="#334155">a = 20</text><path d="M209.66666666666666 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="231.66666666666666" y="12" width="196.66666666666666" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="330" y="36" font-size="13" font-weight="600" fill="#172554">Coherency fabric</text><text x="330" y="56" font-size="11" fill="#334155">Invalidate</text><path d="M431.3333333333333 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="453.3333333333333" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="551.6666666666666" y="36" font-size="13" font-weight="600" fill="#172554">Core 1</text><text x="551.6666666666666" y="56" font-size="11" fill="#334155">Reload = 20</text></svg></div>
 
 ```c
-// Producer
+/* Use proper synchronization for shared data. */
+smp_store_release(&flag, 1);
+/* Other CPU: smp_load_acquire(&flag) */
+```
+
+**1. Without coherency:** Core 0 and Core 1 both cache a = 10. Core 0 writes 20; without coordination, Core 1 could keep reading stale 10.
+
+**2. With coherency:** Core 0 requests write ownership, other copies are invalidated, and a later coherent read obtains 20 from the appropriate cache or memory. This works at cache-line granularity.
+
+| MESI state | Meaning |
+|---|---|
+| M | Modified, dirty and exclusive |
+| E | Exclusive and clean |
+| S | Shared and clean |
+| I | Invalid |
+
+MESI is an illustrative protocol; real Arm implementations vary.
+
+**3. CPU vs DMA:** Non-coherent DMA may require cleaning before a device reads CPU-written buffers and invalidating stale CPU copies before reading device-written data. Linux DMA APIs manage these transitions.
+
+**4. Limitation:** Coherency does not make a++ atomic or enforce ordering between different addresses.
+
+**Interview takeaway:** Coherency keeps cached copies consistent; synchronization and memory barriers solve separate ordering and atomicity problems.
+
+### What is a memory barrier? {M}
+**Short answer:** A barrier constrains memory ordering. On ARM, DMB orders relevant accesses, DSB also waits for required completion, and ISB synchronizes instruction execution after context changes.
+
+<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="Write data: 100 to DMB: Ordering to Write flag: 1" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="108.33333333333333" y="36" font-size="13" font-weight="600" fill="#172554">Write data</text><text x="108.33333333333333" y="56" font-size="11" fill="#334155">100</text><path d="M209.66666666666666 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="231.66666666666666" y="12" width="196.66666666666666" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="330" y="36" font-size="13" font-weight="600" fill="#172554">DMB</text><text x="330" y="56" font-size="11" fill="#334155">Ordering</text><path d="M431.3333333333333 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="453.3333333333333" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="551.6666666666666" y="36" font-size="13" font-weight="600" fill="#172554">Write flag</text><text x="551.6666666666666" y="56" font-size="11" fill="#334155">1</text></svg></div>
+
+```asm
+STR W0, [X1]
+DMB ISHST
+STR W2, [X3]
+```
+
+**1. Without a memory barrier**
+
+Consider two CPU cores sharing data and flag, initially zero. The following is conceptual pseudocode, not safe portable C concurrency:
+
+```c
+// CPU Core 0
+data = 100;
+flag = 1;
+
+// CPU Core 1
+if (flag == 1)
+    value = data;
+```
+
+On weakly ordered ARM systems, Core 1 may observe flag = 1 before data = 100 and obtain the old value 0.
+
+**2. With a memory barrier (Linux kernel)**
+
+```c
+// CPU Core 0
 WRITE_ONCE(data, 100);
 smp_wmb();
 WRITE_ONCE(flag, 1);
 
-// Consumer
+// CPU Core 1
 if (READ_ONCE(flag) == 1) {
     smp_rmb();
     value = READ_ONCE(data);
 }
 ```
 
-| ARM instruction | Purpose |
+<div style="max-width:600px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 260" width="100%" role="img" aria-label="Producer writes data then write barrier then flag. Consumer reads flag then read barrier then data." font-family="system-ui,sans-serif" text-anchor="middle"><g fill="#dbeafe" stroke="#2563eb"><rect x="15" y="10" width="260" height="35" rx="6"/><rect x="325" y="10" width="260" height="35" rx="6"/></g><g fill="#172554" font-size="15" font-weight="600"><text x="145" y="33">CPU Core 0</text><text x="455" y="33">CPU Core 1</text></g><g fill="#dcfce7" stroke="#15803d"><rect x="15" y="60" width="260" height="40" rx="6"/><rect x="325" y="60" width="260" height="40" rx="6"/><rect x="15" y="190" width="260" height="40" rx="6"/><rect x="325" y="190" width="260" height="40" rx="6"/></g><g fill="#fef3c7" stroke="#a16207"><rect x="15" y="125" width="260" height="40" rx="6"/><rect x="325" y="125" width="260" height="40" rx="6"/></g><g fill="#172554" font-size="14"><text x="145" y="85">Write data = 100</text><text x="455" y="85">Read flag = 1</text><text x="145" y="150">Write barrier</text><text x="455" y="150">Read barrier</text><text x="145" y="215">Write flag = 1</text><text x="455" y="215">Read data = 100</text></g><g stroke="#64748b" stroke-width="2" fill="none"><path d="M145 100v25m-5-6 5 6 5-6 M145 165v25m-5-6 5 6 5-6 M455 100v25m-5-6 5 6 5-6 M455 165v25m-5-6 5 6 5-6"/></g></svg></div>
+
+When the consumer observes the published flag, the paired barriers ensure it can read the earlier data in this one-time publication example.
+
+**3. ARM barrier instructions**
+
+| Instruction | Purpose |
 |---|---|
-| DMB | Orders relevant memory accesses within its scope |
-| DSB | Waits for required completion as well |
-| ISB | Synchronizes subsequent instruction execution with context changes |
+| DMB | Orders relevant memory accesses |
+| DSB | Also waits for required completion |
+| ISB | Synchronizes subsequent instruction execution after context changes |
 
-| Linux API | Purpose |
+**4. Linux kernel APIs**
+
+| API | Purpose |
 |---|---|
-| smp_rmb() / smp_wmb() | Order reads / writes respectively |
-| smp_mb() | Full SMP memory barrier |
-| barrier() | Compiler barrier only |
-| smp_store_release() / smp_load_acquire() | Directional publication and consumption ordering |
+| smp_rmb() | Orders reads |
+| smp_wmb() | Orders writes |
+| smp_mb() | Orders reads and writes |
+| barrier() | Compiler ordering only |
+| smp_store_release() | Store with release ordering |
+| smp_load_acquire() | Load with acquire ordering |
 
-**Cache coherency vs barriers:** Coherency keeps copies of a cache line consistent; barriers constrain ordering between accesses. Neither substitutes for the other.
+**5. Coherency vs barrier**
 
-**Interview takeaway:** Use C11 atomics for portable threaded C, not racing plain variables; devices require appropriate DMA/MMIO APIs.
+| Cache coherency | Memory barrier |
+|---|---|
+| Consistency of cached copies | Ordering across memory accesses |
+| Usually hardware-managed | Explicit ordering where needed |
 
-### What is acquire and release ordering? {M}
-**Short answer:** Release publishes earlier accesses before a synchronization operation; acquire orders later accesses after it.
-
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="Write payload then Release flag then Acquire flag then Read payload" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="88.75" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Write payload</text><path d="M166.5 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="179.5" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="256.25" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Release flag</text><path d="M334 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="347" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="423.75" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Acquire flag</text><path d="M501.5 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="514.5" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="591.25" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Read payload</text></svg></div>
-
-**How it works**
-
-1. Producer initializes the payload.
-2. Producer performs a release store to a flag.
-3. Consumer performs an acquire load; if it reads that release, preceding producer operations happen-before the consumer's subsequent operations in C11.
-
-**Example:** A one-time initialized configuration becomes readable after an atomic ready flag is published.
+**6. Simpler Linux publication pattern**
 
 ```c
-// C11, one producer and one-time publication
-static int data;
-static _Atomic int ready;
-// producer: data = 100; atomic_store_explicit(&ready, 1, memory_order_release);
-// consumer: if (atomic_load_explicit(&ready, memory_order_acquire)) use(data);
+// Producer: one-time publication
+WRITE_ONCE(data, 100);
+smp_store_release(&flag, 1);
+
+// Consumer
+if (smp_load_acquire(&flag))
+    value = READ_ONCE(data);
 ```
 
-**Interview takeaway:** Acquire and release are directional; neither makes a multi-step protocol safe without ownership rules.
+Release orders prior accesses before publication; acquire orders later accesses after observing it. Use C11 atomics in portable userspace code. A device ownership flag instead needs the DMA API and appropriate DMA/MMIO barriers.
+
+**Interview takeaway:** Barriers enforce memory ordering, not atomicity or automatic cache writeback. The barrier scope and memory type matter. [Linux memory barriers](https://docs.kernel.org/core-api/wrappers/memory-barriers.html).
+
+### What is acquire and release ordering? {M}
+**Short answer:** Release orders earlier accesses before publication; acquire orders later accesses after observing publication. Together they support safe producer-consumer communication.
+
+<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="Producer: Write data to Release / Acquire: Publish flag to Consumer: Read data" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="108.33333333333333" y="36" font-size="13" font-weight="600" fill="#172554">Producer</text><text x="108.33333333333333" y="56" font-size="11" fill="#334155">Write data</text><path d="M209.66666666666666 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="231.66666666666666" y="12" width="196.66666666666666" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="330" y="36" font-size="13" font-weight="600" fill="#172554">Release / Acquire</text><text x="330" y="56" font-size="11" fill="#334155">Publish flag</text><path d="M431.3333333333333 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="453.3333333333333" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="551.6666666666666" y="36" font-size="13" font-weight="600" fill="#172554">Consumer</text><text x="551.6666666666666" y="56" font-size="11" fill="#334155">Read data</text></svg></div>
+
+```asm
+STLR W0, [X1] // release store
+LDAR W2, [X1] // acquire load
+```
+
+**1. Producer:** Write the payload first, then publish the flag with release ordering.
+
+**2. Consumer:** Load the flag with acquire ordering. If it observes the release publication, subsequent reads can safely access the payload in this one-time publication pattern.
+
+```c
+// Linux kernel; initially flag = 0
+WRITE_ONCE(data, 100);
+smp_store_release(&flag, 1);
+
+// Other CPU
+if (smp_load_acquire(&flag))
+    value = READ_ONCE(data);
+```
+
+**3. Difference from full barriers:** Release primarily orders preceding accesses before publication; acquire orders following accesses after observation. A full barrier is stronger in other ordering directions.
+
+**Interview takeaway:** Acquire/release is a common efficient building block for locks, queues and producer-consumer synchronization.
 
 ### How do LDAXR and STLXR implement atomic operations? {H}
-**Short answer:** LDAXR and STLXR form an acquire/release exclusive-access loop for atomic read-modify-write operations.
+**Short answer:** An exclusive load establishes a reservation. An exclusive store succeeds only if the reservation remains valid; otherwise retry. Acquire/release forms provide ordering.
 
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="LDAXR then ADD then STLXR then Retry if failed" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="88.75" y="49" font-size="12" font-weight="600" fill="#0c4a6e">LDAXR</text><path d="M166.5 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="179.5" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="256.25" y="49" font-size="12" font-weight="600" fill="#0c4a6e">ADD</text><path d="M334 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="347" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="423.75" y="49" font-size="12" font-weight="600" fill="#0c4a6e">STLXR</text><path d="M501.5 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="514.5" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="591.25" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Retry if failed</text></svg></div>
-
-**How it works**
-
-1. LDAXR reads a value and establishes an exclusive reservation.
-2. Compute the new value and attempt STLXR.
-3. STLXR reports success (0) or failure; retry if the reservation was lost.
-
-**Example:** An atomic increment retries rather than overwriting a concurrent update.
+<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="LDAXR: Read / reserve to ADD: Modify to STLXR: Try store to Retry: On failure" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="141.25" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="80.625" y="36" font-size="13" font-weight="600" fill="#172554">LDAXR</text><text x="80.625" y="56" font-size="11" fill="#334155">Read / reserve</text><path d="M154.25 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="176.25" y="12" width="141.25" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="246.875" y="36" font-size="13" font-weight="600" fill="#172554">ADD</text><text x="246.875" y="56" font-size="11" fill="#334155">Modify</text><path d="M320.5 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="342.5" y="12" width="141.25" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="413.125" y="36" font-size="13" font-weight="600" fill="#172554">STLXR</text><text x="413.125" y="56" font-size="11" fill="#334155">Try store</text><path d="M486.75 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="508.75" y="12" width="141.25" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="579.375" y="36" font-size="13" font-weight="600" fill="#172554">Retry</text><text x="579.375" y="56" font-size="11" fill="#334155">On failure</text></svg></div>
 
 ```asm
 1: LDAXR W0, [X1]
@@ -336,273 +459,377 @@ static _Atomic int ready;
    CBNZ W2, 1b
 ```
 
-**Interview takeaway:** Use properly aligned supported memory; LSE atomics may replace exclusive loops on supporting CPUs.
+**1. Why normal increment fails:** Two cores can both load 10, add 1 and store 11, losing an increment.
+
+**2. Exclusive sequence:** LDAXR reads and establishes an exclusive reservation. STLXR attempts the write and returns zero on success or nonzero on failure. Interference or other events can invalidate the reservation.
+
+**3. Retry:** CBNZ repeats the sequence until a store succeeds. LDAXR has acquire semantics and STLXR release semantics.
+
+```c
+// Linux kernel alternative
+atomic_inc(&counter);
+```
+
+**4. Modern ARM:** LSE-capable cores also support single-instruction atomic read-modify-write operations, such as LDADD.
+
+**Interview takeaway:** Exclusives make the update conditional on reservation validity; ordering semantics and atomicity are distinct.
 
 ### What is the difference between normal and device memory? {M}
-**Short answer:** Normal memory is intended for ordinary data and may be cached/speculated; Device memory is for registers with side effects and has stricter access rules.
+**Short answer:** Normal memory is suitable for RAM and may be cacheable. Device memory has stricter access attributes suitable for MMIO registers. Linux drivers use ioremap and appropriate I/O accessors.
 
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="Normal: RAM / cacheable, Device: MMIO / side effects" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="321" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="172.5" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Normal: RAM / cacheable</text><rect x="347" y="12" width="321" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="507.5" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Device: MMIO / side effects</text></svg></div>
+<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="Normal: RAM / cache to Device: MMIO / peripheral" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="307.5" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="163.75" y="36" font-size="13" font-weight="600" fill="#172554">Normal</text><text x="163.75" y="56" font-size="11" fill="#334155">RAM / cache</text><path d="M320.5 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="342.5" y="12" width="307.5" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="496.25" y="36" font-size="13" font-weight="600" fill="#172554">Device</text><text x="496.25" y="56" font-size="11" fill="#334155">MMIO / peripheral</text></svg></div>
 
-**How it works**
+```c
+void __iomem *base = ioremap(phys, size);
+/* After checking base: */
+writel(1, base);
+```
 
-1. A page-table descriptor selects an attribute encoding from MAIR.
-2. Normal memory may use write-back caches and speculative reads.
-3. Device memory subtypes restrict gathering, reordering and early acknowledgement according to their attributes.
+**1. Normal memory:** Used for program code, heap and buffers. Depending on attributes, it can be cached, speculatively accessed and reordered.
 
-**Example:** DRAM holding an array is normal memory; a UART status register is mapped as Device memory.
+**2. Device memory:** Used for registers whose reads or writes can have side effects. Device attributes restrict gathering, reordering and early acknowledgement to varying degrees.
 
-**Interview takeaway:** Device mappings alone do not replace required barriers and accessor APIs.
+| Normal | Device |
+|---|---|
+| RAM | Peripheral MMIO |
+| Often cacheable | Not ordinary cacheable RAM |
+| Speculation allowed as appropriate | Restricted access behavior |
+
+**3. Linux driver:** Use ioremap or managed resource mapping, then readl/writel. Check mapping errors and release unmanaged mappings. Do not treat MMIO as an ordinary pointer or assume volatile supplies hardware ordering.
+
+**Interview takeaway:** Memory attributes tell the CPU how accesses may behave; driver accessors enforce the appropriate semantics.
 
 ### How does DMA interact with CPU caches? {M}
-**Short answer:** DMA transfers data without the CPU copying each byte. A non-coherent DMA master may not see dirty CPU cache lines, and the CPU may see stale cached receive data.
+**Short answer:** A coherent device can participate in hardware coherency. Non-coherent DMA requires cache maintenance and ownership transitions; use Linux DMA mapping APIs to handle this.
 
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="CPU cache then DMA API / ownership then Device / RAM" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="116.66666666666667" y="49" font-size="12" font-weight="600" fill="#0c4a6e">CPU cache</text><path d="M222.33333333333334 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="235.33333333333334" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="49" font-size="12" font-weight="600" fill="#0c4a6e">DMA API / ownership</text><path d="M445.6666666666667 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="458.6666666666667" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="563.3333333333334" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Device / RAM</text></svg></div>
-
-**How it works**
-
-1. For TX, prepare/map the buffer before transferring ownership to hardware.
-2. For RX, prepare the buffer before DMA and synchronize/unmap after completion before reading.
-3. Use the DMA API to obtain a device-visible address and manage ownership and cache maintenance.
-
-**Example:** Linux maps a TX packet with dma_map_single, checks the mapping, programs the device and unmaps after completion.
+<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="CPU cache: DMA mapping to RAM: DMA buffer to Device: DMA engine" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="108.33333333333333" y="36" font-size="13" font-weight="600" fill="#172554">CPU cache</text><text x="108.33333333333333" y="56" font-size="11" fill="#334155">DMA mapping</text><path d="M209.66666666666666 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="231.66666666666666" y="12" width="196.66666666666666" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="330" y="36" font-size="13" font-weight="600" fill="#172554">RAM</text><text x="330" y="56" font-size="11" fill="#334155">DMA buffer</text><path d="M431.3333333333333 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="453.3333333333333" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="551.6666666666666" y="36" font-size="13" font-weight="600" fill="#172554">Device</text><text x="551.6666666666666" y="56" font-size="11" fill="#334155">DMA engine</text></svg></div>
 
 ```c
 dma_addr_t a = dma_map_single(dev, buf, len, DMA_TO_DEVICE);
-if (dma_mapping_error(dev, a)) return -EIO;
-/* Start DMA using a; wait for device completion. */
-dma_unmap_single(dev, a, len, DMA_TO_DEVICE);
+/* Check dma_mapping_error; unmap after DMA completes. */
 ```
 
-**Interview takeaway:** Coherent allocations still need ordering for descriptor ownership; never assume a CPU pointer is a DMA address.
+**1. CPU to device:** CPU writes a buffer. On a non-coherent system, dirty cache lines may hold newer bytes than RAM. Mapping or syncing for the device performs required maintenance.
+
+**2. Device to CPU:** DMA writes memory. The CPU may retain stale cached bytes, so syncing for CPU access or unmapping is necessary before reading.
+
+| Linux API | Use |
+|---|---|
+| dma_alloc_coherent | Coherent allocation |
+| dma_map_single | Streaming mapping |
+| dma_sync_single_for_cpu | Return ownership to CPU |
+| dma_sync_single_for_device | Return ownership to device |
+| dma_unmap_single | End streaming mapping |
+
+**3. Important:** Check dma_mapping_error, obey DMA direction and ownership, and use the returned DMA address, not a cast CPU pointer. Coherent allocation still needs ordering where appropriate.
+
+**Interview takeaway:** The DMA API abstracts cache maintenance and address mapping, including IOMMUs.
 
 ### What is ARM GIC? {M}
-**Short answer:** The Generic Interrupt Controller routes and prioritizes interrupts for Arm A-profile systems.
+**Short answer:** The Generic Interrupt Controller routes and prioritizes interrupts. GICv3 uses a distributor, redistributors and CPU interfaces; an interrupt handler acknowledges and completes interrupts.
 
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="Peripheral IRQ then GIC routing then CPU handler then EOI / deactivate" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="88.75" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Peripheral IRQ</text><path d="M166.5 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="179.5" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="256.25" y="49" font-size="12" font-weight="600" fill="#0c4a6e">GIC routing</text><path d="M334 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="347" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="423.75" y="49" font-size="12" font-weight="600" fill="#0c4a6e">CPU handler</text><path d="M501.5 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="514.5" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="591.25" y="49" font-size="12" font-weight="600" fill="#0c4a6e">EOI / deactivate</text></svg></div>
-
-**How it works**
-
-1. A peripheral asserts an interrupt; the distributor handles shared peripheral interrupts.
-2. A GICv3 redistributor handles per-CPU interrupt state and the CPU interface signals an eligible core.
-3. The handler acknowledges the interrupt, services/clears the device and signals completion; deactivation depends on configuration.
-
-**Example:** A UART IRQ can be routed to a chosen CPU and masked by interrupt priority.
-
-**Interview takeaway:** GIC versions differ; SGIs are software-generated, PPIs private and SPIs shared peripheral interrupts.
-
-### What is TrustZone? {M}
-**Short answer:** TrustZone separates security states so sensitive code and resources can be isolated from normal-world software.
-
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="Normal world then Secure monitor then Secure world" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="116.66666666666667" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Normal world</text><path d="M222.33333333333334 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="235.33333333333334" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Secure monitor</text><path d="M445.6666666666667 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="458.6666666666667" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="563.3333333333334" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Secure world</text></svg></div>
-
-**How it works**
-
-1. Hardware security attributes and platform controllers protect memory and peripherals.
-2. A secure monitor can mediate world transitions; a trusted OS may run trusted applications.
-3. Normal-world software uses a defined interface, often SMC-based, to request a secure service.
-
-**Example:** A normal-world client requests a key operation without reading the protected key.
-
-**Interview takeaway:** Secure state and exception level are separate concepts; security depends on correct platform configuration.
-
-### What is ARM virtualization at EL2? {H}
-**Short answer:** EL2 supports hypervisors through trap controls, stage-2 translation and virtual interrupt/timer facilities.
-
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="Guest VA then Stage 1: IPA then Stage 2: PA" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="116.66666666666667" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Guest VA</text><path d="M222.33333333333334 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="235.33333333333334" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Stage 1: IPA</text><path d="M445.6666666666667 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="458.6666666666667" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="563.3333333333334" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Stage 2: PA</text></svg></div>
-
-**How it works**
-
-1. Guest EL0/EL1 addresses undergo stage-1 translation to IPA.
-2. Stage-2 translation maps IPA to host physical addresses and enforces VM isolation.
-3. Configured operations trap to EL2; the hypervisor handles them and resumes the guest.
-
-**Example:** An emulated device access may generate a stage-2 fault that KVM/QEMU handles.
-
-**Interview takeaway:** Not every guest instruction traps; hardware virtualization runs compatible guest instructions directly.
-
-### What is the ARM64 calling convention? {M}
-**Short answer:** AAPCS64 defines how compiled functions pass arguments, return values and preserve registers.
-
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="Caller: X0/X1 then Function: ADD then Return: X0" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="116.66666666666667" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Caller: X0/X1</text><path d="M222.33333333333334 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="235.33333333333334" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Function: ADD</text><path d="M445.6666666666667 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="458.6666666666667" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="563.3333333333334" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Return: X0</text></svg></div>
-
-**How it works**
-
-1. X0–X7 carry integer/pointer arguments and common return values.
-2. X19–X29 and SP are callee-preserved; X30 holds the return address and X18 is platform-specific.
-3. SP must satisfy 16-byte alignment at public interfaces; SIMD/FP registers have their own rules.
-
-**Example:** add(a,b) can receive a in X0, b in X1 and return the sum in X0.
+<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="Peripheral: IRQ to GIC: Route / priority to CPU: Exception handler" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="108.33333333333333" y="36" font-size="13" font-weight="600" fill="#172554">Peripheral</text><text x="108.33333333333333" y="56" font-size="11" fill="#334155">IRQ</text><path d="M209.66666666666666 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="231.66666666666666" y="12" width="196.66666666666666" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="330" y="36" font-size="13" font-weight="600" fill="#172554">GIC</text><text x="330" y="56" font-size="11" fill="#334155">Route / priority</text><path d="M431.3333333333333 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="453.3333333333333" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="551.6666666666666" y="36" font-size="13" font-weight="600" fill="#172554">CPU</text><text x="551.6666666666666" y="56" font-size="11" fill="#334155">Exception handler</text></svg></div>
 
 ```asm
-add:
+MRS X0, ICC_IAR1_EL1 // acknowledge Group 1
+// handle valid interrupt
+MSR ICC_EOIR1_EL1, X0 // end priority
+```
+
+**1. Interrupt path:** A peripheral asserts an interrupt. The GIC decides its priority and target CPU. The CPU receives an IRQ exception if permitted.
+
+**2. GICv3 components**
+
+| Component | Role |
+|---|---|
+| Distributor | Configures shared peripheral interrupts |
+| Redistributor | Per-core interrupt configuration |
+| CPU interface | Acknowledge, prioritize and signal completion |
+
+**3. Interrupt classes:** SGIs support interprocessor signaling; PPIs are private to a CPU; SPIs are shared peripheral interrupts.
+
+**4. Handler:** Acknowledge the interrupt, service its source, then signal end of interrupt. Depending on configuration, a separate deactivate operation is required. Linux normally handles these details via its IRQ subsystem.
+
+**Interview takeaway:** The GIC routes and prioritizes interrupts; the device driver handles the interrupt source.
+
+### What is TrustZone? {M}
+**Short answer:** TrustZone provides hardware-backed security state separation. A typical system has a normal world and a secure world, with controlled transitions and protected resources.
+
+<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="Normal world: Linux / Android to Secure monitor: SMC to Secure world: Trusted OS" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="108.33333333333333" y="36" font-size="13" font-weight="600" fill="#172554">Normal world</text><text x="108.33333333333333" y="56" font-size="11" fill="#334155">Linux / Android</text><path d="M209.66666666666666 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="231.66666666666666" y="12" width="196.66666666666666" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="330" y="36" font-size="13" font-weight="600" fill="#172554">Secure monitor</text><text x="330" y="56" font-size="11" fill="#334155">SMC</text><path d="M431.3333333333333 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="453.3333333333333" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="551.6666666666666" y="36" font-size="13" font-weight="600" fill="#172554">Secure world</text><text x="551.6666666666666" y="56" font-size="11" fill="#334155">Trusted OS</text></svg></div>
+
+```asm
+SMC #0 // monitor call, where permitted
+```
+
+**1. Normal world:** Runs the ordinary OS and applications, with access limited to non-secure resources.
+
+**2. Secure world:** Runs trusted firmware or a trusted OS and can protect keys or sensitive services through platform security controls.
+
+**3. Transition:** An SMC may enter the secure monitor (depending on routing/configuration), which validates the request and coordinates world switching. Memory controllers and peripheral firewalls enforce resource separation.
+
+| TrustZone | Virtualization |
+|---|---|
+| Security state separation | Guest isolation and resource control |
+| Secure monitor typically EL3 | Hypervisor typically EL2 |
+
+**Interview takeaway:** TrustZone is hardware-assisted isolation, not automatic security for every application; secure firmware and platform configuration matter.
+
+### What is ARM virtualization at EL2? {H}
+**Short answer:** EL2 lets a hypervisor control guest execution and traps. Stage-1 translation maps guest VA to IPA; stage-2 maps IPA to host PA.
+
+<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="Guest VA: Stage 1 to IPA: Stage 2 to Host PA: Memory" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="108.33333333333333" y="36" font-size="13" font-weight="600" fill="#172554">Guest VA</text><text x="108.33333333333333" y="56" font-size="11" fill="#334155">Stage 1</text><path d="M209.66666666666666 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="231.66666666666666" y="12" width="196.66666666666666" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="330" y="36" font-size="13" font-weight="600" fill="#172554">IPA</text><text x="330" y="56" font-size="11" fill="#334155">Stage 2</text><path d="M431.3333333333333 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="453.3333333333333" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="551.6666666666666" y="36" font-size="13" font-weight="600" fill="#172554">Host PA</text><text x="551.6666666666666" y="56" font-size="11" fill="#334155">Memory</text></svg></div>
+
+```asm
+MRS X0, VTTBR_EL2 // stage-2 table base
+```
+
+**1. Guest stage 1:** Guest Linux translates its virtual address using its own page tables to an intermediate physical address (IPA).
+
+**2. Hypervisor stage 2:** EL2 controls translation from IPA to host physical address. This allows a hypervisor to restrict guest memory without modifying guest page tables.
+
+**3. Traps:** Selected privileged operations, device accesses or faults can trap to EL2 for handling. Hardware virtualization allows many guest instructions to execute directly.
+
+**4. Linux example:** KVM on an ARM64 host uses EL2 facilities; QEMU can provide userspace device emulation. An x86 host cannot directly execute ARM guest instructions with KVM and typically needs QEMU TCG for cross-ISA emulation.
+
+**Interview takeaway:** Stage-2 translation and configurable traps let EL2 isolate and manage guests.
+
+### What is the ARM64 calling convention? {M}
+**Short answer:** AAPCS64 passes ordinary integer/pointer arguments in X0–X7 and returns simple integer results in X0. X19–X28 are callee-saved; SP must be 16-byte aligned at public interfaces.
+
+<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="Caller: X0–X7 arguments to Function: Compute to Return: X0 result" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="108.33333333333333" y="36" font-size="13" font-weight="600" fill="#172554">Caller</text><text x="108.33333333333333" y="56" font-size="11" fill="#334155">X0–X7 arguments</text><path d="M209.66666666666666 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="231.66666666666666" y="12" width="196.66666666666666" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="330" y="36" font-size="13" font-weight="600" fill="#172554">Function</text><text x="330" y="56" font-size="11" fill="#334155">Compute</text><path d="M431.3333333333333 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="453.3333333333333" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="551.6666666666666" y="36" font-size="13" font-weight="600" fill="#172554">Return</text><text x="551.6666666666666" y="56" font-size="11" fill="#334155">X0 result</text></svg></div>
+
+```asm
+add_two:
     ADD X0, X0, X1
     RET
 ```
 
-**Interview takeaway:** Aggregates, floating point and indirect results have additional ABI rules.
+**1. Register rules (AAPCS64)**
+
+| Registers | Role |
+|---|---|
+| X0–X7 | Ordinary integer/pointer arguments |
+| X0 | Typical scalar result |
+| X19–X28 | Callee-saved |
+| X29 / X30 | Frame pointer convention / link register |
+| SP | 16-byte aligned at public interfaces |
+
+**2. Example:** Calling add_two(10, 20) passes 10 in X0 and 20 in X1. ADD leaves 30 in X0 and RET returns to the caller.
+
+**3. Extra arguments:** Additional ordinary arguments may be passed on the stack. Floating-point and aggregate arguments follow additional ABI rules. X18 is platform-specific.
+
+**Interview takeaway:** The ABI lets independently compiled functions agree on arguments, results and register preservation.
 
 ### What is a stack frame in ARM64? {M}
-**Short answer:** A stack frame is temporary stack storage used by a function for saved registers, local objects and other call-related data.
+**Short answer:** A function may save its frame pointer X29 and link register X30 on the stack. Leaf functions may not require a frame.
 
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 240" width="100%" role="img" aria-label="Higher address: caller, Saved X29 / X30, Locals / spills, SP: lower address" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="130" y="8" width="420" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="36" font-size="12" font-weight="600" fill="#0c4a6e">Higher address: caller</text><rect x="130" y="64" width="420" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="92" font-size="12" font-weight="600" fill="#0c4a6e">Saved X29 / X30</text><rect x="130" y="120" width="420" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="148" font-size="12" font-weight="600" fill="#0c4a6e">Locals / spills</text><rect x="130" y="176" width="420" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="204" font-size="12" font-weight="600" fill="#0c4a6e">SP: lower address</text></svg></div>
-
-**How it works**
-
-1. A function may decrement SP to reserve aligned space.
-2. It may save frame pointer X29 and LR X30 and establish a frame record.
-3. On return it restores registers and SP before RET.
-
-**Example:** A function that calls another function can save LR so the nested BL cannot destroy its return address.
+<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="SP before: Caller to Stack frame: Saved X29 / X30 to SP after: Restore" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="108.33333333333333" y="36" font-size="13" font-weight="600" fill="#172554">SP before</text><text x="108.33333333333333" y="56" font-size="11" fill="#334155">Caller</text><path d="M209.66666666666666 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="231.66666666666666" y="12" width="196.66666666666666" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="330" y="36" font-size="13" font-weight="600" fill="#172554">Stack frame</text><text x="330" y="56" font-size="11" fill="#334155">Saved X29 / X30</text><path d="M431.3333333333333 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="453.3333333333333" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="551.6666666666666" y="36" font-size="13" font-weight="600" fill="#172554">SP after</text><text x="551.6666666666666" y="56" font-size="11" fill="#334155">Restore</text></svg></div>
 
 ```asm
 STP X29, X30, [SP, #-16]!
 MOV X29, SP
-BL helper
+// function body
 LDP X29, X30, [SP], #16
 RET
 ```
 
-**Interview takeaway:** Optimized leaf functions may omit a frame; layout is compiler/ABI dependent.
+**1. Entry:** STP with pre-index addressing subtracts 16 from SP and stores X29 and X30. MOV sets the frame pointer to the new SP.
+
+**2. Body:** A function may reserve more aligned stack space for local variables, saved registers or outgoing arguments.
+
+**3. Exit:** LDP restores the saved registers and increments SP by 16. RET branches to the saved return address.
+
+| Before frame | After allocation |
+|---|---|
+| SP points to caller stack top | SP points to saved X29 |
+| LR contains return address | Saved X30 is at SP + 8 |
+
+**4. Optimization:** Leaf functions may omit stack frames and some platforms permit frame-pointer omission.
+
+**Interview takeaway:** The stack frame preserves call state and local storage; the stack grows toward lower addresses in the usual AArch64 ABI.
 
 ### What is WFI versus WFE? {M}
-**Short answer:** WFI is a wait-for-interrupt hint; WFE waits for an event or another allowed wake condition. SEV sends an event.
+**Short answer:** WFI waits for an interrupt or another permitted wake condition. WFE waits for an event or other permitted wake condition; SEV sends an event. Neither is a synchronization primitive by itself.
 
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="WFI: interrupt, WFE: event / wake condition" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="321" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="172.5" y="49" font-size="12" font-weight="600" fill="#0c4a6e">WFI: interrupt</text><rect x="347" y="12" width="321" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="507.5" y="49" font-size="12" font-weight="600" fill="#0c4a6e">WFE: event / wake condition</text></svg></div>
-
-**How it works**
-
-1. WFI is commonly used in idle paths.
-2. WFE may consume an already recorded event and return immediately.
-3. A waiting loop must recheck its condition after waking.
-
-**Example:** A CPU can use WFE while waiting for a lock-related event; ordering and the lock protocol are separate.
+<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="WFI: Interrupt to WFE: Event to SEV: Signal event" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="108.33333333333333" y="36" font-size="13" font-weight="600" fill="#172554">WFI</text><text x="108.33333333333333" y="56" font-size="11" fill="#334155">Interrupt</text><path d="M209.66666666666666 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="231.66666666666666" y="12" width="196.66666666666666" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="330" y="36" font-size="13" font-weight="600" fill="#172554">WFE</text><text x="330" y="56" font-size="11" fill="#334155">Event</text><path d="M431.3333333333333 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="453.3333333333333" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="551.6666666666666" y="36" font-size="13" font-weight="600" fill="#172554">SEV</text><text x="551.6666666666666" y="56" font-size="11" fill="#334155">Signal event</text></svg></div>
 
 ```asm
-WFI
-// separate event-based wait example:
-WFE
-SEV
+WFI // idle hint
+WFE // event wait hint
+SEV // send event
 ```
 
-**Interview takeaway:** Neither instruction guarantees a sleep duration or supplies memory synchronization on its own.
+**1. WFI:** A CPU idle loop may use Wait For Interrupt so the processor can reduce activity until a wake condition occurs.
+
+**2. WFE:** Wait For Event can be used in a waiting loop. SEV sends an event; a previously recorded event may make WFE return immediately.
+
+**3. Practical pattern:** Always recheck the shared condition after waking. Wakeups can be unrelated to the expected event, and ordering must be supplied separately.
+
+| WFI | WFE |
+|---|---|
+| Common in idle paths | Common in event-based wait loops |
+| Interrupt-related wakeup | Event or other allowed wakeup |
+
+**Interview takeaway:** These are architectural hints, not locks or guarantees that the core sleeps for a particular duration.
 
 ### What is the difference between a cache clean and invalidate? {M}
-**Short answer:** Cleaning writes dirty cache data toward the specified point; invalidating discards a cached copy.
+**Short answer:** Cleaning writes dirty data toward the required coherency point; invalidation discards cached copies. Incorrect invalidation can lose dirty data. Use platform APIs for DMA.
 
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="Clean: cache → memory, Invalidate: discard cached copy" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="321" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="172.5" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Clean: cache → memory</text><rect x="347" y="12" width="321" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="507.5" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Invalidate: discard cached copy</text></svg></div>
-
-**How it works**
-
-1. Clean when another non-coherent observer must see CPU-written data.
-2. Invalidate stale lines after a device writes memory, after proper ownership transfer.
-3. For receive buffers prepare full cache lines before DMA as required by the platform.
-
-**Example:** TX DMA may read old RAM until cache cleaning; RX CPU reads may hit old cache contents unless synchronized.
-
-**Interview takeaway:** Invalidating dirty lines can lose data; use the OS DMA API and honor cache-line boundaries.
-
-### What is endianness in ARM? {E}
-**Short answer:** Endianness defines byte order for multi-byte objects in memory, not the order of bits inside a register.
-
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="Little: 78 56 34 12, Big: 12 34 56 78" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="321" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="172.5" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Little: 78 56 34 12</text><rect x="347" y="12" width="321" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="507.5" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Big: 12 34 56 78</text></svg></div>
-
-**How it works**
-
-1. Little-endian stores the least significant byte at the lowest address.
-2. Big-endian stores the most significant byte at the lowest address.
-3. AArch64 Linux commonly uses little-endian; hardware and device formats may differ.
-
-**Example:** 0x12345678 is stored as 78 56 34 12 in little-endian and 12 34 56 78 in big-endian.
+<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="Clean: Cache → coherency point to Invalidate: Discard stale line" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="307.5" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="163.75" y="36" font-size="13" font-weight="600" fill="#172554">Clean</text><text x="163.75" y="56" font-size="11" fill="#334155">Cache → coherency point</text><path d="M320.5 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="342.5" y="12" width="307.5" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="496.25" y="36" font-size="13" font-weight="600" fill="#172554">Invalidate</text><text x="496.25" y="56" font-size="11" fill="#334155">Discard stale line</text></svg></div>
 
 ```asm
-REV W0, W0 // reverse bytes of 32-bit value
+DC CVAC, X0 // clean by VA to PoC
+DSB SY      // wait for completion; illustrative
 ```
 
-**Interview takeaway:** Network and peripheral formats may require explicit conversion; do not infer byte order from a pointer cast.
+**1. Clean:** A dirty cache line is written toward the specified coherency point, allowing required observers to obtain updated contents.
+
+**2. Invalidate:** A cached copy is discarded so later access must obtain a valid copy again. Discarding dirty data without correct handling may lose updates.
+
+| Operation | Typical ARM instruction |
+|---|---|
+| Clean by VA to PoC | DC CVAC |
+| Invalidate by VA to PoC | DC IVAC |
+| Clean and invalidate by VA to PoC | DC CIVAC |
+
+**3. Practical notes:** Maintenance applies to cache lines; alignment, scope and barriers matter. PoC is the point of coherency, not necessarily DRAM. Privilege and cache configuration affect permitted instructions.
+
+**Interview takeaway:** Clean makes dirty data available as required; invalidate removes cached copies. Prefer Linux DMA APIs in drivers.
+
+### What is endianness in ARM? {E}
+**Short answer:** Endianness determines the byte order of multi-byte values in memory. AArch64 supports little-endian data and implementation-dependent big-endian support; Linux commonly uses little-endian.
+
+<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="Value: 0x12345678 to Low → high: 78 56 34 12" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="307.5" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="163.75" y="36" font-size="13" font-weight="600" fill="#172554">Value</text><text x="163.75" y="56" font-size="11" fill="#334155">0x12345678</text><path d="M320.5 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="342.5" y="12" width="307.5" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="496.25" y="36" font-size="13" font-weight="600" fill="#172554">Low → high</text><text x="496.25" y="56" font-size="11" fill="#334155">78 56 34 12</text></svg></div>
+
+```asm
+REV W0, W1 // reverse byte order
+```
+
+**1. Example:** Store 0x12345678 at address 0x1000.
+
+| Address | Little endian | Big endian |
+|---|---|---|
+| 0x1000 | 78 | 12 |
+| 0x1001 | 56 | 34 |
+| 0x1002 | 34 | 56 |
+| 0x1003 | 12 | 78 |
+
+**2. C example**
+
+```c
+uint32_t x = 1;
+bool little = *(unsigned char *)&x == 1;
+```
+
+**3. Drivers:** Protocols and device registers may define their own byte order. Use conversions such as cpu_to_le32 or be32_to_cpu where appropriate.
+
+**Interview takeaway:** Endianness changes byte layout in memory, not the numerical meaning of an integer held in a register.
 
 ### What are NZCV condition flags? {E}
-**Short answer:** NZCV are the integer condition flags: Negative, Zero, Carry and Overflow.
+**Short answer:** N is negative, Z is zero, C is carry (or no borrow for subtraction), and V is signed overflow. Flag-setting instructions and conditional branches use them.
 
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="N: negative, Z: zero, C: carry, V: overflow" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="88.75" y="49" font-size="12" font-weight="600" fill="#0c4a6e">N: negative</text><rect x="179.5" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="256.25" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Z: zero</text><rect x="347" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="423.75" y="49" font-size="12" font-weight="600" fill="#0c4a6e">C: carry</text><rect x="514.5" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="591.25" y="49" font-size="12" font-weight="600" fill="#0c4a6e">V: overflow</text></svg></div>
-
-**How it works**
-
-1. N records the result sign bit; Z indicates zero.
-2. C describes carry for addition or no borrow for subtraction.
-3. V indicates signed overflow; conditional branches and selects test these flags.
-
-**Example:** CMP X0,#0 sets flags as if subtracting zero; B.EQ branches if Z is set.
+<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="CMP: Set NZCV to B.EQ: Branch if Z=1" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="307.5" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="163.75" y="36" font-size="13" font-weight="600" fill="#172554">CMP</text><text x="163.75" y="56" font-size="11" fill="#334155">Set NZCV</text><path d="M320.5 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="342.5" y="12" width="307.5" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="496.25" y="36" font-size="13" font-weight="600" fill="#172554">B.EQ</text><text x="496.25" y="56" font-size="11" fill="#334155">Branch if Z=1</text></svg></div>
 
 ```asm
 CMP X0, #0
-B.EQ zero_case
+B.EQ is_zero
 ```
 
-**Interview takeaway:** C and V differ: carry is unsigned, overflow is signed.
+**1. Flags**
 
-### What is the ARM64 boot flow? {M}
-**Short answer:** ARM64 boot initializes a platform and transfers control to a kernel using the boot protocol; exact firmware stages vary.
+| Flag | Meaning |
+|---|---|
+| N | Result sign bit |
+| Z | Result is zero |
+| C | Unsigned carry / no borrow |
+| V | Signed overflow |
 
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="ROM / firmware then Bootloader then Linux kernel then PID 1" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="88.75" y="49" font-size="12" font-weight="600" fill="#0c4a6e">ROM / firmware</text><path d="M166.5 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="179.5" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="256.25" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Bootloader</text><path d="M334 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="347" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="423.75" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Linux kernel</text><path d="M501.5 45h12m-5-4 5 4-5 4" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="514.5" y="12" width="153.5" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="591.25" y="49" font-size="12" font-weight="600" fill="#0c4a6e">PID 1</text></svg></div>
+**2. Example:** CMP X0, #0 performs a subtraction for flags without storing the result. If X0 is zero, Z becomes 1 and B.EQ branches.
 
-**How it works**
-
-1. Reset enters platform firmware or Boot ROM; early code loads trusted firmware and initializes clocks/DRAM as needed.
-2. A bootloader loads the kernel, DTB and optional initramfs; it establishes the required CPU state.
-3. The kernel entry code establishes its own translation state, initializes subsystems and starts PID 1.
-
-**Example:** On a typical embedded system: ROM → platform firmware/SPL → U-Boot → Linux → init.
-
-**Interview takeaway:** For Linux arm64 the boot protocol specifies MMU off at entry, x0 as DTB address for DT boot, and required cache/interrupt state; UEFI paths differ.
-
-### What are TTBR0_EL1, TTBR1_EL1, TCR_EL1 and MAIR_EL1? {H}
-**Short answer:** These system registers configure stage-1 translation at EL1/EL0.
-
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="TTBR: table roots, TCR: translation rules, MAIR: memory type" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="116.66666666666667" y="49" font-size="12" font-weight="600" fill="#0c4a6e">TTBR: table roots</text><rect x="235.33333333333334" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="49" font-size="12" font-weight="600" fill="#0c4a6e">TCR: translation rules</text><rect x="458.6666666666667" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="563.3333333333334" y="49" font-size="12" font-weight="600" fill="#0c4a6e">MAIR: memory type</text></svg></div>
-
-**How it works**
-
-1. TTBR0_EL1 and TTBR1_EL1 specify translation-table roots and associated ASID fields, subject to configuration.
-2. TCR_EL1 controls address sizes, granules and walk attributes.
-3. MAIR_EL1 defines memory attributes selected by page-descriptor AttrIndx; SCTLR_EL1 controls translation/cache enablement.
-
-**Example:** Linux typically separates user and kernel VA ranges using TTBR0 and TTBR1.
+**3. Signed vs unsigned:** B.LT checks signed less-than (N differs from V); B.LO checks unsigned lower (C is clear). Choosing the wrong condition causes bugs.
 
 ```asm
-MRS X0, TTBR0_EL1
+CMP X0, X1
+B.LO unsigned_lower
+B.LT signed_lower
+```
+
+**Interview takeaway:** NZCV records arithmetic conditions and supports conditional execution and branching.
+
+### What is the ARM64 boot flow? {M}
+**Short answer:** Platform firmware initializes hardware and loads the next stage. A typical Linux flow is Boot ROM, platform firmware/bootloader, kernel entry, MMU setup and userspace init. Exact stages vary by SoC.
+
+<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="Boot ROM: Firmware to Bootloader: Kernel + DTB to Linux kernel: MMU / drivers to Userspace: PID 1" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="141.25" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="80.625" y="36" font-size="13" font-weight="600" fill="#172554">Boot ROM</text><text x="80.625" y="56" font-size="11" fill="#334155">Firmware</text><path d="M154.25 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="176.25" y="12" width="141.25" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="246.875" y="36" font-size="13" font-weight="600" fill="#172554">Bootloader</text><text x="246.875" y="56" font-size="11" fill="#334155">Kernel + DTB</text><path d="M320.5 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="342.5" y="12" width="141.25" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="413.125" y="36" font-size="13" font-weight="600" fill="#172554">Linux kernel</text><text x="413.125" y="56" font-size="11" fill="#334155">MMU / drivers</text><path d="M486.75 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="508.75" y="12" width="141.25" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="579.375" y="36" font-size="13" font-weight="600" fill="#172554">Userspace</text><text x="579.375" y="56" font-size="11" fill="#334155">PID 1</text></svg></div>
+
+```asm
+// Linux arm64 boot protocol: X0 = DTB physical address
+// X1–X3 = 0 at kernel entry
+```
+
+**1. Boot ROM:** Executes platform-defined immutable startup code and locates the next boot stage.
+
+**2. Firmware / bootloader:** Initializes required clocks, DDR and devices, configures security state, and loads the kernel and DTB. Some platforms use TF-A, U-Boot SPL or U-Boot proper.
+
+**3. Kernel entry:** Bootloader passes the DTB physical address in X0 according to the ARM64 Linux boot protocol. Linux performs early architecture setup, builds translation tables, enables the MMU and initializes drivers.
+
+**4. Userspace:** The kernel mounts or prepares the root filesystem and executes the initial userspace program, typically systemd, /sbin/init or Android /init.
+
+**Interview takeaway:** Boot flow progresses from platform firmware to kernel initialization to PID 1. Exact stages, exception levels and DDR initialization vary by SoC.
+
+
+
+### What are TTBR0_EL1, TTBR1_EL1, TCR_EL1 and MAIR_EL1? {H}
+**Short answer:** These registers configure stage-1 address translation for EL1 and EL0. TTBRs select translation-table roots, TCR controls translation parameters, and MAIR describes memory attribute encodings.
+
+<figure style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 236" width="100%" role="img" aria-label="Translation tables select the physical mapping; the attribute index selects memory properties." font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="10" width="660" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="39" fill="#0c4a6e" font-size="14" font-weight="600">Virtual address</text><rect x="10" y="82" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="170" y="111" fill="#0c4a6e" font-size="14" font-weight="600">TTBR0 / TTBR1: table root</text><rect x="350" y="82" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="510" y="111" fill="#0c4a6e" font-size="14" font-weight="600">TCR: address size and granule</text><rect x="10" y="154" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="170" y="183" fill="#0c4a6e" font-size="14" font-weight="600">Page descriptor: AttrIndx</text><rect x="350" y="154" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="510" y="183" fill="#0c4a6e" font-size="14" font-weight="600">MAIR: memory type</text></svg><figcaption>Translation tables select the physical mapping; the attribute index selects memory properties.</figcaption></figure>
+
+| Register | Role |
+|---|---|
+| TTBR0_EL1 / TTBR1_EL1 | Root table address and ASID field, subject to configuration |
+| TCR_EL1 | VA size, granule, table-walk cacheability and shareability |
+| MAIR_EL1 | Normal or Device memory attributes selected by descriptor AttrIndx |
+| SCTLR_EL1 | Controls MMU and cache enablement among other settings |
+
+**Example:** A Linux user VA typically uses the TTBR0 range; a kernel VA uses TTBR1. A page descriptor can map normal cacheable RAM or device MMIO using different attribute indices.
+
+```asm
+MRS X0, TTBR0_EL1 // privileged diagnostic read
 MRS X1, TCR_EL1
 MRS X2, MAIR_EL1
 ```
 
-**Interview takeaway:** Changing translation configuration requires architecture-defined barriers and TLB maintenance.
+**Interview takeaway:** Page tables alone are insufficient; the translation configuration and attributes determine how the mapping behaves. Changing them requires the architecture-defined synchronization and invalidation sequence.
 
 ### What are ASIDs, VMIDs and TLB shootdowns? {H}
-**Short answer:** ASIDs distinguish address spaces, VMIDs distinguish VM translation contexts, and shootdowns invalidate stale translations on affected CPUs.
+**Short answer:** ASIDs distinguish address spaces, VMIDs distinguish virtual-machine translation contexts, and a TLB shootdown invalidates cached translations on CPUs that could still use an outdated mapping.
 
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="ASID A: VA → PA A, ASID B: VA → PA B" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="321" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="172.5" y="49" font-size="12" font-weight="600" fill="#0c4a6e">ASID A: VA → PA A</text><rect x="347" y="12" width="321" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="507.5" y="49" font-size="12" font-weight="600" fill="#0c4a6e">ASID B: VA → PA B</text></svg></div>
+<figure style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 236" width="100%" role="img" aria-label="Translation tags avoid unnecessary global invalidation; they do not remove the need to invalidate changed mappings." font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="10" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="170" y="39" fill="#0c4a6e" font-size="14" font-weight="600">Process A: ASID 5</text><rect x="350" y="10" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="510" y="39" fill="#0c4a6e" font-size="14" font-weight="600">Process B: ASID 6</text><rect x="10" y="82" width="660" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="111" fill="#0c4a6e" font-size="14" font-weight="600">Same VA, different cached translations</text><rect x="10" y="154" width="660" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="183" fill="#0c4a6e" font-size="14" font-weight="600">Mapping changes: invalidate affected TLB entries</text></svg><figcaption>Translation tags avoid unnecessary global invalidation; they do not remove the need to invalidate changed mappings.</figcaption></figure>
 
-**How it works**
+**1. Example:** Process A and B both access VA 0x4000, but A maps it to PA 0x10000 while B maps it to PA 0x20000. Non-global translations can be tagged with different ASIDs.
 
-1. Non-global TLB entries can be tagged with ASIDs so switching processes need not flush everything.
-2. VMIDs distinguish stage-2 translation contexts.
-3. After changing mappings or recycling tags, software performs appropriate invalidation and synchronization.
+**2. When a mapping changes:** The OS updates page tables and ensures affected CPUs cannot keep using obsolete entries. ARM provides TLBI instructions and shareable invalidation forms; Linux uses architecture-specific TLB flushing helpers.
 
-**Example:** Process A and B can both map VA 0x4000 to different physical pages without sharing the same cached translation.
+**3. VMID:** A hypervisor uses a VMID to distinguish stage-2 contexts. Reusing an identifier requires appropriate invalidation.
 
-**Interview takeaway:** Tags do not eliminate the need to invalidate changed mappings; use kernel TLB APIs.
+**Interview takeaway:** ASID/VMID tags improve context switching; invalidation maintains correctness when mappings or identifiers change.
 
 ### What is the ARM SMMU and how does it differ from the CPU MMU? {H}
-**Short answer:** The SMMU is Arm's IOMMU architecture. It translates and checks device DMA transactions, independently of CPU virtual address translation.
+**Short answer:** A CPU MMU translates CPU virtual addresses; an SMMU (Arm's IOMMU architecture) translates and checks device DMA transactions. It can provide device isolation and an I/O virtual address space.
 
-<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 92" width="100%" role="img" aria-label="CPU VA → CPU MMU, Device IOVA → SMMU, Physical memory" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="12" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="116.66666666666667" y="49" font-size="12" font-weight="600" fill="#0c4a6e">CPU VA → CPU MMU</text><rect x="235.33333333333334" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Device IOVA → SMMU</text><rect x="458.6666666666667" y="12" width="209.33333333333334" height="66" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="563.3333333333334" y="49" font-size="12" font-weight="600" fill="#0c4a6e">Physical memory</text></svg></div>
+<figure style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 236" width="100%" role="img" aria-label="The CPU and device can use different addresses for the same physical buffer." font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="10" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="170" y="39" fill="#0c4a6e" font-size="14" font-weight="600">CPU virtual address</text><rect x="350" y="10" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="510" y="39" fill="#0c4a6e" font-size="14" font-weight="600">Device DMA address (IOVA)</text><rect x="10" y="82" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="170" y="111" fill="#0c4a6e" font-size="14" font-weight="600">CPU MMU</text><rect x="350" y="82" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="510" y="111" fill="#0c4a6e" font-size="14" font-weight="600">SMMU / IOMMU</text><rect x="10" y="154" width="660" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="183" fill="#0c4a6e" font-size="14" font-weight="600">Physical memory</text></svg><figcaption>The CPU and device can use different addresses for the same physical buffer.</figcaption></figure>
 
-**How it works**
+**1. Example:** A display controller reads a framebuffer through an IOVA. The SMMU translates it to the underlying physical pages and enforces access permissions.
 
-1. The driver maps memory with the DMA API.
-2. The device issues a DMA address (possibly an IOVA); the SMMU translates it to physical memory.
-3. Permissions isolate devices and mappings are removed when no longer required.
+**2. Linux flow:** allocate or obtain a suitable buffer, map it with the DMA API, check the result, program the device with the returned DMA address, then unmap after completion if streaming.
 
-**Example:** A display engine can scan out a framebuffer using a device-visible address that differs from the CPU virtual address.
+```c
+dma_addr_t addr = dma_map_single(dev, buf, len, DMA_TO_DEVICE);
+if (dma_mapping_error(dev, addr))
+    return -EIO;
+/* Program DMA address, wait for completion, then unmap. */
+dma_unmap_single(dev, addr, len, DMA_TO_DEVICE);
+```
 
-**Interview takeaway:** An SMMU does not itself guarantee cache coherency; mappings may alternatively use direct addresses or bounce buffers.
+**3. Important:** An SMMU does not automatically make a non-coherent device coherent. DMA addresses are not CPU pointers; a system may also use direct mapping or bounce buffers.
 
+**Interview takeaway:** The SMMU is for device address translation and isolation; use Linux DMA APIs rather than assuming a physical address equals a DMA address.
