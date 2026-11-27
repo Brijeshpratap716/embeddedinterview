@@ -342,6 +342,12 @@ GPA 0x1_0000_2000 → high RAM → HVA 0x7f80_0000_2000. GPA 0x9000_0000 → no 
 
 **Where this happens:** KVM memslots (`KVM_SET_USER_MEMORY_REGION`), QEMU `address_space_translate`, Firecracker/Cloud Hypervisor `GuestMemoryMmap`, and virtio device emulation translating descriptor addresses.
 
+#### Boundary checks without overflow
+
+Suppose a RAM region starts at GPA 0x80000000 with length 0x1000 and host base p. GPA 0x80000FF0 with length 16 is valid, mapping to p+0xFF0; length 17 crosses the region boundary and must fail or be split using a defined multi-region access mechanism. Testing len <= size−offset avoids overflowing gpa+len.
+
+Validate the region table at construction: sorted starts, no overlap, host backing large enough, and representable pointer offsets. Hold a reference or lock so a concurrent memory-map change cannot invalidate the returned pointer. In a VMM, MMIO regions dispatch callbacks instead of returning an arbitrary host RAM pointer.
+
 ### Write a simple MMIO device model (register read/write callbacks). {H}
 **Short answer:** A device model is a state structure plus two callbacks, `read(offset, size)` and `write(offset, value, size)`, that the VMM calls whenever the guest accesses the device's address range. Each callback switches on the register offset and implements the register's behaviour: return state for reads, update state and trigger side effects (start an operation, clear flags, raise or lower the interrupt) for writes. Invalid offsets or sizes are logged and ignored, never allowed to crash the VMM.
 
