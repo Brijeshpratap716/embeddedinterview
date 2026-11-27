@@ -9,7 +9,7 @@ desc: Keywords, storage classes, scope, the preprocessor, integer rules, undefin
 Almost every embedded interview opens with C. These questions cover the language itself: types, storage classes, the preprocessor, integer conversion rules, and the corners where C stops protecting you. Each answer gives the one-line answer first, then the explanation, an example, and the traps interviewers look for.
 
 ### What are the storage classes in C? {E}
-**Short answer:** Storage-class specifiers decide a variable's **lifetime** (how long it exists), **scope** (where its name is visible) and **linkage** (whether other files can refer to it). C has `auto`, `register`, `static` and `extern`, plus `_Thread_local` since C11 (and `typedef`, which is grammatically a storage class but only creates a type alias).
+**Short answer:** Storage-class specifiers affect storage duration and/or linkage. Scope is determined primarily by where the declaration appears. C has `auto`, `register`, `static` and `extern`, plus `_Thread_local` since C11 (and `typedef`, which is grammatically a storage class but only creates a type alias).
 
 | Specifier | Lifetime | Default initial value | Typical location | Linkage |
 |---|---|---|---|---|
@@ -58,12 +58,12 @@ int next_id(void)
 
 **Pitfalls**
 
-- A static local makes a function **non-reentrant**: two tasks or an ISR calling it at the same time share the variable.
+- Mutable static local state can make a function **non-reentrant**: two tasks or an ISR calling it at the same time share the variable. Read-only static data does not inherently prevent reentrancy.
 - `static` in a header file gives every `.c` file that includes it its own private copy, which wastes memory and is rarely what you want (except for `static inline` functions, which is the normal idiom).
 - (C99) `static` inside array parameter brackets, `void f(int a[static 4])`, means "the caller passes at least 4 elements"; a third, rarely used meaning.
 
 ### What is the difference between declaration and definition? {E}
-**Short answer:** A **declaration** tells the compiler that a name exists and what its type is. A **definition** is a declaration that also creates the thing: it allocates storage for a variable or provides the body of a function. You can declare something many times, but you must define it exactly once in the whole program.
+**Short answer:** A **declaration** tells the compiler that a name exists and what its type is. A **definition** is a declaration that also creates the thing: it allocates storage for a variable or provides the body of a function. Compatible declarations can be repeated. An externally linked object or function that is used generally requires exactly one external definition; internal-linkage entities are separate per translation unit.
 
 ```c
 extern int baud;                         /* declaration only: storage is elsewhere */

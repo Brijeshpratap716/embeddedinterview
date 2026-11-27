@@ -698,3 +698,26 @@ gpiod_line_request_set_value(req, 18, GPIOD_LINE_VALUE_ACTIVE);
 - Anything other applications or subsystems need (network interface, input device, display, audio), anything with tight interrupt timing, or DMA without an IOMMU: write a kernel driver, and consider upstreaming it.
 
 **Follow-up:** "spidev in the device tree?" Bind a specific compatible that the spidev driver lists (or use `driver_override`); a plain `compatible = "spidev"` is rejected because the device tree should describe hardware, not which driver to use.
+
+### How do you debug an embedded Linux board that does not boot? {M}
+**Short answer:** Identify the last successful boot stage before debugging. Check power, reset, boot straps, serial logs, memory initialization, image loading and root filesystem in that order as appropriate.
+
+```text
+Power/reset -> Boot ROM -> SPL / firmware -> U-Boot
+                                           |
+                                           v
+Userspace <- rootfs <- Linux kernel <- image + DTB
+```
+
+| Last visible stage | First checks |
+|---|---|
+| No ROM/early output | Rails, reset, clocks, boot mode, debug interface |
+| SPL starts | DRAM training and clock configuration |
+| U-Boot starts | Image format, load addresses, DTB, boot arguments |
+| Kernel starts | earlycon, console, device tree, root device |
+| VFS panic | root=, filesystem support, initramfs |
+| PID 1 starts | init executable, mounts, dependencies |
+
+**Example:** A VFS unable-to-mount-root panic suggests checking storage driver availability, root device identification and filesystem configuration rather than debugging SPL.
+
+**Interview takeaway:** Locate the failing handoff using evidence from UART, JTAG and logs; boot stages vary by SoC.

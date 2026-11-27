@@ -9,13 +9,13 @@ desc: volatile, ISRs, registers, critical sections, start-up code, linker script
 Embedded C is ordinary C plus the rules that come from sharing memory with hardware and interrupts. These are the questions that decide most firmware interviews. Each answer gives the short version you should say first, then the details, code, and the follow-up questions you are likely to get.
 
 ### What is volatile and when must you use it? {E}
-**Short answer:** `volatile` tells the compiler that a variable can change, or that accessing it has side effects, in ways the compiler cannot see in the code. The compiler must then perform every read and write that appears in the source, in program order relative to other volatile accesses, and may not cache the value in a register, merge accesses or delete them.
+**Short answer:** `volatile` tells the compiler that a variable can change, or that accessing it has side effects, in ways the compiler cannot see in the code. The compiler must preserve volatile accesses according to the implementation's rules and C sequencing requirements. It cannot simply eliminate a required volatile access. Volatile does not impose an order on unrelated ordinary memory accesses.
 
 **Use it for**
 
 1. **Memory-mapped peripheral registers** (status registers change by themselves; writing a data register sends a byte).
 2. **Variables shared between an ISR and the main code** (flags, indexes of a ring buffer).
-3. **Memory written by DMA** or by another core/bus master, when the CPU polls it.
+3. **Hardware-updated memory:** volatile may be useful for polling an implementation-defined hardware-visible location, but DMA requires ownership, cache maintenance and ordering; CPU threads must use atomics or locks.
 4. **Local variables modified between `setjmp` and `longjmp`**.
 5. Variables you want to observe or change from a debugger while code runs (e.g. a test loop counter).
 
@@ -74,7 +74,7 @@ uint64_t read_ticks64(void)
 }
 ```
 
-**Interview line:** "volatile is for hardware and ISR visibility, atomics and locks are for concurrency. You usually need volatile **and** something else."
+**Interview line:** Volatile is for observable accesses such as MMIO; atomics and locks are for concurrency. A simple ISR flag may use volatile under platform-specific atomicity and interrupt rules. For portable threaded C, volatile alone never prevents a data race.
 
 ### Can a pointer be volatile? Explain the declarations. {M}
 **Short answer:** Yes; the position of `volatile` relative to `*` decides what is volatile, exactly like `const`. `volatile int *p` is a pointer to volatile data (the normal case for registers). `int *volatile p` is a volatile pointer to normal data (the pointer variable itself may be changed by an ISR). `volatile int *volatile p` makes both volatile.
@@ -754,7 +754,7 @@ char keypad_scan(void)
 **DMA traps:** cache coherency on Cortex-M7 and Cortex-A (next question), buffers that must stay valid until the transfer finishes (never a local variable of a function that returns), bus matrix restrictions (some DMA controllers cannot access certain RAM banks or TCM), and handling errors and overruns.
 
 ### What are the cache coherency problems with DMA? {H}
-**Short answer:** On CPUs with a data cache (Cortex-M7, Cortex-A, some Cortex-M55/M85 systems), the CPU reads and writes through its cache, but most DMA controllers on MCUs access main memory directly. The two can see different data: DMA may transmit stale data still waiting in the cache, and the CPU may read stale cached data after the DMA has written new data to memory. You must **clean** the cache before DMA reads memory, and **invalidate** it after DMA writes memory (or place DMA buffers in non-cacheable memory).
+**Short answer:** On CPUs with a data cache (Cortex-M7, Cortex-A, some Cortex-M55/M85 systems), the CPU reads and writes through its cache, but most DMA controllers on MCUs access main memory directly. The two can see different data: DMA may transmit stale data still waiting in the cache, and the CPU may read stale cached data after the DMA has written new data to memory. You must **clean** dirty cache lines before DMA reads memory. For DMA writes, prepare dedicated cache-line-aligned buffers before handing them to the device and invalidate stale lines after completion, following the platform's DMA and cache rules.
 
 **The two cases**
 
@@ -768,7 +768,10 @@ char keypad_scan(void)
 SCB_CleanDCache_by_Addr((uint32_t *)tx_buf, sizeof tx_buf);
 start_dma_tx(tx_buf, sizeof tx_buf);
 
-/* ... RX complete interrupt ... */
+/* Before RX: dedicate whole cache lines; clean/invalidate as required. */
+SCB_CleanInvalidateDCache_by_Addr((uint32_t *)rx_buf, sizeof rx_buf);
+start_dma_rx(rx_buf, sizeof rx_buf);
+/* ... RX complete interrupt; device has stopped writing ... */
 SCB_InvalidateDCache_by_Addr((uint32_t *)rx_buf, sizeof rx_buf);
 process(rx_buf);
 ```
@@ -787,10 +790,10 @@ __attribute__((aligned(32))) static uint8_t rx_buf[ALIGN_UP(RX_LEN, 32)];
 
 **Linux:** drivers never do this manually; the DMA API does it: `dma_map_single()`/`dma_unmap_single()` (streaming, does the clean/invalidate), and `dma_alloc_coherent()` (memory that is uncached or hardware-coherent).
 
-**Symptom:** "DMA works with the cache disabled but returns old/corrupted data with the cache enabled" is almost always this problem.
+**Symptom:** "DMA works with the cache disabled but returns old/corrupted data with the cache enabled" is a strong clue to investigate cache maintenance, buffer ownership and DMA addressability.
 
 ### What is a memory barrier and why would firmware need one? {H}
-**Short answer:** A memory barrier forces an ordering between memory operations that the CPU, its write buffers or the bus would otherwise be allowed to reorder or delay. Arm has three barrier instructions: **`DMB`** (memory accesses before it are observed before those after it), **`DSB`** (all memory accesses complete before **any** later instruction executes), and **`ISB`** (flush the pipeline so later instructions are fetched and decoded with the new context).
+**Short answer:** A memory barrier forces an ordering between memory operations that the CPU, its write buffers or the bus would otherwise be allowed to reorder or delay. Arm has three barrier instructions: **`DMB`** (memory accesses before it are observed before those after it), **`DSB`** (waits for required completion of relevant preceding operations within the specified scope before subsequent instructions execute), and **`ISB`** (flush the pipeline so later instructions are fetched and decoded with the new context).
 
 | Barrier | Guarantees | Typical use |
 |---|---|---|

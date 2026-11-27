@@ -1080,6 +1080,8 @@ writel(1, d->base + DOORBELL);
 **dmaengine (memory ↔ peripheral via a system DMA controller)**
 
 ```c
+/* Illustrative fragment: check IS_ERR(chan), configuration result,
+ * descriptor allocation and dma_submit_error(cookie) in real code. */
 chan = dma_request_chan(dev, "rx");                       /* from DT dmas/dma-names */
 dmaengine_slave_config(chan, &cfg);                       /* FIFO address, width, burst */
 desc = dmaengine_prep_slave_single(chan, buf_dma, len, DMA_DEV_TO_MEM, DMA_PREP_INTERRUPT);
@@ -1090,7 +1092,7 @@ dma_async_issue_pending(chan);
 
 **Rules**
 
-- Never DMA to or from stack memory or `vmalloc` memory (not physically contiguous, may share cache lines).
+- Do not pass stack or vmalloc addresses to dma_map_single(). For non-contiguous memory, use suitable page/scatter-gather mappings and respect the platform DMA API.
 - Do not touch a streaming buffer while the device owns it.
 - With non-coherent devices, the DMA API performs cache clean/invalidate; buffers should be cache-line aligned (kmalloc guarantees `ARCH_DMA_MINALIGN`).
 - **IOMMU** (Arm SMMU, Intel VT-d) translates device addresses, gives isolation and makes scattered pages look contiguous to the device.
@@ -1347,7 +1349,7 @@ gdb drivers/misc/mydev.ko -ex 'list *(mydev_irq+0x24)'
 **Method:** make it reproducible, simplify the test case, check recent changes (`git bisect`), and check the obvious: reference counting, missing locking, use after `remove()`, IRQ firing before initialisation completes.
 
 ### What is the DRM/KMS display stack? {H}
-**Short answer:** The Direct Rendering Manager (DRM) is the Linux graphics and display subsystem; **KMS** (kernel mode setting) is the display part. KMS models the display pipeline as objects: **framebuffers** (memory holding pixels, backed by GEM buffer objects), **planes** (layers that scan out a framebuffer: primary, overlay, cursor, with format, scaling and position), **CRTCs** (the scan-out engines that blend planes and generate timing for one display mode), **encoders** (convert the pixel stream to a signal type: DSI, HDMI, eDP, LVDS) and **connectors** (the outputs with their modes and hot-plug status), plus **bridges** and **panels** for external chips and displays. User space commits a complete new state with the **atomic** API, which is validated (`atomic_check`) and applied at vblank (`atomic_commit`), so updates are all-or-nothing and tear-free.
+**Short answer:** The Direct Rendering Manager (DRM) is the Linux graphics and display subsystem; **KMS** (kernel mode setting) is the display part. KMS models the display pipeline as objects: **framebuffers** (memory holding pixels, backed by GEM buffer objects), **planes** (layers that scan out a framebuffer: primary, overlay, cursor, with format, scaling and position), **CRTCs** (the scan-out engines that blend planes and generate timing for one display mode), **encoders** (convert the pixel stream to a signal type: DSI, HDMI, eDP, LVDS) and **connectors** (the outputs with their modes and hot-plug status), plus **bridges** and **panels** for external chips and displays. User space commits a complete new state with the **atomic** API, which is validated (`atomic_check`) and committed by the driver. Normal synchronized page flips typically latch at vblank; asynchronous flips may tear, and modesets can temporarily blank the output.
 
 ```
 GEM buffers → framebuffers → planes ─┐
@@ -1360,7 +1362,7 @@ GEM buffers → framebuffers → planes ─┐
 1. User space (Wayland compositor, Android HWComposer via drm_hwcomposer, `modetest`, Weston) builds a property set: plane FB_ID, CRTC_X/Y/W/H, CRTC MODE_ID, ACTIVE, connector CRTC_ID.
 2. `DRM_IOCTL_MODE_ATOMIC` with `TEST_ONLY` can check a configuration without applying it.
 3. The driver's `atomic_check` callbacks validate bandwidth, formats, scaling limits and clocks.
-4. `atomic_commit` programs the hardware (usually through helpers: `drm_atomic_helper_commit_tail`), latches at the next vblank, and sends page-flip events with timestamps to user space.
+4. `atomic_commit` programs the hardware (usually through helpers: `drm_atomic_helper_commit_tail`), arranges hardware programming and completion. A synchronized page flip commonly latches at vblank; completion events are delivered according to the driver's hardware and commit semantics.
 
 **MIPI DSI panel driver essentials**
 
@@ -1449,3 +1451,50 @@ The `KDIR` tree must have been configured and built (`make modules_prepare` at l
 - **In-tree:** add a Kconfig entry and `obj-$(CONFIG_MYDRV) += mydrv.o` to the subsystem's Makefile; upstreaming the driver avoids constant rebuilding for API changes.
 
 **Common errors:** "Invalid module format" or "disagrees about version of symbol" (built against a different kernel), "Unknown symbol" (missing dependency, or using a GPL-only symbol without a GPL licence), and missing `modules_prepare` in the build tree.
+
+### What is the difference between dma_alloc_coherent and dma_map_single? {M}
+**Short answer:** Coherent allocation returns a CPU pointer and a DMA address for a consistent shared allocation. Streaming mapping temporarily transfers ownership of an existing suitable CPU buffer to a device.
+
+| API | Typical use |
+|---|---|
+| dma_alloc_coherent | Descriptor ring |
+| dma_map_single | One TX/RX buffer |
+| dma_sync_single_for_cpu | CPU accesses a still-mapped streaming buffer |
+| dma_sync_single_for_device | Return ownership to device |
+| dma_unmap_single | End streaming mapping |
+
+**Example:** Ethernet TX maps a packet, programs the DMA address, waits for completion, then unmaps it. A descriptor ring may remain coherently allocated for the lifetime of the interface.
+
+```text
+CPU fills TX buffer -> dma_map_single -> Device owns buffer
+CPU may reuse buffer <- dma_unmap_single <- Completion
+```
+
+**Interview takeaway:** Coherency is not the same as ordering. Even a coherent descriptor ring may require dma_wmb() before publishing ownership. Check mapping errors and match the mapping direction and size. [Linux DMA API guide](https://docs.kernel.org/core-api/dma-api-howto.html).
+
+### How do you debug a display underflow or a black screen on Linux DRM/KMS? {H}
+**Short answer:** Separate panel power and link failures from scanout and bandwidth failures. Verify the atomic state, clocks, timing and buffer readiness before changing hardware settings.
+
+**1. Check connector and modes:** Use modetest and inspect the connector status and advertised modes.
+
+**2. Check pipeline:** Verify framebuffer, plane, CRTC, encoder/bridge and panel enable state. Check regulators, reset, link initialization and backlight where applicable.
+
+```text
+Framebuffer -> Plane -> CRTC -> Encoder / bridge -> Panel
+                ^         ^
+             format    bandwidth / timing
+```
+
+**3. Check interrupts and fences:** Missing vblank, unsignaled render fences or FIFO underrun counters can narrow the failure.
+
+**4. Reproduce:** Try a known supported mode and simple test framebuffer using modetest on a test system where taking display ownership is safe.
+
+```sh
+modetest -M msm -c -p
+cat /sys/kernel/debug/dri/0/state
+dmesg | grep -Ei 'drm|dsi|underflow|underrun'
+```
+
+Driver name, debugfs access and card index vary by platform.
+
+**Interview takeaway:** Black screen is a symptom, not a diagnosis; follow the pixel data path and control/power path separately.

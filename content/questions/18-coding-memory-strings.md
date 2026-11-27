@@ -211,7 +211,7 @@ void *my_memmove(void *dst, const void *src, size_t n)
     uint8_t *d = dst;
     const uint8_t *s = src;
     if (d == s || n == 0) return dst;
-    if ((uintptr_t)d < (uintptr_t)s || (uintptr_t)d >= (uintptr_t)s + n) {
+    if ((uintptr_t)d < (uintptr_t)s || (uintptr_t)d - (uintptr_t)s >= n) {
         while (n--) *d++ = *s++;          /* no harmful overlap: copy forward */
     } else {
         d += n; s += n;                   /* dst overlaps the tail of src: copy backward */
@@ -221,7 +221,7 @@ void *my_memmove(void *dst, const void *src, size_t n)
 }
 ```
 
-**Points:** copy backwards when the destination starts inside the source range, so source bytes are read before they are overwritten. Comparing via `uintptr_t` avoids the technically unspecified comparison of unrelated pointers.
+**Points:** copy backwards when the destination starts inside the source range, so source bytes are read before they are overwritten. Relational comparison of unrelated C object pointers is generally undefined. The uintptr_t approach assumes a flat, monotonically addressed implementation (typical embedded targets); integer conversions are implementation-defined. The subtraction avoids wrapping s + n.
 
 **Why direction matters (example: shift right by 2)**
 
@@ -242,7 +242,7 @@ Shifting **left** (`memmove(buf, buf + 2, 5)`) is safe forwards, because each by
 **Points interviewers check**
 
 - `n == 0` and `d == s` handled (nothing to do).
-- The alternative "copy to a temporary buffer" is wrong for embedded use: it needs O(n) extra memory or a heap.
+- A temporary buffer is semantically valid but often undesirable in embedded systems because it needs O(n) additional space.
 - Typical uses: removing an element from an array, inserting into a buffer, compacting a ring buffer, shifting a received frame.
 
 **Complexity:** O(n) time, O(1) extra space. A word-sized optimisation works in both directions just like `memcpy`.
