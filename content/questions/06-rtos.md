@@ -279,32 +279,41 @@ FreeRTOS mutexes implement a simplified priority-inheritance mechanism, not a ge
 **Interview takeaway:** Neither protocol removes the critical-section execution time. Choose a supported protocol and include blocking in schedulability analysis.
 
 ### What is a deadlock and how do you prevent it? {M}
-**Short answer:** A deadlock occurs when two or more tasks each wait for a resource held by another, so none can proceed. It needs all four **Coffman conditions**: mutual exclusion, hold-and-wait, no pre-emption of resources, and circular wait. Prevent it by breaking at least one condition, most practically by always taking locks in the same global order.
+Deadlock occurs when tasks wait indefinitely for resources that cannot become available because of their dependencies.
 
-**Classic example**
+#### 1. Example
 
-```c
-/* Task A */                     /* Task B */
-take(mutex_spi);                 take(mutex_flash);
-take(mutex_flash);   /* waits */ take(mutex_spi);    /* waits: deadlock */
+```text
+Task A owns lock X, waits for Y
+Task B owns lock Y, waits for X
+A --> Y --> B --> X --> A
 ```
 
-**Prevention strategies**
+Neither can proceed to release its held lock.
 
-| Strategy | Breaks | Practice |
-|---|---|---|
-| Global lock ordering | circular wait | document an order (e.g. always SPI before flash); lockdep in Linux checks it at run time |
-| Take all locks at once, or none | hold and wait | `try` each lock; on failure release everything and retry later |
-| Timeouts on `take` | indefinite waiting | detect and recover (log, release, retry); not a full fix |
-| Single owner / message passing | mutual exclusion on shared state | one task owns the SPI bus; others send requests via a queue |
-| Priority ceiling protocol | circular wait (uniprocessor) | in OSEK/AUTOSAR systems |
-| Avoid nested locks | most cases | keep critical sections small and flat |
+#### 2. Four classical necessary conditions
 
-**Detection:** watchdogs (tasks stop checking in), tracing tools showing tasks blocked forever on mutexes, FreeRTOS/Zephyr thread analyzers, and in the debugger, the RTOS-aware view listing each task's blocking object and each mutex's owner.
+Mutual exclusion, hold-and-wait, no forced preemption of resources, and circular wait. Removing a necessary condition prevents that class of deadlock.
 
-**Related problems:** the **dining philosophers** (five philosophers, five forks, each needs two) is the textbook deadlock: fix it by ordering resources (always pick the lower-numbered fork first) or limiting how many can try at once.
+#### 3. Prevention using lock ordering
 
-**Self-deadlock:** a task taking a non-recursive mutex it already holds, or an ISR waiting on something a task must release. Recursive mutexes fix the first (but often hide a design problem).
+```c
+mutex_lock(&lock_x);
+mutex_lock(&lock_y);
+
+// Access both protected resources.
+
+mutex_unlock(&lock_y);
+mutex_unlock(&lock_x);
+```
+
+Every task needing both locks must acquire X before Y. Handle acquisition errors and release successfully acquired locks on every error path.
+
+#### 4. Other techniques
+
+Avoid nested locks when possible, do not hold locks across unrelated blocking operations, use a single owner task for a peripheral, and use timeout/recovery mechanisms with well-defined cleanup. A timeout can detect or break some waits but does not automatically restore consistency.
+
+**Interview takeaway:** Draw the resource dependency graph and eliminate cycles through a consistent locking design.
 
 ### What is a livelock and what is starvation? {M}
 **Short answer:** In a **livelock**, tasks keep running and changing state but make no progress, for example two tasks that detect a conflict, both back off and retry at the same moment forever. **Starvation** means a task never gets the CPU or a resource because others always win; in a fixed-priority RTOS, a high-priority task that never blocks starves every lower-priority task, including the idle task.
