@@ -906,39 +906,55 @@ Read hardware register values using their required accessors before comparing th
 **Interview takeaway:** XOR highlights differences; masking selects the relevant positions. A zero masked result means all selected bits match.
 
 ### How do you detect if a value has a zero byte? {H}
-**Short answer:** `((v - 0x01010101) & ~v & 0x80808080) != 0` tests all four bytes of a 32-bit word at once. It is the trick behind fast word-at-a-time `strlen` and `memchr`.
+A well-known unsigned bit trick detects whether a 32-bit value contains at least one byte equal to zero without examining each byte separately.
+
+#### 1. C implementation
 
 ```c
-#include <stdint.h>
-#define HAS_ZERO(v)  (((v) - 0x01010101u) & ~(v) & 0x80808080u)
+bool has_zero_byte(uint32_t x)
+{
+    return ((x - UINT32_C(0x01010101)) &
+            ~x & UINT32_C(0x80808080)) != 0;
+}
 ```
 
-**How it works, byte by byte**
+The constants select the low and high bit of each eight-bit group.
 
-1. `v - 0x01010101` subtracts 1 from every byte. A byte that was `0x00` becomes `0xFF` (and borrows from the next byte up), so its high bit becomes 1.
-2. Bytes that were `0x81`–`0xFF` also have the high bit set after subtracting. `& ~v` removes those, because their original high bit was already 1.
-3. `& 0x80808080` keeps only the high bit of each byte.
+#### 2. How the expression works
 
-If anything is left, at least one byte was zero.
+For an isolated byte, subtracting one from zero produces 0xFF. The high bit is set. The complement of the original zero byte also has its high bit set.
 
-**Example**
+For nonzero values below 0x80, subtracting one does not set the high bit unless a borrow propagates from a lower byte. For original bytes with their high bit set, ~x clears that high bit.
 
+Combining the subtraction, complement and high-bit mask detects the presence of a zero byte. Cross-byte borrows can mark additional lanes, so do not interpret the result as an exact per-byte zero bitmap.
+
+#### 3. Example
+
+```text
+x = 0x12003456
+Bytes: 12 00 34 56
+Result: true
 ```
-v               = 0x61 62 00 63
-v - 0x01010101  = 0x60 60 FF 62   (the 00 byte became FF and borrowed from 0x62)
-~v              = 0x9E 9D FF 9C
-(v-..) & ~v     = 0x00 00 FF 00
-& 0x80808080    = 0x00 00 80 00   -> non-zero, a zero byte exists
+
+A simpler reference version:
+
+```c
+bool has_zero_byte_ref(uint32_t x)
+{
+    for (unsigned i = 0; i < 4; i++) {
+        if ((x & 0xFFU) == 0)
+            return true;
+        x >>= 8;
+    }
+    return false;
+}
 ```
 
-The borrow can corrupt bytes **above** the zero byte, which may produce a false high bit there. That is fine for "is there a zero?" but you must find the exact byte with a byte-by-byte check, or by using `__builtin_ctz` on a little-endian machine (lowest set marker = first zero byte in memory order).
+#### 4. Application
 
-**Find a specific byte value `c`:** XOR with a repeated pattern first: `HAS_ZERO(v ^ (0x01010101u * c))`.
+Optimized string and memory routines may check several bytes at a time. Never read outside a valid object merely to apply this optimization; use appropriate alignment and safe loading.
 
-**Practical notes**
-
-- Word-at-a-time reads must be aligned, or you can read past the end of a buffer into an unmapped page. Library implementations align the pointer first.
-- glibc and newlib `strlen`/`memchr` use this idea; Arm's optimized routines use NEON or `UADD8`/`SEL` instead.
+**Interview takeaway:** The expression detects whether any zero byte exists, not necessarily which bytes are zero. Use unsigned arithmetic and width-appropriate constants.
 
 ### What is a bit mask and how is GENMASK built? {M}
 **Short answer:** A mask is a constant whose 1 bits select the bits you want to read or change. `GENMASK(h, l)` builds a contiguous run of ones from bit `l` to bit `h` (inclusive) by shifting all-ones, which avoids the undefined `1u << 32`.
