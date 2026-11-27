@@ -867,34 +867,43 @@ This uses O(32n) time, which is O(n) for fixed-width integers, and O(1) extra st
 **Interview takeaway:** XOR cancels pairs, not triples. Use bit counts modulo the repetition count when the occurrence pattern changes.
 
 ### How do you check whether bit n is the same in two registers? {E}
-**Short answer:** XOR the two values; a 1 marks every bit that differs. Bit `n` is the same in both when `((a ^ b) >> n) & 1u` is 0.
+XOR identifies bits that differ between two values. To compare a selected bit, XOR the register snapshots and test that bit.
+
+#### 1. C implementation
 
 ```c
-#include <stdbool.h>
-#include <stdint.h>
-
 bool same_bit(uint32_t a, uint32_t b, unsigned n)
 {
-    return (((a ^ b) >> n) & 1u) == 0;
+    if (n >= 32)
+        return false; // Invalid position
+
+    return ((a ^ b) & (UINT32_C(1) << n)) == 0;
 }
 ```
 
-**Example:** `a = 0b1010`, `b = 0b1001`, `a ^ b = 0b0011`. Bits 0 and 1 differ; bits 2 and 3 are the same.
+#### 2. Worked example
 
-**Practical uses of "a ^ b"**
+```text
+a       = 00101100
+b       = 00100100
+a XOR b = 00001000
+```
 
-- **Change detection:** read the GPIO input register, XOR it with the previous reading, and the result shows which pins changed. `changed & new_state` gives rising edges and `changed & ~new_state` gives falling edges.
-  ```c
-  uint32_t now = GPIOA->IDR;
-  uint32_t changed = now ^ last;
-  uint32_t rising  = changed & now;
-  uint32_t falling = changed & ~now;
-  last = now;
-  ```
-- **Comparing a register with an expected value under a mask:** `((reg ^ expected) & mask) == 0` checks only the bits you care about.
-- **Hamming distance:** `__builtin_popcount(a ^ b)` counts differing bits, used in error-correction and checksums.
+Bit 3 differs because its XOR result is one. Every other bit matches.
 
-**Follow-up:** "Check whether all bits in a mask are the same": `((a ^ b) & mask) == 0`.
+#### 3. Compare several bits together
+
+```c
+bool fields_match = ((a ^ b) & mask) == 0;
+```
+
+Only positions selected by mask are compared. This is useful for checking whether relevant configuration fields match an expected value.
+
+#### 4. MMIO caution
+
+Read hardware register values using their required accessors before comparing them. Two independent reads may not represent one simultaneous hardware snapshot; read-to-clear registers can also have side effects.
+
+**Interview takeaway:** XOR highlights differences; masking selects the relevant positions. A zero masked result means all selected bits match.
 
 ### How do you detect if a value has a zero byte? {H}
 **Short answer:** `((v - 0x01010101) & ~v & 0x80808080) != 0` tests all four bytes of a 32-bit word at once. It is the trick behind fast word-at-a-time `strlen` and `memchr`.
