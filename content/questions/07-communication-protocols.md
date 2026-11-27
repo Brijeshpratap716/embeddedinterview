@@ -9,26 +9,36 @@ desc: UART, RS-232/RS-485, SPI, I2C, I3C, I2S, CAN, CAN FD, LIN, USB, Modbus, Et
 You will almost certainly be asked to compare UART, SPI and I2C, then pushed on one of them in detail. Automotive roles add CAN and LIN; Linux roles add USB and Ethernet; IoT roles add MQTT and wireless. Each answer gives the short version first, then the details and the follow-ups interviewers ask.
 
 ### Compare UART, SPI and I2C. {E}
-**Short answer:** **UART** is asynchronous, point-to-point, two signal wires (TX, RX), no clock: both sides agree on a baud rate. **SPI** is synchronous, full duplex, a controller drives the clock, four wires plus one chip-select per device, very fast and simple. **I2C** is synchronous, half duplex, two open-drain wires shared by many devices with addresses and per-byte acknowledgements, slower but uses very few pins.
+UART, SPI and I2C are serial communication interfaces widely used to connect microcontrollers to sensors, displays, memory and other devices.
 
-| | UART | SPI | I2C |
+| Feature | UART | SPI | I2C |
 |---|---|---|---|
-| Wires | TX, RX (+ GND) | SCLK, MOSI, MISO, CS (one CS per device) | SDA, SCL (+ pull-ups) |
-| Clock | none (asynchronous, agreed baud) | controller drives SCLK | controller drives SCL (targets can stretch it) |
-| Duplex | full | full | half |
-| Topology | point to point | one controller, many peripherals | multi-controller, multi-target bus |
-| Addressing | none | chip select line | 7-bit (or 10-bit) address in the message |
-| Speed | typically ≤ 1–3 Mbps (some to 10+) | tens of MHz (50–100+ MHz with QSPI) | 100 kHz, 400 kHz, 1 MHz, 3.4 MHz |
-| Acknowledgement | none | none | ACK/NACK per byte |
-| Error detection | optional parity, framing | none (protocols add CRC) | ACK only (SMBus adds PEC) |
-| Distance | board level; long with RS-232/RS-485 | board level (cm) | board level (bus capacitance ≤ 400 pF) |
-| Typical devices | debug console, GPS, modems, BLE/Wi-Fi modules | flash, displays, ADCs, SD cards, IMUs | sensors, EEPROMs, PMICs, touch controllers, RTCs |
+| Clock | Asynchronous | Shared SCLK | Shared SCL |
+| Signals | TX, RX | SCLK, MOSI, MISO, CS | SDA, SCL |
+| Addressing | Not inherent | Chip-select signal | Device address |
+| Duplex | Usually full | Usually full in standard four-wire form | Shared bidirectional data |
+| Typical use | Console, serial modules | Flash, displays, fast ADC | Sensors, configuration |
 
-**One-line pros and cons**
+#### 1. Wiring example
 
-- UART: simplest and universal, but needs matching baud rates and connects only two devices.
-- SPI: fastest and simplest hardware, no addressing overhead, but many pins with multiple devices and no built-in acknowledgement.
-- I2C: two pins for many devices with built-in addressing and ACK, but slow, sensitive to bus capacitance, and a misbehaving device can hang the whole bus.
+```text
+UART: MCU TX --> device RX
+      MCU RX <-- device TX
+
+SPI:  MCU SCLK, MOSI, CS --> target
+      MCU MISO          <-- target
+
+I2C:  controller and targets share SDA and SCL
+      both lines have pull-ups
+```
+
+A common ground and compatible voltage levels are also required.
+
+#### 2. Practical selection
+
+Use UART for an asynchronous debug console, SPI for high-throughput flash or display transfers, and I2C when multiple addressed low-speed devices share two signal wires.
+
+**Interview takeaway:** UART needs matching serial settings, SPI needs matching mode and chip select, and I2C needs addressing, pull-ups and transaction acknowledgment. Actual throughput depends on clock rate and protocol overhead.
 
 ### How do you choose between UART, SPI and I2C for a project? {M}
 **Short answer:** Start from the peripheral (many devices only offer one interface), then weigh data rate, number of devices, pins available, distance, and robustness. Use **SPI** for high data rates (displays, flash, high-rate ADCs, IMUs at kHz rates), **I2C** for many slow devices on few pins (sensors, EEPROM, PMIC configuration), and **UART** for communication with another processor or module (GPS, modem, BLE module, debug console), or over long distances with RS-485.
