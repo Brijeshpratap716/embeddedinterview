@@ -517,15 +517,16 @@ Decode negotiated descriptor endianness, take a stable snapshot of fields instea
 ```c
 #include <stdint.h>
 #include <string.h>
+#include <stdatomic.h>
 
 #define PAGE_SHIFT 12
 #define GUEST_PAGES 4096u                          /* 16 MB guest */
-static uint64_t dirty[GUEST_PAGES / 64];
+static _Atomic uint64_t dirty[GUEST_PAGES / 64];
 
 static inline void mark_dirty(uint64_t gpa)
 {
     uint64_t pfn = gpa >> PAGE_SHIFT;
-    if (pfn < GUEST_PAGES) dirty[pfn / 64] |= 1ull << (pfn % 64);   /* atomic OR if called concurrently */
+    if (pfn < GUEST_PAGES) atomic_fetch_or_explicit(&dirty[pfn / 64], UINT64_C(1) << (pfn % 64), memory_order_relaxed);   /* atomic OR if called concurrently */
 }
 
 /* migration loop: send every dirty page once, then clear the bitmap for the next round */
@@ -533,8 +534,7 @@ unsigned sync_dirty(void (*send_page)(uint64_t pfn))
 {
     unsigned sent = 0;
     for (unsigned w = 0; w < GUEST_PAGES / 64; w++) {
-        uint64_t bits = dirty[w];
-        dirty[w] = 0;                                /* real code: atomic exchange */
+        uint64_t bits = atomic_exchange_explicit(&dirty[w], 0, memory_order_acq_rel);
         while (bits) {
             unsigned b = (unsigned)__builtin_ctzll(bits);
             send_page((uint64_t)w * 64 + b);
@@ -572,6 +572,27 @@ unsigned sync_dirty(void (*send_page)(uint64_t pfn))
 **Convergence problem:** if the guest dirties memory faster than the network can send it, migration never finishes → auto-converge (throttle the vCPUs), post-copy migration (start on the destination and fetch pages on demand), or compress/delta-encode pages.
 
 **Other uses of dirty tracking:** incremental snapshots/checkpoints, framebuffer updates in display emulation (only redraw changed regions), and fault-tolerant VM replication.
+
+#### Atomically consume a dirty-word snapshot
+
+```c
+static _Atomic uint64_t dirty_words[GUEST_PAGES / 64];
+
+void mark_page(unsigned pfn)
+{
+    if (pfn < GUEST_PAGES)
+        atomic_fetch_or_explicit(&dirty_words[pfn / 64],
+             UINT64_C(1) << (pfn % 64), memory_order_relaxed);
+}
+
+uint64_t take_word(unsigned w)
+{
+    return atomic_exchange_explicit(&dirty_words[w], 0,
+                                     memory_order_acq_rel);
+}
+```
+
+Separate read and clear operations can lose a bit concurrently set between them. Exchange establishes a snapshot boundary; subsequent marks remain for the next pass. Dirty logging must be coupled to guest writes using the VMM's tracking protocol: a bitmap alone cannot guarantee a coherent page image while the guest writes. Use KVM dirty logging and synchronization as appropriate, track cross-page writes and handle retransmission failure. Finish pre-copy migration with a coordinated final stop-and-copy phase and CPU/device state transfer.
 
 ### Detect a cycle in a directed graph. {M}
 **Short answer:** Run a depth-first search that colours each node: **white** (not visited), **grey** (on the current DFS path), **black** (finished). Reaching a grey node from the current node means the edge points back into the current path — a cycle. If every node finishes without that happening, the graph is acyclic. O(V + E) time.
