@@ -482,33 +482,36 @@ Select the filesystem and update strategy according to consistency requirements.
 **Interview takeaway:** Do not place a normal block filesystem directly on arbitrary raw NAND. Choose according to the storage abstraction, endurance, power-loss behavior and update strategy.
 
 ### How do A/B (dual-copy) OTA updates work? {M}
-**Short answer:** The device has two copies (slots) of the system. While running from slot A, the update client writes the new image into slot B, verifies it, and tells the bootloader to try B on the next boot. If B boots and the application confirms it is healthy, B becomes the active slot. If B fails to boot after a few attempts (detected by the bootloader's boot counter, often helped by a watchdog), the bootloader rolls back to A.
+A/B OTA (over-the-air) updates keep two bootable system slots so a new image can be installed without overwriting the currently working system.
 
-**Step by step**
+#### 1. Update flow
 
-1. Download the update (full image or delta) over HTTPS; verify its **signature**.
-2. Write it to the **inactive slot** (B) while the device keeps working on A.
-3. Verify what was written (hash).
-4. Set bootloader variables: `boot_slot=B`, `boot_count=0`, `upgrade_available=1`.
-5. Reboot. The bootloader increments `boot_count` and boots B.
-6. User space (after the application is up and passes self-tests) marks the slot good: `upgrade_available=0`.
-7. If the system reboots before that and `boot_count` exceeds the limit (e.g. 3), the bootloader switches back to A (**rollback**).
+```text
+Running slot A
+   -> download and authenticate update
+   -> write inactive slot B
+   -> verify B
+   -> mark B as trial boot
+   -> reboot into B
+   -> health checks pass: mark B successful
+   -> failure / exhausted attempts: roll back to A
+```
 
-**What makes it robust**
+The bootloader and update system cooperate through durable slot metadata and retry counters.
 
-- **Atomic:** the switch is a single variable change; a power cut during writing only affects the inactive slot.
-- **Automatic rollback:** a bad kernel, a missing library or a crashing application does not brick the device.
-- **Watchdog:** if the new system hangs instead of crashing, the hardware watchdog resets it so the boot counter can work.
+#### 2. Why safer?
 
-**Costs and variations**
+A power loss while writing the inactive slot need not destroy the active image. Rollback provides recovery if the new system cannot boot or pass health checks.
 
-- **Double storage** for the system partitions. Alternatives: a single system plus a small **recovery** partition (cheaper, but the device is offline during the update).
-- **Delta updates** (binary diffs, casync, zchunk) reduce download size, which matters for cellular devices.
-- Data, configuration and the bootloader itself are usually **not** A/B; bootloader updates need extra care.
+#### 3. Important details
 
-**Tools to name:** **RAUC**, **SWUpdate**, **Mender**, OSTree/Aktualizr (file-level, not block-level), and Android's `update_engine` (A/B "seamless updates").
+Authenticate update manifests and payloads, validate compatibility, atomically update boot metadata, and account for shared persistent data schema migrations. Anti-rollback security policies must be coordinated with legitimate recovery behavior.
 
-**Security:** sign updates, check versions to prevent **rollback attacks** (installing an old vulnerable image; anti-rollback counters in fuses or RPMB), and combine with secure boot so a modified slot cannot boot.
+#### 4. Health check
+
+Do not mark the new slot successful merely because the kernel started. Verify the services and device functions required by the product.
+
+**Interview takeaway:** A/B updates reduce downtime and failed-update risk, but only if slot selection, power-loss handling, verification and rollback are designed together.
 
 ### What is secure boot and a chain of trust? {H}
 **Short answer:** Secure boot means each boot stage cryptographically verifies the next stage before running it, starting from code that cannot be changed (the boot ROM) and a key that cannot be changed (a hash of the public key burned into one-time-programmable fuses). If any check fails, the boot stops. The chain of trust extends from the ROM through the bootloaders and kernel to the root filesystem.
