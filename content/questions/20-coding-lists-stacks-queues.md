@@ -1148,7 +1148,7 @@ typedef struct {
     int head, tail, used;        /* head = most recent, tail = least recent */
 } lru_t;
 
-void lru_init(lru_t *c) { memset(c->where, -1, sizeof c->where); c->head = c->tail = -1; c->used = 0; }
+void lru_init(lru_t *c) { for (int k = 0; k < MAX_KEY; ++k) c->where[k] = -1; c->head = c->tail = -1; c->used = 0; }
 
 static void unlink_e(lru_t *c, int i)
 {
@@ -1165,6 +1165,7 @@ static void push_front_e(lru_t *c, int i)
 
 bool lru_get(lru_t *c, int key, int *val)
 {
+    if (key < 0 || key >= MAX_KEY || !val) return false;
     int i = c->where[key];
     if (i < 0) return false;
     unlink_e(c, i); push_front_e(c, i);                    /* mark as most recently used */
@@ -1174,6 +1175,7 @@ bool lru_get(lru_t *c, int key, int *val)
 
 void lru_put(lru_t *c, int key, int val)
 {
+    if (key < 0 || key >= MAX_KEY) return;
     int i = c->where[key];
     if (i >= 0) { c->e[i].val = val; unlink_e(c, i); push_front_e(c, i); return; }
     if (c->used < CAPACITY) i = c->used++;
@@ -1207,3 +1209,18 @@ void lru_put(lru_t *c, int key, int val)
 **Where LRU is used:** CPU caches and TLBs (approximations), page replacement in operating systems (clock algorithm approximates LRU), DNS caches, flash translation layers (which logical block to keep mapped), and file system buffer caches.
 
 **Follow-ups:** thread safety (one lock around the whole cache, or sharding), LFU (least frequently used) as an alternative, and TTL-based expiry.
+
+#### LRU eviction worked example
+
+Capacity 3, front = most recently used:
+
+| Operation | MRU → LRU |
+|---|---|
+| put(1,10) | 1 |
+| put(2,20) | 2,1 |
+| put(3,30) | 3,2,1 |
+| get(1) | 1,3,2 |
+| put(4,40) | 4,1,3 |
+
+Key 2 is evicted, and its lookup-table entry must be cleared before its slot is reused. Updating an existing key does not allocate another slot. A general-purpose implementation combines a hash table and doubly linked list, yielding expected O(1) access; the fixed direct-index example gives bounded O(1) operations for its supported key domain. It is not thread-safe without serialization, because get modifies recency as well as reading the value.
+
