@@ -298,3 +298,37 @@ Expose version, health counters and recent failures through an authenticated dia
 
 **Interview takeaway:** Do not log secrets or personal data unnecessarily. Make collection opt-in where appropriate, bound overhead and preserve the exact build identity for symbolication.
 
+### What are top, ps, vmstat and iostat used for? {M}
+
+top shows live task usage; ps lists processes; vmstat reports memory and CPU activity; iostat reports device I/O statistics.
+
+
+### What are perf, ftrace and trace-cmd used for? {M}
+
+perf profiles performance events; ftrace traces kernel functions and events; trace-cmd records and reports tracing data.
+
+
+### What are dmesg, strace and ltrace used for? {M}
+
+dmesg reads kernel messages; strace traces system calls and signals; ltrace traces supported dynamic library calls.
+
+
+### How do you debug high CPU usage in Linux? {M}
+
+Identify the process or thread using top or ps, then use perf and stack traces to locate hot code.
+
+
+### How do you debug high memory usage in Linux? {M}
+
+Inspect free, /proc/meminfo, process smaps and slabtop to distinguish process memory, caches and kernel allocations.
+
+
+### How do you debug a Linux memory leak? {M}
+
+Track allocation growth over time; use sanitizers or Valgrind in userspace and kmemleak or allocation tracing in the kernel.
+
+
+### How do you debug a deadlock or race condition? {M}
+
+Inspect blocked stacks and lock ordering; use lockdep for kernel locking issues and KCSAN or ThreadSanitizer for supported race detection.
+
