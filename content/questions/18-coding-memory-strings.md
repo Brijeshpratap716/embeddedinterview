@@ -204,13 +204,13 @@ bool append(char *dst, size_t cap, const char *src)
 This version rejects insufficient capacity without modifying the destination. It assumes a valid terminated source and nonoverlapping buffers. Track the used length in a packet or logging buffer to avoid repeatedly scanning the existing contents.
 
 ### Implement your own memcpy(). {E}
-**Short answer:** Copy `n` bytes from `src` to `dst` and return `dst`. The simple version is a byte loop. A faster version first copies single bytes until the destination is word aligned, then copies whole 32-bit words (only when source and destination have the same alignment), then copies the remaining tail bytes. Overlapping regions are not allowed; that is what `memmove` is for.
+**Short answer (portable byte loop below; the word-copy example needs target-specific aliasing guarantees):** Copy `n` bytes from `src` to `dst` and return `dst`. The simple version is a byte loop. A faster version first copies single bytes until the destination is word aligned, then copies whole 32-bit words (only when source and destination have the same alignment), then copies the remaining tail bytes. Overlapping regions are not allowed; that is what `memmove` is for.
 
 ```c
 #include <stddef.h>
 #include <stdint.h>
 
-void *my_memcpy(void *restrict dst, const void *restrict src, size_t n)
+void *target_specific_word_copy(void *restrict dst, const void *restrict src, size_t n)
 {
     uint8_t *d = dst;
     const uint8_t *s = src;
@@ -250,6 +250,22 @@ void *my_memcpy(void *restrict dst, const void *restrict src, size_t n)
 - Real libraries unroll loops, use `LDM/STM` (8 registers at a time), or DMA for very large copies.
 
 **Complexity:** O(n) time, O(1) space; the word version does about n/4 iterations.
+
+#### Portable reference implementation
+
+```c
+void *copy_bytes(void *restrict dst,
+                 const void *restrict src, size_t n)
+{
+    unsigned char *d = dst;
+    const unsigned char *s = src;
+    for (size_t i = 0; i < n; ++i)
+        d[i] = s[i];
+    return dst;
+}
+```
+
+Unsigned char can access any object's representation. An ordinary uint32_t lvalue does not have that permission for arbitrary objects, even if aligned; library fast paths rely on compiler/target-specific aliasing guarantees or special implementations. This portable version is appropriate for interview code. DMA is a separate asynchronous transfer mechanism requiring suitable buffers, cache synchronization and completion.
 
 ### Implement memmove() with overlap handling. {E}
 **Short answer:** `memmove` must work even when the source and destination regions overlap. If the destination starts before the source (or the regions do not overlap), copy forwards; if the destination starts inside the source region, copy backwards from the end, so every source byte is read before it is overwritten.
