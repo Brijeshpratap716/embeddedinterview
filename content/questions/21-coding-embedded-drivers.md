@@ -870,6 +870,12 @@ void traffic_light_task(void)                     /* call often from the main lo
 
 **Event-driven form:** `next = transition[state][event]` handles both timeouts and inputs uniformly (see the next question).
 
+#### State and timing trace
+
+Starting at t=0 in RED, the example changes to RED_AMBER at about 20 s, GREEN at 22 s, AMBER at 42 s and RED again at 45 s, subject to polling latency. The table makes next state, output mask and duration explicit. On entry update the lamps once and retain the entry time. Use unsigned elapsed-time arithmetic across counter wrap.
+
+This is an educational one-signal sequence, not a safe road-intersection controller. Real traffic systems require interlocking conflicting movements, all-red clearance intervals, fault detection, safe outputs and compliance with the applicable engineering requirements.
+
 ### Implement a finite state machine for a device driver. {M}
 **Short answer:** Represent the driver as a per-device context with a current state, and convert everything that happens — API calls, interrupts, timeouts — into events. A transition function (a `switch` on the state, or a state × event table) decides, for each event, the action to perform and the next state. Events that are illegal in the current state are rejected, and errors move to a recovery state with limited retries.
 
