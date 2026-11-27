@@ -632,36 +632,44 @@ This also works with negative values. A compiler normally optimizes a parity tes
 **Interview takeaway:** Test bit zero for parity. Use unsigned operands for bit operations and do not confuse odd/even parity with the parity of the number of set bits.
 
 ### How do you find the absolute value without branching? {M}
-**Short answer:** Make a mask that is all ones for negative numbers and zero otherwise (`mask = x >> 31`), then compute `(x + mask) ^ mask`. It relies on an arithmetic right shift and fails for `INT32_MIN`.
+A branchless absolute-value algorithm can use an unsigned sign mask. Returning an unsigned magnitude avoids the signed overflow problem for INT_MIN.
+
+#### 1. Safe unsigned magnitude
 
 ```c
-#include <stdint.h>
-
-int32_t abs_branchless(int32_t x)
+unsigned int magnitude(int n)
 {
-    int32_t mask = x >> 31;        /* 0 if x >= 0, -1 (all ones) if x < 0 */
-    return (x + mask) ^ mask;
+    unsigned int u = (unsigned int)n;
+    unsigned int mask = 0U - (unsigned int)(n < 0);
+    return (u ^ mask) - mask;
 }
 ```
 
-**Walk-through for x = -5**
+For nonnegative n, mask is zero. For negative n, mask is UINT_MAX, so the expression computes the unsigned modular negation of u.
 
-- `mask = -1` (0xFFFFFFFF)
-- `x + mask = -6` (0xFFFFFFFA)
-- `-6 ^ -1 = ~(-6) = 5`
+#### 2. Example using eight-bit illustrations
 
-For `x = 5`, the mask is 0 and `(5 + 0) ^ 0 = 5`.
+```text
+n = -5
+u    = 11111011
+mask = 11111111
+XOR  = 00000100
+subtract mask modulo 256 = 00000101 (5)
+```
 
-**Why it works:** for negative x, `(x - 1)` inverted is `-(x - 1) - 1 = -x`. Two's complement negation is "invert and add one"; this does "subtract one and invert", which is the same thing.
+Actual unsigned int width is target-dependent.
 
-**Limitations**
+#### 3. INT_MIN corner case
 
-1. `x >> 31` on a negative signed value is implementation-defined (arithmetic on GCC/Clang/Arm, but not guaranteed by the standard).
-2. `abs(INT32_MIN)` cannot be represented; the result is `INT32_MIN` again, and with the plain `-x` form it is undefined behaviour.
+On a typical 32-bit two's-complement machine, INT_MIN is -2147483648, whose magnitude 2147483648 cannot fit in int but fits in unsigned int.
 
-**Why branchless was used:** on older CPUs a mispredicted branch was expensive, and in cryptographic code a branch on secret data leaks timing information.
+Calling abs(INT_MIN) is undefined when its magnitude cannot be represented by int. The unsigned approach represents that magnitude.
 
-**In practice:** write `x < 0 ? -x : x` or `abs(x)`. GCC and Clang already generate branchless code for it (on Arm, `CMP` plus a conditional negate or `CSNEG` on AArch64). Branchless tricks are worth knowing for interviews and constant-time code, not for everyday firmware.
+#### 4. Is it always branchless?
+
+The C source has no conditional branch statement, but the compiler decides which machine instructions to generate. A normal conditional expression can also compile to branchless instructions.
+
+**Interview takeaway:** Handle the minimum signed value explicitly. Prefer correct unsigned arithmetic over tricks relying on signed shifts or overflow.
 
 ### How do you round up to the next power of two? {M}
 **Short answer:** Subtract one, copy the highest set bit into every lower position with shifts and ORs, then add one. The smearing turns any value into `2ᵏ - 1`, and adding one gives `2ᵏ`.
