@@ -1637,3 +1637,107 @@ Test a known valid simple framebuffer/mode using the supported modesetting tools
 
 **Interview takeaway:** Debug black screens from buffer to panel. Underflow is primarily a data-delivery/timing issue, but identify the failing stage before changing clocks or bandwidth votes.
 
+### What is the Linux kernel? {M}
+
+The Linux kernel manages CPU scheduling, memory, devices, filesystems, networking and protected access to hardware through system calls.
+
+
+### What is kernel preemption? {M}
+
+Kernel preemption allows an eligible running kernel task to be interrupted by another task when preemption is enabled and the context permits it.
+
+
+### What is process context versus interrupt context? {M}
+
+Process context executes on behalf of a task and may sleep when permitted. Hard IRQ context handles interrupts and cannot sleep.
+
+
+### Why can't you sleep in interrupt context? {M}
+
+A hard IRQ handler has no schedulable task context of its own to block and resume; sleeping would violate atomic-context rules.
+
+
+### What is a softirq? {M}
+
+A softirq is deferred kernel work used by subsystems such as networking; handlers must not sleep.
+
+
+### What is a tasklet? {M}
+
+A tasklet is a legacy softirq-based deferred callback serialized against itself. New drivers should generally prefer modern alternatives.
+
+
+### What is a workqueue? {M}
+
+A workqueue schedules deferred callbacks in worker context; ordinary threaded workqueues allow sleeping.
+
+
+### What is deferred work in Linux? {M}
+
+Work that need not execute in the hard IRQ handler is postponed to mechanisms such as threaded IRQs, workqueues or softirqs.
+
+
+### What is RCU? {M}
+
+Read-Copy-Update permits low-overhead readers while writers publish updates and defer reclamation until a grace period ends.
+
+
+### Why can vmalloc() be slower than kmalloc()? {M}
+
+vmalloc establishes virtual mappings for potentially scattered physical pages, adding mapping and TLB overhead; actual access cost depends on workload.
+
+
+### What is scatter-gather DMA? {M}
+
+A device transfers multiple noncontiguous memory segments using a descriptor list or equivalent hardware support.
+
+
+### What is DMA-coherent memory? {M}
+
+Memory allocated with a coherent DMA API permits CPU and device visibility without explicit cache maintenance for each transfer, but still requires ordering and synchronization.
+
+
+### What is the difference between platform and PCI drivers? {M}
+
+Platform devices are usually described by firmware such as DT or ACPI; PCI devices are enumerated through PCI configuration space and matched by PCI IDs.
+
+
+### What are probe() and remove() in Linux drivers? {M}
+
+probe initializes a matched device and acquires resources; remove stops activity and releases resources when the driver unbinds.
+
+
+### What is file_operations? {M}
+
+A kernel structure of callbacks such as open, read, write, mmap and ioctl that implement file operations.
+
+
+### What is a hardware interrupt versus a software interrupt? {M}
+
+Hardware interrupts originate from devices or interrupt controllers; software-triggered exceptions or deferred softirqs are generated through software mechanisms.
+
+
+### What are MSI and MSI-X? {M}
+
+PCI devices signal interrupts through memory writes. MSI-X supports more independently configurable vectors than MSI.
+
+
+### What is a shared interrupt? {M}
+
+Multiple devices share an IRQ line; each handler checks whether its device caused the interrupt.
+
+
+### What is interrupt affinity? {M}
+
+It controls which CPUs may handle a particular interrupt, subject to controller and kernel constraints.
+
+
+### What is an interrupt storm? {M}
+
+A device generates excessive interrupts, consuming CPU time; investigate acknowledgement, hardware state and interrupt rate.
+
+
+### What is interrupt balancing? {M}
+
+Interrupts are distributed across CPUs to improve throughput or locality, for example through irqbalance or configured affinity.
+
