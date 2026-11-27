@@ -198,55 +198,23 @@ MAP_SHARED permits shared visibility and file-backed updates; MAP_PRIVATE uses p
 **Interview takeaway:** A mapping may allocate physical pages lazily. Device-driver mmap requires explicit mapping support and appropriate permissions/cache attributes. Never assume a virtual address is a physical address.
 
 ### What is the page cache, and how do you write a file safely so it survives a power loss? {M}
-**Short answer:** Linux keeps recently used file data in RAM in the **page cache**. `read()` is served from it when possible, and `write()` only copies data into it and marks the pages dirty; the kernel writes them to storage later (by default within about 30 seconds). To make data durable you must call `fsync()` (or `fdatasync()`). To replace a file atomically, write a temporary file, `fsync()` it, `rename()` it over the old one, and `fsync()` the directory.
+Linux caches file contents in RAM through the page cache. A successful buffered write can mean bytes reached RAM, not persistent storage.
 
-**Safe update pattern**
+#### Durable replacement pattern
+1. Create a temporary file in the same directory/filesystem.
+2. Write all bytes, handling partial writes and EINTR.
+3. fsync the temporary file and check errors.
+4. Close it and atomically rename it over the destination.
+5. fsync the parent directory to persist the name change.
 
-```c
-#include <fcntl.h>
-#include <stdio.h>
-#include <unistd.h>
-
-int save_config(const char *dir, const char *data, size_t len)
-{
-    char tmp[256], dst[256];
-    snprintf(tmp, sizeof tmp, "%s/config.tmp", dir);
-    snprintf(dst, sizeof dst, "%s/config", dir);
-
-    int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (fd < 0) return -1;
-    if (write(fd, data, len) != (ssize_t)len || fsync(fd) != 0) { close(fd); return -1; }
-    close(fd);
-
-    if (rename(tmp, dst) != 0) return -1;     /* atomic replace on POSIX file systems */
-
-    int dfd = open(dir, O_RDONLY | O_DIRECTORY);
-    if (dfd >= 0) { fsync(dfd); close(dfd); }  /* make the rename itself durable */
-    return 0;
-}
+```text
+write -> dirty page cache -> filesystem writeback -> storage
+fsync -> request required data/metadata durability
 ```
 
-After a power cut you see either the complete old file or the complete new one, never a half-written mix.
+Use fdatasync where its metadata guarantees suffice. fflush only flushes C-library buffers into the OS; close alone does not guarantee durability.
 
-**Why each step**
-
-- `write()` returning success only means the data is in the page cache.
-- `fsync(fd)` waits until the file's data and metadata are on the storage device (and asks the device to flush its own cache).
-- `rename()` is atomic: the name points either to the old inode or the new one.
-- `fsync(dir)` persists the directory entry change.
-
-**Buffered vs direct I/O**
-
-| | Buffered (default) | `O_DIRECT` |
-|---|---|---|
-| Path | through the page cache | straight between user buffer and device (DMA) |
-| Benefits | read caching, write combining, read-ahead | no double caching, predictable memory use |
-| Requirements | none | aligned buffers, offsets and sizes (typically 512 B or 4 KB) |
-| Used by | almost everything | databases with their own cache, some video recorders |
-
-**Useful knobs:** `vm.dirty_ratio`, `vm.dirty_background_ratio` and `vm.dirty_expire_centisecs` control how much dirty data may accumulate and how old it may get. `sync` flushes everything. `echo 3 > /proc/sys/vm/drop_caches` drops clean caches (for benchmarking only).
-
-**Embedded relevance:** devices get their power pulled. Configuration and calibration data must be written with this pattern (or stored in a format with checksums and two alternating copies), and logs should not be `fsync`'d on every line, because that wears out flash.
+**Interview takeaway:** Atomic rename and durable rename are distinct. Actual power-loss guarantees also depend on the filesystem, device firmware and whether storage honors flushes.
 
 ### What is the sequence of socket calls for a TCP server and client? {E}
 **Short answer:** **Server:** `socket()` → `bind()` (choose IP and port) → `listen()` → `accept()` (blocks until a client connects, returns a new socket for that connection) → `read()`/`write()` (or `recv`/`send`) → `close()`. **Client:** `socket()` → `connect()` (TCP three-way handshake) → `write()`/`read()` → `close()`.
