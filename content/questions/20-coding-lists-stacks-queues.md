@@ -318,6 +318,7 @@ Input 1→1→1→2: keep the first 1 and unlink its successor. The current poin
 /* reverses each block of k nodes; a final block shorter than k is left as is */
 node_t *reverse_k_group(node_t *head, int k)
 {
+    if (k <= 1) return head;
     node_t dummy = { 0, head }, *group_prev = &dummy;
     for (;;) {
         node_t *kth = group_prev;
@@ -360,6 +361,17 @@ node_t *reverse_k_group(node_t *head, int k)
 **Common mistakes:** reversing a final partial group (read the problem: some versions want it reversed too), losing `group_next` before the reversal, and forgetting to reconnect `group_prev->next`.
 
 **Related:** reverse nodes between positions m and n, swap nodes in pairs (k = 2), and rotate a list by k.
+
+#### Group boundaries
+
+```text
+prev -> A -> B -> C -> D -> E
+k=3:   C -> B -> A -> D -> E
+                  ^     ^
+              group tail remaining
+```
+
+Find the kth node before reversing; if absent, preserve the final partial group. Set prev to the node after the group, so the original first node automatically links to the remaining list when reversed. Require k>=1; k=1 is a no-op. The code must reject zero or negative k before attempting traversal.
 
 ### Find the intersection point of two linked lists. {M}
 **Short answer:** Walk two pointers, one per list; when a pointer reaches the end of its list, restart it at the head of the **other** list. Both pointers then travel the same total distance (length A + length B), so they arrive at the intersection node at the same moment — or both reach NULL together if the lists do not intersect. O(n + m) time, O(1) space.
