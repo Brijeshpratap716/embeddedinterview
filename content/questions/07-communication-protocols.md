@@ -86,20 +86,28 @@ Both endpoints must agree on baud rate, data length, parity and stop configurati
 **Interview takeaway:** The start edge synchronizes the receiver for each frame. Baud rate counts transmitted symbols, including framing overhead.
 
 ### How does a UART receiver sample bits, and how much baud-rate error is tolerated? {M}
-**Short answer:** The receiver detects the falling edge of the start bit, waits half a bit time to reach its middle (confirming it is still low), then samples each following bit near its centre, typically using 16× (or 8×) oversampling and a majority vote of three samples. Because it resynchronises on every start bit, clock error only accumulates over one frame; for 8N1, the total mismatch between transmitter and receiver must stay below roughly ±4–5%, so each side should be within about ±2%.
+A UART receiver detects the start-bit edge and samples the following bits using its own baud-rate clock. It often oversamples the input to locate bit centers and reject noise.
 
-**Why ~5%:** the last sample (the stop bit) is about 9.5 bit-times after the start edge. If it drifts by more than half a bit, it samples the wrong bit: 0.5 / 9.5 ≈ 5.3% total. Edge-detection uncertainty and noise reduce the practical margin to around 3–4.5%, so designers aim for ≤ 2% error per side.
+#### 1. Typical receive sequence
 
-**Where baud error comes from**
+1. Detect a falling edge from idle high.
+2. Validate the start bit near its center.
+3. Sample successive data bits near their centers.
+4. Check parity when enabled and verify the stop bit.
 
-- **Divider rounding:** e.g. 16 MHz / (16 × 115200) = 8.68 → divider 9 gives 111,111 baud, −3.5% error. Fractional baud generators or a "UART-friendly" crystal (14.7456 MHz, 18.432 MHz) fix this.
-- **Oscillator accuracy:** internal RC oscillators can be ±1–3% across temperature, which uses most of the budget; calibrate them or use a crystal for reliable high-baud links.
+A receiver using 16× oversampling has 16 sampling-clock cycles per nominal bit, but the precise sampling/voting algorithm depends on the UART.
 
-**Oversampling options:** 16× gives better noise immunity and timing tolerance; 8× allows higher baud rates from the same clock but tolerates less error.
+#### 2. Baud mismatch
 
-**Auto-baud detection:** some UARTs measure the length of the start bit (or of a known character like 0x55 or 0x7F) to set the baud rate automatically, used by MCU ROM bootloaders.
+Without a shared clock, transmitter and receiver timing errors accumulate across the frame. An idealized 8N1 receiver sampling the stop bit near 9.5 bit times has roughly half a bit of margin, giving an order-of-magnitude combined mismatch limit near 5% under ideal assumptions.
 
-**Interview example:** "We saw random corrupted bytes at 921600 baud only on hot units; the cause was the internal RC oscillator drifting; switching to the crystal (or lowering the baud rate) fixed it."
+Real hardware has start-detection error, oversampling uncertainty, noise and clock tolerance; use the datasheet's specified limit, commonly much tighter than the ideal calculation.
+
+#### 3. Example
+
+At 115200 baud, the nominal bit interval is approximately 8.68 microseconds. A logic analyzer can measure transmitted bit width and compare against the configured rate.
+
+**Interview takeaway:** UART resynchronizes at each start bit. Allowable baud error is a combined transmitter/receiver timing budget, not a universal fixed percentage.
 
 ### What are UART framing, parity and overrun errors? {M}
 **Short answer:** A **framing error** means the stop bit was sampled as 0 (baud mismatch, noise, or a break). A **parity error** means the parity bit does not match the data. An **overrun error** means a new byte arrived before software read the previous one, so data was lost. A **noise error** means the oversampled values within a bit disagreed.
