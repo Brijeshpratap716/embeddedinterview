@@ -535,49 +535,47 @@ After successful probe, register the appropriate interface such as input, IIO, h
 **Interview takeaway:** The controller driver operates the bus; the client driver understands the peripheral's register protocol and function.
 
 ### What is the device tree and why is it used? {M}
-**Short answer:** The device tree is a data structure that describes hardware that cannot be discovered at run time: CPUs, memory, peripherals, their addresses, interrupts, clocks, GPIOs, regulators and pin configuration. Source files (`.dts`/`.dtsi`) are compiled by `dtc` into a binary blob (`.dtb`) that the bootloader passes to the kernel. One kernel image can then support many boards, because board details live in data instead of C code.
+Device tree is a hierarchical hardware description supplied to the kernel, especially on embedded systems. It describes devices, addresses, interrupts and relationships without hardcoding every board's resources in drivers.
+
+#### 1. Example
 
 ```dts
-/ {
-    model = "Acme Board";
-    compatible = "acme,board", "st,stm32mp157";
-
-    memory@c0000000 { device_type = "memory"; reg = <0xc0000000 0x20000000>; };
-
-    leds {
-        compatible = "gpio-leds";
-        status_led: led-0 { gpios = <&gpioa 13 GPIO_ACTIVE_LOW>; linux,default-trigger = "heartbeat"; };
-    };
-};
-
-&i2c1 {
-    pinctrl-names = "default";
-    pinctrl-0 = <&i2c1_pins>;
-    clock-frequency = <400000>;
+&i2c0 {
     status = "okay";
 
-    temp@48 { compatible = "ti,tmp102"; reg = <0x48>; };
+    touch@38 {
+        compatible = "vendor,touch";
+        reg = <0x38>;
+        interrupt-parent = <&gpio1>;
+        interrupts = <5 IRQ_TYPE_EDGE_FALLING>;
+        reset-gpios = <&gpio1 7 GPIO_ACTIVE_LOW>;
+    };
 };
 ```
 
-**Key concepts**
+The actual property names and encodings must follow the device binding and parent controllers. The example uses standard GPIO/IRQ binding macros.
 
-| Concept | Meaning |
-|---|---|
-| `compatible` | most specific first, e.g. `"acme,board-v2", "acme,board"`; drivers match on it |
-| `reg` | address and size, interpreted with the parent's `#address-cells` / `#size-cells` |
-| `interrupts`, `interrupt-parent` | which interrupt controller line and trigger type |
-| phandles (`&label`) | references to other nodes: clocks, GPIO controllers, regulators, pinctrl states |
-| `status = "okay"/"disabled"` | enable/disable a node, commonly in board `.dts` files |
-| `.dtsi` includes | SoC description shared by many boards; the board file overrides nodes with `&label { ... }` |
+#### 2. Build and boot flow
 
-**Bindings:** `Documentation/devicetree/bindings/` contains YAML schemas that define which properties each `compatible` requires; `make dt_binding_check` and `make dtbs_check` validate them.
+```text
+DTS + included DTSI files
+         |
+        dtc
+         |
+        DTB --> bootloader supplies blob to Linux
+         |
+OF/device model creates applicable devices
+         |
+Driver match using compatible --> probe
+```
 
-**At run time:** `/sys/firmware/devicetree/base/` (or `/proc/device-tree`) shows the tree the kernel received; `dtc -I fs /sys/firmware/devicetree/base` decompiles it, which is very useful when debugging which properties actually reached the kernel.
+Device-tree source is compiled to a binary flattened device tree. Bindings define the required property format; schema checks help catch invalid descriptions.
 
-**In drivers:** `of_property_read_u32()`, `device_property_read_u32()` (works for DT and ACPI), `devm_gpiod_get()`, `devm_clk_get()`, `devm_regulator_get()`.
+#### 3. Driver access
 
-**ACPI** is the equivalent on x86 and ARM servers.
+Use platform resource APIs, of_property_read_* or more generic firmware-node APIs, GPIO descriptor interfaces and other subsystem helpers. Do not manually decode standard resources unnecessarily.
+
+**Interview takeaway:** Device tree describes hardware and board wiring, not arbitrary procedural driver logic. The driver implements behavior; bindings define their contract.
 
 ### What are device tree overlays? {M}
 **Short answer:** An overlay (`.dtbo`) is a device tree fragment applied on top of a base tree to add or modify nodes, usually by the bootloader (`fdt apply` in U-Boot, `dtoverlay=` in the Raspberry Pi firmware) before the kernel starts. Overlays are used for add-on boards (HATs, capes, mezzanines), optional peripherals and per-product variants without rebuilding the base DTB.
