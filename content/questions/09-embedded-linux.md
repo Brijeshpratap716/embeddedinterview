@@ -432,26 +432,30 @@ Use the appropriate kernel configuration and prepared source tree. LLVM-based bu
 **Interview takeaway:** The compiler runs on the host but emits target instructions and ABI-compatible objects. A correct CPU architecture alone does not guarantee library or OS compatibility.
 
 ### What is the difference between glibc, musl and uClibc-ng? {M}
-**Short answer:** All three are C standard libraries for Linux. **glibc** is the most complete and compatible but the largest. **musl** is small, clean and easy to link statically, with strict standards behaviour. **uClibc-ng** targets very small systems, including MMU-less (noMMU) Linux. The choice affects image size, compatibility with existing software, and licensing.
+glibc, musl and uClibc-ng are C library implementations used in Linux systems. They provide standard C APIs and operating-system interfaces, with different design and compatibility characteristics.
 
-| | glibc | musl | uClibc-ng |
-|---|---|---|---|
-| Size | large (~2 MB+ shared) | small (~1 MB, tiny static binaries) | small, very configurable |
-| Compatibility | reference; almost all software assumes it | high, but some glibc extensions missing or different | good for common software |
-| Static linking | possible but awkward (NSS, `dlopen`) | designed for it | supported |
-| noMMU support | no | limited | yes |
-| Locale/i18n | full | basic (UTF-8 only) | configurable |
-| License | LGPL-2.1 | MIT | LGPL-2.1 |
-| Used by | most distros, Yocto default | Alpine Linux, many Buildroot/OpenWrt images | old OpenWrt, very small devices |
+| Library | Common characteristics |
+|---|---|
+| glibc | Broad GNU/Linux compatibility and extensive functionality |
+| musl | Compact implementation, simple design and static-linking suitability |
+| uClibc-ng | Configurable lightweight library for embedded targets |
 
-**Practical points**
+#### 1. Why the choice matters
 
-- **Binary compatibility:** a program built against glibc will not run on a musl system (different dynamic loader and symbol versions), and vice versa. Pick one per image.
-- **Behaviour differences** seen in practice: DNS resolver details, smaller default thread stack size in musl (128 KB), `dlclose()` not unloading, some GNU-only functions missing.
-- **Licensing:** LGPL requires that users can relink your application with a modified library. With dynamic linking that is easy; with static linking against glibc you must provide object files. musl's MIT license avoids this, which is one reason for its use in products.
-- **Bare-metal is different:** Cortex-M firmware uses **newlib** or **newlib-nano** (or picolibc), not these Linux libraries.
+Dynamically linked programs need the matching runtime loader and libraries. An executable built against glibc cannot generally be moved unchanged to a musl-based rootfs merely because both use the same CPU architecture.
 
-**How to answer "which would you choose":** glibc for compatibility with third-party and vendor software (and when a vendor SDK requires it); musl for small, statically linked, security-focused or container images; uClibc-ng only for very constrained or noMMU targets.
+```sh
+readelf -l app
+readelf -d app
+```
+
+Inspect the interpreter and shared-library dependencies.
+
+#### 2. Selection
+
+Consider application compatibility, target architecture, memory footprint, locale/threading requirements, security support and licensing obligations. Static linking can simplify deployment but has its own size, update and licensing considerations.
+
+**Interview takeaway:** A C library is part of the userspace ABI. Select it with the toolchain and root filesystem, not independently of the application ecosystem.
 
 ### Which filesystems are used on embedded flash? {M}
 **Short answer:** It depends on the flash type. On **raw NAND/NOR** (an MTD device without its own controller) use **UBIFS** on top of **UBI** (or JFFS2 on small NOR), because the filesystem must handle wear levelling and bad blocks. On **managed flash** (eMMC, SD, UFS, SSD) the controller does that, so use **ext4** or **F2FS**. For a read-only root use **SquashFS** or **EROFS**.
