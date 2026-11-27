@@ -162,17 +162,18 @@ R = 10 kΩ and C = 100 nF produce a 1 ms time constant and cutoff of approximate
 **Interview takeaway:** Consider ADC input impedance and acquisition time when choosing the resistor; loading changes the ideal response.
 
 ### What is a DAC, and how can you generate an analog voltage with PWM? {E}
-**Short answer:** A DAC (digital-to-analog converter) produces an output voltage proportional to a digital code: `V_out = code / (2^N − 1) × V_ref`. Many MCUs have 12-bit DACs for waveform generation, audio, biasing and setpoints. Without a DAC, a **PWM output followed by a low-pass filter** gives an average voltage `V_out = duty × V_high`; resolution comes from the PWM timer's counts and the ripple from the filter.
+A DAC converts a digital value into an analog voltage or current. An MCU without a DAC can approximate an analog output using filtered PWM.
 
-**PWM-DAC numbers**
+```text
+PWM GPIO -> RC low-pass filter -> buffer/load
+```
 
-- Resolution: a timer clocked at 84 MHz with a period of 4096 counts gives 12-bit resolution at 84 MHz / 4096 ≈ **20.5 kHz** PWM frequency.
-- Filter: an RC filter with f_c ≈ 200 Hz attenuates the 20 kHz ripple by about 40 dB (100×); a two-stage filter gives more.
-- Trade-off: higher resolution means a lower PWM frequency (for a fixed timer clock), which needs more filtering and slows the response.
+For a 0–3.3 V ideal PWM signal, the average is 3.3 × duty cycle. At 25% duty, the average is 0.825 V.
 
-**Generating waveforms:** use a timer to trigger DAC updates and DMA to feed a sine table (e.g. 64 samples per period) for exact frequencies without CPU load.
+#### Trade-offs
+Higher PWM frequency and a lower filter cutoff reduce ripple, but the filter slows response. Timer resolution also limits available duty steps. A high-impedance load or buffer avoids changing the filter characteristics.
 
-**Other DAC concepts:** settling time, glitch energy at major code transitions, output buffer drive capability, and R-2R ladder or resistor-string architectures.
+**Interview takeaway:** Unfiltered PWM is a digital pulse train, not a true analog voltage. A dedicated DAC may offer lower ripple and better settling behavior.
 
 ### What is the difference between a crystal and an RC oscillator? {E}
 **Short answer:** A **quartz crystal** (or crystal oscillator module) gives an accurate and stable frequency, typically ±10–50 ppm, needed for UART at high baud rates, USB, CAN, Ethernet, radio and real-time clocks. An internal **RC oscillator** costs nothing, starts quickly and saves pins and board space, but its accuracy is typically ±1–3% over temperature and voltage (factory-trimmed parts can be much better at room temperature), which is too inaccurate for USB, CAN or Ethernet and risky for fast UARTs.
