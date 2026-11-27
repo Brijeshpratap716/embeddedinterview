@@ -994,6 +994,10 @@ Write `'\0'` at index 3 → `"abc"`.
 
 **Note:** the string must be writable; calling it on a string literal (`remove_spaces("a b")`) is undefined behaviour because literals may live in flash/read-only memory.
 
+#### In-place invariant
+
+At any iteration, the write index is no greater than the read index. Thus writing a retained character cannot overwrite unread input. For " a  b ", read moves over all six characters while write advances only twice; writing the final NUL produces "ab". If tabs/newlines should also be removed, use isspace((unsigned char)c) or explicitly define the desired whitespace bytes.
+
 ### Convert a string to uppercase without library functions. {E}
 **Short answer:** Loop over the string and, for each character between `'a'` and `'z'`, subtract `'a' - 'A'` (32) to get the upper-case letter; leave all other characters unchanged. In ASCII the same thing is clearing bit 5 (`c & ~0x20`), but only for letters.
 
