@@ -834,39 +834,37 @@ LED brightness, motor speed, power conversion and servo control. For power stage
 **Interview takeaway:** PWM frequency is controlled by the timer period; duty cycle by the compare threshold. Always calculate using the actual timer clock.
 
 ### What is input capture and how do you measure a frequency with it? {M}
-**Short answer:** In input capture mode, a timer copies (latches) its counter value into a capture register when a selected edge occurs on an input pin, and can raise an interrupt or DMA request. Capturing two consecutive rising edges gives the period in timer ticks: `period = c2 − c1` (computed with unsigned arithmetic so one counter wrap is handled automatically). Frequency = timer clock ÷ period.
+Input capture records a timer counter value when a selected external signal edge occurs. The difference between captures gives elapsed time without relying on ISR entry timing.
 
-```c
-static volatile uint16_t last;
-static volatile uint32_t period_ticks;
+#### 1. Frequency measurement
 
-void TIM3_IRQHandler(void)
-{
-    if (TIM3->SR & TIM_SR_CC1IF) {
-        uint16_t now = (uint16_t)TIM3->CCR1;        /* reading CCR1 clears CC1IF */
-        period_ticks = (uint16_t)(now - last);      /* 16-bit wrap-safe difference */
-        last = now;
-    }
-}
+Suppose the timer runs at 1 MHz, giving one count per microsecond. Two consecutive rising edges capture 1200 and 2200.
 
-/* f = timer_clk / period_ticks, e.g. 1 MHz / 2500 = 400 Hz */
+```text
+delta = 2200 - 1200 = 1000 counts
+period = 1000 / 1000000 = 1 ms
+frequency = 1000 Hz
 ```
 
-**Handling long periods:** if the period can exceed one counter cycle (65,536 ticks for a 16-bit timer), count overflows in the update interrupt and add `overflows × 65536`, being careful when an overflow and a capture happen close together. Or use a 32-bit timer, or a larger prescaler (less resolution).
+#### 2. C example for a free-running 16-bit timer
 
-**Measuring duty cycle (PWM input mode):** map one input to two capture channels, one capturing on rising and one on falling edges, with the timer reset on each rising edge (slave reset mode). Then CCR1 = period and CCR2 = high time.
+```c
+uint16_t delta = (uint16_t)(capture2 - capture1);
+if (delta != 0)
+    frequency = timer_hz / delta;
+```
 
-**Choosing a method by frequency**
+This works across one modulo-65536 wrap when the elapsed interval is less than a full counter period. A timer using a different reload value requires different wrap handling.
 
-| Signal | Best method | Why |
-|---|---|---|
-| Low frequency (Hz–kHz) | input capture (period measurement) | high resolution from many timer ticks per period |
-| High frequency (100 kHz–MHz) | counting edges in a fixed gate time (timer in external clock mode) | many edges per gate → good accuracy |
-| Very short pulses | capture with input filter disabled and a fast timer clock | resolution = 1 timer tick |
+#### 3. Measure pulse width
 
-**Accuracy:** ±1 tick quantisation error per measurement; average several periods for better precision. Input filters (digital filters on the capture input) reject glitches.
+Capture both rising and falling edges. Their difference gives high time; consecutive rising edges give period. Duty cycle is high time divided by period.
 
-**Uses:** reading encoder or hall-sensor speed, ultrasonic distance sensors (echo pulse width), RC receiver pulse widths, IR remote decoding, measuring a crystal's frequency against a reference.
+#### 4. Important limitations
+
+Account for counter overflow, capture overrun, timer resolution, input filtering and very low or high input frequencies. Average several periods when appropriate.
+
+**Interview takeaway:** Input capture timestamps the signal in hardware, reducing software latency error. Counter frequency, overflow handling and edge selection determine the measurement accuracy.
 
 ### How does an ADC work and what are its key parameters? {M}
 **Short answer:** Most MCU ADCs are **successive approximation (SAR)** converters: a sample-and-hold capacitor captures the input voltage, then an internal DAC and comparator perform a binary search, deciding one bit per step from the most significant bit down. Key parameters are resolution, sampling time, conversion rate, the reference voltage, and accuracy figures (offset, gain error, INL/DNL, ENOB).
