@@ -458,7 +458,9 @@ int parse_chain(const struct vring_desc *desc, uint16_t qsize, uint16_t head,
     uint16_t i = head;
     for (int hops = 0; ; hops++) {
         if (i >= qsize || hops >= qsize || n >= max_iov) return -1;   /* bad index, loop, too long */
-        const struct vring_desc *d = &desc[i];                        /* copy fields once in real code */
+        struct vring_desc snapshot = desc[i];  /* teaching example: stable, host-endian input assumed */
+        const struct vring_desc *d = &snapshot;
+        if (d->flags & ~(VRING_DESC_F_NEXT | VRING_DESC_F_WRITE)) return -1;
         uint8_t *p = gpa_to_hva_simple(d->addr, d->len);
         if (!p) return -1;                                            /* buffer outside guest RAM */
         iov[n].ptr = p;
@@ -502,6 +504,12 @@ The device reads the header, reads the disk sector into desc 1, writes the statu
 6. Use the correct memory barriers when reading `avail->idx` and before publishing `used->idx`.
 
 **Notifications:** the guest "kicks" the device with an MMIO/PIO write (or `ioeventfd`), the device interrupts the guest (or `irqfd`); event-index fields let each side suppress unnecessary notifications. Packed virtqueues (virtio 1.1) merge the three structures into one ring for better cache behaviour.
+
+#### Descriptor validation at the guest/host boundary
+
+A split-ring chain may contain a readable request header, readable payload and a writable completion/status buffer. Walk from the validated head, validate each index and address range, and cap total descriptors and bytes. Reject unknown flags and unsupported INDIRECT descriptors rather than treating an indirect table as ordinary data. For virtio devices requiring ordered readable/writable descriptors, enforce the expected direction sequence and validate device-specific header/status lengths.
+
+Decode negotiated descriptor endianness, take a stable snapshot of fields instead of repeatedly trusting guest-modifiable metadata, and retain valid mappings for the operation's lifetime. Use the negotiated IOMMU/DMA address translation when applicable; addresses are not always plain guest physical addresses. Handle completion ordering and used-ring publication through the virtio specification or established VMM helper APIs. A raw illustrative parser is not sufficient for exposing a production backend to an untrusted guest.
 
 ### Track dirty pages with a bitmap (for live migration). {M}
 **Short answer:** Keep one bit per guest page. Whenever the guest (or an emulated device doing DMA) writes to a page, set its bit. Live migration copies all memory once, then repeatedly reads-and-clears the bitmap and re-sends only the pages that were dirtied since the previous pass, until the remaining dirty set is small enough to send during a brief pause of the guest.
