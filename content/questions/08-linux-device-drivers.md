@@ -1523,38 +1523,43 @@ Kernel threads perform background processing, filesystem work, interrupt-thread 
 **Interview takeaway:** Both are schedulable tasks; the distinction is execution role and memory context. Kernel threads are not automatically immune to blocking or scheduling latency.
 
 ### How do you build an out-of-tree kernel module? {E}
-**Short answer:** Write a minimal Kbuild Makefile that sets `obj-m` and calls the kernel build system with `M=$(PWD)`. Build against the configured source or headers of the exact kernel the module will run on (`vermagic` must match). For an embedded target, point `KDIR` at the target kernel build tree and pass `ARCH` and `CROSS_COMPILE`.
+An out-of-tree kernel module is built outside the main kernel source tree using the target kernel's Kbuild infrastructure.
 
-```make
-obj-m += mydrv.o
-mydrv-y := main.o hw.o          # module built from several files
+#### 1. Example Makefile
 
-KDIR ?= /lib/modules/$(shell uname -r)/build
-
-all:
-	$(MAKE) -C $(KDIR) M=$(PWD) modules
-clean:
-	$(MAKE) -C $(KDIR) M=$(PWD) clean
-install:
-	$(MAKE) -C $(KDIR) M=$(PWD) modules_install
+```makefile
+obj-m += demo.o
 ```
 
-**Cross-compiling for an ARM64 board**
+With demo.c containing the module initialization and exit code, build for the running kernel:
 
 ```sh
-make KDIR=~/linux-build ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-
+make -C /lib/modules/$(uname -r)/build M="$PWD" modules
 ```
 
-The `KDIR` tree must have been configured and built (`make modules_prepare` at least) with the same configuration as the target kernel.
+This requires the matching prepared kernel build environment.
 
-**Integration options**
+#### 2. Cross-compile for ARM64
 
-- **Yocto:** a recipe inheriting `module` builds it with the image kernel automatically.
-- **Buildroot:** `kernel-module` package infrastructure.
-- **DKMS:** rebuilds out-of-tree modules automatically when distribution kernels update.
-- **In-tree:** add a Kconfig entry and `obj-$(CONFIG_MYDRV) += mydrv.o` to the subsystem's Makefile; upstreaming the driver avoids constant rebuilding for API changes.
+```sh
+make -C /path/to/kernel/build M="$PWD" \
+     ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules
+```
 
-**Common errors:** "Invalid module format" or "disagrees about version of symbol" (built against a different kernel), "Unknown symbol" (missing dependency, or using a GPL-only symbol without a GPL licence), and missing `modules_prepare` in the build tree.
+Use the exact target configuration, generated headers and symbol version information where required. The compiler/toolchain must match the target's build requirements.
+
+#### 3. Test and diagnose
+
+```sh
+modinfo demo.ko
+sudo insmod demo.ko
+dmesg
+sudo rmmod demo
+```
+
+Deploy to the matching target and follow module signing and loading policies. Clean with the corresponding Kbuild clean target.
+
+**Interview takeaway:** Build against the target kernel, not merely generic Linux headers. Internal kernel APIs and module compatibility can change across kernel versions.
 
 ### What is the difference between dma_alloc_coherent and dma_map_single? {M}
 **Short answer:** Coherent allocation returns a CPU pointer and a DMA address for a consistent shared allocation. Streaming mapping temporarily transfers ownership of an existing suitable CPU buffer to a device.
