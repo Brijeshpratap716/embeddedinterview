@@ -1207,3 +1207,10 @@ stack → net_send() → [free pool] → [TX queue] → hardware/DMA → TX-done
 **Priorities:** for real-time traffic (e.g. control messages over Ethernet), use several queues with a strict priority or weighted scheduling, which is what TSN-capable MACs and Linux `mqprio` provide.
 
 **Zero-copy option:** instead of copying into driver buffers, keep a pointer to the stack's buffer (lwIP `pbuf`, Linux `sk_buff`) and release it in the completion handler — fewer copies, but the buffer must stay valid until the DMA finishes.
+
+#### TX ownership and backpressure
+
+A queue entry remains occupied until hardware has completed transmission and no longer reads its buffer. Enqueue copies the packet into an available slot; kick submits the tail entry; completion retires that same entry and starts the next one. For a full queue, report backpressure rather than overwriting an in-flight frame.
+
+Handle a failed hardware submission: do not leave hw_busy set indefinitely, and define a retry/drop policy. Serialize queue indices and busy state between producer and completion ISR, including the transition that starts a new transfer. On shutdown stop DMA before releasing buffers. Real Linux network drivers integrate with netdev queue stop/wake and skb ownership rules; the example is a simplified firmware queue.
+
