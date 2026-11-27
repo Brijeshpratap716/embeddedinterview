@@ -702,25 +702,37 @@ GPIO access may sleep if the controller is behind a sleeping bus; use gpiod_set_
 **Interview takeaway:** These frameworks abstract resource ownership and board-specific wiring. A successful get operation does not necessarily power or enable the resource.
 
 ### What is deferred probing (-EPROBE_DEFER)? {M}
-**Short answer:** If a driver's `probe()` needs a resource from another driver that has not probed yet (a clock, regulator, GPIO controller, PHY, interrupt controller, I2C bus), the `get` function returns `-EPROBE_DEFER`. The driver returns that code, and the driver core puts the device on a deferred list and retries it whenever another driver binds successfully. This handles arbitrary probe ordering without hard-coded init sequences.
+Deferred probing occurs when a driver cannot initialize because a required supplier is not available yet. The driver returns -EPROBE_DEFER so the driver core can retry probing when appropriate.
 
-**Correct handling**
+#### 1. Example
 
 ```c
-d->vdd = devm_regulator_get(dev, "vdd");
-if (IS_ERR(d->vdd))
-    return dev_err_probe(dev, PTR_ERR(d->vdd), "failed to get vdd\n");
-/* dev_err_probe() prints nothing for -EPROBE_DEFER and records the reason */
+struct regulator *supply;
+
+supply = devm_regulator_get(dev, "vdd");
+if (IS_ERR(supply))
+    return dev_err_probe(dev, PTR_ERR(supply),
+                         "vdd supply unavailable\n");
 ```
 
-**Debugging a device that never probes**
+If the regulator provider has not been bound, the resource API may return -EPROBE_DEFER. Preserve that error rather than converting it to -ENODEV.
 
-- `cat /sys/kernel/debug/devices_deferred` lists deferred devices with the reason recorded by `dev_err_probe`.
-- Common causes: the provider driver is not enabled in the kernel config or is a module not yet loaded; a typo in the DT phandle or `-supply` name; the provider node has `status = "disabled"`.
-- **fw_devlink** (enabled by default) uses DT phandles to create device links, so consumers are not probed before suppliers at all, which reduces repeated deferrals and orders suspend/resume correctly.
-- `deferred_probe_timeout=` on the command line makes the kernel give up after a time so optional dependencies don't block forever.
+#### 2. Dependency flow
 
-**Do not:** busy-wait or sleep in `probe` hoping the resource appears, or treat `-EPROBE_DEFER` as a fatal error and print scary messages.
+```text
+Consumer probe --> supplier unavailable --> -EPROBE_DEFER
+Supplier driver becomes available
+                  |
+           driver core retries consumer
+```
+
+Modern driver-core supplier/device-link mechanisms can also influence when consumer probing is attempted.
+
+#### 3. Debugging repeated deferral
+
+Inspect kernel logs, device-tree phandles, enabled supplier drivers, power-domain/clock dependencies and, where available, the deferred-probe debugfs information. A missing or invalid provider can prevent successful binding indefinitely.
+
+**Interview takeaway:** Deferred probe is not a normal retry loop inside probe. Return the actual dependency error, clean up the failed attempt and let the driver core manage retries.
 
 ### What are top halves and bottom halves? {M}
 **Short answer:** Interrupt handling is split in two so that the hard IRQ handler stays short. The **top half** is the handler registered with `request_irq`: it runs in hard-interrupt context with its line masked, acknowledges the device, grabs urgent data (e.g. a status register or a received byte) and schedules the rest. The **bottom half** is deferred work that runs later with interrupts enabled: **softirqs**, **tasklets** (deprecated), **workqueues** and **threaded IRQs**.
