@@ -94,23 +94,31 @@ Arm's licensing model, broad silicon partner ecosystem, energy-efficient impleme
 **Interview takeaway:** RISC and CISC describe ISA design tendencies, not a universal performance ranking. A64, Thumb and x86 have different encoding and execution characteristics.
 
 ### What are the Cortex-M profiles and how do they differ? {E}
-**Short answer:** Arm's microcontroller cores range from the tiny, low-power Cortex-M0/M0+ (Armv6-M) through the mainstream Cortex-M3/M4 (Armv7-M, M4 adding DSP and an FPU) and the high-performance Cortex-M7 (caches, TCM, superscalar), to the Armv8-M cores Cortex-M23/M33 (TrustZone security) and Cortex-M55/M85 (Helium vector extension for DSP and machine learning).
+Cortex-M is Arm's microcontroller processor family. Different cores implement different M-profile architecture versions and trade performance, cost, security and deterministic control features.
 
-| Core | Architecture | Pipeline | Notable features | Typical use |
-|---|---|---|---|---|
-| M0 / M0+ | Armv6-M | 3 / 2 stages | smallest, Thumb subset, no hardware divide, no unaligned access, optional MPU (M0+) | sensors, simple control, battery devices |
-| M3 | Armv7-M | 3 | Thumb-2, hardware divide, bit-banding, optional MPU | general-purpose control |
-| M4 | Armv7E-M | 3 | M3 + DSP/SIMD instructions, optional single-precision FPU | motor control, audio, sensor fusion |
-| M7 | Armv7E-M | 6, dual-issue | I/D caches, TCM, optional double-precision FPU | high-performance control, graphics, audio |
-| M23 | Armv8-M Baseline | 2 | TrustZone, stack limit (secure), small | secure IoT endpoints |
-| M33 / M35P | Armv8-M Mainline | 3 | TrustZone, DSP, FPU, stack limit registers, M35P adds physical tamper resistance | secure IoT, wearables |
-| M52 / M55 / M85 | Armv8.1-M | 4–7 | Helium (MVE) vector instructions, optional caches/TCM, PACBTI (M85) | ML at the edge, DSP |
+#### 1. Representative cores
 
-**Common to all Cortex-M:** Thumb instruction set only, the NVIC, the same exception model, SysTick, a 4 GB memory map with standard regions, and C-friendly interrupt handling.
+| Core | Typical purpose |
+|---|---|
+| M0/M0+ | Small, low-power control |
+| M3 | General-purpose embedded control |
+| M4 | DSP-oriented control; optional FPU |
+| M7 | Higher performance, often cache and TCM |
+| M23 | Small Armv8-M devices with optional security features |
+| M33 | General Armv8-M control, optional DSP/FPU and TrustZone |
+| M55/M85 | Newer high-performance DSP/ML-oriented M-profile designs |
 
-**Related families:** **Cortex-R** (R5, R52, R82) for real-time safety systems (disk/SSD controllers, automotive ECUs, 5G modems) with TCM, ECC and lock-step options; **Cortex-A** for Linux/Android application processors.
+Exact MPU, FPU, cache, security and debug capabilities depend on the implemented core configuration and SoC.
 
-**Choosing:** the core is rarely the deciding factor alone; peripherals, memory, power modes, price, toolchain and vendor ecosystem usually decide which MCU you use.
+#### 2. Example selection
+
+A low-cost button controller may need only M0+. A motor-control design may benefit from M4 DSP instructions. A signal-processing or ML workload may need a more capable core and accelerator.
+
+#### 3. Common characteristics
+
+Cortex-M uses Thumb instruction encodings, an NVIC-based exception model, and hardware exception stacking. It commonly runs bare-metal firmware or an RTOS.
+
+**Interview takeaway:** Cortex-M is a processor family, not a single set of optional peripherals. Confirm capabilities from the actual core and device reference manuals.
 
 ### What are the differences between Cortex-M, Cortex-R and Cortex-A, and why can't a Cortex-M0+ run Linux? {M}
 **Short answer:** **Cortex-A** cores are application processors with an MMU, caches and high clock speeds, designed to run Linux or Android. **Cortex-R** cores target real-time processing, often with an MPU and tightly coupled memory; some models also support an MMU. **Cortex-M** cores are microcontroller cores optimised for low cost, low power and simple, fast interrupt handling. A Cortex-M0+ is not a supported normal Linux target: it lacks the required architectural features and typical systems have far too little memory. Linux also has no-MMU configurations for suitable supported processors, so absence of an MMU alone does not rule out Linux on every CPU.
