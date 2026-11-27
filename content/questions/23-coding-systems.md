@@ -718,3 +718,279 @@ Edges: clock→I2C, regulator→display, I2C→panel and panel→display. Initia
 
 If fewer than n devices are removed from the queue, the remaining subgraph contains a cycle or unresolved dependency. In an actual initialization system, successful topological ordering does not guarantee successful hardware initialization: if a supplier fails, skip or defer its consumers and unwind completed resources according to dependency order. Linux uses device-model supplier links and deferred probe rather than a universal manually constructed list.
 
+### Implement a simple shadow page table mapping in C. {H}
+**Short answer:** A shadow page table maps guest virtual pages directly to host physical pages. The hypervisor derives the mapping from guest page tables and its own guest-physical-to-host-physical mappings. This small software model uses 4 KB pages and a fixed table.
+
+```c
+#include <stdint.h>
+#include <stdbool.h>
+#define N 64
+#define MASK UINT64_C(0xfff)
+
+struct shadow {
+    bool valid, writable;
+    uint64_t gva, hpa;
+};
+static struct shadow table[N];
+
+bool shadow_map(uint64_t gva, uint64_t hpa, bool write)
+{
+    if ((gva | hpa) & MASK) return false;
+    struct shadow *free_slot = 0;
+    for (int i = 0; i < N; i++) {
+        if (table[i].valid && table[i].gva == gva) {
+            table[i] = (struct shadow){true, write, gva, hpa};
+            return true;
+        }
+        if (!table[i].valid && !free_slot) free_slot = &table[i];
+    }
+    if (!free_slot) return false;
+    *free_slot = (struct shadow){true, write, gva, hpa};
+    return true;
+}
+
+bool shadow_lookup(uint64_t va, bool write, uint64_t *pa)
+{
+    for (int i = 0; i < N; i++)
+        if (table[i].valid && table[i].gva == (va & ~MASK)) {
+            if (write && !table[i].writable) return false;
+            *pa = table[i].hpa | (va & MASK);
+            return true;
+        }
+    return false;
+}
+```
+
+**Example:** GVA 0x4123 maps through page 0x4000 to host frame 0x9000, producing HPA 0x9123. Real shadow tables must combine permissions, track guest page-table changes and invalidate stale TLB entries. Hardware stage-2 translation (ARM) or EPT (Intel) normally avoids this software shadowing. Assume serialized access and one guest address space.
+
+### Implement a bitmap-based physical page allocator. {M}
+**Short answer:** Each bitmap bit represents one physical page. Find a clear bit, set it and return the corresponding physical address. Freeing clears the bit.
+
+```c
+#include <stdint.h>
+#include <stdbool.h>
+#define BASE UINT64_C(0x80000000)
+#define PAGE UINT64_C(4096)
+static uint64_t used;
+
+bool alloc_page(uint64_t *pa)
+{
+    for (unsigned i = 0; i < 64; i++) {
+        uint64_t bit = UINT64_C(1) << i;
+        if (!(used & bit)) {
+            used |= bit;
+            *pa = BASE + i * PAGE;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool free_page(uint64_t pa)
+{
+    if (pa < BASE || pa - BASE >= 64 * PAGE ||
+        (pa - BASE) % PAGE) return false;
+    uint64_t bit = UINT64_C(1) << ((pa - BASE) / PAGE);
+    if (!(used & bit)) return false;
+    used &= ~bit;
+    return true;
+}
+```
+
+This manages 64 pages (256 KiB) with only 8 bytes of allocation metadata. Reserve firmware/MMIO pages before use and protect the bitmap if multiple CPUs allocate concurrently. Real kernels also track ownership and reference counts.
+
+### Implement a virtual IRQ injection queue. {M}
+**Short answer:** A virtual device can enqueue an interrupt for a vCPU. The hypervisor dequeues pending events and presents them to its virtual interrupt controller.
+
+```c
+#include <stdbool.h>
+#define N 32
+struct irq_queue {
+    unsigned irq[N], head, tail, count;
+};
+
+bool inject(struct irq_queue *q, unsigned irq)
+{
+    if (q->count == N) return false;
+    q->irq[q->head] = irq;
+    q->head = (q->head + 1) % N;
+    q->count++;
+    return true;
+}
+
+bool next_irq(struct irq_queue *q, unsigned *irq)
+{
+    if (!q->count) return false;
+    *irq = q->irq[q->tail];
+    q->tail = (q->tail + 1) % N;
+    q->count--;
+    return true;
+}
+```
+
+Initialize the queue to zero. Both operations are O(1). This is a FIFO event model, not a complete vGIC: real injection handles interrupt IDs, priority, masking, level/edge state, EOI and waking the target vCPU. Serialize queue access with a lock when shared across threads; do not silently lose an IRQ on overflow.
+
+### Implement PCI configuration space read and write callbacks. {M}
+**Short answer:** A PCI function exposes configuration registers at byte offsets. Validate access size and alignment, then read/write little-endian bytes. A real device defines writable masks for each register.
+
+```c
+#include <stdint.h>
+#include <stdbool.h>
+static uint8_t cfg[256] = {0x34, 0x12, 0x78, 0x56};
+static uint8_t writable[256] = {[4] = 7}; /* demo command bits */
+
+static bool valid(unsigned off, unsigned size)
+{
+    return (size == 1 || size == 2 || size == 4) &&
+           off <= sizeof cfg - size && off % size == 0;
+}
+
+bool cfg_read(unsigned off, unsigned size, uint32_t *out)
+{
+    if (!valid(off, size)) return false;
+    *out = 0;
+    for (unsigned i = 0; i < size; i++)
+        *out |= (uint32_t)cfg[off+i] << (8*i);
+    return true;
+}
+
+bool cfg_write(unsigned off, unsigned size, uint32_t value)
+{
+    if (!valid(off, size)) return false;
+    for (unsigned i = 0; i < size; i++) {
+        uint8_t m = writable[off+i];
+        cfg[off+i] = (cfg[off+i] & ~m) |
+                     ((value >> (8*i)) & m);
+    }
+    return true;
+}
+```
+
+Reading offset 0 with size 2 gives vendor ID 0x1234. Writes cannot change read-only IDs. This deliberately models only a few writable bits; real PCI/PCIe devices also implement BAR sizing/mapping, status W1C semantics and extended configuration space.
+
+### Implement trap-and-emulate for an MMIO access in C. {H}
+**Short answer:** When a guest accesses emulated MMIO, the hypervisor handles the trap by dispatching the physical address, width and direction to the device. The returned read value is delivered to the guest.
+
+```c
+#include <stdint.h>
+#include <stdbool.h>
+#define BASE UINT64_C(0x10000000)
+static uint32_t control;
+
+struct mmio_exit {
+    uint64_t addr, data;
+    unsigned size;
+    bool write;
+};
+
+bool emulate(struct mmio_exit *e)
+{
+    if (e->addr != BASE || e->size != 4) return false;
+    if (e->write) control = (uint32_t)e->data & 0x7;
+    else e->data = control;
+    return true;
+}
+```
+
+For example, a write of 0xff to BASE stores 7; a following read returns 7. In KVM, userspace receives KVM_EXIT_MMIO via KVM_RUN, fills the read buffer or consumes the write buffer, then re-enters KVM_RUN to complete the access. This is a teaching callback, not the actual KVM ABI. Unsupported accesses require defined bus-error/device behavior, and a real VMM validates widths, endianness and guest addresses.
+
+### Implement a vCPU state save and restore structure. {M}
+**Short answer:** Save the virtual CPU's architectural state before suspension or migration and restore it before resuming. A simplified AArch64 core state includes general registers, stack pointer, PC and PSTATE.
+
+```c
+#include <stdint.h>
+struct cpu_state {
+    uint64_t x[31], sp, pc, pstate;
+};
+
+void save_cpu(struct cpu_state *snapshot,
+              const struct cpu_state *cpu)
+{
+    *snapshot = *cpu;
+}
+
+void restore_cpu(struct cpu_state *cpu,
+                 const struct cpu_state *snapshot)
+{
+    *cpu = *snapshot;
+}
+```
+
+Pause the vCPU before taking a consistent snapshot. In ARM KVM, supported registers are accessed using KVM_GET_ONE_REG and KVM_SET_ONE_REG. Real migration also needs system registers, FP/SIMD, timers, interrupt controller state, pending events, device state and a versioned portable serialization format. A raw C structure is not a portable migration image.
+
+### Implement an IOMMU/SMMU address translation table in C. {H}
+**Short answer:** An IOMMU translates a device's I/O virtual address (IOVA) to a physical address and checks DMA permissions. This educational model represents one device domain with a flat table of 64 pages.
+
+```c
+#include <stdint.h>
+#include <stdbool.h>
+#define N 64
+#define MASK UINT64_C(0xfff)
+struct entry {
+    uint64_t pa;
+    bool valid, writable;
+};
+static struct entry io_pt[N];
+
+bool io_map(uint64_t iova, uint64_t pa, bool writable)
+{
+    if ((iova | pa) & MASK || (iova >> 12) >= N)
+        return false;
+    io_pt[iova >> 12] = (struct entry){pa, true, writable};
+    return true;
+}
+
+bool io_translate(uint64_t iova, bool write, uint64_t *pa)
+{
+    uint64_t i = iova >> 12;
+    if (i >= N || !io_pt[i].valid ||
+        (write && !io_pt[i].writable)) return false;
+    *pa = io_pt[i].pa | (iova & MASK);
+    return true;
+}
+```
+
+IOVA 0x2123 mapped to frame 0x9000 gives PA 0x9123. Real SMMUs use stream IDs, domains, multilevel tables and IOTLBs. Validate the physical target belongs to the device's domain; when unmapping, synchronize outstanding DMA and invalidate cached translations before recycling memory.
+
+### Implement a simplified virtqueue available and used ring. {H}
+**Short answer:** A split virtqueue has a descriptor table, an available ring published by the driver and a used ring published by the device. Here a single producer posts descriptor IDs and a single consumer returns completed IDs. Calls are serialized for clarity.
+
+```c
+#include <stdint.h>
+#include <stdbool.h>
+#define N 8
+struct queue {
+    uint16_t avail[N], used[N];
+    uint16_t a_write, a_read, u_write, u_read;
+    bool busy[N];
+};
+
+bool submit(struct queue *q, uint16_t id)
+{
+    if (id >= N || q->busy[id] ||
+        (uint16_t)(q->a_write-q->a_read) == N) return false;
+    q->busy[id] = true;
+    q->avail[q->a_write++ % N] = id;
+    return true;
+}
+
+bool complete(struct queue *q)
+{
+    if (q->a_read == q->a_write ||
+        (uint16_t)(q->u_write-q->u_read) == N) return false;
+    uint16_t id = q->avail[q->a_read++ % N];
+    /* Process the validated descriptor before publishing completion. */
+    q->used[q->u_write++ % N] = id;
+    return true;
+}
+
+bool reap(struct queue *q, uint16_t *id)
+{
+    if (q->u_read == q->u_write) return false;
+    *id = q->used[q->u_read++ % N];
+    q->busy[*id] = false;
+    return true;
+}
+```
+
+Initialize the queue to zero. Each operation is O(1); a descriptor cannot be reused before completion is consumed. The real virtio ABI includes lengths, flags, chain validation, negotiated endianness and notification suppression. Use the transport's required barriers and cache synchronization to publish descriptors and indices; this example is not a concurrent or wire-compatible virtqueue.
