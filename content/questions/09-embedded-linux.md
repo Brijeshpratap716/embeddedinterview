@@ -772,3 +772,13 @@ SCFW remains running even after Linux boots and handles clock, power and resourc
 | SPL | Configuration dependent | Typically required |
 
 **Key interview point:** In i.MX8QM/QXP, the SCU Cortex-M4 boots before the Cortex-A application processor. It manages system resources and remains active throughout the system's operation.
+
+### What is the difference between BIOS and UEFI? {M}
+
+BIOS is legacy PC firmware; UEFI provides a standardized boot interface, EFI applications, GPT support and optional Secure Boot.
+
+
+### What is GRUB? {M}
+
+GRUB is a bootloader that selects and loads an OS kernel and optional initramfs, then transfers control to the kernel.
+
