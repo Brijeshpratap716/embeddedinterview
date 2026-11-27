@@ -464,6 +464,12 @@ bool log_get(const log_ring_t *r, uint32_t i, int16_t *v)
 
 **Crash-log trick:** place the buffer in a `.noinit` RAM section (not zeroed at reset) with a magic number, so after a watchdog reset the firmware can dump the last events that happened before the crash.
 
+#### Overwrite example
+
+Capacity 4; insert 10,20,30,40. The next insert 50 overwrites 10 and advances the write index. The logical sequence is now 20,30,40,50. The oldest physical index is (head-count) modulo capacity, not always index zero.
+
+This is appropriate for diagnostic history where recent records matter most, but not for a command stream that must preserve every message. Protect head, count and data access together if read concurrently. An overwrite-capable SPSC queue cannot simply let the producer update the consumer-owned tail without revisiting the concurrency protocol.
+
 ### Implement a blocking producer-consumer ring buffer (mutex + condition variable). {M}
 **Short answer:** Protect the buffer with a mutex and use two condition variables: producers wait on `not_full` while the buffer is full, consumers wait on `not_empty` while it is empty. After a put, signal `not_empty`; after a get, signal `not_full`. Always wait inside a `while` loop that re-checks the condition after waking.
 
