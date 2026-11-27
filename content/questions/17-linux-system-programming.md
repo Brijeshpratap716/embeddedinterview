@@ -105,35 +105,24 @@ Returning from main is equivalent to exit, so other threads terminate. If the in
 **Interview takeaway:** Do not return pointers to a terminating thread's stack. Prefer explicit joins and orderly shutdown over leaving background threads unmanaged.
 
 ### What are /proc, /sys and /dev used for? {E}
-**Short answer:** They are virtual (in-memory) file systems that the kernel uses to talk to user space. **`/proc`** shows information about processes (`/proc/<pid>/...`) and many kernel statistics and settings (`/proc/meminfo`, `/proc/interrupts`, `/proc/sys/...`). **`/sys`** (sysfs) shows the device model: every bus, device, driver and class, with one value per file. **`/dev`** contains device nodes (character and block devices) that programs open to talk to drivers.
+/proc, /sys and /dev expose different interfaces to the running kernel.
 
-**`/proc` (procfs)**
+| Interface | Purpose | Examples |
+|---|---|---|
+| /proc | Process and kernel information | /proc/self/maps, /proc/interrupts |
+| /sys | Kernel device/object attributes | /sys/bus/i2c/devices, /sys/class |
+| /dev | Device nodes and special files | /dev/i2c-0, /dev/ttyS0 |
 
-| Path | Contents |
-|---|---|
-| `/proc/<pid>/status`, `stat`, `maps`, `fd/`, `cmdline`, `environ` | process state, memory map, open files |
-| `/proc/meminfo`, `/proc/cpuinfo`, `/proc/loadavg` | memory, CPUs, load |
-| `/proc/interrupts`, `/proc/softirqs` | interrupt counts per CPU |
-| `/proc/cmdline` | kernel command line |
-| `/proc/sys/...` (`sysctl`) | tunable kernel parameters, e.g. `/proc/sys/vm/swappiness`, `/proc/sys/net/ipv4/ip_forward` |
-| `/proc/device-tree` | the device tree the kernel booted with |
+```bash
+cat /proc/meminfo
+cat /proc/interrupts
+ls /sys/bus/platform/devices
+ls -l /dev
+```
 
-**`/sys` (sysfs)**
+Device nodes identify character/block devices using major/minor numbers; open/read/write/ioctl operations dispatch through the relevant kernel subsystem or driver. Sysfs attributes are often small textual configuration/status values.
 
-- `/sys/class/net/eth0/`, `/sys/class/leds/`, `/sys/class/thermal/`: devices grouped by type.
-- `/sys/bus/platform/devices/`, `/sys/bus/i2c/drivers/`: buses, devices and drivers; `bind`/`unbind` files attach or detach a driver.
-- `/sys/kernel/debug` (debugfs, if mounted), `/sys/fs/cgroup` (cgroups), `/sys/firmware/devicetree`.
-- One value per file, in text, e.g. `cat /sys/class/thermal/thermal_zone0/temp`.
-
-**`/dev`**
-
-- Character devices (`/dev/ttyS0`, `/dev/i2c-1`, `/dev/gpiochip0`, `/dev/null`) and block devices (`/dev/mmcblk0`, `/dev/sda`).
-- Created automatically by **devtmpfs** and managed by **udev**/**mdev**, which set permissions and create friendly symlinks (`/dev/disk/by-uuid/...`).
-- A device node is identified by its **major/minor numbers**, which select the driver and the device instance.
-
-**Role in system administration:** almost every monitoring and configuration tool reads these files. `ps`, `top` and `free` read `/proc`; `ip`, `lsblk`, `lsusb` and `udevadm` use `/sys`; and `sysctl -w` writes `/proc/sys`. Scripts can do the same with `cat` and `echo`, which is very handy on minimal embedded systems with only BusyBox.
-
-**Rule of thumb for driver writers:** process and legacy information in `/proc`, device attributes in `/sys`, data streams and control through a `/dev` node, and debugging-only information in `debugfs`.
+**Interview takeaway:** These are kernel interfaces, not ordinary stored configuration files. Use documented ABI attributes and do not assume every sysfs file is writable.
 
 ### How do Linux file permissions work? {E}
 **Short answer:** Every file has an owner (UID), a group (GID) and three sets of permission bits: read, write and execute for the **owner**, the **group**, and **others**. When a process accesses a file, the kernel checks the process's effective UID and groups against these bits: owner bits if it owns the file, else group bits if it is in the group, else the "other" bits. Root (UID 0) bypasses most checks, and the special bits **setuid**, **setgid** and **sticky** add more behaviour.
