@@ -180,12 +180,14 @@ int bm_alloc(void)
 
 void bm_free(int i)
 {
+    if (i < 0 || (unsigned)i >= NBLOCKS) return;
     bitmap[i / 32] &= ~(1u << (i % 32));
 }
 
 /* allocate n contiguous blocks (simple scan) */
 int bm_alloc_range(unsigned n)
 {
+    if (!n || n > NBLOCKS) return -1;
     unsigned run = 0;
     for (unsigned i = 0; i < NBLOCKS; i++) {
         if (bitmap[i / 32] & (1u << (i % 32))) { run = 0; continue; }
@@ -216,6 +218,12 @@ int bm_alloc_range(unsigned n)
 **Memory cost:** 1 bit per block — 4096 blocks need only 512 bytes of metadata, compared with a pointer-based free list that needs space in every block.
 
 **Real uses:** Linux IDA/IDR (IDs, minor numbers), page and block allocation in file systems (ext4 block bitmaps), flash sector maps in FTLs, interrupt vector and PID allocation, and RTOS memory pools.
+
+#### Allocate the first available bit
+
+For a word 0xFFFFFFF7, complement gives 0x00000008. CTZ returns 3, so if the word is bitmap[2], the free global index is 2×32+3=67. Set that bit before releasing the allocator lock. Never invoke traditional CTZ on a zero operand.
+
+Finding and setting a free bit must be one synchronized operation, or two threads can allocate the same block. For single-block allocation an atomic compare-and-swap loop on the selected word is possible; contiguous multiword allocation typically needs a larger synchronization protocol. Mark unused tail bits reserved if capacity is not a multiple of word width, reject out-of-range frees, and reject allocation requests of length zero.
 
 ### Simulate a two-level page-table walk. {H}
 **Short answer:** Split the virtual address into fields: for a 32-bit address with 4 KB pages, bits 31–22 index the first-level table (1024 entries), bits 21–12 index the second-level table, and bits 11–0 are the offset within the page. Read the level-1 entry; if it is not valid, report a translation fault; otherwise it gives the physical address of the level-2 table. Read the level-2 entry, check valid and permission bits, then combine its physical frame number with the unchanged offset.
