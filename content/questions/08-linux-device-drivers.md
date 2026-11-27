@@ -1562,24 +1562,45 @@ Deploy to the matching target and follow module signing and loading policies. Cl
 **Interview takeaway:** Build against the target kernel, not merely generic Linux headers. Internal kernel APIs and module compatibility can change across kernel versions.
 
 ### What is the difference between dma_alloc_coherent and dma_map_single? {M}
-**Short answer:** Coherent allocation returns a CPU pointer and a DMA address for a consistent shared allocation. Streaming mapping temporarily transfers ownership of an existing suitable CPU buffer to a device.
+dma_alloc_coherent and dma_map_single solve different buffer-management problems. Coherent allocation creates a new CPU/device-visible buffer; streaming mapping makes an existing suitable CPU buffer available for a DMA transfer.
 
-| API | Typical use |
+| dma_alloc_coherent | dma_map_single |
 |---|---|
-| dma_alloc_coherent | Descriptor ring |
-| dma_map_single | One TX/RX buffer |
-| dma_sync_single_for_cpu | CPU accesses a still-mapped streaming buffer |
-| dma_sync_single_for_device | Return ownership to device |
-| dma_unmap_single | End streaming mapping |
+| Allocates DMA-suitable storage | Maps existing suitable buffer |
+| Returns CPU pointer and DMA address | Returns DMA address |
+| Coherent CPU/device visibility | Ownership and cache synchronization required |
+| Often used for descriptors/rings | Often used for packet or data transfers |
 
-**Example:** Ethernet TX maps a packet, programs the DMA address, waits for completion, then unmaps it. A descriptor ring may remain coherently allocated for the lifetime of the interface.
+#### 1. Coherent example
 
-```text
-CPU fills TX buffer -> dma_map_single -> Device owns buffer
-CPU may reuse buffer <- dma_unmap_single <- Completion
+```c
+dma_addr_t dma;
+void *cpu = dma_alloc_coherent(dev, size, &dma, GFP_KERNEL);
+if (!cpu)
+    return -ENOMEM;
+
+// CPU initializes descriptor; device uses dma.
+// Stop hardware before freeing.
+dma_free_coherent(dev, size, cpu, dma);
 ```
 
-**Interview takeaway:** Coherency is not the same as ordering. Even a coherent descriptor ring may require dma_wmb() before publishing ownership. Check mapping errors and match the mapping direction and size. [Linux DMA API guide](https://docs.kernel.org/core-api/dma-api-howto.html).
+Coherent visibility does not guarantee descriptor publication ordering. Use appropriate barriers before handing ownership to the device.
+
+#### 2. Streaming example
+
+```c
+dma_addr_t dma = dma_map_single(dev, buf, len, DMA_FROM_DEVICE);
+if (dma_mapping_error(dev, dma))
+    return -EIO;
+
+// Start device receive; wait for completion.
+dma_unmap_single(dev, dma, len, DMA_FROM_DEVICE);
+// Now CPU may consume received data.
+```
+
+Do not touch the buffer while owned by the device. For persistent mappings use matching sync-for-CPU/device operations.
+
+**Interview takeaway:** Use coherent memory for shared control structures when appropriate and streaming DMA for transient data. Always use the device's DMA address, correct direction and matching release API.
 
 ### How do you debug a display underflow or a black screen on Linux DRM/KMS? {H}
 **Short answer:** Separate panel power and link failures from scanout and bandwidth failures. Verify the atomic state, clocks, timing and buffer readiness before changing hardware settings.
