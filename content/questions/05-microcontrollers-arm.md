@@ -84,7 +84,7 @@ Most firmware jobs today mean Arm. These questions test whether you understand t
 **Choosing:** the core is rarely the deciding factor alone; peripherals, memory, power modes, price, toolchain and vendor ecosystem usually decide which MCU you use.
 
 ### What are the differences between Cortex-M, Cortex-R and Cortex-A, and why can't a Cortex-M0+ run Linux? {M}
-**Short answer:** **Cortex-A** cores are application processors with an MMU, caches and high clock speeds, designed to run Linux or Android. **Cortex-R** cores are real-time processors with an MPU, tightly coupled memory, fast deterministic interrupts and safety features. **Cortex-M** cores are microcontroller cores optimised for low cost, low power and simple, fast interrupt handling. A Cortex-M0+ cannot run standard Linux mainly because it has **no MMU** (Linux needs virtual memory for processes), and typical M0+ parts also have far too little memory (tens of KB of RAM, versus the tens of MB Linux needs).
+**Short answer:** **Cortex-A** cores are application processors with an MMU, caches and high clock speeds, designed to run Linux or Android. **Cortex-R** cores target real-time processing, often with an MPU and tightly coupled memory; some models also support an MMU. **Cortex-M** cores are microcontroller cores optimised for low cost, low power and simple, fast interrupt handling. A Cortex-M0+ is not a supported normal Linux target: it lacks the required architectural features and typical systems have far too little memory. Linux also has no-MMU configurations for suitable supported processors, so absence of an MMU alone does not rule out Linux on every CPU.
 
 | | Cortex-M | Cortex-R | Cortex-A |
 |---|---|---|---|
@@ -101,7 +101,7 @@ Most firmware jobs today mean Arm. These questions test whether you understand t
 - **No MMU:** mainline Linux relies on virtual memory for process isolation, `fork()`, demand paging and memory-mapped files. A no-MMU Linux (uClinux) exists, but it has been dropped or limited on many architectures and still needs megabytes of RAM.
 - **Memory:** M0+ chips typically have 8–256 KB of flash and 4–64 KB of RAM. A minimal Linux needs several MB of RAM and storage.
 - **Performance:** tens of MHz, no caches, no hardware divide.
-- **No privilege separation needed by Linux:** Armv6-M has only basic privileged/unprivileged modes and an optional, small MPU.
+- **Limited architectural features:** Armv6-M has only basic privileged/unprivileged modes and an optional, small MPU.
 
 **What a Cortex-M0+ is good for:** simple sensor nodes, battery-powered devices (very low µA/MHz and deep-sleep currents), smart cards, power management controllers, motor drivers, as a co-processor next to a bigger CPU, and anywhere cost per unit is critical (cents per chip).
 
