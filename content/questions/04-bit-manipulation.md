@@ -302,49 +302,48 @@ Compilers normally allocate a temporary register or optimize the swap efficientl
 **Interview takeaway:** Know the XOR identity and same-address corner case, but use a temporary variable for clear, maintainable C.
 
 ### How do you find the position of the lowest set bit? {M}
-**Short answer:** `x & -x` isolates the lowest set bit, and its index is the number of trailing zeros: `__builtin_ctz(x)` (undefined when `x == 0`). For the highest set bit use `31 - __builtin_clz(x)`.
+The lowest set bit is the first one encountered when scanning an integer from its least significant end. Its index is also the number of trailing zeros.
+
+#### 1. Simple implementation
 
 ```c
-unsigned lowest_set_index(uint32_t x)   /* x != 0 */
+int lowest_set_bit(uint32_t n)
 {
-    return (unsigned)__builtin_ctz(x);
-}
+    if (n == 0)
+        return -1;
 
-unsigned highest_set_index(uint32_t x)  /* x != 0 */
-{
-    return 31u - (unsigned)__builtin_clz(x);
+    int position = 0;
+    while ((n & 1U) == 0) {
+        n >>= 1;
+        position++;
+    }
+    return position;
 }
 ```
 
-**Portable loop (for an interview without builtins):**
+For n = 40 (00101000), the result is 3.
+
+#### 2. Isolate the lowest set bit
 
 ```c
-int lowest_set_index_loop(uint32_t x)
-{
-    if (x == 0) return -1;
-    int i = 0;
-    while ((x & 1u) == 0) { x >>= 1; i++; }
-    return i;
-}
+uint32_t mask = n & (uint32_t)(0U - n);
 ```
 
-**How the hardware does it on Arm:** `CLZ` (count leading zeros) exists on Arm v5 and later, including Cortex-M3/M4/M7 but **not** Cortex-M0/M0+. Count trailing zeros is `RBIT` (reverse bits) followed by `CLZ`.
+On a conventional unsigned 32-bit target, n = 40 gives mask = 8. The mask is a value, not the bit index.
 
-**Why x & -x isolates the lowest bit:** in two's complement `-x == ~x + 1`. Inverting flips every bit, and adding 1 ripples up to the lowest original 1, so only that bit is common to `x` and `-x`.
+#### 3. Compiler builtin
 
-```
-x  = 0b0110_1000
--x = 0b1001_1000
-x & -x = 0b0000_1000   -> bit 3
+```c
+int pos = n ? __builtin_ctz((unsigned int)n) : -1;
 ```
 
-**Where it is used:**
+This variant assumes unsigned int can represent all uint32_t values. The traditional builtin is undefined for zero. AArch64 can implement trailing-zero counting using RBIT followed by CLZ, or a dedicated instruction on supporting architectures.
 
-- **RTOS schedulers:** FreeRTOS's port-optimised task selection keeps one bit per priority and uses `CLZ` to find the highest ready priority in one instruction.
-- **Interrupt dispatch:** finding the first pending source.
-- `ffs()` in POSIX returns the 1-based index (0 for no bits) and is defined for 0.
+#### 4. Use in firmware
 
-**Follow-up:** "log₂ of a power of two?" `__builtin_ctz(x)`. "Floor log₂ of any x?" `31 - __builtin_clz(x)`.
+A software scheduler or interrupt dispatcher may keep pending events in a bitmap. Finding the lowest set bit selects one pending event without scanning all positions.
+
+**Interview takeaway:** CTZ gives the zero-based index; n & -n isolates a one-bit mask for unsigned n. Handle zero explicitly.
 
 ### How do you reverse the bits of a byte or an n-bit number? {E}
 **Short answer:** Loop over the bits: if bit `i` is set in the input, set bit `(width - 1 - i)` in the output. The width must be the number of **bits**, not bytes.
