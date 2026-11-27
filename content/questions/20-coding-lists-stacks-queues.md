@@ -715,6 +715,10 @@ struct task { int id; struct list_head node; };
 
 **Poisoning:** Linux sets deleted pointers to `LIST_POISON1/2` so a use after deletion faults immediately instead of corrupting memory.
 
+#### Why use a sentinel?
+
+An empty intrusive list has head.next=head and head.prev=head. Inserting the first node uses the same four pointer assignments as an interior insertion. Deleting the last node restores the self-links. The containing object is not allocated or freed by list_add/list_del. One list_head can belong to only one list at a time; separate members permit multiple memberships. Use safe iteration when removing the current entry, and locks/RCU appropriate to concurrent access.
+
 ### Implement a stack using an array and using a linked list. {E}
 **Short answer:** A stack is last-in, first-out. With an **array**, keep a `top` index: push stores at `a[top++]` (fail if full), pop returns `a[--top]` (fail if empty). With a **linked list**, push inserts at the head and pop removes the head. Both give O(1) push and pop; the array is fixed-size and cache-friendly, the list grows dynamically but needs allocation per element.
 
