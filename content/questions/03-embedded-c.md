@@ -983,30 +983,47 @@ The empty assembly does not emit a CPU ordering instruction. Follow the compiler
 **Interview takeaway:** A barrier does not automatically make an operation atomic, clean caches or provide a complete synchronization protocol. In portable C threads use C11 atomic acquire/release operations or locks.
 
 ### What is the Arm calling convention (AAPCS), and why does it matter in embedded work? {M}
-**Short answer:** The AAPCS (Procedure Call Standard for the Arm Architecture) defines how functions pass arguments and return values and which registers they must preserve. On 32-bit Arm: the first four arguments go in `r0`–`r3`, the rest on the stack; results come back in `r0` (and `r1` for 64-bit values); `r0`–`r3` and `r12` are caller-saved (scratch); `r4`–`r11` are callee-saved; `r13` is SP, `r14` is LR (return address), `r15` is PC; and the stack must be 8-byte aligned at public function boundaries.
+AAPCS (Arm Architecture Procedure Call Standard) specifies how functions exchange arguments and return values, preserve registers and align the stack. It lets separately compiled code and assembly work together.
 
-| Register | Role | Preserved across calls? |
+#### 1. AAPCS32 vs AAPCS64
+
+| Feature | AAPCS32 | AAPCS64 |
 |---|---|---|
-| r0–r3 | arguments, return value, scratch | no (caller-saved) |
-| r4–r11 | local variables | yes (callee-saved) |
-| r12 (IP) | intra-procedure scratch | no |
-| r13 (SP) | stack pointer | yes |
-| r14 (LR) | return address | saved by callee if it makes calls |
-| r15 (PC) | program counter | – |
-| s0–s15 / d0–d7 (FPU) | FP arguments/results (hard-float), scratch | no |
-| s16–s31 | FP callee-saved | yes |
+| Common integer argument registers | R0–R3 | X0–X7 |
+| Common integer return | R0 (R1 may also be used) | X0 (X1 may also be used) |
+| Link register | R14 | X30 |
+| Public-interface stack alignment | 8 bytes | 16 bytes |
 
-AArch64 is similar with more registers: `x0`–`x7` for arguments and results, `x19`–`x28` callee-saved, `x29` frame pointer, `x30` link register, 16-byte stack alignment.
+Floating-point arguments, structures and special platform registers follow additional rules.
 
-**Why it matters**
+#### 2. AArch64 example
 
-- **Cortex-M interrupts are plain C functions** because the hardware automatically stacks exactly the caller-saved registers (`r0`–`r3`, `r12`, `lr`, `pc`, `xPSR`). The compiler-generated code saves `r4`–`r11` only if the ISR uses them. That is a deliberate fit with the AAPCS.
-- **Writing assembly** that is called from C (or calls C): you must preserve `r4`–`r11` and keep SP aligned, or C code breaks in subtle ways.
-- **Performance:** functions with four or fewer integer arguments pass everything in registers; a fifth argument goes on the stack. Passing a pointer to a struct instead of many arguments is cheaper.
-- **Struct returns:** small structs (≤ 4 bytes on AArch32) come back in `r0`; larger ones through memory the caller provides.
-- **Float ABI:** `-mfloat-abi=hard` passes floats in FPU registers; `softfp` uses FPU instructions but passes floats in integer registers; mixing objects built with `hard` and `soft`/`softfp` fails to link.
-- **Context switches:** an RTOS on Cortex-M saves `r4`–`r11` (and `s16`–`s31` if the FPU is used) in software in PendSV, because the hardware already saved the rest.
-- **Debugging:** in a crash dump, `lr` and the stacked frame let you reconstruct the call chain.
+```c
+long add(long a, long b)
+{
+    return a + b;
+}
+```
+
+Typical AArch64 LP64 code:
+
+```asm
+add:
+    ADD X0, X0, X1
+    RET
+```
+
+The caller supplies a and b in X0 and X1; X0 contains the return value.
+
+#### 3. Caller-saved vs callee-saved
+
+For AAPCS64, X19–X29 are callee-saved; SP is preserved, and X18 is platform-specific. A non-leaf function typically saves LR if another call would overwrite it. Other general registers commonly hold arguments or temporary values.
+
+#### 4. Embedded relevance
+
+Startup code, interrupt wrappers, bootloader transitions, RTOS context switching and handwritten assembly must obey the applicable ABI or explicitly document a different interface. An exception frame is not the same as an ordinary function call frame.
+
+**Interview takeaway:** AAPCS is a software interface contract, not merely a list of registers. Incorrect stack alignment or register preservation can break otherwise correct C code.
 
 ### What are compiler intrinsics, and when should you use them instead of inline assembly? {M}
 **Short answer:** Intrinsics are functions provided by the compiler (or by headers such as CMSIS) that map directly to specific machine instructions: `__WFI()`, `__DSB()`, `__REV()`, `__CLZ()`, `__LDREXW()`, saturating and SIMD operations. The compiler understands them, so it can still optimise around them and check types. Use intrinsics whenever one exists; use inline assembly only for instructions or sequences that have no intrinsic.
