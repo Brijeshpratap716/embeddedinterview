@@ -79,25 +79,31 @@ A delayed task is blocked, not necessarily suspended. State terminology differs 
 **Interview takeaway:** Ready means eligible, not currently executing. A blocked task consumes no CPU time while waiting for its condition.
 
 ### What is pre-emptive versus cooperative scheduling? {E}
-**Short answer:** With **pre-emptive** scheduling, the kernel switches to a higher-priority task as soon as it becomes ready (because of an interrupt, a timer or another task), even in the middle of the current task's code. With **cooperative** scheduling, a task keeps the CPU until it voluntarily yields or blocks. Pre-emption gives better worst-case response for urgent work; cooperative scheduling is simpler and needs fewer locks, but one task that does not yield stalls everything.
+Preemptive scheduling allows the scheduler to replace the currently running task when a higher-priority task becomes ready. Cooperative scheduling depends on tasks voluntarily yielding or blocking, subject to the kernel's rules.
 
-| | Pre-emptive | Cooperative |
-|---|---|---|
-| When switches happen | any time a higher-priority task is ready | only at `taskYIELD()`, blocking calls, or task return |
-| Response time for urgent work | bounded by kernel latency | bounded by the longest code between yields |
-| Shared data protection | needed everywhere data is shared | only needed around yield points (and with ISRs) |
-| Risk | race conditions, priority inversion | one long-running task blocks all others |
-| FreeRTOS | `configUSE_PREEMPTION 1` | `configUSE_PREEMPTION 0` |
+#### 1. Example
 
-**How pre-emption happens on Cortex-M:** an ISR (or a task) makes a higher-priority task ready → the kernel pends PendSV → when all ISRs finish, PendSV switches context.
+```text
+Low-priority task runs
+High-priority task becomes ready
 
-**Mixed approaches**
+Preemptive: high-priority task runs immediately when eligible
+Cooperative: low-priority task runs until a scheduling point
+```
 
-- FreeRTOS: pre-emptive between priorities, with optional time slicing between equal priorities.
-- Zephyr: **cooperative threads** (negative priorities) cannot be pre-empted by other threads, which is useful for code that must not be interrupted by other threads but still allows ISRs; **pre-emptible threads** (non-negative priorities).
-- Event-driven "run-to-completion" frameworks (QP active objects) are cooperative inside each object but can use pre-emption between objects.
+Interrupt handlers can still interrupt ordinary task execution in either model.
 
-**Interview angle:** most products use pre-emptive scheduling for responsiveness, plus good discipline: short critical sections, message passing, and correct priorities.
+| Preemptive | Cooperative |
+|---|---|
+| Better responsiveness to urgent ready tasks | Simpler reasoning about task-to-task interleaving |
+| Requires synchronization for shared data | Long tasks can delay other ready tasks |
+| More possible context switches | Depends on bounded voluntary scheduling points |
+
+#### 2. Embedded use
+
+A high-priority control task that wakes from a timer can preempt a background logger in a preemptive RTOS. A cooperative super loop instead depends on each service returning quickly.
+
+**Interview takeaway:** Preemption improves responsiveness but does not eliminate blocking, interrupt masking or priority inversion. Cooperative scheduling still needs interrupt-safe sharing.
 
 ### What is time slicing / round-robin scheduling? {E}
 **Short answer:** When several ready tasks share the **same** highest priority, the scheduler gives each a time slice and rotates between them in round-robin order. In FreeRTOS a slice is one tick (`configUSE_TIME_SLICING`). Tasks of **different** priorities are never time-sliced against each other: the higher-priority ready task always runs.
