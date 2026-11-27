@@ -906,33 +906,44 @@ Configure reference, channel, sampling time and trigger; start conversion; colle
 **Interview takeaway:** Resolution is not accuracy. Reference stability, analog source impedance, sampling time, noise, calibration and anti-alias filtering all affect measurement quality.
 
 ### How does a DAC work, and how do you generate a waveform with it? {M}
-**Short answer:** A DAC (digital-to-analogue converter) turns a digital code into a voltage: `Vout = code / (2^N) × Vref` (for an N-bit DAC). MCU DACs are typically 8–12 bits with a few hundred kHz to a few MHz update rate. To generate a waveform, store one period of samples in a table and have a **timer trigger** the DAC update while **DMA** feeds samples from the table in circular mode, so the output frequency is exact and the CPU is not involved.
+A Digital-to-Analog Converter (DAC) converts a digital code into an analog voltage or current. MCU DACs commonly generate reference voltages, audio or low-frequency waveforms.
 
-```c
-#include <math.h>
-#include <stdint.h>
+#### 1. Ideal conversion
 
-#define N_SAMPLES 64
-static uint16_t sine_table[N_SAMPLES];
+For a 12-bit voltage DAC with 3.3 V reference:
 
-void make_sine_table(void)                       /* 12-bit DAC, mid-scale offset */
-{
-    for (int i = 0; i < N_SAMPLES; i++)
-        sine_table[i] = (uint16_t)(2048 + 2047 * sinf(2.0f * 3.14159265f * i / N_SAMPLES));
-}
-/* Configure: timer update event at f_out * N_SAMPLES (e.g. 1 kHz * 64 = 64 kHz),
-   DAC trigger = timer TRGO, DMA circular from sine_table to the DAC data register. */
+```text
+Vout ≈ code × 3.3 / 4096
+code = 2048 gives approximately 1.65 V
 ```
 
-`f_out = f_trigger / N_SAMPLES`. More samples per period give a cleaner waveform but require a higher update rate.
+Use the actual DAC transfer function, output buffer limits and calibration for accurate results.
 
-**Key parameters:** resolution, settling time (how long the output takes to reach the new value), output impedance and drive capability (many MCU DACs need the internal output buffer enabled or an external op-amp to drive a load), and reference accuracy.
+#### 2. Generate a sine wave
 
-**Cleaning up the output:** a DAC produces a staircase; a **reconstruction low-pass filter** after it removes the step frequency (images around the update rate). The sinc roll-off of a zero-order hold also attenuates higher output frequencies slightly.
+```text
+Timer trigger --> DMA reads next sample from LUT
+                           |
+                          DAC --> analog output
+```
 
-**DAC types:** resistor string, R-2R ladder (common on MCUs), sigma-delta (audio codecs), and **PWM + RC filter** as a cheap "DAC" when no DAC is available: duty cycle sets the average voltage, at the cost of ripple and slow response.
+Create a lookup table containing one period of a scaled sine wave, use a timer as a regular trigger, and configure circular DMA to feed the DAC.
 
-**Uses:** audio tones and alerts, generating reference or bias voltages, test signals, setting analogue control inputs (e.g. a laser driver or a motor controller reference), and the internal DAC that sets comparator thresholds.
+#### 3. Frequency example
+
+A 100-sample table played at 20,000 samples/second produces a 200 Hz waveform.
+
+```text
+waveform frequency = sample rate / samples per period
+```
+
+For an arbitrary waveform, sample values must remain within the DAC's legal code range.
+
+#### 4. Hardware considerations
+
+Settling time, output impedance, load, reference noise, quantization and reconstruction filtering limit waveform quality.
+
+**Interview takeaway:** Timer-triggered DAC plus DMA provides consistent sample timing without per-sample CPU interrupts. The sample rate and table length determine the generated frequency.
 
 ### What is DMA and how is it configured? {M}
 **Short answer:** A Direct Memory Access controller transfers data between peripherals and memory (or memory and memory) without the CPU copying each word. You configure the source and destination addresses, the number of items and their width, whether each address increments, the direction, the trigger (which peripheral request starts each transfer), priority, and normal or circular mode; interrupts signal half-transfer, transfer-complete and errors.
