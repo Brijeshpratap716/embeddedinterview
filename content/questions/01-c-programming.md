@@ -1938,35 +1938,57 @@ Now ptr points to a. A double pointer is needed here because the object to modif
 **Interview takeaway:** All C arguments are passed by value. Passing a pointer permits indirect modification of the caller's object; use const-qualified pointees when modification is not intended.
 
 ### What is recursion and why is it avoided in embedded code? {E}
-**Short answer:** Recursion is a function calling itself (directly or through other functions). Each call uses a new stack frame. It is avoided in embedded systems because the maximum stack depth depends on the input and cannot easily be bounded at compile time, stacks are small (often 512 bytes to a few KB per task), and a stack overflow on a microcontroller without an MPU silently corrupts other memory. MISRA C forbids recursion.
+Recursion occurs when a function calls itself directly or indirectly. A recursive algorithm must have a terminating base case and make progress toward it.
+
+#### 1. Example
 
 ```c
-/* recursive: stack use grows with n */
-unsigned fact_rec(unsigned n) { return n <= 1 ? 1 : n * fact_rec(n - 1); }
-
-/* iterative: constant stack use */
-unsigned fact_iter(unsigned n)
+unsigned int fact(unsigned int n)
 {
-    unsigned r = 1;
-    while (n > 1) r *= n--;
-    return r;
+    if (n <= 1)
+        return 1;
+    return n * fact(n - 1);
 }
 ```
 
-**Problems in detail**
+For fact(4), the result is 24.
 
-- **Unbounded stack:** a recursive tree walk on a degenerate (linked-list shaped) tree goes as deep as the number of nodes.
-- **Static analysis:** tools that compute worst-case stack usage (`-fstack-usage` + call-graph analysis, StackAnalyzer) cannot give a bound for recursive call cycles.
-- **Silent corruption:** on a Cortex-M without stack limit checking, the stack grows into `.bss` or another task's stack. The failure appears somewhere else, much later.
-- **Timing:** deep recursion takes variable time, bad for real-time code.
+```text
+fact(4)
+  4 * fact(3)
+      3 * fact(2)
+          2 * fact(1)
+              returns 1
+          returns 2
+      returns 6
+  returns 24
+```
 
-**How to replace recursion**
+#### 2. Stack usage
 
-- Tail-recursive functions become simple loops.
-- Tree and graph traversals use an explicit stack (a fixed-size array) with a checked maximum depth.
-- Divide-and-conquer sorting: use heapsort or an iterative merge sort, or quicksort that recurses only on the smaller part (bounding depth to log₂ n) and loops on the larger.
+Each active function call may require its own stack frame containing saved registers, local variables and return information. Deep recursion can exhaust a small microcontroller or RTOS task stack.
 
-**If you must use recursion:** prove a maximum depth (e.g. a parser limited to 8 nesting levels), check it at run time, and size the stack for it. Cortex-M33 (Armv8-M) has stack limit registers (`MSPLIM`/`PSPLIM`) that fault on overflow instead of corrupting memory.
+#### 3. Iterative alternative
+
+```c
+unsigned int fact(unsigned int n)
+{
+    unsigned int result = 1;
+
+    while (n > 1)
+        result *= n--;
+
+    return result;
+}
+```
+
+The iterative version avoids growing the call depth. Both versions need an input bound to avoid unwanted arithmetic overflow.
+
+#### 4. Why embedded projects often restrict recursion
+
+Limited stack memory, worst-case execution-time analysis, and safety requirements make unbounded recursion particularly undesirable. Some compilers optimize certain tail-recursive functions, but the C language does not guarantee this optimization.
+
+**Interview takeaway:** Recursion is not inherently incorrect in firmware, but its maximum depth and timing must be bounded. Prefer iteration when it simplifies resource analysis.
 
 ### What are the stages of compilation in C? {E}
 **Short answer:** There are four stages. **Preprocessing** expands `#include`, macros and conditional compilation. **Compilation** translates the preprocessed C into assembly. **Assembly** turns that into a relocatable object file (`.o`). **Linking** combines object files and libraries, resolves symbols, and places code and data at addresses defined by the linker script, producing an executable (ELF).
