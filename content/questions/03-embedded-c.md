@@ -626,7 +626,7 @@ A strong definition of UART_IRQHandler at file scope in another source file over
 
 **Startup file vs linker script:** Startup code defines the initialization behavior; the linker script defines where sections and symbols are placed. Both must agree on the memory layout.
 
-References: [Startup file tutorial](https://microcontrollerslab.com/microcontrollers-startup-file-arm-cortex-m4-mcu/) and [Arm CMSIS startup file documentation](https://arm-software.github.io/CMSIS_6/latest/Core/startup_c_pg.html).
+Reference: [Arm CMSIS startup file documentation](https://arm-software.github.io/CMSIS_6/latest/Core/startup_c_pg.html).
 
 ### What is a linker script and what does it contain? {M}
 A linker script describes how object-file sections are combined and placed in the target's memory. It also defines symbols used by startup code and reserves memory for special purposes.
