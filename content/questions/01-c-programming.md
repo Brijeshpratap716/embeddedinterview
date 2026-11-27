@@ -2318,44 +2318,71 @@ The output region must not overlap either input region accessed by the function.
 **Interview takeaway:** Restrict is a promise, not a runtime check. Violating its contract causes undefined behaviour. It does not mean every pointer in a program must have a different address; the rules concern accesses to objects, particularly objects modified during the relevant block execution.
 
 ### What is the difference between exit() and return from main? {E}
-**Short answer:** In a hosted program, returning from `main` is equivalent to calling `exit()` with the returned value: functions registered with `atexit()` run, open `FILE` streams are flushed and closed, and temporary files are removed. `_Exit()` / `_exit()` terminate immediately **without** that cleanup. On a bare-metal microcontroller there is nobody to return to, so `main` should never return.
+In hosted C, returning from the initial invocation of main is equivalent to calling `exit()` with the returned status. Both perform normal program termination.
+
+#### 1. Returning from main
+
+```c
+int main(void)
+{
+    return 0;
+}
+```
+
+Returning zero reports successful termination to the host environment.
+
+#### 2. Calling exit()
+
+```c
+#include <stdlib.h>
+
+void check(int valid)
+{
+    if (!valid)
+        exit(EXIT_FAILURE);
+}
+
+int main(void)
+{
+    check(0);
+    return EXIT_SUCCESS;
+}
+```
+
+Exit terminates the program immediately from check; execution does not return to main.
+
+#### 3. Cleanup during normal termination
 
 ```c
 #include <stdio.h>
 #include <stdlib.h>
 
-static void cleanup(void) { puts("cleanup"); }
+void cleanup(void)
+{
+    puts("Cleaning up");
+}
 
 int main(void)
 {
     atexit(cleanup);
-    printf("work");          /* buffered */
-    return 0;                /* or exit(0): flushes "work", prints "cleanup" */
-    /* _exit(0) here would lose "work" (unflushed) and skip cleanup */
+    return 0;
 }
 ```
 
-**Differences that can matter**
+The registered cleanup function runs during normal termination. The C library also flushes and closes streams as specified. Calling exit(0) instead of returning would produce the same normal cleanup.
 
-- `exit()` can be called from any function; `return` only leaves `main` when written in `main`.
-- After `return` from `main`, `main`'s local variables are gone before `atexit` handlers run, so a handler must not use pointers to them (for example, a `setvbuf` buffer that is a local array in `main`).
-- Exit status: `EXIT_SUCCESS` (0) and `EXIT_FAILURE`; only the low 8 bits reach the parent on POSIX.
-- In a multi-threaded program, `exit()` (or returning from `main`) ends **all** threads.
-- In a child process after a failed `exec()`, use `_exit()` so the child does not flush the parent's copied stdio buffers a second time.
+#### 4. Comparison
 
-**Bare metal**
+| Feature | return from main | exit() |
+|---|---|---|
+| Normal termination | Yes | Yes |
+| atexit handlers | Called | Called |
+| Standard I/O cleanup | Yes | Yes |
+| Can terminate from a helper function | No | Yes |
 
-- The start-up code calls `main()` and, if it returns, typically falls into an infinite loop (`b .`) or calls `exit()`, which in newlib may loop forever or trigger a semihosting exit.
-- Firmware therefore ends with a super loop or starts the RTOS scheduler, which never returns:
+An ordinary return from a helper function only transfers control back to its caller. Functions such as abort and _Exit have different termination and cleanup semantics.
 
-```c
-int main(void)
-{
-    board_init();
-    vTaskStartScheduler();   /* does not return */
-    for (;;) { }             /* reached only if the scheduler could not start */
-}
-```
+**Interview takeaway:** Use return from main for ordinary completion and exit when termination is needed from another function. On bare-metal firmware, the effect of returning from main or calling exit is implementation-specific; there may be no operating system to return to.
 
 ### How do variadic functions work? {M}
 **Short answer:** A variadic function such as `printf` has at least one fixed parameter followed by `...`. It reads the extra arguments with the `<stdarg.h>` macros `va_start`, `va_arg`, `va_end` (and `va_copy`). The function has no way to know how many arguments were passed or their types, so a fixed parameter (a count or a format string) must tell it.
