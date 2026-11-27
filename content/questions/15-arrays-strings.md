@@ -295,51 +295,23 @@ uint64_t trapped(const uint32_t h[], size_t n)
 **Complexity:** O(n) time, O(1) space.
 
 ### How do you find the maximum number of consecutive 1s in a binary array? {E}
-**Short answer:** Keep a running count of 1s, reset it to 0 on every 0, and remember the largest count seen. One pass, O(n) time, O(1) space.
+Track the current run of ones and the longest run seen.
 
 ```c
-#include <stddef.h>
-
-size_t max_consecutive_ones(const int *arr, size_t n)
+size_t max_ones(const int a[], size_t n)
 {
-    size_t count = 0, best = 0;
-    for (size_t i = 0; i < n; i++) {
-        if (arr[i] == 1) {
-            count++;
-            if (count > best) best = count;
-        } else {
-            count = 0;
-        }
+    size_t cur = 0, best = 0;
+    for (size_t i = 0; i < n; ++i) {
+        cur = a[i] == 1 ? cur + 1 : 0;
+        if (cur > best) best = cur;
     }
     return best;
 }
-/* {0,1,1,1,1,0,1,1,1,1,1,1,0,0,1,0} -> 6 */
 ```
 
-**Why update `best` inside the 1 branch:** if the array ends with a run of 1s, there is no 0 afterwards to trigger a final comparison. Updating as you go avoids a separate check after the loop.
+[1, 1, 0, 1, 1, 1, 0] → 3. Empty or all-zero input returns 0.
 
-**Bit-level version** (popular in firmware interviews: longest run of 1s in a 32-bit register):
-
-```c
-unsigned longest_run_of_ones(uint32_t x)
-{
-    unsigned n = 0;
-    while (x) {
-        x &= x << 1;      /* each step shortens every run by one */
-        n++;
-    }
-    return n;
-}
-/* 0b0111_1011 -> 4 */
-```
-
-Each `x &= x << 1` removes the lowest 1 of every run, so the number of iterations equals the length of the longest run.
-
-**Follow-ups**
-
-- *Flip at most one 0 to maximise the run:* sliding window that allows at most one 0 inside; when a second 0 enters, move the left edge past the first 0.
-- *At most k zeros:* the same window with a zero counter.
-- Real use: finding the longest free block in an allocation bitmap.
+**Complexity:** O(n) time, O(1) space. Allowing flips of up to k zeros requires a variable-size sliding window.
 
 ### How do you find the maximum sum of k consecutive elements (sliding window)? {M}
 **Short answer:** Sum the first `k` elements; that is the first window and the first candidate for the maximum. Then slide: add the element entering the window and subtract the one leaving (`sum += a[i] - a[i-k]`), updating the maximum each time. O(n) instead of O(n·k).
