@@ -641,46 +641,36 @@ size_t rotated_search(const int a[],size_t n,int key)
 **Complexity:** O(log n) time for distinct input, O(1) space.
 
 ### How do you add two binary strings or add one to a number stored as digits? {E}
-**Short answer:** Work from the least significant end (the right) with a carry, exactly like addition on paper: sum the two digits plus the carry, write `sum % base`, carry `sum / base`. If a carry is left at the end, the result is one digit longer.
+Both problems use digit-wise addition from the least-significant end and propagate carry.
 
+#### Binary addition
 ```c
-#include <string.h>
-
-/* out must have room for max(len a, len b) + 2 bytes */
-void add_binary(const char *a, const char *b, char *out)
+/* out has max(strlen(a),strlen(b))+2 bytes.
+   Inputs contain only 0/1; out does not overlap them. */
+void add_binary(const char *a,const char *b,char *out)
 {
-    size_t i = strlen(a), j = strlen(b);
-    size_t k = (i > j ? i : j) + 1;           /* room for a final carry */
-    out[k] = '\0';
-    int carry = 0;
-    while (k > 0) {
-        int sum = carry;
-        if (i > 0) sum += a[--i] - '0';
-        if (j > 0) sum += b[--j] - '0';
-        out[--k] = (char)('0' + (sum & 1));
-        carry = sum >> 1;
+    size_t i=strlen(a),j=strlen(b),k=0;
+    unsigned carry=0;
+    while (i || j || carry) {
+        unsigned s=carry;
+        if (i) s+=(unsigned)(a[--i]-'0');
+        if (j) s+=(unsigned)(b[--j]-'0');
+        out[k++]=(char)('0'+s%2);
+        carry=s/2;
     }
-    if (out[0] == '0' && out[1] != '\0')      /* drop the unused leading digit */
-        memmove(out, out + 1, strlen(out));
-}
-/* "1011" + "11" -> "1110" */
-
-/* digits[0] is the most significant decimal digit; returns new length */
-size_t plus_one(unsigned char *digits, size_t n)   /* capacity n + 1 */
-{
-    for (size_t i = n; i-- > 0; ) {
-        if (digits[i] < 9) { digits[i]++; return n; }
-        digits[i] = 0;                         /* 9 + 1 = 10: write 0, carry on */
+    if (!k) out[k++]='0';
+    out[k]='\0';
+    for(size_t x=0;x<k/2;++x) {
+        char t=out[x];out[x]=out[k-1-x];out[k-1-x]=t;
     }
-    memmove(digits + 1, digits, n);            /* all nines: 999 -> 1000 */
-    digits[0] = 1;
-    return n + 1;
 }
 ```
+1011 + 11 = 1110.
 
-**Why this matters in embedded work:** arbitrary-precision arithmetic, BCD counters (RTC chips store time in BCD; adding to a BCD value needs a decimal carry at 10, not 16), and multi-word counters (a 64-bit counter built from two 32-bit hardware registers, where the carry must be handled when the low word wraps).
+#### Add one to decimal digits
+Starting at the last digit, change trailing 9s to 0 and increment the first non-9. If all digits are 9, prepend 1 (extra output capacity required). Example: [1,9,9] → [2,0,0]; [9,9] → [1,0,0].
 
-**Check your carry logic on:** "1" + "1" = "10", "0" + "0" = "0", {9, 9} + 1 = {1, 0, 0}.
+**Complexity:** Linear time; output storage proportional to result length.
 
 ### How do you implement atoi() and itoa() in C? {M}
 **Short answer:** **atoi:** skip leading spaces, read an optional sign, then for each digit compute `value = value * 10 + (c - '0')`, checking for overflow **before** multiplying; stop at the first non-digit. **itoa:** repeatedly take `value % base` as the next digit (from the least significant end) and divide by the base, then reverse the digits; handle zero and negative numbers (including `INT_MIN`) carefully.
