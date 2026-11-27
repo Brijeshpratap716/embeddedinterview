@@ -205,52 +205,55 @@ This assumes pending has the type expected by the builtin. The actual device int
 **Interview takeaway:** Clearing one set bit at a time makes algorithms proportional to the number of set bits, not the entire integer width.
 
 ### How do you count the set bits in an integer? {M}
-**Short answer:** Use Brian Kernighan's loop, which runs once per set bit because `x & (x - 1)` clears the lowest set bit. In production use `__builtin_popcount` (a single `CNT`/`VCNT` or `POPCNT` instruction where the CPU has one).
+Set-bit counting (population count) returns the number of ones in an integer's binary representation.
+
+#### 1. Basic method
 
 ```c
-unsigned popcount(uint32_t x)
+int count_bits(uint32_t n)
 {
-    unsigned n = 0;
-    while (x) {
-        x &= x - 1;   /* drop lowest set bit */
-        n++;
+    int count = 0;
+    while (n) {
+        count += n & 1U;
+        n >>= 1;
     }
-    return n;
+    return count;
 }
 ```
 
-**Three approaches compared**
+The loop examines one bit per iteration.
 
-| Method | Loop count | Notes |
-|---|---|---|
-| Test every bit: `n += x & 1; x >>= 1;` | 32 | simplest; fine for a first answer |
-| Kernighan: `x &= x - 1` | number of set bits | good when few bits are set |
-| SWAR (parallel add) | 0 (constant time) | best general-purpose software method |
-
-**Simple version and its trap.** Many people write this:
+#### 2. Brian Kernighan's algorithm
 
 ```c
-int a = 255, count = 0;
-while (a) { count += a & 1; a >>= 1; }
-```
-
-It works for positive values, but for a **negative** `int` the arithmetic right shift keeps copying the sign bit, so `a` never becomes 0 and the loop never ends. Use `unsigned`/`uint32_t`.
-
-**Constant-time SWAR version** (adds bits in pairs, then nibbles, then bytes):
-
-```c
-unsigned popcount_swar(uint32_t x)
+int count_bits(uint32_t n)
 {
-    x = x - ((x >> 1) & 0x55555555u);                 /* 2-bit sums */
-    x = (x & 0x33333333u) + ((x >> 2) & 0x33333333u); /* 4-bit sums */
-    x = (x + (x >> 4)) & 0x0F0F0F0Fu;                 /* 8-bit sums */
-    return (x * 0x01010101u) >> 24;                   /* add the 4 bytes */
+    int count = 0;
+    while (n) {
+        n &= n - 1U;
+        count++;
+    }
+    return count;
 }
 ```
 
-**Lookup table:** a 256-entry table and four lookups is fast on a microcontroller without a multiplier, at the cost of 256 bytes of flash.
+Each iteration clears exactly one set bit.
 
-**Follow-ups:** "Count the bits that differ between a and b" is `popcount(a ^ b)` (the Hamming distance). "Count set bits for every number 0..n" uses `bits[i] = bits[i >> 1] + (i & 1)`.
+<div style="max-width:620px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 142" width="100%" role="img" aria-label="Kernighan algorithm removes three set bits in three iterations"><text x="8" y="24" font-size="11" fill="currentColor">Start</text><rect x="79" y="5" width="28" height="27" rx="3" fill="#16a34a" fill-opacity=".18" stroke="#16a34a"/><text x="93" y="23" font-size="13" text-anchor="middle" fill="currentColor">1</text><rect x="110" y="5" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="124" y="23" font-size="13" text-anchor="middle" fill="currentColor">0</text><rect x="141" y="5" width="28" height="27" rx="3" fill="#16a34a" fill-opacity=".18" stroke="#16a34a"/><text x="155" y="23" font-size="13" text-anchor="middle" fill="currentColor">1</text><rect x="172" y="5" width="28" height="27" rx="3" fill="#16a34a" fill-opacity=".18" stroke="#16a34a"/><text x="186" y="23" font-size="13" text-anchor="middle" fill="currentColor">1</text><rect x="203" y="5" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="217" y="23" font-size="13" text-anchor="middle" fill="currentColor">0</text><rect x="234" y="5" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="248" y="23" font-size="13" text-anchor="middle" fill="currentColor">0</text><rect x="265" y="5" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="279" y="23" font-size="13" text-anchor="middle" fill="currentColor">0</text><rect x="296" y="5" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="310" y="23" font-size="13" text-anchor="middle" fill="currentColor">0</text><text x="8" y="58" font-size="11" fill="currentColor">Step 1</text><rect x="79" y="39" width="28" height="27" rx="3" fill="#16a34a" fill-opacity=".18" stroke="#16a34a"/><text x="93" y="57" font-size="13" text-anchor="middle" fill="currentColor">1</text><rect x="110" y="39" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="124" y="57" font-size="13" text-anchor="middle" fill="currentColor">0</text><rect x="141" y="39" width="28" height="27" rx="3" fill="#16a34a" fill-opacity=".18" stroke="#16a34a"/><text x="155" y="57" font-size="13" text-anchor="middle" fill="currentColor">1</text><rect x="172" y="39" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="186" y="57" font-size="13" text-anchor="middle" fill="currentColor">0</text><rect x="203" y="39" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="217" y="57" font-size="13" text-anchor="middle" fill="currentColor">0</text><rect x="234" y="39" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="248" y="57" font-size="13" text-anchor="middle" fill="currentColor">0</text><rect x="265" y="39" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="279" y="57" font-size="13" text-anchor="middle" fill="currentColor">0</text><rect x="296" y="39" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="310" y="57" font-size="13" text-anchor="middle" fill="currentColor">0</text><text x="8" y="92" font-size="11" fill="currentColor">Step 2</text><rect x="79" y="73" width="28" height="27" rx="3" fill="#16a34a" fill-opacity=".18" stroke="#16a34a"/><text x="93" y="91" font-size="13" text-anchor="middle" fill="currentColor">1</text><rect x="110" y="73" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="124" y="91" font-size="13" text-anchor="middle" fill="currentColor">0</text><rect x="141" y="73" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="155" y="91" font-size="13" text-anchor="middle" fill="currentColor">0</text><rect x="172" y="73" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="186" y="91" font-size="13" text-anchor="middle" fill="currentColor">0</text><rect x="203" y="73" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="217" y="91" font-size="13" text-anchor="middle" fill="currentColor">0</text><rect x="234" y="73" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="248" y="91" font-size="13" text-anchor="middle" fill="currentColor">0</text><rect x="265" y="73" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="279" y="91" font-size="13" text-anchor="middle" fill="currentColor">0</text><rect x="296" y="73" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="310" y="91" font-size="13" text-anchor="middle" fill="currentColor">0</text><text x="8" y="126" font-size="11" fill="currentColor">Step 3</text><rect x="79" y="107" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="93" y="125" font-size="13" text-anchor="middle" fill="currentColor">0</text><rect x="110" y="107" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="124" y="125" font-size="13" text-anchor="middle" fill="currentColor">0</text><rect x="141" y="107" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="155" y="125" font-size="13" text-anchor="middle" fill="currentColor">0</text><rect x="172" y="107" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="186" y="125" font-size="13" text-anchor="middle" fill="currentColor">0</text><rect x="203" y="107" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="217" y="125" font-size="13" text-anchor="middle" fill="currentColor">0</text><rect x="234" y="107" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="248" y="125" font-size="13" text-anchor="middle" fill="currentColor">0</text><rect x="265" y="107" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="279" y="125" font-size="13" text-anchor="middle" fill="currentColor">0</text><rect x="296" y="107" width="28" height="27" rx="3" fill="#94a3b8" fill-opacity=".18" stroke="#94a3b8"/><text x="310" y="125" font-size="13" text-anchor="middle" fill="currentColor">0</text></svg></div>
+
+Result: 3.
+
+#### 3. Complexity and alternatives
+
+| Method | Iterations |
+|---|---|
+| Shift method | Up to word width |
+| Kernighan | Exactly number of set bits |
+| Compiler builtin | Target-dependent optimized implementation |
+
+GCC/Clang provide __builtin_popcount for unsigned int and width variants for larger types. The compiler may select a hardware instruction or optimized software sequence.
+
+**Interview takeaway:** Kernighan is particularly effective for sparse masks. For production code, a suitable population-count builtin is usually clearer and lets the compiler choose the best implementation.
 
 ### How do you swap two numbers without a temporary variable? {E}
 **Short answer:** Use three XORs: `a ^= b; b ^= a; a ^= b;`. It is a well-known trick, but in real code a temporary variable is clearer and just as fast.
