@@ -435,35 +435,30 @@ A controller may report arbitration loss as a retryable error. Retry only when a
 **Interview takeaway:** I2C arbitration is nondestructive for the winning bit stream. A released-high controller loses when it observes a low level during arbitration.
 
 ### How do you recover a stuck I2C bus? {M}
-**Short answer:** If a target was reset or interrupted in the middle of a read, it may still be holding SDA low, waiting to send the rest of a byte; the controller then cannot generate a START. To recover: switch SCL to GPIO open-drain mode, toggle SCL up to 9 times until the target releases SDA (it finishes its byte and sees a NACK because SDA is high on the 9th clock), generate a STOP condition manually, then return the pins to I2C mode and reset the I2C peripheral.
+An I2C bus may become stuck when SDA or SCL remains low, for example after a controller reset in the middle of a transaction, an unpowered device or a hardware fault.
 
-```c
-#include <stdbool.h>
+#### 1. Diagnose first
 
-void scl_set(int level); void sda_set(int level); int sda_get(void); void delay_us(unsigned us);
+Read both line levels and inspect recent bus activity. Check power rails, pull-ups, target reset state and controller error flags.
 
-bool i2c_bus_recover(void)                /* pins temporarily configured as open-drain GPIO */
-{
-    sda_set(1);
-    for (int i = 0; i < 9 && !sda_get(); i++) {
-        scl_set(0); delay_us(5);
-        scl_set(1); delay_us(5);
-    }
-    if (!sda_get()) return false;         /* still stuck: power-cycle the device if possible */
-    sda_set(0); delay_us(5);              /* generate STOP: SDA low → high while SCL high */
-    scl_set(1); delay_us(5);
-    sda_set(1); delay_us(5);
-    return true;                          /* now re-init the I2C peripheral */
-}
+#### 2. Bus recovery
+
+If the controller is the only active bus owner and the hardware permits recovery, an SDA-low target waiting for clock edges may release the line after clock pulses. A conventional recovery sequence can attempt up to nine SCL pulses, observing actual line levels, then generate STOP when possible.
+
+```text
+Release SDA --> pulse SCL with open-drain semantics
+             --> check whether SDA is released
+             --> generate STOP if bus state permits
+             --> restore controller/pin configuration
 ```
 
-**Other causes of a stuck bus**
+If SCL itself is held low, pulses cannot be generated normally. Reset or power-cycle the faulty device only when the system design permits it.
 
-- **SCL held low** by a crashed target (clock stretching forever): clocking does not help; reset or power-cycle the device (a GPIO-controlled reset line or power switch on the board is good design practice).
-- **Controller peripheral in a bad state** after a glitch: reset the peripheral (many MCUs have errata requiring this).
-- **Missing or wrong pull-ups**, shorted lines, or a device powered off that clamps the lines through its protection diodes.
+#### 3. Linux
 
-**Prevention:** use timeouts on every I2C wait, call bus recovery on timeout, and design hardware so devices can be reset. The Linux kernel provides `i2c_recover_bus()` with GPIO-based recovery described in the device tree (`scl-gpios`, `sda-gpios`).
+Use the adapter driver's supported bus-recovery mechanism where available. Do not directly toggle GPIOs behind an active I2C controller or another bus owner.
+
+**Interview takeaway:** Recovery is conditional on the actual fault and bus ownership. Use bounded timeouts and the hardware/controller's recovery procedure; do not assume nine pulses always fix a stuck bus.
 
 ### What is the difference between 7-bit and 10-bit I2C addressing? {E}
 **Short answer:** 7-bit addressing gives 128 addresses, of which 16 are reserved, so 112 are usable; it is used by almost all devices. 10-bit addressing sends a first byte `11110xx` + R/W (where `xx` are the two high address bits) followed by a second byte with the low 8 bits, giving 1024 addresses; 10-bit devices are rare.
