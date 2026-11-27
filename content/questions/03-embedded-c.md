@@ -236,32 +236,45 @@ The kernel supplies irq and dev_id and uses the returned status. This is a softw
 **Interview takeaway:** Raw ISR signatures follow the architecture/compiler convention; OS frameworks can supply arguments and return status through their own handler API.
 
 ### What is interrupt latency and how do you reduce it? {M}
-**Short answer:** Interrupt latency is the time from the interrupt signal being asserted until the first instruction of the ISR runs. On Cortex-M3/M4 the hardware minimum is 12 clock cycles with zero-wait-state memory (Cortex-M0 is 16, M0+ 15). In real systems it is dominated by software: periods with interrupts disabled, higher-priority interrupts running, and memory wait states.
+Interrupt latency is the time from interrupt assertion to the point at which the CPU starts servicing the interrupt. Define the exact measurement points when specifying latency.
 
-**What adds latency**
+#### 1. Sources of delay
 
-| Cause | Effect |
+```text
+IRQ asserted
+     | Pending / masked / higher-priority handler
+     | Interrupt-controller delivery
+     | Architectural exception entry
+     | Handler prologue
+     v
+First measured handler instruction
+```
+
+A high-priority ISR running for 20 microseconds can delay a lower-priority interrupt by a significant part of that time.
+
+#### 2. How to reduce latency
+
+- Keep interrupt-disabled regions short.
+- Assign priorities according to actual deadlines.
+- Keep higher-priority handlers bounded.
+- Use DMA to reduce frequent CPU interrupts.
+- Avoid long flash wait states or memory stalls in critical paths where supported.
+
+Cortex-M features such as tail chaining can reduce exception transition overhead, but do not remove masking or contention delays.
+
+#### 3. How to measure
+
+Toggle a GPIO at the earliest practical ISR point, then compare that signal against the input interrupt edge using a scope or logic analyzer. Alternatively use hardware trace or a cycle counter where supported.
+
+The measurement includes instrumentation and peripheral write delays, so document these. Measure under worst-case load, not just on an idle system.
+
+| Metric | Meaning |
 |---|---|
-| Interrupts disabled (critical sections, `__disable_irq`) | the interrupt waits until they are re-enabled |
-| A higher- or equal-priority ISR already running | waits for it to finish (or tail-chains after it) |
-| Flash wait states, cache misses on the vector fetch or stacking | adds cycles |
-| FPU context stacking (Cortex-M4F/M7) | up to 17 extra words; lazy stacking defers it |
-| RTOS kernel critical sections | the kernel masks interrupts up to its syscall priority |
-| Multi-cycle instructions (e.g. `LDM` on some cores) | may be restarted or completed first |
-| Wake-up from deep sleep | clock and regulator start-up time (microseconds to milliseconds) |
+| Interrupt latency | Request to handler entry |
+| ISR execution time | Handler entry to completion |
+| Response time | Request to application-visible action |
 
-**How to reduce it**
-
-- Keep critical sections short; mask only what you must (**`BASEPRI`** to block lower priorities instead of `PRIMASK`, which blocks everything).
-- Give time-critical interrupts the highest priority and keep other ISRs short.
-- Put the vector table and hot ISRs in RAM or TCM (Cortex-M7: ITCM) to avoid flash wait states; enable flash prefetch/ART accelerators and caches.
-- Avoid the FPU in time-critical ISRs, or keep lazy stacking enabled.
-- On an RTOS, run the most time-critical interrupts **above** the RTOS's maximum syscall priority, so kernel critical sections never mask them (they then must not call RTOS APIs).
-- Choose a lighter sleep mode if wake-up time matters.
-
-**Jitter** (variation in latency) often matters more than the average for control loops; measure both by toggling a GPIO at the start of the ISR and capturing the delay from the input edge on an oscilloscope or logic analyser.
-
-**Related Cortex-M features:** tail-chaining (6 cycles between back-to-back ISRs instead of a full exit and entry) and late arrival (a higher-priority interrupt arriving during stacking gets serviced first without re-stacking) both reduce latency automatically.
+**Interview takeaway:** Optimize worst-case latency and jitter rather than only average interrupt response.
 
 ### What is a critical section and how do you implement one on bare metal? {M}
 **Short answer:** A critical section is a piece of code that must not be interrupted by anything that accesses the same shared data. On a single-core MCU the simplest implementation is to disable interrupts on entry and restore the previous state on exit; saving and restoring (instead of blindly re-enabling) makes it safe to nest.
