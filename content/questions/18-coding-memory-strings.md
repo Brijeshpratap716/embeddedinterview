@@ -922,6 +922,10 @@ Result: vowels 3, consonants 7.
 
 **Points interviewers check:** non-letters such as digits and punctuation are neither vowels nor consonants; `tolower` must receive an `unsigned char` value (negative `char` values are undefined behaviour for `<ctype.h>` functions); output via pointers (or a struct) because C returns one value.
 
+#### Classification example
+
+"Hello, ARM 64!" contains three vowels (e, o, A) and five consonants (H, l, l, R, M). Digits, punctuation and spaces do not contribute. For ctype functions, convert a char to unsigned char before passing it; negative signed-char values other than EOF are not valid inputs. If the specification requires ASCII rather than locale-dependent letters, explicitly use ASCII ranges on ASCII-compatible targets.
+
 ### Find the first non-repeated character in a string. {E}
 **Short answer:** Use two passes over the string with a 256-entry count table: the first pass counts how many times each byte appears, and the second pass walks the string in its original order and returns the first character whose count is 1. Time O(n), space O(1) (a fixed table).
 
