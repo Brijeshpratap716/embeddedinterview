@@ -110,23 +110,19 @@ Use a bounded non-blocking ring buffer, hardware trace, GPIO timing pulses or de
 **Interview takeaway:** A bug that disappears after adding logging is not necessarily fixed. The instrumentation may have changed the race or timing.
 
 ### What are ITM, SWO, ETM and RTT, and when do you use trace? {M}
-**Short answer:** They are ways to get data out of a running Cortex-M without stopping it. **ITM** (Instrumentation Trace Macrocell) sends software messages (printf-style output, event IDs) and hardware events (DWT data trace, PC sampling, exception entry/exit) over the single-wire **SWO** pin. **ETM** (Embedded Trace Macrocell) streams every executed instruction through a parallel trace port (or into an on-chip buffer like the ETB/MTB), giving a full execution history for timing analysis and code coverage. **RTT** (SEGGER Real-Time Transfer) uses ring buffers in RAM that the debug probe reads in the background, so it works on any core with just SWD.
+Trace provides observability without stopping the CPU, subject to bandwidth and hardware limits.
 
-| | ITM/SWO | ETM (+ trace port) | MTB (Cortex-M0+) | RTT |
-|---|---|---|---|---|
-| Data | software messages, PC samples, exception trace, data watch trace | full instruction trace | recent branches in RAM | software messages, bidirectional |
-| Pins | 1 (SWO) | 4–5 (TRACECLK, TRACEDATA[3:0]) | none | none (SWD) |
-| Probe | most probes | trace probes (J-Trace, Lauterbach, ULINKpro) | any | J-Link (and some others) |
-| Use | logging, profiling, ISR timing | "what happened before the crash", coverage, WCET | post-mortem branch history | fast logging, shell |
+| Mechanism | Purpose |
+|---|---|
+| ITM | Software instrumentation and supported hardware events |
+| SWO | Serial trace output path, where available |
+| ETM | Hardware instruction trace on supported cores |
+| RTT | RAM-buffer communication read through a debug probe |
 
-**Uses of trace**
+#### Selection
+Use ITM/SWO or RTT for low-overhead events and timestamps. Use ETM when the execution history before a fault is required and suitable trace capture is available.
 
-- Finding the code path just before a HardFault (ETM/MTB history).
-- Statistical profiling: PC sampling every N cycles shows where CPU time goes.
-- RTOS event trace: Percepio Tracealyzer and SEGGER SystemView record context switches, ISRs and API calls (via RTT or a RAM buffer) and display timelines.
-- Code coverage on target with ETM, without instrumentation.
-
-**DWT cycle counter:** `DWT->CYCCNT` (enable with `CoreDebug->DEMCR |= TRCENA; DWT->CTRL |= 1`) gives cycle-accurate timing of code sections, available on Cortex-M3 and above.
+**Interview takeaway:** Trace is not infinitely fast. Check buffer overflow, timestamp accuracy, target support and whether the implementation can block.
 
 ### How do you find memory corruption and stack overflows in firmware? {M}
 **Short answer:** Detect them as close to the cause as possible: **stack overflows** with MPU guard regions below each stack (immediate MemManage fault), the Armv8-M stack limit registers (MSPLIM/PSPLIM), RTOS stack checking (canary patterns checked at context switches), and high-water marks from stack painting; **memory corruption** with data watchpoints on the corrupted variable, canary values around buffers and heap blocks, MPU regions that make code and constant data read-only and catch NULL pointer access, and host-side tools (AddressSanitizer, Valgrind) by running the same code in unit tests on a PC.
