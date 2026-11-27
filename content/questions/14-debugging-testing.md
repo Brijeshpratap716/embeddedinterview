@@ -140,55 +140,21 @@ A task with a 512-byte stack declares a 600-byte local buffer. Increase or redes
 **Interview takeaway:** Stack watermarking estimates observed usage, not a mathematical worst-case guarantee. Test interrupt nesting and fault paths as well.
 
 ### How do you unit test embedded C code? {M}
-**Short answer:** Separate hardware access from logic behind thin interfaces (HAL functions, function pointers or link-time substitution), then compile and run the logic **on the host PC** with a test framework (Unity, CppUTest, GoogleTest, CMocka), replacing hardware functions with **fakes or mocks** (CMock, FFF, hand-written fakes). Run the tests on every commit in CI, measure coverage, and add on-target and hardware-in-the-loop tests for what only real hardware can show.
+Unit testing verifies small software components in isolation with repeatable inputs and expected outputs.
 
-**Example: testing a debounce module with Unity**
-
+#### Separate logic from hardware
 ```c
-/* debounce.h */
-#include <stdbool.h>
-#include <stdint.h>
-typedef struct { uint8_t count; bool state; } debounce_t;
-bool debounce_update(debounce_t *d, bool raw);       /* call every 1 ms; returns stable state */
-
-/* debounce.c */
-bool debounce_update(debounce_t *d, bool raw)
+bool temperature_alarm(int value, int limit)
 {
-    if (raw == d->state) { d->count = 0; return d->state; }
-    if (++d->count >= 5) { d->state = raw; d->count = 0; }   /* 5 consecutive samples */
-    return d->state;
+    return value >= limit;
 }
-
-/* test_debounce.c — runs on the PC */
-#include "unity.h"
-#include "debounce.h"
-
-void setUp(void) {}
-void tearDown(void) {}
-
-void test_glitch_is_ignored(void)
-{
-    debounce_t d = {0};
-    debounce_update(&d, true);  debounce_update(&d, true);
-    debounce_update(&d, false);                      /* bounce back */
-    for (int i = 0; i < 4; i++) TEST_ASSERT_FALSE(debounce_update(&d, true));
-    TEST_ASSERT_TRUE(debounce_update(&d, true));     /* 5th consecutive sample */
-}
-
-int main(void) { UNITY_BEGIN(); RUN_TEST(test_glitch_is_ignored); return UNITY_END(); }
 ```
+Test below, at and above the threshold on the host. For hardware-dependent code, inject an interface and replace register/bus operations with fakes or mocks.
 
-**Techniques for replacing hardware**
+#### Workflow
+Use frameworks such as Unity/Ceedling or a project-specific test harness. Check success, errors, boundaries, timeouts and state transitions. Run with sanitizers on the host and add target tests for real hardware behavior.
 
-| Technique | How | Pros/cons |
-|---|---|---|
-| Link-time substitution | link `fake_gpio.c` instead of `gpio.c` in the test build | simple, no production code changes |
-| Function pointers / interfaces | driver struct with ops, tests pass fakes | flexible, small run-time cost |
-| Generated mocks (CMock, FFF) | mocks record calls and return programmed values | verifies interactions; tests can become brittle |
-| Register-level fakes | point the peripheral base pointer at a RAM struct | tests driver register logic on the host |
-| Emulation | run the firmware in QEMU or Renode | tests whole images, including startup and RTOS |
-
-**Good practices:** test-driven development for logic-heavy modules (parsers, state machines, protocol handling, filters), keep hardware-dependent code thin, run tests with sanitizers (`-fsanitize=address,undefined`) on the host, and track coverage with gcov/lcov. Book: *Test-Driven Development for Embedded C* (James Grenning).
+**Interview takeaway:** Unit tests do not prove electrical timing or register side effects; complement them with integration and hardware tests.
 
 ### What is hardware-in-the-loop (HIL) testing, and how do you set up CI for firmware? {M}
 **Short answer:** **CI for firmware** builds every configuration and target on each commit, runs static analysis and host unit tests, checks code size, and produces versioned artifacts. **Hardware-in-the-loop** testing then flashes the build onto real boards (or a board farm) connected to test equipment that simulates the environment — sensors, buses, power supplies, network — and runs automated system tests that check behaviour, timing and recovery. Simulation-based testing (QEMU, Renode) sits in between: whole firmware images on virtual hardware, faster and easier to scale than real boards.
