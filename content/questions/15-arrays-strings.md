@@ -616,37 +616,29 @@ bool majority(const int a[], size_t n, int *out)
 **Complexity:** O(n) time, O(1) space.
 
 ### How do you search for a value in a rotated sorted array? {M}
-**Short answer:** A sorted array rotated at an unknown point (e.g. `{4, 5, 6, 7, 0, 1, 2}`) can still be searched in O(log n). At each binary-search step, at least one half is properly sorted. Check whether the target lies inside that sorted half's range; if so, search it, otherwise search the other half.
+A rotated sorted array with distinct elements always has at least one sorted half around its midpoint. Determine whether the key lies inside that half.
 
 ```c
-#include <stddef.h>
-
-long search_rotated(const int *a, size_t n, int target)   /* distinct values */
+size_t rotated_search(const int a[],size_t n,int key)
 {
-    size_t lo = 0, hi = n;                     /* [lo, hi) */
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-        if (a[mid] == target) return (long)mid;
-        if (a[lo] <= a[mid]) {                 /* left half [lo, mid] is sorted */
-            if (a[lo] <= target && target < a[mid]) hi = mid;
-            else                                     lo = mid + 1;
-        } else {                               /* right half [mid, hi-1] is sorted */
-            if (a[mid] < target && target <= a[hi - 1]) lo = mid + 1;
-            else                                          hi = mid;
+    size_t l=0,r=n;
+    while (l<r) {
+        size_t m=l+(r-l)/2;
+        if (a[m]==key) return m;
+        if (a[l]<=a[m]) {
+            if (a[l]<=key && key<a[m]) r=m;
+            else l=m+1;
+        } else {
+            if (a[m]<key && key<=a[r-1]) l=m+1;
+            else r=m;
         }
     }
-    return -1;
+    return SIZE_MAX;
 }
-/* {4, 5, 6, 7, 0, 1, 2}, target 0 -> 4 */
 ```
+[4,5,6,7,0,1,2], key 0 → index 4. With duplicates, equal endpoints can obscure the sorted half; narrowing ambiguous boundaries may degrade to O(n).
 
-**Dry run (target 0):** lo 0, hi 7, mid 3 (7). Left half 4..7 sorted, 0 not in [4, 7) → lo 4. mid 5 (1). `a[4]=0 <= a[5]=1`: left half sorted, 0 in [0, 1) → hi 5. mid 4 (0) → found at 4.
-
-**Duplicates** (e.g. `{1, 1, 1, 3, 1}`) break the "which half is sorted" test when `a[lo] == a[mid] == a[hi-1]`; then you can only shrink by one (`lo++`), and the worst case becomes O(n).
-
-**Related:** find the rotation point (the minimum) with binary search comparing `a[mid]` with `a[hi-1]`.
-
-**Embedded relevance:** a circular log or ring buffer of timestamped records written in order and wrapped around is exactly a rotated sorted array; this search finds a record by timestamp without unrolling the buffer.
+**Complexity:** O(log n) time for distinct input, O(1) space.
 
 ### How do you add two binary strings or add one to a number stored as digits? {E}
 **Short answer:** Work from the least significant end (the right) with a carry, exactly like addition on paper: sum the two digits plus the carry, write `sum % base`, carry `sum / base`. If a carry is left at the end, the result is one digit longer.
