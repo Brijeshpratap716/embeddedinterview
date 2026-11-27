@@ -265,34 +265,34 @@ Inspect bootcmd and bootargs and interrupt autoboot using the platform's configu
 **Interview takeaway:** U-Boot commands manipulate real hardware and memory. Understand address ranges and image formats before issuing memory writes or persistent environment operations.
 
 ### What are kernel command line (bootargs) parameters? {E}
-**Short answer:** The kernel command line is a string of parameters passed by the bootloader (or stored in the device tree's `/chosen/bootargs`, or built into the kernel) that configures the kernel at boot: which console to use, where the root filesystem is, log level, and settings for built-in drivers. The running values are in `/proc/cmdline`.
+Kernel command-line parameters supply configuration options to Linux at boot. U-Boot commonly stores the command line in bootargs and passes it through the configured boot mechanism, such as the device tree's chosen node.
 
+#### 1. Example
+
+```text
+console=ttyS0,115200 root=/dev/mmcblk0p2 rootwait rw
 ```
-console=ttymxc0,115200 earlycon root=/dev/mmcblk0p2 rootfstype=ext4 rootwait ro quiet loglevel=4 panic=5
-```
 
-**Common parameters**
-
-| Parameter | Meaning |
+| Parameter | Purpose |
 |---|---|
-| `console=ttyS0,115200` | kernel console device and baud rate (can be given more than once) |
-| `earlycon` | very early console from the DT `stdout-path`, before the UART driver probes |
-| `root=/dev/mmcblk0p2` | root filesystem device (also `PARTUUID=...`, `/dev/nfs`, `ubi0:rootfs`) |
-| `rootfstype=ext4` | skip filesystem probing |
-| `rootwait` | wait until the root device appears (needed for slow eMMC/SD/USB) |
-| `ro` / `rw` | mount root read-only or read-write |
-| `init=/bin/sh` | run a different first program (recovery trick) |
-| `quiet`, `loglevel=N` | reduce console output (printing to a slow UART can add seconds to boot) |
-| `panic=5` | reboot 5 s after a kernel panic |
-| `mem=512M` | limit usable memory |
-| `module.param=value` | parameter for a built-in driver, e.g. `usbcore.autosuspend=-1` |
-| `nfsroot=`, `ip=dhcp` | network root filesystem for development |
+| console= | Select kernel console device/settings |
+| root= | Specify root filesystem device or identifier |
+| rootwait | Wait for the root device to appear |
+| ro / rw | Initial root mount mode |
+| earlycon | Enable supported early console output |
+| init= | Override normal init program selection |
 
-**Where it comes from (priority depends on kernel config):** U-Boot's `bootargs` variable, which U-Boot writes into the DTB's `/chosen` node; the DTB itself; or `CONFIG_CMDLINE` built into the kernel (can be set to append, extend or force).
+Actual device names and console settings are platform-specific. Stable identifiers such as PARTUUID may be preferable to enumeration-dependent names.
 
-**How the kernel parses it:** parameters registered with `__setup()` or `early_param()`, and `module_param()` for built-in modules. Anything the kernel does not recognise is passed to init as arguments or environment variables.
+#### 2. Inspect running kernel
 
-**Security note:** if users can change `bootargs` (open U-Boot console), they can add `init=/bin/sh` and get a root shell. Locking the environment is part of hardening.
+```sh
+cat /proc/cmdline
+```
+
+This reports the command line the kernel received. Built-in kernel parameters, module parameters and userspace-consumed options have distinct handling.
+
+**Interview takeaway:** bootargs configures the kernel at boot; it is not the same as U-Boot bootcmd, which determines the bootloader commands that run.
 
 ### What is an initramfs and when is it needed? {M}
 **Short answer:** An initramfs is a small root filesystem packed as a cpio archive, which the kernel unpacks into a RAM-based filesystem (tmpfs/ramfs) and runs `/init` from before the real root filesystem is mounted. It is needed when mounting the real root needs work that the kernel alone cannot do: loading storage drivers built as modules, decrypting, assembling RAID/LVM, picking an A/B slot, or checking integrity.
