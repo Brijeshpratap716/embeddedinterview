@@ -1063,46 +1063,53 @@ Use inline assembly for operations not exposed by a suitable intrinsic, or when 
 **Interview takeaway:** Prefer documented intrinsics where possible. Check their target requirements, edge cases and ordering semantics; an intrinsic does not automatically imply a memory barrier.
 
 ### How do you implement a delay without blocking the CPU? {M}
-**Short answer:** Use a free-running time base (e.g. a 1 ms SysTick counter or a hardware timer) and compare timestamps instead of spinning in a delay loop. Record the start time, return to the main loop, and check later whether the required time has elapsed. Use unsigned arithmetic `(now - start) >= interval` so the check keeps working when the counter wraps around.
+A nonblocking delay allows the CPU to perform other work while waiting for a deadline. Instead of spinning, record the starting time and check elapsed time from a periodic service function.
+
+#### 1. Blocking approach
 
 ```c
-#include <stdbool.h>
+delay_ms(100);
+toggle_led();
+```
+
+The caller cannot service other foreground work during a busy-wait delay.
+
+#### 2. Nonblocking approach
+
+```c
 #include <stdint.h>
 
-static volatile uint32_t g_ms;              /* incremented in SysTick_Handler */
-void SysTick_Handler(void) { g_ms++; }
-
-static inline uint32_t millis(void) { return g_ms; }   /* 32-bit read is atomic on Cortex-M */
-
-typedef struct { uint32_t start, interval; } soft_timer_t;
-
-bool timer_expired(soft_timer_t *t)
+void led_service(void)
 {
-    if ((uint32_t)(millis() - t->start) >= t->interval) {
-        t->start += t->interval;            /* keeps a fixed period without drift */
-        return true;
-    }
-    return false;
-}
+    static uint32_t last;
+    uint32_t now = millis();
 
-/* main loop */
-soft_timer_t led = { 0, 500 };
-for (;;) {
-    if (timer_expired(&led)) toggle_led();
-    poll_uart();                            /* other work keeps running */
+    if ((uint32_t)(now - last) >= 100U) {
+        last = now;
+        toggle_led();
+    }
 }
 ```
 
-**Why unsigned subtraction works across wrap-around:** if `start = 0xFFFFFFF0` and the counter wraps to `now = 0x00000010`, then `now - start` in 32-bit unsigned arithmetic is `0x20` = 32 ms, which is correct. The broken form `if (now >= start + 500)` fails because `start + 500` wraps to a small number and the condition becomes true immediately (or never). The difference must be compared, not the absolute times. A 32-bit millisecond counter wraps every 49.7 days, which is exactly when long-running devices fail with the broken form.
+Call led_service repeatedly from the main loop. The unsigned subtraction handles ordinary counter wraparound, provided the elapsed interval is observed within the counter's wrap period.
 
-**Other non-blocking approaches**
+#### 3. Main-loop example
 
-- **Hardware timer interrupt or one-shot timer** that sets a flag or calls a callback.
-- **State machines** where each state records when it was entered and moves on when a timeout passes.
-- **RTOS:** `vTaskDelay()`/`vTaskDelayUntil()` block only the calling task; other tasks run (this is "blocking" for the task but not for the CPU).
-- **Low power:** if nothing else needs doing, sleep (`__WFI()`) until the next timer interrupt instead of busy-polling.
+```c
+for (;;) {
+    led_service();
+    uart_service();
+    button_service();
+}
+```
 
-**When short busy-wait delays are fine:** a few microseconds required by hardware (e.g. a 10 µs reset pulse) can use a cycle-counter loop (`DWT->CYCCNT` on Cortex-M3+), but not with a plain `for` loop, which the optimiser may delete and whose timing depends on clock speed and flash wait states.
+Each service function performs short bounded work and returns promptly. Updating last to now skips missed periods; adding the period to last instead maintains a periodic schedule but requires an explicit missed-deadline policy.
+
+#### 4. RTOS alternative
+
+A task may block using an RTOS delay or wait for a timer event, allowing other ready tasks to run. Blocking the current task is different from busy-waiting the CPU.
+
+**Interview takeaway:** Use elapsed-time checks, hardware timers or RTOS waits rather than spin delays for long waits. Time resolution and scheduling jitter determine actual timing accuracy.
 
 ### What is a super loop (foreground/background) architecture? {E}
 **Short answer:** A super loop is the simplest firmware structure: `main()` initialises the hardware and then runs an infinite loop that calls each task function in turn. Interrupts (the **foreground**) handle time-critical events quickly and set flags or fill buffers; the loop (the **background**) does the processing. It needs no RTOS and is easy to understand, but the response time of every task depends on the total time of one pass of the loop.
