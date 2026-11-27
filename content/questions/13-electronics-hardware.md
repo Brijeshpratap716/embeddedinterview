@@ -209,15 +209,18 @@ At 1 A and RDS(on) = 50 mΩ, conduction loss is 50 mW, excluding switching losse
 **Interview takeaway:** Gate threshold is not the full-enhancement voltage. Inductive loads require an appropriate flyback or clamp path.
 
 ### What is a flyback diode and why is it needed? {E}
-**Short answer:** When current through an inductive load (relay coil, motor, solenoid) is switched off suddenly, the inductor's stored energy produces a large voltage spike (V = L × di/dt, often hundreds of volts) that can destroy the switching transistor or MCU pin. A **flyback (freewheeling) diode** across the load, reverse-biased in normal operation (cathode to the positive supply), gives the current a path to circulate and decay safely, clamping the spike to about one diode drop above the supply.
+An inductor opposes a sudden change in current. Opening a relay-coil switch can produce a high voltage and damage the driver. Connect a flyback diode across the coil, cathode to supply and anode to the low-side switch.
 
-**Trade-off: release time.** A plain diode lets the current decay slowly, so a relay opens more slowly (and motors keep spinning). For faster release, add a Zener or TVS in series with the diode (clamps at a higher voltage, dissipating energy faster) while keeping the voltage below the transistor's rating.
+```text
++V ----- Coil -----+---- switch ---- GND
+ |                 |
+ +-----|<|---------+
+     flyback diode
+```
 
-**Motors driven in both directions (H-bridges)** have four freewheeling diodes (often the MOSFETs' body diodes, or synchronous rectification by switching on the opposite MOSFETs).
+During normal operation the diode is reverse-biased. When the switch opens, coil current circulates through the diode.
 
-**Choosing the diode:** reverse voltage above the supply, current rating at least the load current (for the decay time), fast or Schottky types for PWM-driven loads.
-
-**Firmware symptom of a missing or failed diode:** the MCU resets or a GPIO dies when a relay switches; noise on ADC readings at each motor commutation.
+**Interview takeaway:** A simple diode limits voltage but slows relay release. A suitably designed TVS clamp can speed turn-off within the switch ratings.
 
 ### What is ESD and how do you protect a board? {M}
 **Short answer:** Electrostatic discharge is a fast, high-voltage pulse (thousands of volts, nanosecond rise times, amps of peak current) when a charged person or object touches a connector or pin. It can destroy or weaken ICs immediately or cause latent damage and glitches (resets, lock-ups, corrupted registers). Protect external interfaces with **TVS diodes** placed right at the connector with a short path to ground, add series resistors or ferrites on signals, use proper grounding and enclosure design, and design firmware to recover from glitches.
