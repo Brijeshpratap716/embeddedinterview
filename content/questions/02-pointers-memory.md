@@ -9,30 +9,50 @@ desc: Pointer arithmetic, arrays vs pointers, the memory layout of a C program, 
 Pointers are where interviewers separate people who have written C from people who have debugged it. Expect to draw memory on a whiteboard. Each answer gives the short version first, then the explanation, code, and the mistakes interviewers look for.
 
 ### What is a pointer? {E}
-**Short answer:** A pointer is a variable whose value is the address of another object (or function). Its type says what kind of object is at that address, which decides how many bytes a dereference reads or writes and how far `p + 1` moves.
+A pointer is a variable whose value refers to another object or function. Its type tells the compiler how to interpret the pointed-to object.
+
+#### 1. Declaring and dereferencing a pointer
 
 ```c
-int x = 10;
-int *p = &x;     /* & gives the address of x; p now points to x */
-*p = 20;         /* * dereferences: writes 20 into x */
-printf("%p %d\n", (void *)p, *p);
+int a = 10;
+int *p = &a;
+
+printf("%d", *p); // 10
+*p = 20;
+printf("%d", a);  // 20
 ```
 
-**Key facts**
+- `&a` obtains the address of a.
+- `p` stores that address.
+- `*p` accesses the object at that address.
 
-- **Size:** a data pointer is 4 bytes on a 32-bit MCU (Cortex-M) and 8 bytes on 64-bit Linux (ARM64, x86-64), regardless of what it points to. On some 8-bit/16-bit MCUs (AVR, 8051) there are different pointer sizes for code and data memory.
-- **Type matters:** `uint8_t *` and `uint32_t *` may hold the same address, but `*p` reads 1 byte versus 4 bytes.
-- **NULL:** a pointer that points to nothing. Always initialise pointers, either to an object or to `NULL`.
-- **Dereferencing an invalid pointer** (NULL, freed, uninitialised, out of bounds) is undefined behaviour.
+#### 2. Memory representation
 
-**Why pointers are essential in embedded C**
+<div style="max-width:600px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 114" width="100%" role="img" aria-label="Pointer at address 0x2004 contains the address 0x2000 of integer a">
+<rect x="8" y="23" width="118" height="47" rx="5" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/>
+<text x="67" y="40" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">p = 0x2000</text><text x="67" y="57" text-anchor="middle" font-size="11" fill="currentColor">Pointer variable</text>
+<rect x="228" y="23" width="104" height="47" rx="5" fill="#16a34a" fill-opacity=".13" stroke="#16a34a"/>
+<text x="280" y="40" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">a = 20</text><text x="280" y="57" text-anchor="middle" font-size="11" fill="currentColor">Integer object</text>
+<path d="M126 47 H228 m-6-4 6 4-6 4" stroke="currentColor" fill="none"/><text x="177" y="40" text-anchor="middle" font-size="10" fill="currentColor">points to</text>
+<text x="67" y="85" text-anchor="middle" font-size="10" fill="currentColor">Address 0x2004</text><text x="280" y="85" text-anchor="middle" font-size="10" fill="currentColor">Address 0x2000</text>
+<text x="170" y="105" text-anchor="middle" font-size="10" fill="currentColor">Illustrative 32-bit memory addresses</text></svg></div>
 
-- Accessing hardware registers at fixed addresses.
-- Passing large structures and buffers to functions without copying them.
-- Letting functions return several results (output parameters).
-- Callbacks (function pointers), linked structures, and DMA descriptors that hold addresses of buffers.
+#### 3. Pointer size and type
 
-**Reading declarations:** `int *p` (pointer to int), `int **pp` (pointer to pointer to int), `int *a[4]` (array of 4 pointers), `int (*a)[4]` (pointer to an array of 4 ints), `int (*f)(void)` (pointer to a function).
+| Expression | Meaning |
+|---|---|
+| `sizeof(p)` | Size of the pointer itself |
+| `sizeof(*p)` | Size of the pointed-to int |
+| `p + 1` | Next int element, where valid |
+| `p = NULL` | Pointer refers to no object |
+
+Object pointers are commonly 4 bytes on Cortex-M and 8 bytes on AArch64 Linux, but the C language does not require either size or identical representations for all pointer types.
+
+#### 4. Use in embedded systems
+
+Pointers allow hardware register access, passing buffers without copying them, linked lists, callback functions and modifying caller-owned objects.
+
+**Interview takeaway:** A pointer and its target are distinct objects. Never dereference a null, uninitialized, dangling or out-of-bounds pointer.
 
 ### How does pointer arithmetic work? {E}
 **Short answer:** Adding an integer `n` to a pointer moves it by `n * sizeof(*p)` bytes, so `p + 1` points to the **next element**, not the next byte. Subtracting two pointers into the same array gives the number of elements between them (type `ptrdiff_t`). Arithmetic is only defined within one array object (and one past its end).
