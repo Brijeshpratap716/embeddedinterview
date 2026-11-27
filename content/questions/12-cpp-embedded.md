@@ -232,44 +232,32 @@ Flags such as -fno-exceptions and -fno-rtti are compiler-specific. Ensure librar
 **Interview takeaway:** Exceptions and RTTI are optional design choices in many embedded projects. Decide based on measured footprint, supported toolchain and timing/error-handling requirements.
 
 ### What are templates and what is code bloat? {M}
-**Short answer:** Templates let you write type- or value-generic code (functions, classes) that the compiler instantiates for each set of template arguments used, producing code as efficient as hand-written specialised code. **Code bloat** is the downside: every distinct instantiation (e.g. `RingBuffer<uint8_t, 64>`, `RingBuffer<uint8_t, 128>`, `RingBuffer<uint16_t, 64>`) generates a separate copy of the functions, which can grow flash usage significantly.
+Templates define code parameterized by types or compile-time values. The compiler instantiates versions needed by the program.
+
+#### 1. Example
 
 ```cpp
-#include <array>
-#include <cstddef>
-#include <cstdio>
-
-template <typename T, std::size_t N>
-class RingBuffer {
-    static_assert((N & (N - 1)) == 0, "N must be a power of two");
-public:
-    bool push(const T &v) { if (head_ - tail_ == N) return false; buf_[head_++ & (N - 1)] = v; return true; }
-    bool pop(T &v)        { if (head_ == tail_) return false; v = buf_[tail_++ & (N - 1)]; return true; }
-    std::size_t size() const { return head_ - tail_; }
-private:
-    std::array<T, N> buf_{};
-    std::size_t head_ = 0, tail_ = 0;
+template<class T, unsigned N>
+struct Buffer {
+    T data[N]{};
+    constexpr unsigned size() const { return N; }
 };
 
-int main()
-{
-    RingBuffer<int, 4> rb;
-    for (int i = 0; i < 6; i++) rb.push(i);
-    int v;
-    while (rb.pop(v)) std::printf("%d ", v);     // 0 1 2 3
-    std::printf("\n");
-}
+Buffer<unsigned char, 64> rx;
+Buffer<unsigned short, 32> samples;
 ```
 
-**Controlling bloat**
+The two buffer types have different element types and capacities known at compile time.
 
-- **Hoist type-independent code** into a non-template base class that works on `void*` and sizes, with a thin template wrapper on top (the "thin template" idiom).
-- Limit the number of distinct instantiations (e.g. standardise buffer sizes).
-- Use `extern template` / explicit instantiation in one file to avoid duplicates across translation units (the linker removes identical duplicates anyway, but compile time shrinks).
-- Build with `-Os`, `-ffunction-sections -fdata-sections -Wl,--gc-sections` and LTO; the linker's identical code folding (`--icf` in lld/gold) merges identical instantiations.
-- Measure: check the map file or `nm --size-sort -C` for large template symbols.
+#### 2. Code bloat
 
-**Good embedded uses:** fixed-capacity containers, register access with compile-time addresses, unit-safe types (milliseconds vs microseconds), and compile-time pin configuration.
+Multiple template instantiations can generate separate machine-code copies for similar operations. Link-time optimization and linker folding may reduce duplicates, but are not guaranteed to eliminate them.
+
+#### 3. Reduce size
+
+Move type-independent work into shared non-template functions, avoid unnecessary combinations of parameters, use explicit instantiation where appropriate, and inspect the linker map and generated code.
+
+**Interview takeaway:** Templates can give strong typing and static dispatch without dynamic allocation. Code size depends on instantiation and optimization, so measure rather than assuming templates are free or always expensive.
 
 ### What are smart pointers and should you use them on an MCU? {M}
 **Short answer:** Smart pointers own the object they point to and release it automatically. `std::unique_ptr` has a single owner, is the same size as a raw pointer (with a stateless deleter) and has no run-time overhead, so it is fine on an MCU, especially with a **custom deleter** that returns memory to a pool. `std::shared_ptr` uses reference counting with a separately allocated control block and atomic increments, adding RAM, code and allocation, so it is usually avoided in firmware. Since most MCU code avoids the heap anyway, the main value is clear ownership.
