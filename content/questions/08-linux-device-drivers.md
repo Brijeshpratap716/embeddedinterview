@@ -878,38 +878,31 @@ On PREEMPT_RT, spinlock_t uses different underlying semantics and many IRQs are 
 **Interview takeaway:** Use mutexes when sleeping is allowed and spinlocks for short appropriate critical sections. Never hold a non-sleeping lock across an operation that may sleep.
 
 ### When should you use spin_lock_irqsave? {H}
-**Short answer:** Use `spin_lock_irqsave` when the data protected by the lock is also accessed from a **hard interrupt handler**. If process-context code takes a plain `spin_lock` and the interrupt fires on the same CPU, the handler spins forever on a lock that its own CPU holds, and the CPU deadlocks. `spin_lock_irqsave(&lock, flags)` disables local interrupts and saves their previous state, so it is safe from any context.
+spin_lock_irqsave acquires a spinlock while saving the local interrupt state. On ordinary non-RT kernels, it disables local hard interrupts to avoid deadlock when the same lock is acquired by a local interrupt handler.
+
+#### 1. Deadlock without IRQ protection
+
+A task acquires a lock. A local IRQ interrupts that task and attempts to acquire the same lock. The handler cannot proceed because the task owns it, and the task cannot resume until the interrupt returns.
+
+#### 2. Correct pattern
 
 ```c
-/* process context (e.g. ioctl) */
 unsigned long flags;
-spin_lock_irqsave(&d->lock, flags);
-d->config = new_config;
-spin_unlock_irqrestore(&d->lock, flags);
 
-/* hard IRQ handler on the same data */
-static irqreturn_t mydev_irq(int irq, void *data)
-{
-    struct mydev *d = data;
-    spin_lock(&d->lock);        /* interrupts are already disabled here: plain lock is enough */
-    d->count++;
-    spin_unlock(&d->lock);
-    return IRQ_HANDLED;
-}
+spin_lock_irqsave(&d->lock, flags);
+d->pending |= EVENT_RX;
+spin_unlock_irqrestore(&d->lock, flags);
 ```
 
-**Choosing the variant**
+The matching unlock restores the saved interrupt state. The lock also serializes competing CPUs.
 
-| Data shared with | Process-context side uses |
-|---|---|
-| only other process context | `spin_lock` (or a mutex if it may sleep) |
-| softirq / tasklet / timer | `spin_lock_bh` (disables bottom halves locally) |
-| hard IRQ handler | `spin_lock_irqsave` (or `spin_lock_irq` if interrupts are known to be enabled) |
+#### 3. When to use it
 
-- `spin_lock_irq` / `spin_unlock_irq` unconditionally re-enable interrupts, which is a bug if they were already disabled by the caller; `irqsave/irqrestore` restores the original state.
-- Interrupts are disabled only on the **local** CPU; another CPU can still run the handler and spin briefly on the lock, which is fine — that is what the spinlock is for.
-- Lockdep reports "inconsistent lock state" when a lock is taken both with and without IRQs disabled where an IRQ could interrupt the holder.
-- Keep these sections short: interrupt latency on that CPU grows while they are held.
+Use it when a lock is shared between process context and interrupt context on a non-RT kernel, or when the relevant locking design calls for saving interrupt state. Keep the section short and do not call sleeping APIs inside it.
+
+On PREEMPT_RT, spinlock_t and its IRQ variants have changed semantics. A true hard-IRQ shared critical section may require raw_spinlock_t or redesign; follow the documented RT locking rules.
+
+**Interview takeaway:** Local IRQ masking prevents same-core interrupt reentry; the spinlock handles cooperating CPUs. Restoring flags is safer than blindly enabling interrupts.
 
 ### What are atomic_t, RCU and seqlocks? {H}
 **Short answer:** **`atomic_t`/`atomic64_t`** provide lock-free integer operations (`atomic_inc`, `atomic_dec_and_test`, `atomic_cmpxchg`), and **`refcount_t`** is the safe type for reference counts (it saturates and warns instead of wrapping). **RCU (read-copy-update)** lets readers access shared data with almost no overhead and no locks: writers publish a new version with `rcu_assign_pointer` and free the old version only after a **grace period**, when all pre-existing readers have finished. **Seqlocks** let readers proceed without locks and retry if a writer changed the data during the read; they suit small, frequently read, rarely written data like timekeeping.
