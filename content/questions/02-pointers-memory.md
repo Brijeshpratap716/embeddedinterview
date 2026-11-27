@@ -928,50 +928,64 @@ Avoid arbitrary pointer casts when parsing packet buffers or examining floating-
 **Interview takeaway:** A pointer cast changes the pointer type, not the actual object's type. Access memory only through permitted types.
 
 ### How do you access a memory-mapped register at a fixed address? {E}
-**Short answer:** Convert the register's address into a pointer to a `volatile` fixed-width integer and dereference it. The `volatile` makes the compiler perform every read and write exactly as written. Vendor headers (CMSIS) do the same with a struct that overlays a whole peripheral's registers.
+Memory-mapped I/O (MMIO) assigns hardware registers addresses in the processor's memory map. Firmware reads or writes these registers through appropriately typed volatile accesses.
+
+#### 1. Bare-metal example
+
+Assume the hardware manual defines a 32-bit control register at address 0x40000010.
 
 ```c
 #include <stdint.h>
 
-#define GPIOA_BASE  0x40020000u
-#define GPIOA_MODER (*(volatile uint32_t *)(GPIOA_BASE + 0x00u))
-#define GPIOA_ODR   (*(volatile uint32_t *)(GPIOA_BASE + 0x14u))
+#define CTRL (*(volatile uint32_t *)0x40000010U)
 
-void led_on(void)
+void enable(void)
 {
-    GPIOA_MODER = (GPIOA_MODER & ~(3u << 10)) | (1u << 10);   /* PA5 as output */
-    GPIOA_ODR |= (1u << 5);                                     /* drive PA5 high */
+    CTRL |= (1U << 3);
 }
 ```
 
-**The struct-overlay style (CMSIS)**
+The processor performs a register read, modifies bit 3 and writes the result back. This is appropriate only if the register permits read-modify-write.
+
+#### 2. Hardware access flow
+
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 174" width="100%" role="img" aria-label="CPU issues an MMIO address through a system interconnect to a peripheral register">
+<rect x="95" y="5" width="150" height="32" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="25" text-anchor="middle" font-size="12" fill="currentColor">CPU load / store</text><path d="M170 37 V65 m-4-5 4 5 4-5" stroke="currentColor" fill="none"/><text x="180" y="53" font-size="10" fill="currentColor">Address + data</text>
+<rect x="75" y="65" width="190" height="31" rx="5" fill="#eab308" fill-opacity=".12" stroke="#ca8a04"/><text x="170" y="84" text-anchor="middle" font-size="12" fill="currentColor">Interconnect / address decode</text><path d="M170 96 V121 m-4-5 4 5 4-5" stroke="currentColor" fill="none"/>
+<rect x="65" y="121" width="210" height="45" rx="5" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/><text x="170" y="139" text-anchor="middle" font-size="12" fill="currentColor">Peripheral CTRL register</text><text x="170" y="155" text-anchor="middle" font-size="11" fill="currentColor">0x40000010 (illustrative)</text></svg></div>
+
+The address decoder routes the transaction to the correct peripheral instead of ordinary RAM.
+
+#### 3. Read-only register
 
 ```c
-typedef struct {
-    volatile uint32_t MODER;    /* 0x00 */
-    volatile uint32_t OTYPER;   /* 0x04 */
-    volatile uint32_t OSPEEDR;  /* 0x08 */
-    volatile uint32_t PUPDR;    /* 0x0C */
-    volatile const uint32_t IDR;/* 0x10  read-only */
-    volatile uint32_t ODR;      /* 0x14 */
-    volatile uint32_t BSRR;     /* 0x18  write-only set/reset */
-} GPIO_TypeDef;
+#define STATUS (*(const volatile uint32_t *)0x40000014U)
 
-#define GPIOA ((GPIO_TypeDef *)GPIOA_BASE)
-
-GPIOA->BSRR = 1u << 5;          /* atomic set of PA5, no read-modify-write */
+uint32_t value = STATUS;
 ```
 
-Use `_Static_assert(offsetof(GPIO_TypeDef, ODR) == 0x14, "")` to check the layout.
+Const prevents writes through this lvalue; volatile preserves required hardware reads.
 
-**Important details**
+#### 4. Linux driver example
 
-- **`volatile` is required**, or the compiler may combine, reorder or remove accesses (e.g. a polling loop reading a status register once).
-- **Access width:** some peripherals require 32-bit accesses; using `uint8_t` pointers to them may fault or be ignored. Match the width the reference manual specifies.
-- **Read-modify-write is not atomic.** `GPIOA->ODR |= x` can race with an ISR modifying the same register; use set/clear registers (`BSRR`), bit-banding, or a critical section.
-- **Write-1-to-clear** status bits: `SR |= FLAG` would clear **every** flag that is set; write only the bit you mean: `SR = FLAG`.
-- **Ordering:** `volatile` orders accesses in the compiler, but on cores with write buffers (Cortex-M7, Cortex-A) you may need `__DSB()` before relying on a write having reached the peripheral (e.g. before sleeping or after clearing an interrupt flag).
-- On Linux, user space cannot use physical addresses directly; drivers use `ioremap()` + `readl()`/`writel()`, and user space can `mmap()` `/dev/mem` or a UIO device for experiments.
+```c
+void __iomem *base;
+
+base = devm_platform_ioremap_resource(pdev, 0);
+if (IS_ERR(base))
+    return PTR_ERR(base);
+
+writel(1, base + 0x10);
+value = readl(base + 0x14);
+```
+
+This is a driver probe fragment. The resource index, offsets and access width must match the actual device. Use kernel MMIO APIs rather than directly dereferencing physical addresses.
+
+#### 5. Important precautions
+
+Check register width, alignment, reserved bits, read/write side effects and memory-ordering requirements. A write-one-to-clear register typically needs a direct mask write rather than OR-based read-modify-write. Volatile does not replace CPU barriers.
+
+**Interview takeaway:** Fixed-address pointers are common on bare metal. Linux uses mapped I/O addresses and MMIO accessors. Always follow the hardware's register semantics.
 
 ### Why is sizeof not a function? {E}
 **Short answer:** `sizeof` is a compile-time **operator**, not a function. The compiler evaluates it from the type of its operand, so no code runs and the operand expression is **not evaluated** (except for variable-length arrays). Parentheses are required only around a type name: `sizeof(int)`; for an expression, `sizeof x` is valid.
