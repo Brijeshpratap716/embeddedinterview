@@ -1119,36 +1119,60 @@ For example, function argument evaluation order is generally unspecified, and pl
 **Interview takeaway:** Correct behaviour on one board or at `-O0` is not proof of valid C. Fix the underlying UB instead of disabling optimization.
 
 ### What is a sequence point? {H}
-**Short answer:** A sequence point is a point in the execution where all side effects of earlier evaluations are complete and none of the later ones have started. If an object is modified twice, or modified and also read for another purpose, without a sequence point (in C11 terms, without being "sequenced before") between them, the behaviour is undefined.
+A sequence point establishes a boundary at which preceding evaluations and side effects have completed before subsequent ones begin. Modern C describes this more generally using **sequenced-before** relationships.
 
-**Where sequence points are (C99 terms)**
-
-- At the end of a full expression (the `;`, the condition of `if`/`while`/`for`, a `return` expression).
-- After the first operand of `&&`, `||`, `?:` and the comma operator.
-- After evaluating a function's arguments, just before the call.
-
-**Undefined examples**
+#### 1. Defined sequence
 
 ```c
-i = i++ + 1;        /* i modified twice */
-a[i] = i++;         /* i read (for the index) and modified, unsequenced */
-f(i++, i++);        /* the two arguments are unsequenced relative to each other */
-x = y++ * y++;      /* y modified twice */
+int i = 5;
+i++;
+i++;
+
+printf("%d", i);
 ```
 
-**Well-defined examples**
+**Output:** `7`
+
+Each expression statement completes before the next one.
+
+#### 2. Undefined behaviour
 
 ```c
-i++, j = i;               /* comma operator: i++ completes first */
-if (p != NULL && p->ok)   /* && sequences and short-circuits */
-x = (i++ > 0) ? i : 0;    /* ?: sequences after the condition */
+int i = 5;
+int x = i++ + i++;
 ```
 
-**C11 terminology:** "sequenced before", "unsequenced" and "indeterminately sequenced" replaced "sequence point". The practical rule is unchanged: **do not modify a variable more than once in one expression, and do not read it elsewhere in an expression that modifies it.**
+The operands of `+` are not sequenced relative to one another. Both modify `i`, causing undefined behaviour in C.
 
-**Note on function arguments:** the order in which `f(a(), b())` calls `a` and `b` is **unspecified** (either order is allowed, but it is not UB as long as they do not touch the same object without sequencing). Code that depends on that order is still a bug.
+Similarly, `i = i++ + 1;` is undefined.
 
-**Embedded twist:** reading a `volatile` hardware register twice in one expression (`STATUS + STATUS`) gives unspecified order of the two reads; with registers that clear on read, that matters. Read into a local first.
+#### 3. Operators that provide sequencing
+
+```c
+if (p != NULL && *p == 10) {
+    // Safe dereference if p is valid and non-NULL
+}
+```
+
+The left operand of `&&` is evaluated first. The right operand is evaluated only if needed. The same short-circuit principle applies to `||`. The comma operator and the first operand of `?:` also establish sequencing.
+
+#### 4. Function arguments
+
+```c
+printf("%d %d", i++, i++);
+```
+
+This has undefined behaviour in C. A comma separating function arguments is not the comma operator, and argument evaluation order is generally unspecified.
+
+Use separate statements instead:
+
+```c
+int a = i++;
+int b = i++;
+printf("%d %d", a, b);
+```
+
+**Interview takeaway:** Avoid unsequenced modifications to the same scalar, or an unsequenced modification and read of its value. Operator precedence determines expression grouping, not evaluation order.
 
 ### What is the size of an int, and what are fixed-width types? {E}
 **Short answer:** The C standard only fixes minimum ranges: `char` at least 8 bits, `short` and `int` at least 16, `long` at least 32, `long long` at least 64. The actual sizes depend on the compiler and target: `int` is 16 bits on 8-bit AVR and MSP430, and 32 bits on ARM Cortex-M, ARM64 and x86. For hardware registers and data formats use the fixed-width types from `<stdint.h>`.
