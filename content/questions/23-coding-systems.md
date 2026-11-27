@@ -54,6 +54,28 @@ Result: 8 leading zeros (the highest set bit is bit 23 = 31 − 8).
 
 **Related: count trailing zeros (CTZ)** gives the index of the lowest set bit: `__builtin_ctz(x)`, or `x & -x` isolates that bit. On Arm, CTZ = `RBIT` followed by `CLZ`.
 
+#### Simple reference implementation
+
+```c
+unsigned clz_ref(uint32_t x)
+{
+    unsigned n = 0;
+    for (uint32_t mask = UINT32_C(1) << 31;
+         mask && !(x & mask); mask >>= 1)
+        ++n;
+    return n;
+}
+```
+
+| Input | Leading zeros |
+|---|---:|
+| 0x00000000 | 32 |
+| 0x00000001 | 31 |
+| 0x00008000 | 16 |
+| 0x80000000 | 0 |
+
+The result describes the width of the specified 32-bit representation, including its leading zeros. For nonzero x, the highest set-bit index is 31−clz32(x). Do not apply that formula to zero. The traditional GCC builtin operates on unsigned int, so verify that its width matches the required 32-bit operation.
+
 ### Find the element that appears once when all others appear three times. {M}
 **Short answer:** Add up, for each bit position, how many numbers have that bit set. Every number that appears three times contributes a multiple of 3 to each of its bit positions, so `count % 3` leaves exactly the bits of the single number. The compact version keeps the per-bit count modulo 3 in two bitmasks (`ones` and `twos`) that act as a 2-bit counter for all 32 bits in parallel. O(n) time, O(1) space.
 
