@@ -443,35 +443,38 @@ AArch64 provides RBIT. Some Cortex-M implementations also support bit reversal d
 **Interview takeaway:** Bit reversal is not a byte swap. The loop is simple, the mask-based version has fixed operation count, and hardware can provide an even more efficient implementation.
 
 ### How do you swap the odd and even bits of a number? {M}
-**Short answer:** Mask the odd bits with `0xAAAAAAAA` and shift them right by one, mask the even bits with `0x55555555` and shift them left by one, then OR the two halves.
+Swapping odd and even bits means exchanging bit 0 with bit 1, bit 2 with bit 3, and so on.
+
+#### 1. Masks
+
+For a 32-bit value, 0xAAAAAAAA selects odd-numbered bit positions and 0x55555555 selects even-numbered positions (zero-based).
 
 ```c
-uint32_t swap_odd_even_bits(uint32_t n)
+uint32_t swap_adjacent(uint32_t x)
 {
-    return ((n & 0xAAAAAAAAu) >> 1) | ((n & 0x55555555u) << 1);
+    return ((x & 0xAAAAAAAAU) >> 1) |
+           ((x & 0x55555555U) << 1);
 }
 ```
 
-**Example:** `23 = 0b0001_0111`
+#### 2. Example
 
+```text
+x       = 1001 0110 (0x96)
+odd     = 1000 0010
+odd >>1 = 0100 0001
+even    = 0001 0100
+even<<1 = 0010 1000
+OR      = 0110 1001 (0x69)
 ```
-n          = 0001 0111
-odd bits   = 0000 0010  (n & 0xAA) -> >>1 = 0000 0001
-even bits  = 0001 0101  (n & 0x55) -> <<1 = 0010 1010
-result     = 0010 1011  = 43
-```
 
-Bit 0 and bit 1 swap, bit 2 and bit 3 swap, and so on.
+Odd bits move one position right; even bits move one position left. The two fields do not overlap after shifting.
 
-**Why the masks:** `0xA` is `1010` (bits 1 and 3 of a nibble, the odd positions) and `0x5` is `0101` (bits 0 and 2, the even positions). Repeating them covers all 32 bits.
+#### 3. Applications
 
-**Use unsigned.** With a signed `int`, `(n & 0xAAAAAAAA) >> 1` involves a value that may have the sign bit set, and shifting the even bits left can move a 1 into bit 31 of a signed int (undefined behaviour). With `uint32_t` both shifts are well-defined.
+Adjacent-bit swaps are a building block for parallel bit reversal and certain protocol or hardware-lane transformations. Only use the transformation when the actual data format requires it.
 
-**Related tricks with the same idea:**
-
-- Swap nibbles in a byte: `(b >> 4) | (b << 4)`.
-- Swap adjacent bytes: `((x & 0xFF00FF00u) >> 8) | ((x & 0x00FF00FFu) << 8)`.
-- This step is the first line of the constant-time bit-reverse algorithm.
+**Interview takeaway:** Separate disjoint bit groups, shift each to its destination and OR the results. This swap is its own inverse.
 
 ### How do you set all bits in a range from position l to r? {M}
 **Short answer:** Build a mask of ones from bit `l` to bit `r` and OR it in. With 0-based positions: `mask = ((1u << (r - l + 1)) - 1u) << l`, valid while the field is narrower than 32 bits.
