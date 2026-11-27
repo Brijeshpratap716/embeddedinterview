@@ -363,6 +363,24 @@ def cpp_compatible(code, slug):
         code = code.replace("r->head = h + 1u;", "r->head.store(h + 1u, std::memory_order_release);")
         code = code.replace("r->tail = t + 1u;", "r->tail.store(t + 1u, std::memory_order_release);")
         code = code.replace("r.head = r.tail = 0xFFFFFFFEu;", "r.head.store(0xFFFFFFFEu); r.tail.store(0xFFFFFFFEu);")
+    # C++ standard-library headers and qualified names, without changing the
+    # low-level problem interfaces or requiring heavyweight STL abstractions.
+    headers = {
+        "stdio.h": "cstdio", "stdint.h": "cstdint", "stddef.h": "cstddef",
+        "stdlib.h": "cstdlib", "string.h": "cstring", "limits.h": "climits",
+    }
+    code = re.sub(r"(?m)^#include <stdbool\.h>\n", "", code)
+    code = re.sub(r"(?m)^#include <([^>]+)>", lambda m:
+                  "#include <" + headers.get(m.group(1), m.group(1)) + ">", code)
+    # Skip comments and string/character literals, so expected output stays intact.
+    tokens = re.compile(r'''//[^\n]*|/\*[\s\S]*?\*/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|(?<![:\w])(?:u?int(?:8|16|32|64|ptr|max)_t|size_t|ptrdiff_t|printf|puts|malloc|calloc|realloc|free|memcmp|memset|memcpy|memmove|strcmp|strlen|NULL)\b''')
+    def qualify(m):
+        word = m.group(0)
+        if word.startswith(("/", '"', "'")):
+            return word
+        return "nullptr" if word == "NULL" else "std::" + word
+    code = tokens.sub(qualify, code)
+    code = re.sub(r"\b([A-Za-z_]\w*)\(void\)", r"\1()", code)
     return code
 
 
