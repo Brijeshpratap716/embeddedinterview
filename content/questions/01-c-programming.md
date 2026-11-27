@@ -2385,46 +2385,74 @@ An ordinary return from a helper function only transfers control back to its cal
 **Interview takeaway:** Use return from main for ordinary completion and exit when termination is needed from another function. On bare-metal firmware, the effect of returning from main or calling exit is implementation-specific; there may be no operating system to return to.
 
 ### How do variadic functions work? {M}
-**Short answer:** A variadic function such as `printf` has at least one fixed parameter followed by `...`. It reads the extra arguments with the `<stdarg.h>` macros `va_start`, `va_arg`, `va_end` (and `va_copy`). The function has no way to know how many arguments were passed or their types, so a fixed parameter (a count or a format string) must tell it.
+A variadic function accepts a variable number of arguments. In C it uses an ellipsis (`...`) in its declaration and the macros defined in `<stdarg.h>` to access additional arguments.
+
+#### 1. Example
 
 ```c
-#include <stdarg.h>
 #include <stdio.h>
+#include <stdarg.h>
 
-int sum(int count, ...)
+int sum(int n, ...)
 {
-    va_list ap;
-    int s = 0;
-    va_start(ap, count);              /* start after the last fixed parameter */
-    while (count--)
-        s += va_arg(ap, int);         /* read the next argument as an int */
-    va_end(ap);
-    return s;
+    va_list args;
+    va_start(args, n);
+
+    int total = 0;
+
+    for (int i = 0; i < n; i++)
+        total += va_arg(args, int);
+
+    va_end(args);
+    return total;
 }
 
-/* a logging wrapper that forwards to vprintf */
-void log_msg(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
-void log_msg(const char *fmt, ...)
+int main(void)
 {
-    va_list ap;
-    va_start(ap, fmt);
-    printf("[%lu] ", (unsigned long)0 /* tick */);
-    vprintf(fmt, ap);
-    va_end(ap);
+    printf("%d", sum(3, 10, 20, 30));
+    return 0;
 }
 ```
 
-**Rules and pitfalls**
+**Output:** 60
 
-- **Default argument promotions** apply to the variable arguments: `char` and `short` become `int`, `float` becomes `double`. So `va_arg(ap, char)` or `va_arg(ap, float)` is wrong; use `int` and `double`.
-- Reading more arguments than were passed, or with the wrong type, is undefined behaviour. `printf("%d", 3.5)` and `printf("%s", 42)` are classic bugs.
-- The `format` attribute lets GCC/Clang check format strings in your own wrappers, catching those bugs at compile time.
-- To pass the arguments on, write a `v` version that takes a `va_list` (like `vprintf`), because you cannot forward `...` directly.
-- Use `va_copy` if you need to traverse the list twice.
+The caller provides n as the argument count. This example assumes the arguments really are int values and the sum is representable.
 
-**How it works underneath:** on Arm (AAPCS), the first four integer arguments are in registers `r0`–`r3`, and the rest are on the stack. `va_start` makes the callee save the register arguments to memory so `va_arg` can walk them like an array. Floating-point variadic arguments go in integer registers or on the stack even with a hardware FPU (the variadic calling convention is the soft-float one).
+#### 2. How the macros work
 
-**Embedded notes:** a full `printf` implementation can add 10–30 KB of flash; small projects use `newlib-nano` (`--specs=nano.specs`), a minimal printf, or deferred/binary logging where the device sends a format ID and raw arguments and a PC tool formats them (Trice, defmt, Zephyr dictionary logging). Avoid `printf` in ISRs (slow and usually not reentrant).
+| Macro or type | Purpose |
+|---|---|
+| va_list | Holds argument traversal state |
+| va_start | Initializes traversal (traditional form uses the last named parameter) |
+| va_arg | Retrieves the next argument using its promoted type |
+| va_copy | Creates an independent traversal state |
+| va_end | Cleans up the initialized state |
+
+Call va_end for each state initialized by va_start or va_copy.
+
+#### 3. Default argument promotions
+
+A float passed through the ellipsis is promoted to double. Narrow integer arguments undergo integer promotion. Therefore, retrieve a float argument with va_arg(args, double), not va_arg(args, float).
+
+The callee does not automatically know the number or types of the additional arguments. It needs a convention such as a count, format string or sentinel.
+
+#### 4. Embedded logging example
+
+```c
+void log_msg(const char *fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    vprintf(fmt, args);
+    va_end(args);
+}
+```
+
+Example call: `log_msg("UART error: %d", error_code);`
+
+On embedded systems, the logging backend may write to UART or a trace buffer instead of standard output.
+
+**Interview takeaway:** Variadic arguments follow the target ABI, so they are not necessarily all stored on the stack. Use stdarg.h rather than manually walking memory. Reading a nonexistent argument or using an incompatible va_arg type can cause undefined behaviour.
 
 ### What is conditional compilation, and how is it used in embedded projects? {E}
 **Short answer:** Conditional compilation uses preprocessor directives (`#if`, `#ifdef`, `#ifndef`, `#elif`, `#else`, `#endif`, and the `defined()` operator) to include or exclude code before it is compiled. Embedded projects use it to build one code base for several boards and MCUs, to enable debug features, and to select features at build time.
