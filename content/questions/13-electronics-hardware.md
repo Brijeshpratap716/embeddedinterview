@@ -9,17 +9,15 @@ desc: Ohm's law and power, pull-ups, GPIO modes, LEDs, level shifting, decouplin
 Firmware engineers are expected to read schematics, bring up boards and talk to hardware engineers. These are the basics that come up, each with a short answer, the numbers to know and the follow-ups.
 
 ### What are Ohm's law and the power formula, and how do you use them on a board? {E}
-**Short answer:** Ohm's law says **V = I × R** (voltage across a resistor equals current times resistance). Power dissipated is **P = V × I = I² × R = V² / R**. Firmware engineers use them to size pull-ups and LED resistors, estimate current draw and battery life, check that a GPIO can drive a load, and choose resistor power ratings.
+Ohm's law relates voltage, current and resistance: V = IR. Electrical power is P = VI = I²R = V²/R for a resistor.
 
-**Worked examples**
+#### 1. Board calculation
+A 3.3 V output drives a 1 kΩ resistor to ground. The current is 3.3 mA and the resistor dissipates 10.89 mW. Check that the GPIO can supply that current and that the resistor's power rating includes adequate margin.
 
-- A 10 kΩ pull-up to 3.3 V with the line held low draws I = 3.3 / 10,000 = **0.33 mA**, power 1.1 mW. A 1 kΩ pull-up would draw 3.3 mA — significant for a battery device that holds the line low.
-- A 0.1 Ω current-sense resistor carrying 2 A drops 0.2 V and dissipates 0.4 W: needs at least a 1/2 W part (use a 2× margin).
-- Voltage divider: Vout = Vin × R2 / (R1 + R2). Measuring a 12 V battery with a 3.3 V ADC: R1 = 100 kΩ, R2 = 27 kΩ gives 12 × 27/127 = 2.55 V full scale, drawing only ~94 µA. Higher resistances save current but the ADC's sampling capacitor needs a low source impedance (add a capacitor at the ADC pin or a slower sampling time).
+#### 2. Debugging application
+Measure the voltage across a known series resistor and calculate current using I = V/R. If a board draws unexpectedly high current, inspect the affected power rail for shorts, incorrect components or improperly configured outputs.
 
-**Battery life estimate:** average current = Σ(current × time fraction). A sensor drawing 5 mA for 10 ms every second and 5 µA otherwise averages 5 × 0.01 + 0.005 × 0.99 ≈ 55 µA; a 220 mAh coin cell lasts about 220 / 0.055 ≈ 4000 h ≈ 5.5 months (before derating for temperature, self-discharge and peak current limits).
-
-**Kirchhoff's laws:** currents into a node sum to zero (KCL); voltages around a loop sum to zero (KVL). They explain dividers, ground offsets and why a shared ground return matters.
+**Interview takeaway:** Use these equations to size components and validate measured values; do not treat a GPIO as an unlimited voltage source.
 
 ### What are pull-up and pull-down resistors? {E}
 **Short answer:** A pull-up resistor connects a signal to the supply so the line reads a defined **high** when nothing actively drives it; a pull-down connects it to ground for a defined **low**. Without one, an unconnected (floating) CMOS input picks up noise, reads random values and can draw extra current because the input stage sits halfway between levels. Typical values are 4.7 kΩ–100 kΩ; lower values give faster edges and better noise immunity but waste more current when the line is driven to the opposite level. Most MCUs have selectable internal pulls of roughly 30–50 kΩ.
