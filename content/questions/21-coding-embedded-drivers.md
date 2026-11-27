@@ -1063,6 +1063,10 @@ bit:   7     6..4      3      2..0
 
 **Write-1-to-clear flags:** clear them by writing a 1 only to the bits you handled (`reg = HANDLED_BITS;`), never with a read-modify-write, which would clear other pending flags.
 
+#### Decode and update a register field
+
+For 0x2353, bit 0=1, bit 1=1, bits 6:4=101 (5), bits 15:8=0x23 (35). Read a volatile/MMIO register once into a local snapshot to avoid interpreting values from different hardware instants. To encode mode=3 in an ordinary writable register, clear ST_MODE_Msk then OR ((3U << ST_MODE_Pos) & ST_MODE_Msk). Do not use that read-modify-write pattern on a W1C or read-to-clear register without checking its semantics. C bit-field layout is implementation-dependent; explicit masks are a better hardware interface.
+
 ### Implement a DMA descriptor ring (as used by Ethernet drivers). {H}
 **Short answer:** A descriptor ring is an array of descriptors shared between the CPU and a DMA engine (as in Ethernet MACs). Each descriptor holds a buffer address, a length, status bits and an **OWN** bit saying who may touch it. For receive, software gives empty buffers to the hardware (OWN = hardware); the hardware fills one, writes the length/status and clears OWN; software processes it, refills it and hands it back. Both sides walk the ring in order and wrap at the end.
 
