@@ -879,21 +879,45 @@ Stress burst traffic, nested interrupts, timeouts, queue saturation, stack margi
 **Interview takeaway:** RTOS correctness requires a resource and timing design. Creating tasks and assigning priorities alone does not make firmware real-time.
 
 ### How does Zephyr differ from FreeRTOS? {M}
-**Short answer:** **FreeRTOS** is a small, portable kernel (scheduler, queues, semaphores, timers, event groups) with optional add-on libraries; drivers usually come from the silicon vendor's SDK, and configuration is a header file. **Zephyr** is a full RTOS platform under the Linux Foundation: it uses **Kconfig** and **devicetree** (like Linux) for configuration, has a unified driver model and many in-tree drivers, networking (IPv4/IPv6, Bluetooth LE, Thread/Matter), file systems, a shell, logging, power management, MCUboot integration and optional user-mode isolation, built with CMake and the `west` tool. Zephyr does more out of the box but is larger and has a steeper learning curve.
+Zephyr and FreeRTOS are both RTOS ecosystems, but they have different architectural scope and integration models.
 
-| | FreeRTOS | Zephyr |
-|---|---|---|
-| Scope | kernel + optional libraries | complete OS platform |
-| Configuration | `FreeRTOSConfig.h` | Kconfig (`prj.conf`) + devicetree + board definitions |
-| Drivers | vendor SDK/HAL, or your own | in-tree, generic APIs (`gpio_pin_set_dt`, `i2c_write_read_dt`) |
-| Build | any (Make, CMake, IDE projects) | CMake + `west` meta-tool |
-| Networking / BLE | separate (FreeRTOS+TCP, vendor stacks, lwIP) | integrated IP stack, Bluetooth host/controller, OpenThread |
-| Memory protection | FreeRTOS-MPU port | user mode threads with MPU/MMU (`CONFIG_USERSPACE`) |
-| Footprint | very small (≈ 5–10 KB kernel) | larger, but highly configurable (minimal builds of ~10 KB are possible) |
-| Licensing | MIT | Apache 2.0 |
-| Learning curve | gentle | steep (devicetree, Kconfig, west) |
-| Governance | maintained by Amazon (AWS) | Linux Foundation project with many vendors |
+| Zephyr | FreeRTOS |
+|---|---|
+| Integrated configurable OS | Lightweight real-time kernel with libraries |
+| Devicetree and Kconfig commonly describe hardware/configuration | Hardware configuration often provided by vendor SDK |
+| Standardized driver model and subsystems | Drivers commonly supplied by MCU vendor or application |
+| Integrated networking, Bluetooth, power-management facilities | Networking/security libraries available as separate components |
+| Typically CMake/west build workflows | Build workflow depends on integration |
 
-**When to choose which:** FreeRTOS for small, simple products, existing vendor SDK-based projects, or teams that want minimal abstraction. Zephyr for connected products (BLE, Thread, Matter, IP), portability across many boards, a Linux-like development model, and long-term vendor-neutral support (Nordic's nRF Connect SDK is built on Zephyr).
+#### 1. Zephyr example
 
-**Others worth knowing:** Eclipse ThreadX (formerly Azure RTOS, with safety certifications), NuttX (POSIX-compatible, used by PX4 drones), RIOT (IoT), Mbed OS (end of life), and commercial safety RTOSes (SafeRTOS, VxWorks, QNX, INTEGRITY).
+```c
+void worker(void)
+{
+    for (;;) {
+        do_work();
+        k_msleep(100);
+    }
+}
+```
+
+#### 2. FreeRTOS example
+
+```c
+void worker(void *arg)
+{
+    for (;;) {
+        do_work();
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+```
+
+Both delay the current execution context rather than busy-waiting the CPU. The examples assume suitable thread/task setup.
+
+#### 3. Choosing a kernel
+
+Use Zephyr when an integrated driver, devicetree, networking and board ecosystem fits the project. FreeRTOS is attractive when a small kernel with a vendor-specific HAL/SDK is sufficient. Compare target support, footprint, real-time constraints, qualification needs and team experience.
+
+**Interview takeaway:** Compare complete product configurations, not just kernel names. Both can support preemptive real-time workloads; timing guarantees depend on system design.
+
