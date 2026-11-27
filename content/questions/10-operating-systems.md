@@ -34,27 +34,24 @@ A Linux read system call may proceed through VFS and a kernel driver without cro
 **Interview takeaway:** The distinction is service placement and protection boundaries, not whether the kernel supports modules. Performance and reliability depend on the actual design.
 
 ### What is the difference between a process and a thread? {E}
-**Short answer:** A **process** is a running program with its own virtual address space and resources (open files, signal handlers, credentials). A **thread** is a path of execution inside a process; all threads of a process share its memory and open files, but each has its own stack, registers (including the program counter) and scheduling state. Threads are cheaper to create and switch, but a bug in one thread can corrupt the others.
+A process is an execution environment with an address space and resources. A thread is a schedulable execution stream within that environment.
 
-| | Process | Thread |
-|---|---|---|
-| Address space | own (isolated) | shared with other threads of the process |
-| Open files, signal handlers, cwd | own | shared |
-| Stack, registers, PC | own | own |
-| Thread-local storage, signal mask | – | own |
-| Creation cost | higher (new page tables; copy-on-write helps) | lower |
-| Context switch | may need a TLB/ASID change | same address space: cheaper |
-| Failure | a crash affects only that process | a crash (e.g. segfault) kills the whole process |
-| Communication | IPC (pipes, sockets, shared memory) | shared variables + locks |
+| Process | Thread |
+|---|---|
+| Usually separate virtual address space | Shares process address space |
+| Resources such as file descriptors | Shares many process resources |
+| Communication often uses IPC | Can communicate through shared objects |
+| Own execution context | Own stack, registers and scheduling state |
 
-**In Linux both are "tasks"** (`struct task_struct`). `fork()` and `pthread_create()` both call `clone()`; the flags decide what is shared. `pthread_create` passes `CLONE_VM | CLONE_FILES | CLONE_FS | CLONE_SIGHAND | CLONE_THREAD ...`, so the new task shares memory and files. Each thread has its own TID; `getpid()` returns the thread-group ID, which is the same for all threads.
+#### 1. Example
 
-**What two threads of the same process share** (a common multiple-choice question): code, global and static variables, heap, open file descriptors, and the current directory. They do **not** share their call stacks or register state (and each has its own small kernel bookkeeping such as `thread_info`).
+Two threads in a process can access the same global variable. Each has its own stack and register state. Two ordinary processes have separate mappings, even if their virtual addresses happen to be identical.
 
-**When to choose which**
+#### 2. Linux implementation
 
-- **Threads:** work that shares a lot of data and needs low-latency communication (a UI thread plus worker threads, parallel computation).
-- **Processes:** isolation and robustness (a crash in one service does not take down the others), privilege separation (a small privileged process plus an unprivileged worker), running different programs.
+Linux represents schedulable tasks using task_struct. Threads created with suitable clone flags share resources such as memory mappings and file tables. The thread group provides process-level identity.
+
+**Interview takeaway:** Threads share memory, not a single execution context. Shared objects require synchronization; separate processes may also explicitly share memory.
 
 ### What are the states of a process, and how does a process move between them? {E}
 **Short answer:** The textbook states are **New** → **Ready** (waiting for a CPU) → **Running** → **Blocked/Waiting** (waiting for I/O or an event) → back to Ready, and finally **Terminated**. The scheduler moves processes between Ready and Running; system calls and interrupts move them to and from Blocked.
