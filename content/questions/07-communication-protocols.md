@@ -41,24 +41,29 @@ Use UART for an asynchronous debug console, SPI for high-throughput flash or dis
 **Interview takeaway:** UART needs matching serial settings, SPI needs matching mode and chip select, and I2C needs addressing, pull-ups and transaction acknowledgment. Actual throughput depends on clock rate and protocol overhead.
 
 ### How do you choose between UART, SPI and I2C for a project? {M}
-**Short answer:** Start from the peripheral (many devices only offer one interface), then weigh data rate, number of devices, pins available, distance, and robustness. Use **SPI** for high data rates (displays, flash, high-rate ADCs, IMUs at kHz rates), **I2C** for many slow devices on few pins (sensors, EEPROM, PMIC configuration), and **UART** for communication with another processor or module (GPS, modem, BLE module, debug console), or over long distances with RS-485.
+Choose a serial interface by considering required throughput, pin count, number of devices, cable length, voltage levels and software complexity.
 
-**Decision factors**
+#### 1. Example design
 
-| Factor | Favours |
+| Requirement | Suitable starting choice |
 |---|---|
-| > 1 Mbit/s sustained | SPI (or QSPI) |
-| Many devices, few GPIOs | I2C |
-| Talking to another MCU or a module with its own firmware | UART (or SPI with a protocol) |
-| Long cables / noisy environment | RS-485 (UART), CAN |
-| Need confirmation that a device is present | I2C (ACK) |
-| Deterministic, low-latency streaming | SPI with DMA |
-| Hot-plug or off-board connection | UART, USB, CAN |
-| Low power (fewer transitions, sleep) | I2C/SPI at low clock, UART with wake-on-RX |
+| Debug console | UART |
+| High-rate display pixel data | SPI or dedicated display interface |
+| Several low-rate sensors | I2C |
+| Fast serial flash | SPI/QSPI |
+| Long noisy industrial cable | UART protocol with suitable transceiver, e.g. RS-485 |
 
-**Example answer:** "For a wearable with an IMU at 1 kHz, a temperature sensor, a battery fuel gauge and a display: SPI for the IMU and the display (bandwidth, DMA), I2C for the temperature sensor and fuel gauge (low rate, shared bus), UART for the debug console and the BLE module. I would check that no two I2C devices share an address and that the bus capacitance allows 400 kHz."
+#### 2. Throughput calculation
 
-**Follow-ups:** what if two I2C sensors have the same fixed address (address pin, I2C multiplexer like TCA9548A, or a second bus); what if you run out of SPI chip selects (GPIO expander, decoder, or daisy chain).
+A UART configured at 115200 baud using 8N1 transfers ten bits per eight-bit data byte, giving at most 11,520 bytes/s before application overhead.
+
+A standard SPI link clocked at 10 MHz transfers up to 1.25 MB/s per data line direction during continuous transfer. I2C at 400 kHz needs address, ACK and transaction overhead, so its application throughput is below the raw clock rate.
+
+#### 3. Other constraints
+
+Check target-supported speeds, electrical timing, bus loading, error handling, controller support and pin availability. I2C address conflicts may need an address strap or mux; SPI may require more chip-select pins.
+
+**Interview takeaway:** Select the interface for the actual payload and hardware constraints, not solely the maximum advertised bit rate.
 
 ### What does a UART frame look like? {E}
 **Short answer:** The line idles high. Each character starts with a **start bit** (low), followed by **5–9 data bits sent LSB first**, an optional **parity bit**, and **1, 1.5 or 2 stop bits** (high). "115200 8N1" means 115200 bits per second, 8 data bits, no parity, 1 stop bit, so each byte takes 10 bit times and the payload rate is 11,520 bytes per second.
