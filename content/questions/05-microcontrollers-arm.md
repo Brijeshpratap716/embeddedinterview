@@ -462,22 +462,35 @@ An MPU-aware RTOS may reprogram task-specific regions during a context switch, r
 **Interview takeaway:** An MPU can improve isolation and fault detection, but its protection is only as good as the configured regions and privilege model. It does not automatically isolate DMA masters.
 
 ### What is TrustZone for Cortex-M? {H}
-**Short answer:** TrustZone for Armv8-M (Cortex-M23/M33/M35P/M55/M85) splits the system into a **Secure** world and a **Non-secure** world on the same core. Memory, peripherals and interrupts are assigned to one world; Non-secure code cannot access Secure resources, and can call Secure code only through defined entry points. It protects keys, secure boot, cryptographic services and firmware update logic from bugs or attacks in the application.
+Arm TrustZone for Cortex-M, introduced with Armv8-M security extensions, divides execution and resources into Secure and Non-secure security states on supporting implementations.
 
-**How it works**
+#### 1. Architecture
 
-- **SAU** (Security Attribution Unit, programmed by secure code) and **IDAU** (fixed by the chip designer) mark each address as Secure, Non-secure, or **Non-secure Callable (NSC)**.
-- **Entry from Non-secure to Secure** only at NSC addresses that start with the `SG` (secure gateway) instruction; the compiler generates these veneers for functions marked `__attribute__((cmse_nonsecure_entry))`.
-- **Calls from Secure to Non-secure** use `BLXNS`, with registers cleared so secrets do not leak.
-- **Banked resources:** separate stack pointers (MSP_S/PSP_S, MSP_NS/PSP_NS), stack limits, MPUs, SysTick timers, VTORs, and interrupt masks per world. Each interrupt is assigned to one world (`NVIC->ITNS`).
-- **Peripheral and memory protection** outside the core by the chip's security controllers (e.g. TZC, MPC/PPC), so even DMA from the Non-secure side cannot read Secure memory.
-- Faults from security violations go to the **SecureFault** handler.
+```text
+Non-secure application
+        |
+Non-secure callable gateway (SG)
+        |
+Secure service --> protected memory / peripherals
+        |
+Return to non-secure caller
+```
 
-**Software stack:** the Secure side typically runs **Trusted Firmware-M (TF-M)**, which provides PSA services (crypto, secure storage, attestation, firmware update), and the Non-secure side runs the RTOS and application (Zephyr, FreeRTOS).
+The Security Attribution Unit (SAU), implementation-defined attribution and platform security controllers determine which address regions and resources belong to each security state.
 
-**Compared with TrustZone for Cortex-A:** the same idea, but Cortex-A switches worlds through EL3 secure monitor calls (`SMC`) and runs a full secure OS (OP-TEE). Cortex-M switching is a fast function call, designed for microcontrollers.
+#### 2. Example
 
-**Design rules:** keep the Secure world small, validate every pointer and length passed from the Non-secure side (it may point into Secure memory: use `cmse_check_address_range`), and lock the configuration (SAU, debug access) before starting Non-secure code.
+A non-secure application requests an operation using a protected cryptographic key. A secure service validates the request, performs the operation and returns the result without exposing the key.
+
+#### 3. Secure gateway
+
+Non-secure code enters approved Secure services through correctly defined Non-secure Callable regions and gateway veneers. Secure software must validate non-secure pointers, sizes and permissions before accessing caller-supplied buffers.
+
+#### 4. Difference from Cortex-A
+
+M-profile uses its own security state and exception architecture. Cortex-A systems commonly use a secure monitor and different exception levels; do not assume EL3 or the A-profile SMC flow exists on Cortex-M.
+
+**Interview takeaway:** TrustZone provides hardware security attribution and controlled transitions. It is not encryption by itself and does not eliminate the need for secure firmware, validation and correct peripheral configuration.
 
 ### What is the Cortex-A53, and what are its key architectural features? {M}
 **Short answer:** The Cortex-A53 is Arm's most widely used 64-bit (Armv8-A) application core: an in-order, dual-issue, 8-stage pipeline core optimised for efficiency, used in the Raspberry Pi 3, many i.MX 8, Rockchip, Allwinner and Qualcomm SoCs, and as the LITTLE core in big.LITTLE designs. It runs both AArch64 and AArch32 code, has four exception levels (EL0–EL3) with virtualization and TrustZone, a Neon SIMD and floating-point unit, separate L1 instruction and data caches per core, a shared L2 cache, and an MMU with a two-level TLB.
