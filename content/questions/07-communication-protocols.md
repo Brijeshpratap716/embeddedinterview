@@ -605,25 +605,33 @@ Assign identifiers based on network timing requirements. High-priority traffic c
 **Interview takeaway:** CAN arbitration is based on dominant/recessive signaling, not a central scheduler. Losing arbitration is normal, not a transmission error.
 
 ### How does CAN handle errors? {H}
-**Short answer:** CAN has five error-detection mechanisms: **bit monitoring** (a transmitter checks that the bus level equals what it sent, outside arbitration and the ACK slot), **bit stuffing check**, **form check** (fixed-format fields such as delimiters and EOF), **CRC check**, and **ACK check**. A node that detects an error transmits an **error frame**, which makes all nodes discard the frame, and the sender retransmits automatically. Error counters confine faulty nodes so one bad node cannot block the bus forever.
+CAN detects transmission errors using multiple protocol checks and manages faulty nodes through error confinement.
 
-**Error confinement states**
+#### 1. Detection mechanisms
 
-| State | Condition | Behaviour |
-|---|---|---|
-| Error active | TEC < 128 and REC < 128 | sends active error flags (6 dominant bits) |
-| Error passive | TEC ≥ 128 or REC ≥ 128 | sends passive error flags (6 recessive bits), waits 8 extra bit times before retransmitting |
-| Bus off | TEC ≥ 256 | stops transmitting; recovers only after 128 × 11 recessive bits (and usually a software request) |
+| Check | Detects |
+|---|---|
+| CRC | Corruption in protected frame fields |
+| Bit monitoring | Unexpected bus value outside permitted exceptions |
+| Bit stuffing | Invalid run length in stuffed fields |
+| Form check | Incorrect fixed-format bits |
+| ACK check | Missing receiver acknowledgment |
 
-TEC (transmit error counter) increases by 8 on a transmit error and decreases by 1 on success; REC increases by 1 (sometimes 8) on receive errors.
+A detected error can trigger an error frame and retransmission according to controller settings and protocol rules.
 
-**What firmware should do**
+#### 2. Error confinement
 
-- Monitor error counters and state changes (interrupts on error-passive and bus-off) and report them as diagnostics (DTCs in automotive).
-- Decide a **bus-off recovery** strategy: automatic recovery with a delay, limited retries, or staying off and entering a safe mode.
-- Remember that automatic retransmission means a message can be delayed but also that a misconfigured node (wrong bit rate) can cause continuous error frames until it goes bus-off.
+Controllers maintain transmit and receive error counters. The protocol uses these to transition among error-active, error-passive and bus-off states. Bus-off is triggered when the transmit error counter exceeds its permitted threshold (255 in Classical CAN).
 
-**Common causes of CAN errors:** missing or wrong termination, wrong bit timing or sample point between nodes, oscillator inaccuracy, ground offsets, long stubs, and transceiver problems. Tools: CAN analysers (PCAN, Vector, Kvaser), and oscilloscopes with CAN decoding to look at the analogue signal.
+#### 3. Debugging example
+
+Repeated transmit errors may indicate missing termination, wrong bit timing, wiring faults or no other node acknowledging frames. Inspect controller status, error counters, waveform and bus configuration.
+
+#### 4. Recovery
+
+Bus-off recovery follows the controller, protocol and application policy. Automatic recovery is not always suitable in safety-related systems. Diagnose and report persistent faults rather than blindly retrying forever.
+
+**Interview takeaway:** CAN combines error detection, retransmission and error confinement. A valid CAN ACK is not an application-level acknowledgment.
 
 ### What is the difference between CAN and CAN FD? {M}
 **Short answer:** CAN FD (Flexible Data-rate) keeps classic CAN's arbitration (at the nominal bit rate, so priorities and robustness stay the same) but allows up to **64 data bytes** per frame instead of 8, switches to a **faster bit rate for the data phase** (commonly 2–5 Mbps, versus ≤ 1 Mbps for arbitration), uses stronger CRCs (17 or 21 bits plus a stuff-bit counter), and drops remote frames.
