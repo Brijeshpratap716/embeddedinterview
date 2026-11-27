@@ -345,6 +345,15 @@ S | 0xD0 (0x68<<1 | W) | A | 0x0F | A | Sr | 0xD1 (0x68<<1 | R) | A | data0 | A 
 
 **On Linux:** `i2c_smbus_read_byte_data()` / `i2c_transfer()` in drivers, or `ioctl(I2C_RDWR)` from user space with `/dev/i2c-N`.
 
+#### Read sequence for a two-byte register value
+
+```text
+S | 0xA0 | ACK | 0x10 | ACK
+Sr| 0xA1 | ACK | MSB  | ACK | LSB | NACK | P
+```
+
+The target's unshifted address is 0x50. The register pointer is written first, followed by a repeated START for reading. Decode the two data bytes according to the target's byte order, e.g. ((uint16_t)data[0] << 8) | data[1] for big-endian data. Validate length, address, buffers and transfer result; an I2C_RDWR call succeeds fully only when its return equals the number of requested messages. Check that lengths fit the message structure's fields and controller limits. Use a synchronous primitive for the local stack buffers, not an asynchronous submission that outlives them.
+
 ### Implement a lock-free single-producer single-consumer (SPSC) ring buffer. {H}
 **Short answer:** Use a power-of-two buffer with two free-running indices: only the producer writes `head`, only the consumer writes `tail`. The producer writes the data, then publishes the new head with a **release** store; the consumer reads head with an **acquire** load before reading the data, then publishes the new tail with a release store. Full is `head - tail == N`, empty is `head == tail`. No locks, no disabled interrupts, O(1) per operation.
 
