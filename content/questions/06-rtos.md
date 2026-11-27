@@ -372,40 +372,36 @@ Size the queue for burst rate, service time and permitted backlog. Define whethe
 **Interview takeaway:** Queues provide synchronized data transfer and buffering. Use ISR-safe variants in interrupts and explicitly manage ownership when sending pointers.
 
 ### What are stream buffers and message buffers, and when are they better than queues? {M}
-**Short answer:** FreeRTOS **stream buffers** pass a continuous stream of bytes from exactly one writer to exactly one reader (like a pipe), and the reader can block until a trigger level of bytes is available. **Message buffers** are built on stream buffers and pass variable-length messages (each with a length prefix). Both are lighter than queues because they assume a single writer and single reader (no locking among multiple writers), and they copy only as many bytes as needed rather than fixed-size items.
+FreeRTOS stream buffers transfer a sequence of bytes. Message buffers transfer variable-length messages while preserving boundaries. A normal queue transfers fixed-size items.
 
-| | Queue | Stream buffer | Message buffer |
-|---|---|---|---|
-| Item | fixed size | bytes | variable-length messages |
-| Writers/readers | many/many | one/one | one/one |
-| Typical use | commands, events | UART/USB byte streams, audio | packets, variable-size records |
-| ISR use | yes | yes (one side in an ISR) | yes |
-| Overhead | higher | low | low |
+| Queue | Stream buffer | Message buffer |
+|---|---|---|
+| Fixed-size items | Byte stream | Variable-length messages |
+| Multiple producers/consumers supported under API rules | Designed for one writer and one reader | Designed for one writer and one reader |
+| Good for structures and descriptors | Good for continuous UART bytes | Good for packets |
+
+#### 1. UART stream example
 
 ```c
-StreamBufferHandle_t rx = xStreamBufferCreate(256, 1);    /* size, trigger level */
-
-void USART2_IRQHandler(void)
-{
-    BaseType_t woken = pdFALSE;
-    uint8_t b = (uint8_t)USART2->DR;
-    xStreamBufferSendFromISR(rx, &b, 1, &woken);
-    portYIELD_FROM_ISR(woken);
-}
-
-void rx_task(void *p)
-{
-    uint8_t buf[64];
-    for (;;) {
-        size_t n = xStreamBufferReceive(rx, buf, sizeof buf, portMAX_DELAY);
-        parse(buf, n);
-    }
-}
+StreamBufferHandle_t sb =
+    xStreamBufferCreate(256, 1);
 ```
 
-**Rules:** if more than one task (or ISR) writes, protect the writes with a critical section or a mutex, because the implementation assumes one writer. With message buffers, the receive buffer must be large enough for the next message, or the call returns 0 and the message stays.
+Check the handle. A producer writes received bytes and a parser consumes available bytes. Sends may transfer fewer bytes than requested; handle partial results.
 
-**Zephyr equivalents:** `k_pipe`, `k_msgq` (fixed size), and `ring_buf` with semaphores.
+#### 2. Message buffer example
+
+```c
+MessageBufferHandle_t mb = xMessageBufferCreate(256);
+```
+
+A producer sends one message, and a consumer receives a complete message into a sufficiently large buffer. Message-length metadata consumes part of the storage.
+
+#### 3. Concurrency restriction
+
+Stream/message buffers assume one writer and one reader unless additional serialization is provided following the kernel documentation. Queues may be a better choice for multiple independent producers.
+
+**Interview takeaway:** Use a stream buffer for bytes, a message buffer for variable-length records, and a queue for fixed-size messages or descriptors.
 
 ### What are event groups / event flags? {M}
 **Short answer:** An event group is a set of bits (flags) that tasks can set, clear and wait on with **AND** ("wait until bits 0 and 2 are both set") or **OR** ("wait until any of bits 0–3 is set") semantics, optionally clearing them on exit. They synchronise a task with several conditions at once, or several tasks at a barrier (`xEventGroupSync`). Unlike a counting semaphore, setting a bit that is already set does not count twice.
