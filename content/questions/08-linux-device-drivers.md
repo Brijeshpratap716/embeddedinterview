@@ -1079,24 +1079,45 @@ Avoid exposing secrets, unrestricted register writes or kernel addresses. Valida
 **Interview takeaway:** procfs describes process/system state, sysfs represents kernel objects and debugfs supports debugging. Use the correct subsystem interface rather than creating ad hoc files.
 
 ### What is the difference between kmalloc, vmalloc and kzalloc? {M}
-**Short answer:** `kmalloc(size, flags)` returns **physically contiguous** memory from the slab allocator: fast, cache-friendly, usable for DMA (through the DMA API), and best for small to medium sizes (practically up to a few pages; large requests may fail when memory is fragmented). `kzalloc` is `kmalloc` plus zeroing, and `kcalloc`/`kmalloc_array` add overflow checks for arrays. `vmalloc(size)` returns memory that is **virtually** contiguous but physically scattered: good for large buffers, but slower (page-table setup, TLB pressure), it may sleep, and it is not directly usable for device DMA. `kvmalloc` tries `kmalloc` and falls back to `vmalloc`.
+kmalloc, kzalloc and vmalloc allocate kernel memory but differ in initialization and physical contiguity.
 
-| | kmalloc / kzalloc | vmalloc | alloc_pages | dma_alloc_coherent |
-|---|---|---|---|---|
-| Physically contiguous | yes | no | yes (2^order pages) | yes (or IOMMU-contiguous) |
-| Size | small–medium | large | whole pages | device buffers |
-| Atomic context | yes with `GFP_ATOMIC` | no | yes with `GFP_ATOMIC` | depends; usually process context |
-| Free with | `kfree` | `vfree` | `__free_pages` | `dma_free_coherent` |
-| Use for | structs, small buffers | large tables, module code | page-level buffers | DMA descriptors, shared buffers |
+| API | CPU virtual contiguity | Physical contiguity | Initialization |
+|---|---|---|---|
+| kmalloc | Yes | Yes for allocation | Uninitialized |
+| kzalloc | Yes | Yes for allocation | Zeroed |
+| vmalloc | Yes | Not necessarily | Uninitialized |
 
-**Other allocators to mention**
+#### 1. Examples
 
-- **`kmem_cache_create` / `kmem_cache_alloc`:** dedicated slab caches for many objects of the same size (e.g. network buffers, inodes).
-- **`devm_kzalloc`:** freed automatically when the device unbinds.
-- **CMA** (Contiguous Memory Allocator): large physically contiguous buffers for cameras/displays without IOMMU, reserved at boot, used through the DMA API.
-- **mempool:** guaranteed allocations under memory pressure for I/O paths.
+```c
+struct demo *d = kzalloc(sizeof *d, GFP_KERNEL);
+if (!d)
+    return -ENOMEM;
+// ...
+kfree(d);
+```
 
-**Common bugs:** freeing with the wrong function (`kfree` on `vmalloc` memory), forgetting to check for `NULL`, `kmalloc(n * size)` overflow (use `kmalloc_array`), and DMA from stack or `vmalloc` buffers.
+For a larger virtual buffer:
+
+```c
+void *buf = vmalloc(size);
+if (!buf)
+    return -ENOMEM;
+// ...
+vfree(buf);
+```
+
+Use vzalloc for zeroed vmalloc memory or suitable kvmalloc/kvfree helpers when an allocation may fall back to vmalloc.
+
+#### 2. DMA caveat
+
+Physical contiguity of kmalloc memory does not mean the CPU pointer is a DMA address. Use DMA mapping APIs and device constraints. Ordinary dma_map_single cannot be used on arbitrary vmalloc memory.
+
+#### 3. Allocation context
+
+Choose appropriate GFP flags and allocation sizes. Large physically contiguous requests can fail despite free memory.
+
+**Interview takeaway:** kmalloc is suitable for many small kernel allocations; kzalloc also zeroes them. vmalloc assembles virtually contiguous storage and is not a drop-in DMA buffer allocator.
 
 ### What do GFP_KERNEL and GFP_ATOMIC mean? {E}
 **Short answer:** They are allocation flags that tell the allocator what it is allowed to do. `GFP_KERNEL` may sleep to reclaim memory (write back pages, swap, compact), so it may only be used in process context with no spinlocks held; it is the normal choice and rarely fails. `GFP_ATOMIC` never sleeps and may use emergency reserves, so it can be used in interrupt handlers and under spinlocks, but it fails more often and callers must handle `NULL`.
