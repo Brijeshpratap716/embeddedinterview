@@ -9,7 +9,7 @@ desc: UART TX/RX, SPI and I2C transfer functions, busy-wait delays, lock-free SP
 These are the "write the driver code" questions from embedded interviews. Register names follow STM32-style conventions (`SR`, `DR`, flag bits) but the patterns apply to any MCU: wait with a timeout, never block forever, keep ISRs short, and make shared data safe between interrupt and task context. Each answer is brief: working C plus what the interviewer checks.
 
 ### Implement a delay without using a library function. {E}
-**Short answer:** Use a free-running hardware counter and busy-wait until the required number of ticks has passed: on Cortex-M3 and above the DWT cycle counter (`CYCCNT`) gives cycle accuracy for microsecond delays, and a 1 ms SysTick counter works for millisecond delays. Compare with unsigned subtraction `(now - start) < ticks`, which stays correct when the counter wraps around.
+**Short answer:** Use a free-running hardware counter and busy-wait until the required number of ticks has passed: on implementations with an available DWT cycle counter (`CYCCNT`), it gives cycle-count resolution for microsecond delays, and a 1 ms SysTick counter works for millisecond delays. Compare with unsigned subtraction `(now - start) < ticks`, which stays correct when the counter wraps around.
 
 ```c
 #include <stdint.h>
@@ -31,7 +31,10 @@ void dwt_init(void)
 void delay_us(uint32_t us)
 {
     uint32_t start = DWT_CYCCNT;
-    uint32_t ticks = us * (SystemCoreClock / 1000000u);
+    uint64_t ticks64 = ((uint64_t)us * SystemCoreClock + 999999u) / 1000000u;
+    /* Example API: reject unsupported delay lengths. */
+    if (ticks64 > UINT32_MAX / 2u) return;
+    uint32_t ticks = (uint32_t)ticks64;
     while ((uint32_t)(DWT_CYCCNT - start) < ticks) { }   /* wrap-safe */
 }
 
@@ -40,7 +43,7 @@ extern volatile uint32_t g_ms;
 void delay_ms(uint32_t ms) { uint32_t s = g_ms; while ((uint32_t)(g_ms - s) < ms) { } }
 ```
 
-**Points:** a plain `for (i = 0; i < N; i++);` loop is a bad delay: the optimiser can delete it, and its duration changes with clock speed, flash wait states and compiler flags (add `volatile` and calibrate if you must). Hardware counters give accurate timing; unsigned subtraction handles wrap-around. Busy delays waste CPU and power: use timers or an RTOS delay for anything long. (Cortex-M0/M0+ has no DWT counter: use SysTick or a timer.)
+**Points:** a plain `for (i = 0; i < N; i++);` loop is a bad delay: the optimiser can delete it, and its duration changes with clock speed, flash wait states and compiler flags (add `volatile` and calibrate if you must). Hardware counters give accurate timing; unsigned subtraction handles wrap-around. Busy delays waste CPU and power: use timers or an RTOS delay for anything long. (Cortex-M0/M0+ has no CYCCNT: use SysTick or a timer. On other cores check that CYCCNT exists, is enabled and runs in the intended power state.)
 
 **Why unsigned subtraction is wrap-safe:** with a 32-bit counter, if `start = 0xFFFFFFF0` and `now = 0x00000010` after wrapping, `now - start` = 0x20 (32 ticks) in unsigned arithmetic — exactly the elapsed time. Comparing `now < start + ticks` instead breaks at the wrap.
 
@@ -78,7 +81,10 @@ int uart_write_polled(uart_t *u, const uint8_t *buf, size_t len, uint32_t timeou
 {
     for (size_t i = 0; i < len; i++) {
         uint32_t t = timeout;
-        while (!(u->SR & UART_SR_TXE)) if (--t == 0) return -1;
+        while (!(u->SR & UART_SR_TXE)) {
+            if (t == 0) return -1;
+            --t;
+        }
         u->DR = buf[i];
     }
     return 0;
