@@ -769,43 +769,44 @@ Read and preserve reset-cause registers early after reboot. Record useful fault 
 **Interview takeaway:** Never blindly feed a watchdog in an interrupt or unconditional loop. It should be serviced only after confirming that essential software is progressing.
 
 ### What is debouncing and how do you implement it? {E}
-**Short answer:** Mechanical switches and buttons "bounce": the contacts open and close several times for a few milliseconds (typically 1–10 ms, sometimes more) when pressed or released. Debouncing means accepting a new state only after the input has been stable for a period. Do it in software by sampling periodically, or in hardware with an RC filter and a Schmitt-trigger input.
+Mechanical switches can produce several rapid transitions when pressed or released. Debouncing filters these transitions so software generates a single stable button event.
 
-**Software: shift-register (integrating) debounce, called every 1 ms**
+#### 1. Signal behavior
+
+<div style="max-width:650px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 145" width="100%" role="img" aria-label="Raw switch signal bounces before settling; filtered signal transitions once after the stability period">
+<text x="8" y="13" font-size="11" fill="currentColor">Raw switch input</text><path d="M10 54 H65 V25 H78 V54 H90 V25 H104 V54 H116 V25 H330" fill="none" stroke="#3b82f6" stroke-width="2"/>
+<text x="8" y="87" font-size="11" fill="currentColor">Debounced input</text><path d="M10 127 H205 V98 H330" fill="none" stroke="#16a34a" stroke-width="2"/><path d="M116 59 V94 M205 59 V94 M116 72 H205" stroke="currentColor" stroke-dasharray="4 3" fill="none"/><text x="160" y="68" text-anchor="middle" font-size="10" fill="currentColor">Stable interval</text><text x="330" y="142" text-anchor="end" font-size="10" fill="currentColor">Time →</text></svg></div>
+
+#### 2. Nonblocking software implementation
+
+Call the following function every 1 ms. It accepts a transition after 20 consecutive samples that differ from the currently stable state.
 
 ```c
 #include <stdbool.h>
-#include <stdint.h>
 
-static bool pressed;
-
-void button_poll_1ms(void)
+bool debounce(bool raw)
 {
-    static uint8_t history;
-    history = (uint8_t)((history << 1) | (read_pin() ? 1u : 0u));
-    if (history == 0xFFu)      pressed = true;    /* 8 consecutive samples high */
-    else if (history == 0x00u) pressed = false;   /* 8 consecutive samples low  */
-    /* mixed samples: keep the previous state */
+    static bool stable;
+    static unsigned count;
+
+    if (raw == stable) {
+        count = 0;
+    } else if (++count >= 20) {
+        stable = raw;
+        count = 0;
+        // Generate a transition event if needed.
+    }
+    return stable;
 }
 ```
 
-**Counter-based debounce for several buttons at once** (vertical counters) is a common efficient variant: process up to 8 or 32 buttons in parallel with bitwise operations.
+This is a single-button example initialized to false. Initialize state appropriately for the hardware; use a separate state structure for each button.
 
-**Edge detection after debouncing:**
+#### 3. Hardware alternative
 
-```c
-bool now = pressed;
-if (now && !last) on_press();      /* rising edge of the debounced state */
-last = now;
-```
+An RC filter and Schmitt-trigger input can reduce bouncing, provided their electrical behavior and timing are suitable.
 
-**Interrupt-based approach:** an edge interrupt starts a timer (and disables the pin interrupt); when the timer expires (e.g. 20 ms later), read the pin and re-enable the interrupt. This keeps the CPU asleep when nothing happens, which matters for battery devices.
-
-**Hardware debouncing:** an RC low-pass filter (e.g. 10 kΩ and 100 nF, time constant 1 ms) smooths the bounce; a Schmitt-trigger input (most MCU GPIOs have hysteresis) turns the slow edge into a clean transition. Dedicated debouncer ICs exist too.
-
-**Why not just use an edge interrupt on a raw switch?** Each bounce triggers an interrupt, so one press produces a burst of 5–50 interrupts, and the press may be counted many times.
-
-**Interview follow-ups:** long press vs short press (count how long the debounced state stays pressed), and scanning a matrix keypad (see the next question).
+**Interview takeaway:** Do not insert a long blocking delay in a button ISR. Sample periodically or use a nonblocking timer and choose the debounce interval based on the switch's actual behavior.
 
 ### How do you scan a matrix keypad? {M}
 **Short answer:** A matrix keypad connects keys at the crossings of rows and columns, so a 4×4 keypad needs 8 pins instead of 16. Configure the columns as inputs with pull-ups and the rows as outputs. Drive one row low at a time, read the columns: a column reading low means the key at that row and column is pressed. Repeat for each row every few milliseconds and debounce the result.
