@@ -163,25 +163,18 @@ Hard links refer to the same inode and normally cannot cross filesystem boundari
 **Interview takeaway:** A filename is not the inode. An open file can remain usable after unlink removes its name.
 
 ### How do file systems store file data: contiguous, linked (FAT), indexed and extents? {M}
-**Short answer:** **Contiguous** allocation stores a file in consecutive blocks (fast, simple, but suffers from fragmentation and files cannot grow easily). **Linked** allocation chains blocks together, as FAT does with its File Allocation Table (no external fragmentation, but random access must follow the chain). **Indexed** allocation keeps a list of block numbers per file in the inode (direct, indirect, double-indirect pointers in ext2/3). **Extents** (ext4, XFS, Btrfs) record runs of consecutive blocks as (start, length), which is compact for large, contiguous files.
+File allocation methods determine how logical file offsets map to storage blocks.
 
-| Method | Example | Random access | Growth | Metadata size |
-|---|---|---|---|---|
-| Contiguous | CD-ROM (ISO 9660), some flash images | O(1) | hard (need free space after the file) | tiny (start + length) |
-| Linked list | FAT12/16/32, exFAT | O(n): walk the FAT chain | easy | one FAT entry per cluster |
-| Indexed block map | ext2/ext3 (12 direct + indirect pointers) | O(1)–O(3) lookups | easy | one pointer per block |
-| Extents | ext4, XFS, NTFS, APFS | O(log n) in an extent tree | easy | one entry per contiguous run |
+| Method | Mechanism | Trade-off |
+|---|---|---|
+| Contiguous | Consecutive blocks | Fast access, difficult growth |
+| Linked/FAT | Each block points to next via metadata | Flexible growth, random access overhead |
+| Indexed | Metadata references block addresses | Efficient lookup, index overhead |
+| Extents | Runs described by start and length | Compact for contiguous ranges |
 
-**FAT in more detail:** the directory entry points to the first cluster; the FAT table entry for each cluster gives the next cluster, ending with an end-of-chain marker. Caching the FAT in RAM makes walking it fast. Interview follow-ups:
+For a file occupying logical blocks 0–7, an extent might map 0–3 to physical blocks 100–103 and 4–7 to 220–223. Modern filesystems often use extent trees with additional allocation and caching logic.
 
-- *Why keep a pointer to the last block as well?* Appending (the most common write to log files) would not need to walk the whole chain.
-- *A doubly linked FAT?* Seeking backwards becomes faster, but every entry doubles in size and the FAT is twice as large to cache and to write. Most access is sequential forwards, so the cost is usually not worth it.
-
-**Extents vs block maps:** a contiguous 1 GB file with 4 KB blocks needs 262,144 block pointers (about 1 MB of metadata) but only **8 extents** in ext4 (each extent covers up to 128 MB = 32,768 blocks), each 12 bytes. A block map is better only for files that are badly fragmented, where every block is in a different place and each extent would describe one block.
-
-**Hybrid (first N blocks contiguous, the rest linked):** small files get fast contiguous access with minimal metadata; large files can still grow. Downsides: two code paths, random access into the linked tail is slow, and reserving N contiguous blocks causes fragmentation.
-
-**Embedded relevance:** SD cards and USB sticks use FAT/exFAT because every OS can read them, but FAT has no journal, so a power cut during a write can corrupt the file system. Use ext4/F2FS (or a journaled FAT driver) for data that must survive power loss, and keep FAT only for exchange partitions.
+**Interview takeaway:** Filesystem fragmentation affects metadata and access patterns. SSDs reduce seek latency but do not eliminate allocation, write-amplification or metadata concerns.
 
 ### What is mmap, and what is mprotect used for? {M}
 **Short answer:** `mmap()` maps a file or anonymous memory into the process's address space, so the program can access it with normal pointers instead of `read()`/`write()`. Pages are loaded on demand by page faults, and with `MAP_SHARED` changes go back to the file (or are visible to other processes mapping it). `mprotect()` changes the access permissions (read, write, execute) of pages that are already mapped.
