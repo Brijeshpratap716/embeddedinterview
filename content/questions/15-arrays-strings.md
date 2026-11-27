@@ -546,40 +546,31 @@ size_t common_prefix(const char *const a[], size_t n)
 **Complexity:** O(nL) worst-case for n strings with inspected prefix length L, O(1) space.
 
 ### How do you check if brackets in a string are balanced (Valid Parentheses)? {E}
-**Short answer:** Use a stack. Push every opening bracket; on a closing bracket, the stack must be non-empty and its top must be the matching opener, which you pop. At the end, the stack must be empty. O(n) time, O(n) space (bounded by the string length).
+Use a stack of opening brackets. For every closing bracket, the top must contain the matching opener.
 
 ```c
-#include <stdbool.h>
-#include <string.h>
-
-bool valid_brackets(const char *s)
+bool balanced(const char *s, char *stack, size_t cap)
 {
-    size_t len = strlen(s);
-    char stack[256];                       /* fixed size: reject inputs that would overflow */
-    size_t top = 0;
-    for (size_t i = 0; i < len; i++) {
-        char c = s[i];
-        if (c == '(' || c == '[' || c == '{') {
-            if (top == sizeof stack) return false;      /* too deep */
-            stack[top++] = c;
-        } else if (c == ')' || c == ']' || c == '}') {
-            char want = (c == ')') ? '(' : (c == ']') ? '[' : '{';
-            if (top == 0 || stack[top - 1] != want) return false;
-            top--;
-        }
+    size_t n=0;
+    for (; *s; ++s) {
+        char c=*s;
+        if (c=='(' || c=='[' || c=='{') {
+            if (n==cap) return false;
+            stack[n++]=c;
+        } else if (c==')' || c==']' || c=='}') {
+            if (!n) return false;
+            char t=stack[--n];
+            if ((c==')' && t!='(') ||
+                (c==']' && t!='[') ||
+                (c=='}' && t!='{')) return false;
+        } else return false;
     }
-    return top == 0;
+    return n==0;
 }
-/* "{[()]}" -> true, "([)]" -> false, "((" -> false */
 ```
+"{[()]}" succeeds; "([)]" fails. This version accepts only brackets and uses caller-provided storage; capacity exhaustion is reported as false.
 
-**Three ways to fail:** a closer with an empty stack (`")("`), a closer that does not match the top (`"([)]"`), and openers left over at the end (`"(("`).
-
-**Only one bracket type?** You do not need a stack, just a counter: increment on `(`, decrement on `)`, fail if it ever goes negative, and require 0 at the end.
-
-**Embedded notes:** use a fixed-size array as the stack and handle overflow explicitly instead of recursing or allocating. The same pattern validates nesting in a JSON or configuration parser on a device with no heap.
-
-**Follow-ups:** minimum number of insertions to balance (count unmatched openers and closers), and the longest valid parentheses substring (stack of indices).
+**Complexity:** O(n) time, O(n) worst-case stack space.
 
 ### How do you merge two sorted arrays? {E}
 **Short answer:** Walk both arrays with one index each and copy the smaller current element to the output, then copy whatever remains. O(n + m). To merge **in place** when the first array has room at its end (LeetCode "Merge Sorted Array"), fill from the **back** so nothing is overwritten before it is read.
