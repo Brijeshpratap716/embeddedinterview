@@ -576,6 +576,10 @@ free(n);
 
 **Uses:** LRU caches (move a node to the front in O(1)), RTOS ready lists and timer lists, undo/redo history, and any queue where items are removed from the middle.
 
+#### Insert and delete invariants
+
+For each interior node n, n->next->prev == n and n->prev->next == n. The head has prev=NULL and tail has next=NULL. Removing the only node must set both head and tail to NULL. A pointer passed to remove must belong to this list; arbitrary or stale pointers are not valid inputs. Add push_front symmetrically by linking the new node to the old head and updating the old head's prev, or setting tail when the list was empty.
+
 ### Implement a circular linked list. {E}
 **Short answer:** In a circular linked list the last node points back to the first instead of NULL, so you can keep going around forever. It is convenient for round-robin scheduling and rotating buffers. Keeping a pointer to the **tail** (rather than the head) is a common trick: the head is `tail->next`, so both inserting at the front and at the end are O(1).
 
