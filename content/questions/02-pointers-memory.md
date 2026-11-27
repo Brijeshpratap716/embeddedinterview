@@ -1470,3 +1470,236 @@ DMA descriptors, cache-line maintenance, SIMD operations and hardware buffers ma
 
 **Interview takeaway:** Prefer _Alignas(64) when supported. Manual alignment requires extra space, a power-of-two alignment and valid address arithmetic.
 
+### Check memory address alignment for 4, 8, 16, or 64 bytes {E}
+A memory address is aligned to N bytes if it is exactly divisible by N. For power-of-two alignments, we can check this without using the modulo operator.
+
+#### 1. Generic formula
+
+```c
+is_aligned = !(addr & (alignment - 1));
+```
+
+#### 2. C program
+
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+int is_aligned(uintptr_t addr, unsigned int alignment)
+{
+    return !(addr & (alignment - 1));
+}
+
+int main()
+{
+    uintptr_t addr = 0x1020;
+
+    printf("4-byte aligned:  %d\n", is_aligned(addr, 4));
+    printf("8-byte aligned:  %d\n", is_aligned(addr, 8));
+    printf("16-byte aligned: %d\n", is_aligned(addr, 16));
+    printf("64-byte aligned: %d\n", is_aligned(addr, 64));
+
+    return 0;
+}
+```
+
+**Output:**
+
+```text
+4-byte aligned:  1
+8-byte aligned:  1
+16-byte aligned: 1
+64-byte aligned: 0
+```
+
+#### 3. How does it work?
+
+For an address to be aligned to a power of two, certain least significant bits must be zero.
+
+| Alignment | Mask | Required zero bits |
+|---|---|---|
+| 4 bytes | 0x03 | Last 2 bits |
+| 8 bytes | 0x07 | Last 3 bits |
+| 16 bytes | 0x0F | Last 4 bits |
+| 32 bytes | 0x1F | Last 5 bits |
+| 64 bytes | 0x3F | Last 6 bits |
+
+For example, checking 16-byte alignment for address 0x1020 (lower eight bits):
+
+```text
+Address  00100000
+Mask     00001111
+AND      00000000
+```
+
+Result is zero — 16-byte aligned.
+
+#### 4. Direct bitwise expressions
+
+```c
+is_4_aligned  = !(addr & 3);
+is_8_aligned  = !(addr & 7);
+is_16_aligned = !(addr & 15);
+is_64_aligned = !(addr & 63);
+```
+
+#### 5. Important interview follow-up
+
+Handle invalid alignment values, such as 0, 3 or 7.
+
+```c
+int is_aligned(uintptr_t addr, unsigned int alignment)
+{
+    // Check if alignment is a valid power of 2
+    if (!alignment || (alignment & (alignment - 1)))
+        return 0;
+
+    return !(addr & (alignment - 1));
+}
+```
+
+**Time complexity:** O(1).
+
+**Space complexity:** O(1).
+
+**Embedded applications:** DMA buffer alignment, cache-line alignment, ARM memory access, SIMD instructions and memory allocators.
+
+Remember to use uintptr_t instead of int when converting pointers to integers, especially on 64-bit platforms.
+
+### Allocate memory without malloc or calloc, aligned to 64 bytes {M}
+You can allocate memory without malloc() or calloc() using a **static buffer** and align its starting address to a 64-byte boundary using bitwise operations.
+
+#### Method 1: Using bitwise operators (Interview approach)
+
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+#define SIZE 1024
+#define ALIGNMENT 64
+
+static uint8_t buffer[SIZE + ALIGNMENT - 1];
+
+int main()
+{
+    uintptr_t addr = (uintptr_t)buffer;
+
+    addr = (addr + ALIGNMENT - 1) & ~(uintptr_t)(ALIGNMENT - 1);
+
+    uint8_t *ptr = (uint8_t *)addr;
+
+    printf("Original address: %p\n", (void *)buffer);
+    printf("Aligned address:  %p\n", (void *)ptr);
+    printf("Is aligned: %d\n", !(addr & 63));
+
+    return 0;
+}
+```
+
+Now ptr points to a 64-byte aligned memory region with at least 1024 usable bytes.
+
+The formula for rounding an address up to an alignment boundary is:
+
+```c
+aligned_addr = (addr + 63) & ~(uintptr_t)63;
+```
+
+Suppose the original address is 0x1004.
+
+```text
+Original address = 0x1004
+Add 63           = 0x1043
+Clear last 6 bits
+Aligned address  = 0x1040
+```
+
+**Why allocate 63 extra bytes?**
+
+In the worst case, we may need to skip 63 bytes to reach the next 64-byte aligned address. The additional memory guarantees that 1024 usable bytes remain available.
+
+#### Method 2: Using C11 _Alignas
+
+```c
+#include <stdint.h>
+
+_Alignas(64) static uint8_t buffer[1024];
+```
+
+The compiler ensures 64-byte alignment if that alignment is supported.
+
+#### Method 3: Using GCC compiler attributes
+
+```c
+static uint8_t buffer[1024]
+    __attribute__((aligned(64)));
+```
+
+| Feature | Bitwise | _Alignas | GCC attribute |
+|---|---|---|---|
+| Uses malloc/calloc | No | No | No |
+| Extra buffer bytes | 63 | None required | None required |
+| Standard C | Yes* | C11 onwards | No |
+| Runtime alignment calculation | Yes | No | No |
+| Suitable for embedded systems | Yes | Yes | Yes |
+
+*The bitwise method assumes a conventional flat address space with uintptr_t support and no address overflow.
+
+For interviews, explain Method 1 first, as it demonstrates your understanding of memory allocation, pointer arithmetic, padding and bitwise manipulation. Then mention compiler-supported alternatives.
+
+**Time complexity:** O(1).
+
+### Allocate 64-byte-aligned memory using sizeof without malloc or calloc {M}
+You can use sizeof to calculate the required memory size and declare a buffer with 63 extra bytes for 64-byte alignment.
+
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+int main()
+{
+    int arr[100];
+
+    uint8_t buffer[sizeof(arr) + 63];
+
+    uintptr_t addr = (uintptr_t)buffer;
+
+    addr = (addr + 63) & ~(uintptr_t)63;
+
+    int *ptr = (int *)addr;
+
+    printf("Original address: %p\n", (void *)buffer);
+    printf("Aligned address: %p\n", (void *)ptr);
+    printf("Is aligned: %d\n", !(addr & 63));
+
+    return 0;
+}
+```
+
+This example demonstrates address alignment only. The buffer is automatic storage, and the cast does not make the declared byte array an int array; do not access it through int * as if it were one. For actual integer storage use the aligned int array below.
+
+#### Simpler approach using C11
+
+If you want to allocate memory for 100 integers without an additional array:
+
+```c
+#include <stdint.h>
+
+_Alignas(64) uint8_t buffer[100 * sizeof(int)];
+```
+
+Or directly:
+
+```c
+_Alignas(64) int buffer[100];
+```
+
+**Important:** sizeof itself does not allocate memory. It calculates the size in bytes. The array declaration allocates the memory.
+
+The key bitwise formula to remember for interviews is:
+
+```c
+aligned_addr = (addr + 63) & ~(uintptr_t)63;
+```
+
+This rounds the address up to the nearest 64-byte boundary.
+
