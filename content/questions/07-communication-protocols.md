@@ -742,23 +742,28 @@ A body controller can communicate with window or seat modules over LIN and publi
 **Interview takeaway:** LIN trades bandwidth and distributed arbitration for predictable low-cost scheduled communication. It complements rather than universally replaces CAN.
 
 ### What are the USB transfer types? {M}
-**Short answer:** USB has four transfer types. **Control** transfers configure and query devices on endpoint 0 (enumeration, standard and class requests) with guaranteed delivery. **Bulk** transfers move large amounts of data with error checking and retries but no timing guarantee (mass storage, printers, CDC serial data). **Interrupt** transfers carry small, periodic data with a guaranteed maximum polling interval (keyboards, mice, HID, status). **Isochronous** transfers reserve bandwidth with fixed timing but no retransmission (audio, video).
+USB defines four transfer types with different reliability and timing characteristics.
 
-| Type | Guaranteed delivery | Guaranteed timing | Max packet (FS / HS) | Typical use |
-|---|---|---|---|---|
-| Control | yes | best effort (reserved share) | 64 / 64 | enumeration, configuration |
-| Bulk | yes (retries) | no | 64 / 512 | storage, serial data, network |
-| Interrupt | yes (retries) | bounded polling interval | 64 / 1024 | HID, sensors, notifications |
-| Isochronous | no | yes | 1023 / 1024 | audio, video streaming |
+| Transfer | Purpose | Typical example |
+|---|---|---|
+| Control | Configuration and requests | Endpoint 0 enumeration |
+| Bulk | Reliable large data, no guaranteed latency | Mass storage |
+| Interrupt | Periodic host-polled data with scheduled opportunities | HID input reports |
+| Isochronous | Time-sensitive data, no retransmission guarantee | Audio/video streams |
 
-**Key facts**
+#### 1. Host-driven scheduling
 
-- **The host initiates every transfer**; a device can only answer when polled. "Interrupt" transfers are therefore polled, not true interrupts.
-- **Endpoints:** a device has endpoint 0 (control, bidirectional) plus up to 15 IN and 15 OUT endpoints. IN = device to host.
-- **Classes** standardise drivers: HID, CDC-ACM (virtual serial port), MSC (mass storage), UAC (audio), UVC (video), DFU (firmware update). Using a standard class means no custom host driver.
-- **Speeds:** low (1.5 Mbps), full (12 Mbps), high (480 Mbps), SuperSpeed (5 Gbps+); most MCUs have full-speed device controllers, some high-speed with an external or internal ULPI PHY.
+On conventional USB host/device links, the host schedules transactions. An interrupt endpoint does not independently interrupt the host like a GPIO IRQ; the host polls it according to its scheduling rules.
 
-**Embedded stacks:** TinyUSB, vendor stacks (STM32 USB device library), Zephyr USB, and on Linux the gadget framework (configfs).
+#### 2. Bulk versus isochronous
+
+Bulk transfers use available bandwidth and can retry failed transactions. Isochronous transfers reserve appropriate service opportunities and prioritize timing over recovery of every lost packet.
+
+#### 3. Driver selection
+
+Select endpoints according to device class, bandwidth, latency and data-integrity needs. Maximum packet sizes and scheduling constraints depend on USB speed and endpoint descriptors.
+
+**Interview takeaway:** Choose transfer type based on timing versus reliability. USB transfer type is distinct from endpoint direction and device class.
 
 ### What happens during USB enumeration? {H}
 **Short answer:** When a device is plugged in, the host detects it, resets it, reads its device descriptor at address 0 to learn the control endpoint's maximum packet size, assigns it a unique address, reads all its descriptors (device, configuration, interfaces, endpoints, strings), chooses a driver based on class or vendor/product ID, and selects a configuration. Only then can the device's other endpoints be used.
