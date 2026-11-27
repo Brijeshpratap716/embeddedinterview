@@ -132,18 +132,18 @@ This estimates voltage using ideal code bins; use the datasheet transfer functio
 **Interview takeaway:** Resolution is not accuracy. Reference tolerance, noise, offset, gain error and effective number of bits matter. Timer-triggered ADC with DMA is useful for periodic acquisition.
 
 ### What is the Nyquist theorem and what is aliasing? {E}
-**Short answer:** The Nyquist–Shannon sampling theorem says a signal must be sampled at **more than twice its highest frequency component** to be reconstructed without loss. If frequencies above half the sample rate (the **Nyquist frequency**, f_s/2) are present, they fold back and appear as false lower frequencies — **aliasing** — which cannot be removed after sampling. That is why an **anti-aliasing low-pass filter** is placed before the ADC.
+The Nyquist sampling condition requires a sampling rate greater than twice the highest frequency in a band-limited baseband signal for ideal reconstruction.
 
-**Aliasing example:** sampling at 1 kHz, a 900 Hz signal appears at |900 − 1000| = **100 Hz**. Mains hum (50/60 Hz) harmonics and switching-regulator noise commonly alias into sensor readings this way.
+#### Example
+A 1 kHz sine sampled at 1.5 kHz appears as a 500 Hz component because the sampled sequence cannot distinguish those frequencies.
 
-**Practical rules**
+```text
+Analog signal -> anti-alias filter -> ADC -> digital processing
+```
 
-- Sample at 5–10× the highest frequency of interest when possible; this relaxes the anti-aliasing filter (a simple RC filter rolls off slowly: only −20 dB/decade).
-- Put the filter's cut-off at or below the band of interest and well below f_s/2.
-- Use oversampling + digital filtering + decimation: sample fast with a simple analog filter, then filter and downsample digitally (sigma-delta ADCs do this internally).
-- For slow sensors, choose a sampling rate that rejects mains: averaging over exactly 20 ms (50 Hz) or 16.67 ms (60 Hz), or 100 ms for both.
+Real filters have finite roll-off, so sampling is usually higher than the theoretical minimum and analog frequencies above the usable band are attenuated before conversion.
 
-**Related:** quantisation noise (from finite resolution) is different from aliasing; dithering and oversampling can reduce its effect.
+**Interview takeaway:** Increasing digital filtering after sampling cannot undo aliasing that already occurred at the ADC.
 
 ### What is a low-pass RC filter and how do you find its cut-off frequency? {E}
 **Short answer:** A resistor in series with the signal and a capacitor to ground form a first-order low-pass filter: low frequencies pass, high frequencies are attenuated at −20 dB per decade above the cut-off frequency **f_c = 1 / (2π R C)**, where the output is −3 dB (about 70.7% of the input amplitude). Example: R = 10 kΩ, C = 100 nF → f_c = 1 / (2π × 10⁴ × 10⁻⁷) ≈ **159 Hz**.
