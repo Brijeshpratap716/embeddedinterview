@@ -1772,43 +1772,57 @@ memmove(s + 1, s, 4);  // "AABCD"
 **Interview takeaway:** Use string APIs for properly bounded strings, memcpy for non-overlapping binary data, and memmove for overlapping byte ranges. None of these functions knows the destination capacity automatically.
 
 ### What is the difference between an array and a pointer? {M}
-**Short answer:** An array is a block of contiguous objects; a pointer is a variable that holds an address. In most expressions an array name **decays** into a pointer to its first element, which is why they often look interchangeable. They differ in `sizeof`, in `&`, in assignment, and in how they are stored.
+An **array** is an object containing consecutive elements of the same type. A **pointer** is a separate object containing a pointer value that can refer to an element.
+
+#### 1. Declaration
 
 ```c
-int arr[10];
-int *ptr = arr;          /* arr decays to &arr[0] */
-
-sizeof arr               /* 40: the whole array */
-sizeof ptr               /* 4 on 32-bit, 8 on 64-bit: just the pointer */
-
-&arr                     /* type int (*)[10]: pointer to the whole array */
-&ptr                     /* type int **: address of the pointer variable */
-
-arr = ptr;               /* error: an array is not assignable */
-ptr = arr + 1;           /* fine */
-
-arr[3] == *(arr + 3) == *(ptr + 3) == ptr[3] == 3[arr]   /* all the same element */
+int a[5] = {10,20,30,40,50};
+int *p = a;
 ```
 
-**Where an array does not decay:** as the operand of `sizeof`, of `&`, and as a string literal used to initialise a `char` array.
+Here the array expression a is converted to a pointer to its first element.
 
-**Function parameters:** `void f(int a[10])` is exactly the same as `void f(int *a)`. The `10` is ignored, and `sizeof a` inside `f` gives the pointer size, a classic bug:
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 117" width="100%" role="img" aria-label="Pointer p refers to first element of an array of five integers">
+<rect x="8" y="38" width="78" height="34" rx="5" fill="#16a34a" fill-opacity=".15" stroke="#16a34a"/>
+<text x="47" y="59" font-size="11" text-anchor="middle" fill="currentColor">p = &amp;a[0]</text>
+<path d="M86 55 H132 M126 50 L132 55 L126 60" fill="none" stroke="currentColor"/>
+<rect x="136" y="38" width="39" height="34" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="155.5" y="59" text-anchor="middle" font-size="12" fill="currentColor">10</text><text x="155.5" y="85" text-anchor="middle" font-size="9" fill="currentColor">a[0]</text><rect x="175" y="38" width="39" height="34" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="194.5" y="59" text-anchor="middle" font-size="12" fill="currentColor">20</text><text x="194.5" y="85" text-anchor="middle" font-size="9" fill="currentColor">a[1]</text><rect x="214" y="38" width="39" height="34" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="233.5" y="59" text-anchor="middle" font-size="12" fill="currentColor">30</text><text x="233.5" y="85" text-anchor="middle" font-size="9" fill="currentColor">a[2]</text><rect x="253" y="38" width="39" height="34" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="272.5" y="59" text-anchor="middle" font-size="12" fill="currentColor">40</text><text x="272.5" y="85" text-anchor="middle" font-size="9" fill="currentColor">a[3]</text><rect x="292" y="38" width="39" height="34" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="311.5" y="59" text-anchor="middle" font-size="12" fill="currentColor">50</text><text x="311.5" y="85" text-anchor="middle" font-size="9" fill="currentColor">a[4]</text>
+<text x="47" y="100" text-anchor="middle" font-size="10" fill="currentColor">8 bytes</text><text x="233" y="100" text-anchor="middle" font-size="10" fill="currentColor">20 bytes total</text></svg></div>
+
+Example assumes a typical 64-bit system and four-byte int.
+
+#### 2. sizeof difference
 
 ```c
-void clear(int a[10]) { memset(a, 0, sizeof a); }   /* clears only 4 or 8 bytes! */
-void clear(int *a, size_t n) { memset(a, 0, n * sizeof *a); }   /* correct */
+sizeof(a);  // 20 bytes on this system
+sizeof(p);  // 8 bytes on this system
 ```
 
-**Storage difference:**
+The array size includes all elements. The pointer size is independent of the array length.
+
+#### 3. Reassignment
 
 ```c
-char s1[] = "hello";     /* an array of 6 chars, writable copy */
-char *s2  = "hello";     /* a pointer to a string literal, which must not be modified */
+p = &a[2];   // Allowed
+// a = p;    // Invalid
 ```
 
-**Multi-dimensional arrays:** `int m[3][4]` decays to `int (*)[4]` (pointer to a row), not to `int **`. Passing it to a function expecting `int **` is wrong; declare `void f(int m[][4])` or `void f(int (*m)[4])`.
+A pointer variable can change its target. An array cannot be assigned as a whole using ordinary assignment.
 
-**Count elements safely:** `#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))` works only on real arrays, not on pointers; GCC/Clang can be made to reject pointers with a `__builtin_types_compatible_p` check (as the Linux kernel's version does).
+#### 4. Passing an array to a function
+
+```c
+void print(int a[], size_t n)
+{
+    for (size_t i = 0; i < n; i++)
+        printf("%d ", a[i]);
+}
+```
+
+The array parameter is adjusted to int *. Pass the length separately; sizeof(a) inside this function gives the pointer size.
+
+**Interview takeaway:** An array is not a pointer, although an array expression usually decays to a pointer to its first element. sizeof and unary address-of are important exceptions.
 
 ### What is a function pointer and where is it used? {M}
 **Short answer:** A function pointer holds the address of a function so the function can be called indirectly, chosen at run time. Embedded code uses them for interrupt vector tables, driver callbacks, state machines, command tables and "operations" structures that give C a form of polymorphism.
