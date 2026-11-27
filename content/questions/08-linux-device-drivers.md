@@ -618,31 +618,48 @@ Overlay removal is not a general-purpose safe hot-unplug mechanism. Drivers and 
 **Interview takeaway:** An overlay modifies hardware description, not driver code. Validate bindings and resource conflicts, and use the platform's supported overlay lifecycle.
 
 ### What are the devm_ (managed) APIs? {M}
-**Short answer:** Device-managed resource functions (`devm_kzalloc`, `devm_platform_ioremap_resource`, `devm_request_irq`, `devm_clk_get_enabled`, `devm_regulator_get`, `devm_gpiod_get`...) record a release action on the device. If `probe` fails, or the device is later unbound, all managed resources are released automatically in reverse order. This removes most error-path cleanup code and the leaks that come with it.
+The devm_ APIs implement device-managed resource lifetime. Resources acquired through supported managed helpers are automatically released when the device is detached or a probe attempt fails.
 
-**Before and after**
+#### 1. Example
 
 ```c
-/* manual: every error path must undo the previous steps */
-base = ioremap(res->start, resource_size(res));
-if (!base) return -ENOMEM;
-ret = request_irq(irq, handler, 0, "x", d);
-if (ret) { iounmap(base); return ret; }
+static int demo_probe(struct platform_device *pdev)
+{
+    struct device *dev = &pdev->dev;
+    struct demo *d;
 
-/* managed: just return on error */
-base = devm_ioremap_resource(dev, res);
-if (IS_ERR(base)) return PTR_ERR(base);
-ret = devm_request_irq(dev, irq, handler, 0, "x", d);
-if (ret) return ret;
+    d = devm_kzalloc(dev, sizeof *d, GFP_KERNEL);
+    if (!d)
+        return -ENOMEM;
+
+    d->base = devm_platform_ioremap_resource(pdev, 0);
+    if (IS_ERR(d->base))
+        return PTR_ERR(d->base);
+
+    platform_set_drvdata(pdev, d);
+    return 0;
+}
 ```
 
-**Custom cleanup:** `devm_add_action_or_reset(dev, my_cleanup, data)` registers any function to run on release (e.g. to put hardware into reset).
+If the mapping fails, the managed allocation is automatically released during failed-probe cleanup.
 
-**Pitfalls**
+#### 2. Common helpers
 
-- **Ordering with `remove()`:** managed resources are released **after** `remove()` returns. A managed IRQ can still fire after `remove()` has stopped or freed something the handler uses; disable the device's interrupts in hardware in `remove()`, or make that teardown itself a devm action registered in the right order.
-- **Lifetime:** memory from `devm_kzalloc` is freed when the device unbinds, even if user space still has the `/dev` file open; data reachable from open files must be reference-counted separately.
-- Do not use devm functions outside probe paths for resources that are created and destroyed repeatedly (they accumulate until unbind).
+| API | Resource |
+|---|---|
+| devm_kzalloc | Zeroed memory |
+| devm_request_threaded_irq | Interrupt registration |
+| devm_gpiod_get | GPIO descriptor |
+| devm_clk_get | Clock reference |
+| devm_regulator_get | Regulator reference |
+
+Acquiring a clock or regulator reference is not the same as enabling it. Enable/disable actions need matching management, through suitable managed helpers or explicit cleanup.
+
+#### 3. Important limitation
+
+Managed release does not automatically stop hardware DMA, cancel arbitrary workqueues or make open userspace handles safe. Quiesce asynchronous activity before resources are released. devm_add_action_or_reset can register custom cleanup.
+
+**Interview takeaway:** devm simplifies cleanup, but resource dependencies and asynchronous device lifetime still require explicit design.
 
 ### What is pinctrl, and how do GPIO, clock and regulator frameworks work in drivers? {M}
 **Short answer:** These frameworks let drivers request board resources by name from the device tree instead of programming SoC registers directly. **pinctrl** sets pin multiplexing and electrical settings (pull-ups, drive strength) for named states (`default`, `sleep`), applied automatically before `probe`. The **GPIO** consumer API (`devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH)`, `gpiod_set_value_cansleep()`) handles active-low polarity from the DT. The **clock** framework (`devm_clk_get`, `clk_prepare_enable`, `clk_set_rate`) manages clock trees and reference counts. The **regulator** framework (`devm_regulator_get`, `regulator_enable`, `regulator_set_voltage`) controls power rails.
