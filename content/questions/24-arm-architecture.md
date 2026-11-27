@@ -149,6 +149,20 @@ function:
 
 **Interview takeaway:** SP manages stack storage, LR supports returns, PC controls execution and PSTATE records processor state.
 
+#### Function call versus exception return
+
+```asm
+BL  function       // X30 receives address of next instruction
+// execution continues here after RET
+function:
+    ADD X0, X0, #1
+    RET            // normally branches to X30
+```
+
+A non-leaf function generally preserves its incoming return address before executing another BL. SP points into the active stack; the normal AAPCS64 stack alignment at public interfaces is 16 bytes. PC is not a general-purpose X register, but PC-relative instructions such as ADR and ADRP construct addresses relative to instruction execution.
+
+An exception uses a separate mechanism: hardware writes ELR_ELx and SPSR_ELx for the target exception level, and ERET restores the saved return state. X30 is not the exception return register. PSTATE contains flags and execution controls (such as NZCV and exception masks); selected fields are accessed using architectural system-register interfaces, not as one ordinary writable GPR.
+
 ### What is a load-store architecture? {E}
 **Short answer:** Arithmetic normally uses registers; explicit loads and stores transfer data between registers and memory.
 
