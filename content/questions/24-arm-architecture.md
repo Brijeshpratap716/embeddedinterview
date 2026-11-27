@@ -11,7 +11,7 @@ Quick ARM architecture interview revision for embedded Linux, BSP, firmware and 
 ### What is ARM architecture and how do Cortex-A, R and M differ? {E}
 **Short answer:** Arm is a family of instruction set architectures. Cortex-A targets application processors with an MMU, Cortex-R targets real-time systems, and Cortex-M targets microcontrollers.
 
-<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="Cortex-A: Linux / Android to Cortex-R: Real-time to Cortex-M: MCU / RTOS" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="108.33333333333333" y="36" font-size="13" font-weight="600" fill="#172554">Cortex-A</text><text x="108.33333333333333" y="56" font-size="11" fill="#334155">Linux / Android</text><path d="M209.66666666666666 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="231.66666666666666" y="12" width="196.66666666666666" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="330" y="36" font-size="13" font-weight="600" fill="#172554">Cortex-R</text><text x="330" y="56" font-size="11" fill="#334155">Real-time</text><path d="M431.3333333333333 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="453.3333333333333" y="12" width="196.66666666666666" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="551.6666666666666" y="36" font-size="13" font-weight="600" fill="#172554">Cortex-M</text><text x="551.6666666666666" y="56" font-size="11" fill="#334155">MCU / RTOS</text></svg></div>
+<figure style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 164" width="100%" role="img" aria-label="Three processor profiles are alternatives, not stages in a pipeline." font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="10" width="206.66666666666666" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="113.33333333333333" y="39" fill="#0c4a6e" font-size="14" font-weight="600">Cortex-A</text><rect x="236.66666666666666" y="10" width="206.66666666666666" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="39" fill="#0c4a6e" font-size="14" font-weight="600">Cortex-R</text><rect x="463.3333333333333" y="10" width="206.66666666666666" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="566.6666666666666" y="39" fill="#0c4a6e" font-size="14" font-weight="600">Cortex-M</text><rect x="10" y="82" width="206.66666666666666" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="113.33333333333333" y="111" fill="#0c4a6e" font-size="14" font-weight="600">Linux / Android</text><rect x="236.66666666666666" y="82" width="206.66666666666666" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="111" fill="#0c4a6e" font-size="14" font-weight="600">Real-time control</text><rect x="463.3333333333333" y="82" width="206.66666666666666" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="566.6666666666666" y="111" fill="#0c4a6e" font-size="14" font-weight="600">Firmware / RTOS</text></svg><figcaption>Three processor profiles are alternatives, not stages in a pipeline.</figcaption></figure>
 
 ```asm
 ADD X0, X1, X2 // AArch64 example
@@ -34,7 +34,7 @@ The ISA defines instructions, registers and the programmer-visible behavior. A p
 ### What is AArch64 versus AArch32? {E}
 **Short answer:** AArch64 is the 64-bit execution state using A64 instructions. AArch32 is the 32-bit state using A32 or T32 instructions, where supported. AArch64 instructions are 32 bits wide.
 
-<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="AArch32: R0–R15 to AArch64: X0–X30" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="307.5" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="163.75" y="36" font-size="13" font-weight="600" fill="#172554">AArch32</text><text x="163.75" y="56" font-size="11" fill="#334155">R0–R15</text><path d="M320.5 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="342.5" y="12" width="307.5" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="496.25" y="36" font-size="13" font-weight="600" fill="#172554">AArch64</text><text x="496.25" y="56" font-size="11" fill="#334155">X0–X30</text></svg></div>
+<figure style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 164" width="100%" role="img" aria-label="Alternative execution states; support for AArch32 is implementation-dependent." font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="10" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="170" y="39" fill="#0c4a6e" font-size="14" font-weight="600">AArch32: A32 / T32</text><rect x="350" y="10" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="510" y="39" fill="#0c4a6e" font-size="14" font-weight="600">AArch64: A64</text><rect x="10" y="82" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="170" y="111" fill="#0c4a6e" font-size="14" font-weight="600">R0–R15 (32-bit)</text><rect x="350" y="82" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="510" y="111" fill="#0c4a6e" font-size="14" font-weight="600">X0–X30 (64-bit)</text></svg><figcaption>Alternative execution states; support for AArch32 is implementation-dependent.</figcaption></figure>
 
 ```asm
 ADD W0, W1, W2 // 32-bit operation in AArch64
@@ -139,7 +139,7 @@ STR W0, [X1]
 ### What are ARM exception levels EL0 to EL3? {M}
 **Short answer:** EL0 runs applications, EL1 normally runs the OS kernel, EL2 supports virtualization, and EL3 supports secure monitor functions. Availability depends on implementation.
 
-<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="EL0: Application to EL1: Kernel to EL2: Hypervisor to EL3: Secure monitor" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="141.25" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="80.625" y="36" font-size="13" font-weight="600" fill="#172554">EL0</text><text x="80.625" y="56" font-size="11" fill="#334155">Application</text><path d="M154.25 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="176.25" y="12" width="141.25" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="246.875" y="36" font-size="13" font-weight="600" fill="#172554">EL1</text><text x="246.875" y="56" font-size="11" fill="#334155">Kernel</text><path d="M320.5 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="342.5" y="12" width="141.25" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="413.125" y="36" font-size="13" font-weight="600" fill="#172554">EL2</text><text x="413.125" y="56" font-size="11" fill="#334155">Hypervisor</text><path d="M486.75 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="508.75" y="12" width="141.25" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="579.375" y="36" font-size="13" font-weight="600" fill="#172554">EL3</text><text x="579.375" y="56" font-size="11" fill="#334155">Secure monitor</text></svg></div>
+<figure style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 308" width="100%" role="img" aria-label="Privilege hierarchy. An exception is routed to its configured target; it need not traverse every level." font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="10" width="660" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="39" fill="#0c4a6e" font-size="14" font-weight="600">EL3 — secure monitor (if present)</text><rect x="10" y="82" width="660" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="111" fill="#0c4a6e" font-size="14" font-weight="600">EL2 — hypervisor (if present)</text><rect x="10" y="154" width="660" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="183" fill="#0c4a6e" font-size="14" font-weight="600">EL1 — OS kernel</text><rect x="10" y="226" width="660" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="255" fill="#0c4a6e" font-size="14" font-weight="600">EL0 — application</text></svg><figcaption>Privilege hierarchy. An exception is routed to its configured target; it need not traverse every level.</figcaption></figure>
 
 ```asm
 MRS X0, CurrentEL // privileged code
@@ -254,7 +254,7 @@ LDR X0, [X1] // translation performed if needed
 ### How does a memory access travel from CPU to DRAM? {M}
 **Short answer:** A load uses an address in a register, translates it through the MMU, and checks caches. A cache miss can reach the coherent interconnect, memory controller and DRAM. Exact cache organization varies.
 
-<div style="max-width:660px;margin:12px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 100" width="100%" role="img" aria-label="CPU / MMU: Address to L1 / L2: Cache lookup to Interconnect: Miss to DRAM: Memory controller" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="12" width="141.25" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="80.625" y="36" font-size="13" font-weight="600" fill="#172554">CPU / MMU</text><text x="80.625" y="56" font-size="11" fill="#334155">Address</text><path d="M154.25 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="176.25" y="12" width="141.25" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="246.875" y="36" font-size="13" font-weight="600" fill="#172554">L1 / L2</text><text x="246.875" y="56" font-size="11" fill="#334155">Cache lookup</text><path d="M320.5 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="342.5" y="12" width="141.25" height="68" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="413.125" y="36" font-size="13" font-weight="600" fill="#172554">Interconnect</text><text x="413.125" y="56" font-size="11" fill="#334155">Miss</text><path d="M486.75 46 h18 m-6 -5 l6 5 -6 5" fill="none" stroke="#64748b" stroke-width="2"/><rect x="508.75" y="12" width="141.25" height="68" rx="9" fill="#dcfce7" stroke="#15803d"/><text x="579.375" y="36" font-size="13" font-weight="600" fill="#172554">DRAM</text><text x="579.375" y="56" font-size="11" fill="#334155">Memory controller</text></svg></div>
+<figure style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 350" width="100%" role="img" aria-label="Load uses virtual address; TLB miss triggers page walk; cache miss reaches interconnect and possibly DRAM." font-family="system-ui,sans-serif" text-anchor="middle"><g fill="#e0f2fe" stroke="#0369a1"><rect x="210" y="10" width="260" height="40" rx="7"/><rect x="210" y="75" width="260" height="40" rx="7"/><rect x="500" y="75" width="165" height="40" rx="7"/><rect x="210" y="140" width="260" height="40" rx="7"/><rect x="10" y="140" width="165" height="40" rx="7"/><rect x="210" y="205" width="260" height="40" rx="7"/><rect x="500" y="205" width="165" height="40" rx="7"/><rect x="210" y="270" width="260" height="50" rx="7"/></g><g fill="#0c4a6e" font-size="13"><text x="340" y="35">LDR: virtual address</text><text x="340" y="100">MMU / TLB</text><text x="582" y="100">Page-table walk</text><text x="340" y="165">Cache hierarchy</text><text x="92" y="165">Hit: return bytes</text><text x="340" y="230">Coherent interconnect</text><text x="582" y="230">Peer cache may supply</text><text x="340" y="290">Memory controller</text><text x="340" y="307">DRAM if required</text></g><g stroke="#475569" stroke-width="2" fill="none"><path d="M340 50v25m-5-6 5 6 5-6 M340 115v25m-5-6 5 6 5-6 M340 180v25m-5-6 5 6 5-6 M340 245v25m-5-6 5 6 5-6 M470 95h30m-6-5 6 5-6 5 M210 160h-35m6-5-6 5 6 5 M470 225h30m-6-5 6 5-6 5"/></g><g fill="#475569" font-size="11"><text x="485" y="87">miss</text><text x="192" y="152">hit</text><text x="364" y="195">miss</text></g></svg><figcaption>Conceptual data-access flow; cache and translation lookups can overlap.</figcaption></figure>
 
 ```asm
 LDR X2, [X1] // X1 = virtual address
@@ -403,7 +403,21 @@ When the consumer observes the published flag, the paired barriers ensure it can
 | Consistency of cached copies | Ordering across memory accesses |
 | Usually hardware-managed | Explicit ordering where needed |
 
-**Interview takeaway:** Barriers enforce memory ordering across CPUs or devices, not atomicity or automatic cache writeback. Device drivers need appropriate DMA/MMIO ordering APIs; portable userspace C uses atomics.
+**6. Simpler Linux publication pattern**
+
+```c
+// Producer: one-time publication
+WRITE_ONCE(data, 100);
+smp_store_release(&flag, 1);
+
+// Consumer
+if (smp_load_acquire(&flag))
+    value = READ_ONCE(data);
+```
+
+Release orders prior accesses before publication; acquire orders later accesses after observing it. Use C11 atomics in portable userspace code. A device ownership flag instead needs the DMA API and appropriate DMA/MMIO barriers.
+
+**Interview takeaway:** Barriers enforce memory ordering, not atomicity or automatic cache writeback. The barrier scope and memory type matter. [Linux memory barriers](https://docs.kernel.org/core-api/wrappers/memory-barriers.html).
 
 ### What is acquire and release ordering? {M}
 **Short answer:** Release orders earlier accesses before publication; acquire orders later accesses after observing publication. Together they support safe producer-consumer communication.
@@ -762,3 +776,60 @@ B.LT signed_lower
 
 **Interview takeaway:** Boot flow progresses from platform firmware to kernel initialization to PID 1. Exact stages, exception levels and DDR initialization vary by SoC.
 
+
+
+### What are TTBR0_EL1, TTBR1_EL1, TCR_EL1 and MAIR_EL1? {H}
+**Short answer:** These registers configure stage-1 address translation for EL1 and EL0. TTBRs select translation-table roots, TCR controls translation parameters, and MAIR describes memory attribute encodings.
+
+<figure style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 236" width="100%" role="img" aria-label="Translation tables select the physical mapping; the attribute index selects memory properties." font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="10" width="660" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="39" fill="#0c4a6e" font-size="14" font-weight="600">Virtual address</text><rect x="10" y="82" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="170" y="111" fill="#0c4a6e" font-size="14" font-weight="600">TTBR0 / TTBR1: table root</text><rect x="350" y="82" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="510" y="111" fill="#0c4a6e" font-size="14" font-weight="600">TCR: address size and granule</text><rect x="10" y="154" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="170" y="183" fill="#0c4a6e" font-size="14" font-weight="600">Page descriptor: AttrIndx</text><rect x="350" y="154" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="510" y="183" fill="#0c4a6e" font-size="14" font-weight="600">MAIR: memory type</text></svg><figcaption>Translation tables select the physical mapping; the attribute index selects memory properties.</figcaption></figure>
+
+| Register | Role |
+|---|---|
+| TTBR0_EL1 / TTBR1_EL1 | Root table address and ASID field, subject to configuration |
+| TCR_EL1 | VA size, granule, table-walk cacheability and shareability |
+| MAIR_EL1 | Normal or Device memory attributes selected by descriptor AttrIndx |
+| SCTLR_EL1 | Controls MMU and cache enablement among other settings |
+
+**Example:** A Linux user VA typically uses the TTBR0 range; a kernel VA uses TTBR1. A page descriptor can map normal cacheable RAM or device MMIO using different attribute indices.
+
+```asm
+MRS X0, TTBR0_EL1 // privileged diagnostic read
+MRS X1, TCR_EL1
+MRS X2, MAIR_EL1
+```
+
+**Interview takeaway:** Page tables alone are insufficient; the translation configuration and attributes determine how the mapping behaves. Changing them requires the architecture-defined synchronization and invalidation sequence.
+
+### What are ASIDs, VMIDs and TLB shootdowns? {H}
+**Short answer:** ASIDs distinguish address spaces, VMIDs distinguish virtual-machine translation contexts, and a TLB shootdown invalidates cached translations on CPUs that could still use an outdated mapping.
+
+<figure style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 236" width="100%" role="img" aria-label="Translation tags avoid unnecessary global invalidation; they do not remove the need to invalidate changed mappings." font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="10" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="170" y="39" fill="#0c4a6e" font-size="14" font-weight="600">Process A: ASID 5</text><rect x="350" y="10" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="510" y="39" fill="#0c4a6e" font-size="14" font-weight="600">Process B: ASID 6</text><rect x="10" y="82" width="660" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="111" fill="#0c4a6e" font-size="14" font-weight="600">Same VA, different cached translations</text><rect x="10" y="154" width="660" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="183" fill="#0c4a6e" font-size="14" font-weight="600">Mapping changes: invalidate affected TLB entries</text></svg><figcaption>Translation tags avoid unnecessary global invalidation; they do not remove the need to invalidate changed mappings.</figcaption></figure>
+
+**1. Example:** Process A and B both access VA 0x4000, but A maps it to PA 0x10000 while B maps it to PA 0x20000. Non-global translations can be tagged with different ASIDs.
+
+**2. When a mapping changes:** The OS updates page tables and ensures affected CPUs cannot keep using obsolete entries. ARM provides TLBI instructions and shareable invalidation forms; Linux uses architecture-specific TLB flushing helpers.
+
+**3. VMID:** A hypervisor uses a VMID to distinguish stage-2 contexts. Reusing an identifier requires appropriate invalidation.
+
+**Interview takeaway:** ASID/VMID tags improve context switching; invalidation maintains correctness when mappings or identifiers change.
+
+### What is the ARM SMMU and how does it differ from the CPU MMU? {H}
+**Short answer:** A CPU MMU translates CPU virtual addresses; an SMMU (Arm's IOMMU architecture) translates and checks device DMA transactions. It can provide device isolation and an I/O virtual address space.
+
+<figure style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 236" width="100%" role="img" aria-label="The CPU and device can use different addresses for the same physical buffer." font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="10" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="170" y="39" fill="#0c4a6e" font-size="14" font-weight="600">CPU virtual address</text><rect x="350" y="10" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="510" y="39" fill="#0c4a6e" font-size="14" font-weight="600">Device DMA address (IOVA)</text><rect x="10" y="82" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="170" y="111" fill="#0c4a6e" font-size="14" font-weight="600">CPU MMU</text><rect x="350" y="82" width="320" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="510" y="111" fill="#0c4a6e" font-size="14" font-weight="600">SMMU / IOMMU</text><rect x="10" y="154" width="660" height="48" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="183" fill="#0c4a6e" font-size="14" font-weight="600">Physical memory</text></svg><figcaption>The CPU and device can use different addresses for the same physical buffer.</figcaption></figure>
+
+**1. Example:** A display controller reads a framebuffer through an IOVA. The SMMU translates it to the underlying physical pages and enforces access permissions.
+
+**2. Linux flow:** allocate or obtain a suitable buffer, map it with the DMA API, check the result, program the device with the returned DMA address, then unmap after completion if streaming.
+
+```c
+dma_addr_t addr = dma_map_single(dev, buf, len, DMA_TO_DEVICE);
+if (dma_mapping_error(dev, addr))
+    return -EIO;
+/* Program DMA address, wait for completion, then unmap. */
+dma_unmap_single(dev, addr, len, DMA_TO_DEVICE);
+```
+
+**3. Important:** An SMMU does not automatically make a non-coherent device coherent. DMA addresses are not CPU pointers; a system may also use direct mapping or bounce buffers.
+
+**Interview takeaway:** The SMMU is for device address translation and isolation; use Linux DMA APIs rather than assuming a physical address equals a DMA address.
