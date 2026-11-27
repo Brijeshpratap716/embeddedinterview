@@ -1044,42 +1044,70 @@ sizeof includes structure padding, but cannot discover an allocation's size from
 **Interview takeaway:** sizeof operates on types and expressions, not on runtime function arguments. Its result is size_t, so use the %zu printf format.
 
 ### How do you find the number of elements in an array? {E}
-**Short answer:** Divide the size of the whole array by the size of one element: `sizeof(a) / sizeof((a)[0])`, usually wrapped in an `ARRAY_SIZE` macro. It only works on a real array whose declaration is in scope; on a pointer (including an array passed to a function) it silently gives a wrong result.
+The number of elements in an actual array can be calculated by dividing its total size by the size of one element.
+
+#### 1. Example
+
+```c
+int arr[] = {10, 20, 30, 40, 50};
+
+size_t count = sizeof(arr) / sizeof(arr[0]);
+
+printf("%zu", count);
+```
+
+**Output:** 5
+
+With four-byte ints, the total size is 20 bytes and each element occupies four bytes.
+
+#### 2. Reusable macro
 
 ```c
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
-static const uint16_t baud_table[] = { 9600, 19200, 38400, 57600 };
+int arr[] = {1, 2, 3};
+size_t n = ARRAY_SIZE(arr); // 3
+```
 
-for (size_t i = 0; i < ARRAY_SIZE(baud_table); i++) { /* 4 iterations */ }
+This simple macro is valid only for actual arrays. It does not reject pointer arguments. The Linux kernel's ARRAY_SIZE macro includes additional checking.
 
-void f(const uint16_t *t)
+#### 3. Common mistake inside a function
+
+```c
+void fun(int arr[])
 {
-    size_t n = ARRAY_SIZE(t);    /* WRONG: sizeof(pointer) / sizeof(uint16_t) = 2 on 32-bit */
+    size_t n = sizeof(arr) / sizeof(arr[0]);
+    // Wrong: arr is a pointer parameter.
 }
 ```
 
-**Making it safe (GCC/Clang):** the Linux kernel's version fails to compile when given a pointer:
+An array parameter is adjusted to a pointer. Its original array length is not carried in the pointer.
+
+Correct implementation:
 
 ```c
-#define __must_be_array(a) \
-    (sizeof(struct { int : -!!(__builtin_types_compatible_p(__typeof__(a), __typeof__(&(a)[0]))); }))
-#define ARRAY_SIZE_SAFE(a) (sizeof(a) / sizeof((a)[0]) + __must_be_array(a))
+void fun(const int *arr, size_t n)
+{
+    for (size_t i = 0; i < n; i++)
+        printf("%d ", arr[i]);
+}
+
+// Caller:
+int a[] = {1, 2, 3};
+fun(a, ARRAY_SIZE(a));
 ```
 
-C23 and C++17 make this easier: C++ has `std::size(a)`, which refuses pointers.
-
-**Why `(a)[0]` and not `*a`:** both work for arrays; the brackets are just a common idiom. The parentheses around `a` protect expressions passed to the macro.
-
-**Best practice for functions:** always pass the element count with the pointer (`void send(const uint8_t *buf, size_t len)`), or pass a struct that contains both.
-
-**Static check for tables that must match an enum:**
+#### 4. Multidimensional array
 
 ```c
-enum mode { MODE_IDLE, MODE_RUN, MODE_COUNT };
-static const char *const mode_name[] = { "idle", "run" };
-_Static_assert(ARRAY_SIZE(mode_name) == MODE_COUNT, "mode_name out of sync with enum mode");
+int matrix[3][4];
+size_t rows = sizeof matrix / sizeof matrix[0];
+size_t cols = sizeof matrix[0] / sizeof matrix[0][0];
 ```
+
+The results are three rows and four columns.
+
+**Interview takeaway:** Compute array length before array-to-pointer decay and pass it explicitly to functions. sizeof cannot recover the length of a dynamically allocated buffer.
 
 ### What is the difference between memcpy and memmove? {E}
 **Short answer:** Both copy `n` bytes from source to destination. `memcpy` assumes the two regions **do not overlap**; if they do, the behaviour is undefined. `memmove` handles overlap correctly, as if the data were first copied to a temporary buffer, usually by copying backwards when the destination is above the source.
