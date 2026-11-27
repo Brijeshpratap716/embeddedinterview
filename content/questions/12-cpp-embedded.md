@@ -112,53 +112,37 @@ CRTP can implement common driver algorithms while allowing target-specific regis
 **Interview takeaway:** Static polymorphism trades runtime flexibility for compile-time knowledge. Use virtual dispatch when runtime selection is genuinely needed.
 
 ### What is RAII? {E}
-**Short answer:** Resource Acquisition Is Initialisation: a resource (lock, interrupt mask, peripheral clock, chip-select line, buffer) is acquired in an object's constructor and released in its destructor. Because destructors run automatically when the object goes out of scope — on every return path — the resource can never be leaked or left locked by an early return. It costs nothing at run time compared with doing it by hand.
+RAII (Resource Acquisition Is Initialization) associates resource ownership with an object's lifetime. A constructor or factory establishes ownership; the destructor releases it.
+
+#### 1. Example: mutex guard
 
 ```cpp
-#include <cstdint>
-#include <cstdio>
-
-// stand-ins for __get_PRIMASK / __disable_irq / __set_PRIMASK on Cortex-M
-static uint32_t primask;
-static uint32_t get_primask() { return primask; }
-static void disable_irq() { primask = 1; }
-static void set_primask(uint32_t v) { primask = v; }
-
-class CriticalSection {
+class LockGuard {
+    Mutex& m;
 public:
-    CriticalSection() : saved_(get_primask()) { disable_irq(); }
-    ~CriticalSection() { set_primask(saved_); }          // restores the previous state (nesting-safe)
-    CriticalSection(const CriticalSection &) = delete;   // non-copyable
-    CriticalSection &operator=(const CriticalSection &) = delete;
-private:
-    uint32_t saved_;
+    explicit LockGuard(Mutex& mutex) : m(mutex) {
+        m.lock();
+    }
+    ~LockGuard() { m.unlock(); }
+
+    LockGuard(const LockGuard&) = delete;
+    LockGuard& operator=(const LockGuard&) = delete;
 };
 
-static int shared_counter;
-
-bool update(int v)
+void update(Mutex& m)
 {
-    CriticalSection cs;                 // interrupts off from here...
-    if (v < 0) return false;            // ...restored on this path
-    shared_counter += v;
-    return true;                        // ...and on this one
-}
-
-int main()
-{
-    update(5); update(-1);
-    std::printf("counter=%d primask=%u\n", shared_counter, (unsigned)primask);   // counter=5 primask=0
+    LockGuard guard(m);
+    update_shared_state();
 }
 ```
 
-**Other RAII uses in firmware**
+The lock is released when guard leaves scope, including an early return. Mutex is an illustrative platform type.
 
-- `std::lock_guard` / `std::scoped_lock` around RTOS mutexes (wrap the RTOS API in a class with `lock()`/`unlock()`).
-- `ChipSelect cs(spi_dev);` asserts CS for the duration of a transaction.
-- Peripheral power or clock enable for a scope; DMA buffer ownership; file handles.
-- `std::unique_ptr` with a custom deleter (e.g. returning a buffer to a pool).
+#### 2. Embedded uses
 
-**Rules:** make RAII classes non-copyable (or movable only, transferring ownership), never throw from destructors, and keep the destructor's work short in interrupt-sensitive code.
+GPIO resource ownership, interrupt-mask restoration, peripheral clocks, mutexes, file descriptors and buffer handles. Destruction must be valid in the execution context; a blocking destructor is not suitable in an ISR.
+
+**Interview takeaway:** RAII makes cleanup follow scope and ownership. It does not require heap allocation or exception support, and should be designed around acquisition failure.
 
 ### What are move semantics and why do they matter even without a heap? {M}
 **Short answer:** Move semantics (C++11) let an object transfer ownership of its resources to another object instead of copying them. A **move constructor** / **move assignment** takes an rvalue reference (`T&&`), steals the source's resource, and leaves the source in a valid but empty state. `std::move` is just a cast that says "this object may be moved from". On embedded systems, moves matter mostly for **unique ownership** types: a buffer handle from a pool, a DMA channel or a file descriptor that must have exactly one owner, can be returned from functions and stored in containers without copying or double release.
