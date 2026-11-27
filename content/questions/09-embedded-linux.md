@@ -62,40 +62,37 @@ Inspect actual board configuration and environment; do not assume universal load
 **Interview takeaway:** U-Boot is already executing on a CPU before board_init_f. Early CPU initialization refines the processor state for the next stage; it does not make a previously inactive CPU start running.
 
 ### How does U-Boot pass control to the Linux kernel, and what state must the CPU be in? {H}
-**Short answer:** The `bootm`/`bootz`/`booti` command loads and checks the images, fixes up the device tree (memory size, `bootargs` into `/chosen`, initrd location), shuts down U-Boot's drivers, disables caches and the MMU, and jumps to the kernel entry point. On ARM64 it passes the DTB physical address in `x0` (with `x1`–`x3` zero); on 32-bit ARM it passes `r0 = 0`, `r1 = machine type`, `r2 = DTB (or ATAGS) address`.
+U-Boot transfers control to Linux after placing the kernel and required boot data in suitable memory and establishing the architecture-defined entry state.
 
-**Which command**
+#### 1. Direct ARM64 device-tree boot
 
-| Command | Image format |
-|---|---|
-| `bootm` | legacy uImage (64-byte header) or **FIT** image (kernel + DTBs + initramfs + signatures in one file) |
-| `bootz` | 32-bit ARM `zImage` (self-decompressing) |
-| `booti` | ARM64 / RISC-V `Image` (uncompressed, or compressed with U-Boot's help) |
+A typical command uses booti for an appropriate ARM64 Image:
 
-Arguments are `kernel_addr initrd_addr fdt_addr`; `-` means "none" for the initrd.
-
-**What the kernel's boot protocol requires (ARM64, `Documentation/arch/arm64/booting.rst`)**
-
-- MMU **off**, data cache off (or cleaned), instruction cache may be on.
-- All interrupts masked (DAIF set).
-- CPU in **EL2** (preferred, so the kernel can run KVM) or EL1.
-- `x0` = physical address of the DTB, `x1`–`x3` = 0.
-- The DTB must be 8-byte aligned and not overlap the kernel image.
-- Secondary CPUs are held in firmware (PSCI) until the kernel asks for them.
-
-**32-bit ARM:** jump with `r0 = 0`, `r1 = machine ID` (only used by old non-DT boards), `r2 = DTB address`. Conceptually:
-
-```c
-void (*kernel_entry)(int zero, int arch, unsigned long params);
-kernel_entry = (void *)kernel_addr;
-kernel_entry(0, machid, (unsigned long)fdt_addr);   /* never returns */
+```sh
+booti ${kernel_addr_r} - ${fdt_addr_r}
 ```
 
-**Device tree fix-ups U-Boot does before jumping:** writes the real DRAM size into `/memory`, `bootargs` into `/chosen/bootargs`, initrd start/end into `/chosen`, MAC addresses, and reserved-memory regions.
+The environment variables must refer to valid loaded objects. The dash indicates no initrd in this example.
 
-**Why caches and MMU are off:** the kernel builds its own page tables in `head.S`. Stale cache lines from U-Boot or a mapping the kernel does not know about could corrupt memory.
+#### 2. Required entry contract
 
-**Debugging tip:** if nothing appears after "Starting kernel ...", add `earlycon` (with the right UART type and address) to `bootargs`; it prints from the earliest point in `head.S`/`setup_arch` before the real console driver probes.
+For the ordinary arm64 boot protocol, x0 carries the physical DTB address; x1–x3 are reserved and zero. The MMU must be off at kernel entry, with the required cache maintenance, interrupt masking and supported exception-level state. Other requirements apply to system registers, firmware services and secondary CPUs.
+
+The exact requirements should be checked against the target kernel's arm64 booting documentation. UEFI boot and other architectures have different entry protocols.
+
+#### 3. Transfer flow
+
+```text
+Load Image / DTB / optional initramfs
+Prepare bootargs and memory reservations
+Clean or synchronize caches as required
+Quiesce platform state according to boot protocol
+Branch to kernel entry address
+```
+
+Linux then establishes its own translation environment. U-Boot does not remain an ordinary running process underneath Linux.
+
+**Interview takeaway:** Bootloader-to-kernel handoff is an ABI. Correct addresses alone are insufficient; CPU state, cache visibility, DTB and firmware interfaces must also be valid.
 
 ### What does the Linux kernel do from head.S to starting the init process? {H}
 **Short answer:** `head.S` sets up the early page tables, enables the MMU and jumps to `start_kernel()` in `init/main.c`. `start_kernel()` initialises the architecture (`setup_arch`), memory management, the scheduler, interrupts, timers and the console, then calls `rest_init()`, which creates `kernel_init` (it becomes PID 1) and `kthreadd` (PID 2) and turns the boot thread into the idle task (PID 0). `kernel_init` runs all driver initcalls, mounts the root filesystem and `exec`s `/sbin/init`.
