@@ -76,51 +76,40 @@ Virtual dispatch can add object storage and an indirect branch, and complicate w
 **Interview takeaway:** Virtual functions enable runtime substitution. A vtable is a common implementation technique, not a required C++ object layout.
 
 ### What is CRTP and how does static polymorphism compare with virtual functions? {H}
-**Short answer:** The Curiously Recurring Template Pattern (CRTP) is a class that derives from a template instantiated with itself: `class Uart1 : public UartBase<Uart1>`. The base can call derived-class functions through `static_cast<Derived*>(this)`, which the compiler resolves at **compile time**, so there is no vtable, no vptr and calls can be inlined. It gives a common interface and shared code with zero run-time cost, but you lose the ability to store different types behind one base pointer at run time.
+CRTP (Curiously Recurring Template Pattern) uses a derived type as a template argument to its base class, enabling compile-time polymorphism.
+
+#### 1. Example
 
 ```cpp
-#include <cstdint>
-#include <cstdio>
-
-template <typename Derived>
-class UartBase {
-public:
-    void write(const char *s) {                    // shared code, written once
-        while (*s) static_cast<Derived *>(this)->put(static_cast<uint8_t>(*s++));
+template<class Derived>
+struct Driver {
+    void start() {
+        static_cast<Derived&>(*this).start_impl();
     }
 };
 
-class Uart1 : public UartBase<Uart1> {
-public:
-    void put(uint8_t c) { std::putchar(c); }       // would write the UART1 data register
+struct Uart : Driver<Uart> {
+    void start_impl() { /* Enable UART */ }
 };
 
-class LogBuffer : public UartBase<LogBuffer> {
-public:
-    void put(uint8_t c) { if (n < sizeof buf) buf[n++] = c; }
-    uint8_t buf[64]; unsigned n = 0;
-};
-
-template <typename Port>
-void banner(UartBase<Port> &p) { p.write("boot ok\n"); }    // generic, no virtual calls
-
-int main()
-{
-    Uart1 u; LogBuffer lb;
-    banner(u); banner(lb);
-    std::printf("log has %u bytes\n", lb.n);                  // log has 8 bytes
-}
+Uart uart;
+uart.start();
 ```
 
-| | Virtual functions | CRTP / templates |
-|---|---|---|
-| Dispatch | run time (indirect call) | compile time (direct, inlinable) |
-| RAM per object | vptr | none |
-| Flash | one vtable per class; one copy of generic code | one copy of generic code **per type** (possible bloat) |
-| Heterogeneous containers (`Sensor*` list of mixed types) | yes | no (unless combined with a small virtual wrapper) |
-| Error messages | simple | template errors can be verbose (C++20 concepts help) |
+The compiler knows Derived is Uart and can resolve the call statically.
 
-**When to use which:** CRTP/templates when the configuration is fixed at compile time (which UART, which pins, which buffer size); virtual interfaces when types are chosen at run time (plugin-style sensor drivers, mocks in tests, different boards from one binary). C++20 **concepts** document and check the required interface (`requires { p.put(uint8_t{}); }`).
+| CRTP | Virtual functions |
+|---|---|
+| Compile-time dispatch | Runtime dispatch |
+| Often easy to inline | Indirect call may be needed |
+| Separate template instantiations | Common base interface |
+| Does not inherently support heterogeneous base-pointer collections | Supports runtime substitution |
+
+#### 2. Embedded use
+
+CRTP can implement common driver algorithms while allowing target-specific register operations. Template instantiations may increase code size; misuse of the derived-type contract can be unsafe.
+
+**Interview takeaway:** Static polymorphism trades runtime flexibility for compile-time knowledge. Use virtual dispatch when runtime selection is genuinely needed.
 
 ### What is RAII? {E}
 **Short answer:** Resource Acquisition Is Initialisation: a resource (lock, interrupt mask, peripheral clock, chip-select line, buffer) is acquired in an object's constructor and released in its destructor. Because destructors run automatically when the object goes out of scope — on every return path — the resource can never be leaked or left locked by an early return. It costs nothing at run time compared with doing it by hand.
