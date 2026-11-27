@@ -700,40 +700,32 @@ Skip whitespace, parse sign, accumulate digits with value = value×10+digit, che
 **Interview takeaway:** Define overflow, invalid-input and output-capacity behavior explicitly.
 
 ### How do you implement read(n) using a read4() API that returns 4 bytes at a time? {M}
-**Short answer:** Call `read4()` into a small 4-byte temporary buffer and copy into the caller's buffer until you have `n` bytes or `read4()` returns fewer than 4 (end of file). If the function is called several times, keep the **leftover** bytes from the last `read4()` between calls, so data is not lost when the last chunk was larger than needed.
+If read4 returns up to four bytes, preserve unused bytes across successive read(n) calls in reader state.
 
 ```c
-#include <string.h>
-
-int read4(char *buf4);          /* provided: reads up to 4 bytes, returns count (0 at EOF) */
-
-static char  cache[4];          /* leftovers between calls */
-static int   cache_pos, cache_len;
-
-int read_n(char *buf, int n)
+struct reader {
+    char cache[4];
+    size_t pos, end;
+};
+/* read4 returns 0 at EOF, 1..4 on success.
+   Initialize reader to zero; assume no I/O errors. */
+size_t read_n(struct reader *r,char *dst,size_t n)
 {
-    int total = 0;
-    while (total < n) {
-        if (cache_pos == cache_len) {          /* cache empty: refill */
-            cache_len = read4(cache);
-            cache_pos = 0;
-            if (cache_len == 0) break;         /* end of data */
+    size_t k=0;
+    while(k<n) {
+        if(r->pos==r->end) {
+            r->end=read4(r->cache);
+            r->pos=0;
+            if(!r->end) break;
         }
-        int take = cache_len - cache_pos;
-        if (take > n - total) take = n - total;
-        memcpy(buf + total, cache + cache_pos, (size_t)take);
-        cache_pos += take;
-        total += take;
+        dst[k++]=r->cache[r->pos++];
     }
-    return total;
+    return k;
 }
 ```
+For source "abcdef", read(3) returns "abc" and retains 'd'; next read(3) returns "def". Output is raw bytes, not necessarily NUL-terminated.
 
-**The bug in the one-call version:** without the cache, a call `read(3)` consumes 4 bytes from `read4()` and throws one away, so the next `read()` misses a byte.
-
-**Why embedded interviewers like this question:** it is exactly how drivers sit on top of hardware that delivers fixed-size chunks: a flash device with 4- or 16-byte read granularity, a UART FIFO, a USB endpoint with 64-byte packets, or an SPI sensor with a fixed frame. The caller wants arbitrary lengths; the driver keeps a staging buffer.
-
-**Discuss:** making the static state per-instance (a struct passed in) so it is reentrant and supports several files, thread safety (a mutex if shared), and reading directly into the caller's buffer when 4 or more bytes remain, avoiding the extra copy.
+**Complexity:** O(n) time, O(1) persistent cache. A production API should separately report errors.
 
 ### How do you find the product of an array except self without division? {M}
 **Short answer:** Compute the product of elements to the left and right of each index. Multiply these products; division is unnecessary, including when the input contains zeros.
