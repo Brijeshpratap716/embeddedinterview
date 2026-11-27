@@ -359,49 +359,43 @@ Buildroot is attractive for a small appliance or straightforward image. Yocto is
 **Interview takeaway:** Buildroot is an integrated build system; Yocto is a distribution construction ecosystem. Choose based on product lifecycle and customization, not simply image size.
 
 ### What are Yocto layers, recipes and bbappend files? {M}
-**Short answer:** A **recipe** (`.bb`) tells BitBake how to build one piece of software. A **layer** (`meta-*`) groups recipes and configuration so that the vendor BSP, the distribution policy and your product stay separate. A **`.bbappend`** modifies a recipe from another layer without editing it.
+Yocto/OpenEmbedded uses BitBake metadata to describe how software is fetched, configured, built, installed and packaged.
 
-**Recipe:** describes the source, license and build steps through BitBake tasks.
+#### 1. Main concepts
+
+| Item | Role |
+|---|---|
+| Layer | Organized collection of metadata |
+| .bb recipe | Describes a software build and packages |
+| .bbappend | Extends or modifies a matching recipe |
+| Machine configuration | Board/architecture-specific configuration |
+| Distro configuration | Distribution policy and features |
+
+#### 2. Recipe example
 
 ```bitbake
-SUMMARY = "Sensor daemon"
+SUMMARY = "Demo program"
 LICENSE = "MIT"
-LIC_FILES_CHKSUM = "file://LICENSE;md5=..."
-SRC_URI = "git://github.com/acme/sensord.git;branch=main;protocol=https"
-SRCREV = "1a2b3c..."
-S = "${WORKDIR}/git"
-inherit cmake systemd
-SYSTEMD_SERVICE:${PN} = "sensord.service"
+LIC_FILES_CHKSUM = "file://LICENSE;md5=<actual-checksum>"
+SRC_URI = "file://demo.c file://LICENSE"
+
+do_compile() {
+    ${CC} ${CFLAGS} ${LDFLAGS} ${WORKDIR}/demo.c -o demo
+}
+
+do_install() {
+    install -d ${D}${bindir}
+    install -m 0755 demo ${D}${bindir}/demo
+}
 ```
 
-Tasks run in order: `do_fetch` → `do_unpack` → `do_patch` → `do_configure` → `do_compile` → `do_install` → `do_package`, and the image tasks assemble the root filesystem. Classes such as `cmake`, `autotools`, `meson`, `systemd` supply the standard steps.
+This is illustrative; source unpack locations and build-directory conventions vary with Yocto release, so adapt to the target metadata version and use the real license checksum.
 
-**Layer:** a directory with `conf/layer.conf`, listed in `build/conf/bblayers.conf`. Each layer has a **priority** that decides which version of a recipe or file wins. A typical stack:
+#### 3. Extend a recipe
 
-```
-poky/meta              core recipes (openembedded-core)
-meta-openembedded/...  extra recipes
-meta-vendor-bsp        SoC/board support (kernel, U-Boot, firmware)
-meta-mycompany         your distro, images, applications, bbappends
-```
+A layer can provide a matching .bbappend to add a patch, change configuration or extend installation without editing the upstream recipe. Layer priority and matching version patterns affect selection.
 
-**`.bbappend`:** for example `linux-imx_%.bbappend` in your layer adds a patch and a kernel config fragment to the vendor's kernel recipe:
-
-```bitbake
-FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
-SRC_URI += "file://0001-add-my-panel.patch file://panel.cfg"
-```
-
-This keeps your changes out of the vendor layer, so you can upgrade it later.
-
-**Configuration levels**
-
-- **MACHINE** (`conf/machine/myboard.conf`): CPU tune, kernel and bootloader providers, DTB names, serial console.
-- **DISTRO** (`conf/distro/mydistro.conf`): policy: init system, C library, `DISTRO_FEATURES` (wifi, bluetooth, systemd).
-- **Image recipe** (`my-image.bb`): what goes into the root filesystem (`IMAGE_INSTALL`).
-- `local.conf`: per-build settings (machine choice, download and sstate directories). Do not put product settings only here; they are not version controlled with the layers.
-
-**Useful commands:** `bitbake -c devshell virtual/kernel`, `bitbake -e recipe | grep ^SRC_URI`, `devtool modify`, `bitbake-layers show-appends`.
+**Interview takeaway:** Recipes describe software builds, layers organize reusable metadata, and bbappend files customize recipes. Verify the effective configuration with BitBake tools.
 
 ### What is cross-compilation and what is a toolchain? {E}
 **Short answer:** Cross-compiling means building on one machine (the **host**, e.g. an x86-64 PC) a program that runs on a different architecture (the **target**, e.g. an ARM64 board). A **toolchain** is the set of tools and libraries that make this possible: cross compiler, assembler, linker, binutils, the C library and kernel headers for the target.
