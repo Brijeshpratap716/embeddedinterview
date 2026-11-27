@@ -325,16 +325,34 @@ Expected output: 42 after successful operations.
 **Interview takeaway:** ioctl is a UAPI contract. Validate command, data and permissions, use uaccess helpers and maintain compatible layouts; never trust a userspace pointer.
 
 ### What are major and minor numbers? {E}
-**Short answer:** Every device node has a device number (`dev_t`) made of a **major** number, which identifies the driver, and a **minor** number, which the driver uses to identify the device instance. `ls -l /dev/ttyS0` shows `4, 64` (major 4, minor 64). Use `MAJOR()`, `MINOR()` and `MKDEV()` to work with them, and allocate numbers dynamically with `alloc_chrdev_region` rather than hard-coding a major.
+A Linux device number (dev_t) contains a major number and a minor number. The registered number range identifies a device interface, and the minor distinguishes instances within that range.
 
-**Details**
+#### 1. Kernel helpers
 
-- `dev_t` is 32 bits: 12 bits major and 20 bits minor.
-- Character and block devices have separate number spaces; `/proc/devices` lists registered majors.
-- The `/dev` node is just a pointer (type + major + minor); `mknod /dev/x c 240 0` creates one manually, but devtmpfs and udev normally create them automatically when `device_create()` is called.
-- In `open()`, a driver can find the instance with `iminor(inode)` or, better, `container_of(inode->i_cdev, struct mydev, cdev)`.
-- Well-known fixed majors exist (1 = mem, 4 = tty, 8 = SCSI disks), documented in `Documentation/admin-guide/devices.txt`; new drivers should not take fixed ones.
-- Misc devices all share major 10 with different minors.
+```c
+dev_t devno = MKDEV(major, minor);
+unsigned int m = MAJOR(devno);
+unsigned int n = MINOR(devno);
+```
+
+For a character driver, alloc_chrdev_region can dynamically allocate a device-number range. cdev_add associates a cdev with that range.
+
+#### 2. Inspect a device node
+
+```sh
+ls -l /dev/ttyS0
+cat /proc/devices
+```
+
+The character or block device node stores the major/minor pair. Opening it causes the kernel to locate the registered device operations.
+
+#### 3. Example
+
+A driver might reserve one range for four device instances. The minor determines which instance is opened; the driver may store its instance pointer in file->private_data after opening.
+
+Modern systems commonly create nodes automatically through devtmpfs/udev or another device manager.
+
+**Interview takeaway:** Major/minor numbers identify a device-number registration, not a physical MMIO address. Do not hardcode a major number when dynamic allocation is appropriate.
 
 ### Why use copy_to_user and copy_from_user instead of memcpy? {M}
 **Short answer:** A pointer from user space is untrusted: it may be invalid, point into kernel memory, or refer to a page that is not resident yet. `copy_from_user`/`copy_to_user` check that the range is in user space (`access_ok`), handle page faults safely (returning the number of bytes **not** copied instead of crashing), and temporarily lift hardware protections such as ARM PAN and x86 SMAP that block the kernel from touching user memory by accident. A plain `memcpy` could crash the kernel or be used to read or overwrite kernel memory.
