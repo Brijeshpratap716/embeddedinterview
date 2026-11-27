@@ -226,19 +226,35 @@ A wrong CPHA may cause bit shifts or unstable samples. Wrong CPOL changes idle l
 **Interview takeaway:** Configure both endpoints for the same SPI mode. CPOL defines idle level; CPHA defines which edge samples data.
 
 ### How do you choose and configure the SPI clock? {M}
-**Short answer:** Use the highest clock that the **device** supports (from its datasheet's maximum SCLK and timing parameters), that the **MCU's SPI peripheral** can generate (usually the peripheral clock divided by a power of two), and that the **board** can carry with clean edges (trace length, capacitance, level shifters, connectors). Then check timing: setup and hold times, the device's output delay on MISO at that frequency, and the CS-to-clock delays.
+The SPI controller generates SCLK. Its frequency must remain within both controller and target timing limits, including board-level signal integrity.
 
-**Steps**
+#### 1. Clock divider example
 
-1. **Device limits:** max SCLK (e.g. 10 MHz for a sensor, 104 MHz for a QSPI flash in fast-read mode), often lower for some commands (e.g. reads vs writes, or SD cards at 400 kHz during initialisation).
-2. **Peripheral divider:** e.g. APB clock 84 MHz with prescalers /2, /4, /8 … → 42, 21, 10.5 MHz: pick the fastest ≤ the device limit.
-3. **MISO timing:** the device's clock-to-output delay plus board delay must be less than half a clock period before the controller samples (at 50 MHz, half a period is only 10 ns). Some MCUs offer a delayed sample point for this.
-4. **Signal integrity:** long traces or cables need slower clocks or series termination resistors (22–33 Ω) near the driver; level shifters often limit speed to a few MHz.
-5. **Verify with a scope:** check edges, ringing and that the clock actually reaches the device cleanly.
+If a controller has a 48 MHz input clock and supported divisors 2, 4, 8, 16, and the target permits at most 10 MHz, divisor 8 gives 6 MHz. Divisor 4 gives 12 MHz and exceeds the target limit.
 
-**Throughput math:** at 10 MHz, one byte takes 0.8 µs, but per-byte software overhead (polling flags) can dominate; use DMA and FIFOs for sustained rates, and keep CS asserted across multi-byte transactions.
+The formula and allowed divisors are controller-specific.
 
-**Low-power and EMI:** slower clocks and slower GPIO slew settings reduce emissions and power; use the minimum speed that meets the data-rate requirement.
+#### 2. Configuration procedure
+
+Select CPOL/CPHA, bit order, word width, maximum frequency and chip-select timing from the target datasheet. Configure clocks and pins, then verify the actual signal on hardware.
+
+#### 3. Linux SPI example
+
+```c
+spi->max_speed_hz = 6000000;
+spi->mode = SPI_MODE_0;
+spi->bits_per_word = 8;
+
+ret = spi_setup(spi);
+```
+
+This illustrates a Linux SPI client configuration fragment. Respect board/firmware constraints and check the return value. The controller may choose a lower attainable clock.
+
+#### 4. Troubleshooting
+
+Start at a conservative frequency, verify commands and responses, then increase speed within limits. Check setup/hold time, CS gaps, ringing and cable/trace loading.
+
+**Interview takeaway:** Maximum SPI clock is a hardware timing limit, not a guarantee of reliable communication. Configure and measure the real clock.
 
 ### How do you connect multiple SPI devices? {E}
 **Short answer:** Usually with **independent chip selects**: all devices share SCLK, MOSI and MISO, and each has its own CS line; only the selected device drives MISO, the others keep it high-impedance. Alternatively, **daisy-chain** devices that support it: each device's data output feeds the next device's input and they share one CS, so data shifts through the chain like one long shift register.
