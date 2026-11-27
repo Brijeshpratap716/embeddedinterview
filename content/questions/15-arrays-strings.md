@@ -92,46 +92,22 @@ void reverse(int a[], size_t n)
 **Complexity:** O(n) time, O(1) space. No unsigned underflow for n=0.
 
 ### How do you remove duplicates from a sorted array in place? {E}
-**Short answer:** Because the array is sorted, duplicates are next to each other. Keep a write index `k` pointing at the last unique value; for each new element that differs from `arr[k]`, increment `k` and copy it there. The new length is `k + 1`.
+Since equal values are adjacent in a sorted array, use a read index and a write index.
 
 ```c
-#include <stddef.h>
-
-size_t remove_duplicates(int *arr, size_t n)
+size_t unique(int a[], size_t n)
 {
-    if (n == 0) return 0;
-    size_t k = 0;                      /* arr[0..k] are the unique values */
-    for (size_t i = 1; i < n; i++) {
-        if (arr[i] != arr[k]) {
-            k++;
-            arr[k] = arr[i];
-        }
-    }
-    return k + 1;                      /* new length */
+    size_t w = 0;
+    for (size_t r = 0; r < n; ++r)
+        if (w == 0 || a[r] != a[w-1])
+            a[w++] = a[r];
+    return w;
 }
-/* {1, 3, 3, 5, 5, 6, 9} -> {1, 3, 5, 6, 9}, returns 5 */
 ```
 
-**Dry run**
+[1, 1, 2, 2, 4] becomes [1, 2, 4, ...] with returned length 3. Elements after that length are unspecified for the caller's logical array.
 
-| i | arr[i] | arr[k] | action | unique part |
-|---|---|---|---|---|
-| 1 | 3 | 1 | k=1, copy | 1 3 |
-| 2 | 3 | 3 | skip | 1 3 |
-| 3 | 5 | 3 | k=2, copy | 1 3 5 |
-| 4 | 5 | 5 | skip | 1 3 5 |
-| 5 | 6 | 5 | k=3, copy | 1 3 5 6 |
-| 6 | 9 | 6 | k=4, copy | 1 3 5 6 9 |
-
-**Report the new length.** A common slip is printing the original `size` after removing duplicates. The caller needs `k + 1`; the values after that index are leftovers and should be ignored.
-
-**Complexity:** O(n) time, O(1) extra space. Each element is read once and written at most once.
-
-**Follow-ups**
-
-- *Unsorted array:* sort first (O(n log n)), or use a hash set / bitmap of seen values (O(n) time, O(n) memory).
-- *Allow each value at most twice:* compare with `arr[k-1]` instead of `arr[k]`.
-- *Do not change order of first occurrences in an unsorted array:* hash set of seen values while copying.
+**Complexity:** O(n) time, O(1) space. Sorted input is essential.
 
 ### How do you move all zeros to the end of an array? {E}
 **Short answer:** Keep a write index for the next non-zero position. Walk the array; whenever you see a non-zero value, swap it into the write index and advance it. Zeros end up at the back and the non-zero values keep their original order. O(n) time, O(1) space.
