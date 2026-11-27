@@ -320,52 +320,52 @@ A pointer to an array is useful for multidimensional image buffers and matrices.
 **Interview takeaway:** Array brackets bind more tightly than the pointer declarator unless parentheses change the grouping.
 
 ### What is the memory layout of a C program? {E}
-**Short answer:** From low to high addresses, a typical program has **text** (code), **rodata** (constants), **data** (initialised globals/statics), **bss** (zero-initialised globals/statics), the **heap** (growing up) and the **stack** (growing down). On a microcontroller, text and rodata stay in flash, data is copied from flash to RAM at start-up, and bss, heap and stack share RAM.
+A C program typically contains code, read-only data, initialized data, zero-initialized data, heap and stack. The actual layout depends on the executable format, linker script and operating system.
 
-**Typical layout on Linux (per process, virtual addresses)**
+#### 1. Typical memory layout
 
-```
-high   +-----------------------+
-       | kernel space          |  not accessible from user mode
-       +-----------------------+
-       | stack  ↓              |  locals, return addresses; 8 MB limit by default
-       |                       |
-       | mmap area             |  shared libraries, large malloc, mmap'd files
-       |                       |
-       | heap   ↑              |  malloc (brk)
-       +-----------------------+
-       | .bss                  |  zero-initialised globals/statics
-       | .data                 |  initialised globals/statics
-       | .rodata               |  constants, string literals
-       | .text                 |  code
-low    +-----------------------+  (address 0 unmapped: catches NULL)
-```
+<div style="max-width:560px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 289" width="100%" role="img" aria-label="Illustrative virtual process layout from low address code to high address stack">
+<rect x="45" y="5" width="280" height="35" rx="3" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="55" y="19" font-size="11" font-weight="600" fill="currentColor">Stack</text><text x="55" y="32" font-size="10" fill="currentColor">Automatic objects, saved registers</text><rect x="45" y="45" width="280" height="35" rx="3" fill="#94a3b8" fill-opacity=".13" stroke="#94a3b8"/><text x="55" y="59" font-size="11" font-weight="600" fill="currentColor">Unmapped / mapped regions</text><text x="55" y="72" font-size="10" fill="currentColor">Shared libraries, mmap, guard pages</text><rect x="45" y="85" width="280" height="35" rx="3" fill="#16a34a" fill-opacity=".13" stroke="#16a34a"/><text x="55" y="99" font-size="11" font-weight="600" fill="currentColor">Heap</text><text x="55" y="112" font-size="10" fill="currentColor">Dynamically allocated storage</text><rect x="45" y="125" width="280" height="35" rx="3" fill="#eab308" fill-opacity=".13" stroke="#eab308"/><text x="55" y="139" font-size="11" font-weight="600" fill="currentColor">.bss</text><text x="55" y="152" font-size="10" fill="currentColor">Zero-initialized static objects</text><rect x="45" y="165" width="280" height="35" rx="3" fill="#f97316" fill-opacity=".13" stroke="#f97316"/><text x="55" y="179" font-size="11" font-weight="600" fill="currentColor">.data</text><text x="55" y="192" font-size="10" fill="currentColor">Initialized writable static objects</text><rect x="45" y="205" width="280" height="35" rx="3" fill="#a855f7" fill-opacity=".13" stroke="#a855f7"/><text x="55" y="219" font-size="11" font-weight="600" fill="currentColor">.rodata</text><text x="55" y="232" font-size="10" fill="currentColor">Read-only data</text><rect x="45" y="245" width="280" height="35" rx="3" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="55" y="259" font-size="11" font-weight="600" fill="currentColor">.text</text><text x="55" y="272" font-size="10" fill="currentColor">Executable instructions</text><text x="38" y="19" font-size="9" text-anchor="end" fill="currentColor">High</text><text x="38" y="277" font-size="9" text-anchor="end" fill="currentColor">Low</text></svg></div>
 
-**Typical layout on a Cortex-M microcontroller**
+This is conceptual, not a fixed Linux address map. ASLR, shared libraries, mmap and thread stacks can change the arrangement.
 
-```
-FLASH 0x08000000: vector table | .text | .rodata | initial values of .data
-RAM   0x20000000: .data | .bss | heap ↑ ... ↓ stack (top of RAM = initial MSP)
-```
-
-**What goes where**
+#### 2. C example
 
 ```c
-const int table[] = {1, 2, 3};   /* .rodata (flash)            */
-int counter = 5;                 /* .data   (flash copy + RAM) */
-int total;                       /* .bss    (RAM, zeroed)      */
-static char buf[256];            /* .bss                       */
+int g = 10;                 // Usually .data
+int flag;                   // Usually .bss
+static const int limit = 5;  // Often .rodata
 
-void f(void)
+void fun(void)
 {
-    int local;                   /* stack                      */
-    static int calls;            /* .bss                       */
-    char *p = malloc(32);        /* p on the stack, 32 bytes on the heap */
-    const char *s = "text";      /* "text" in .rodata, s on the stack */
+    int local = 20;         // Stack or register
+    static int count;       // Usually .bss
+    int *p = malloc(16);    // Allocation from heap
+    free(p);
 }
 ```
 
-**Why it matters:** heap and stack growing towards each other can **collide** on an MCU without memory protection, silently corrupting data. Embedded projects size the stack carefully, often disable or limit the heap, and use the linker map file to check how much RAM each section uses. In an RTOS, each task has its own stack (allocated from the heap or statically), and the "main stack" (MSP) is used by interrupts.
+The pointer p itself is an automatic local object; the allocated storage is separate.
+
+#### 3. What happens on an MCU before main?
+
+1. Startup code establishes the stack and required CPU state.
+2. The initialized .data image is copied from flash to RAM.
+3. The .bss region is zeroed.
+4. Runtime initialization completes and main is called.
+
+Code and read-only data may execute or be read directly from flash if the target supports it. A linker script controls placement.
+
+#### 4. How to inspect it
+
+```sh
+size firmware.elf
+readelf -S firmware.elf
+```
+
+Use a linker map file to locate individual symbols. On Linux, /proc/PID/maps shows process virtual memory mappings.
+
+**Interview takeaway:** Static storage duration is a language property; stack, heap and section placement are implementation details. Do not assume every local variable occupies a stack slot or every constant lives in flash.
 
 ### What is the difference between stack and heap? {E}
 **Short answer:** The **stack** holds function-local data automatically: space is reserved on function entry by moving the stack pointer and released on return, so it is fast and deterministic but small and limited to the function's lifetime. The **heap** holds memory you request explicitly with `malloc` and release with `free`; it lives until freed and can be large, but allocation is slower, can fail, and can fragment.
