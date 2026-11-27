@@ -259,23 +259,17 @@ Choose low-quiescent-current regulators, avoid leakage through unpowered periphe
 **Interview takeaway:** Measure the current waveform across active, sleep and wake states; account for transition energy and worst-case conditions.
 
 ### How do you read a datasheet efficiently? {E}
-**Short answer:** Start with the **front page** (key features, operating range) and the **block diagram**, then the **pin description** and **absolute maximum ratings** (never exceed) vs **recommended operating conditions** (where specifications apply). Read the **electrical characteristics** for the parameters you depend on (min/max, not typical), the **timing diagrams** for the interface you use, the **register map** and the **application circuit/layout guidelines**. Finally, always check the **errata** document for silicon bugs.
+Read the exact part's datasheet and errata with a specific question in mind.
 
-**What to extract for firmware work**
+1. Identify revision, package and operating conditions.
+2. Separate absolute maximum ratings from recommended conditions.
+3. Locate pinout, power sequencing, interface timing and electrical characteristics.
+4. Find register descriptions, reset values and interrupt behavior.
+5. Check errata and initialization examples.
 
-| Section | Look for |
-|---|---|
-| Interface timing | SPI mode and max clock, I2C address and clock stretching, setup/hold times, CS timing |
-| Power-up sequence | supply ramp, reset timing, delays before the first command, power-on default register values |
-| Register map | reset values, reserved bits (write as read or 0), read-to-clear or write-1-to-clear flags |
-| Electrical characteristics | V_IH/V_IL, output drive, supply current in each mode, ADC accuracy |
-| Conversion/start-up times | how long to wait before data is valid |
-| Application notes | recommended configuration sequences, typical pitfalls |
-| Errata | workarounds that firmware must implement |
+For an I²C sensor, verify address straps, power-up delay, supported bus rate, identification register and repeated-START requirements.
 
-**Typical vs min/max:** design for the worst case (min/max over temperature and voltage); "typical" values are what you measure on the bench at 25 °C.
-
-**MCU documentation set:** the **datasheet** (pins, electrical specs, package), the **reference manual** (peripherals and registers), the **programming manual** (CPU core, instructions) and the **errata sheet** — you need all four.
+**Interview takeaway:** Use the reference manual for register programming and the errata for hardware limitations. Never guess register meanings.
 
 ### How do you read a schematic as a firmware engineer? {E}
 **Short answer:** Find the MCU and trace from each of its pins to what they connect to: which peripherals use which pins (and therefore which alternate functions to configure), pull-up and pull-down resistors (default states), active-low signals (names with a bar, `n`, `#` or `_N`), power domains and enables, reset and boot-mode circuitry, debug connectors, clock sources and any level shifters. Use net names to follow signals across sheets, and keep a pin-mapping table that becomes your board configuration (device tree, pin mux files, CubeMX configuration).
