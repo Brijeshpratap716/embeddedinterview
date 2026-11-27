@@ -547,38 +547,36 @@ Secure boot enforces a verification policy. Measured boot records measurements f
 **Interview takeaway:** Secure boot is an enforced trust chain, not simply checking a checksum. Cover the complete boot path, key management, recovery and update policy.
 
 ### What is the difference between systemd, SysVinit and BusyBox init? {E}
-**Short answer:** All three are implementations of PID 1, the first user-space process that starts and supervises the rest of the system. **BusyBox init** is tiny and reads a simple `/etc/inittab`. **SysVinit** runs ordered shell scripts per runlevel. **systemd** starts services in parallel from a dependency graph and also supervises, logs and manages them, at the cost of size and complexity.
+systemd, SysVinit and BusyBox init are userspace initialization/service-management approaches. They run or support PID 1 responsibilities but differ in configuration and features.
 
-| | BusyBox init | SysVinit | systemd |
-|---|---|---|---|
-| Config | `/etc/inittab` + `rcS` script | `/etc/inittab`, `/etc/init.d/*`, runlevel links | unit files (`.service`, `.socket`, `.timer`, `.mount`) |
-| Start order | sequential script | sequential, numbered scripts | parallel, based on dependencies (`After=`, `Requires=`) |
-| Service supervision | `respawn` entries only | none built in | restart policies, cgroups track every process |
-| Logging | syslogd (BusyBox) | syslog | journald |
-| Extra features | – | – | watchdog support, socket activation, timers, device and mount management, resource limits |
-| Size | tens of KB | small | several MB plus dependencies |
-| Typical use | small Buildroot images | legacy systems | Yocto/Debian-based products, larger devices |
+| System | Typical behavior |
+|---|---|
+| systemd | Unit dependencies, supervision, activation and integrated service management |
+| SysVinit | Runlevels and traditional init scripts |
+| BusyBox init | Small configurable init implementation often used in minimal embedded systems |
 
-**A systemd service for a product application**
+#### 1. systemd example
 
 ```ini
 [Unit]
-Description=Sensor daemon
-After=network-online.target
-Wants=network-online.target
+Description=Demo application
+After=network.target
 
 [Service]
-ExecStart=/usr/bin/sensord
+ExecStart=/usr/bin/demo
 Restart=on-failure
-WatchdogSec=10s
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-`WatchdogSec` means the app must call `sd_notify("WATCHDOG=1")` regularly or systemd restarts it; systemd itself can pet the hardware watchdog (`RuntimeWatchdogSec=` in `system.conf`).
+This is an illustrative service unit. After= expresses ordering, not a guarantee that network connectivity is available.
 
-**How to choose:** BusyBox init when flash is tiny and the system only runs a few processes; systemd when you need robust supervision, dependency handling, timers and watchdog integration, and you can afford a few MB. Mention boot time: systemd's parallel start helps, and `systemd-analyze blame` shows what is slow.
+#### 2. Choosing
+
+For a small dedicated appliance, BusyBox init may be sufficient. For multiple interdependent services, systemd can provide structured supervision and dependency handling. SysVinit is common in traditional configurations.
+
+**Interview takeaway:** Init is responsible for starting and managing userspace. Choose based on service complexity, resource constraints and distribution integration.
 
 ### How do you reduce boot time on an embedded Linux device? {M}
 **Short answer:** Measure first, then remove or defer work at every stage: shorten the bootloader (no countdown, minimal init, or Falcon mode), make the kernel smaller and quieter (only needed drivers built in, `quiet`, fast decompression, deferred probing), and start the critical application early in user space (fewer services, read-only compressed root, no unnecessary waits).
