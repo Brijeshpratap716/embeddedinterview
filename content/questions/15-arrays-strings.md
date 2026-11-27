@@ -591,37 +591,29 @@ void merge(const int a[], size_t n, const int b[],
 **Complexity:** O(n+m) time, O(1) auxiliary space excluding output. If the first array has spare capacity, merging from the end can avoid a separate output.
 
 ### How do you find the majority element (appearing more than n/2 times)? {M}
-**Short answer:** Use the **Boyer–Moore voting algorithm**: keep a candidate and a counter. For each element, if the counter is 0, take it as the new candidate; then increment the counter if the element equals the candidate, otherwise decrement it. If a majority exists, it is the final candidate. O(n) time, O(1) space. If a majority is not guaranteed, verify with a second pass.
+Boyer–Moore voting cancels pairs of different values. A strict majority survives these cancellations.
 
 ```c
-#include <stdbool.h>
-#include <stddef.h>
-
-bool majority(const int *a, size_t n, int *out)
+bool majority(const int a[], size_t n, int *out)
 {
-    int cand = 0;
-    size_t count = 0;
-    for (size_t i = 0; i < n; i++) {
-        if (count == 0) cand = a[i];
-        count += (a[i] == cand) ? 1 : (size_t)-1;   /* +1 or -1 */
+    int candidate=0;
+    size_t votes=0;
+    for (size_t i=0;i<n;++i) {
+        if (!votes) candidate=a[i];
+        if (a[i]==candidate) ++votes;
+        else --votes;
     }
-    size_t c = 0;                                    /* verification pass */
-    for (size_t i = 0; i < n; i++) c += (a[i] == cand);
-    if (c > n / 2) { *out = cand; return true; }
-    return false;
+    size_t count=0;
+    for (size_t i=0;i<n;++i)
+        if (a[i]==candidate) ++count;
+    if (count<=n/2) return false;
+    *out=candidate;
+    return true;
 }
-/* {2, 2, 1, 1, 1, 2, 2} -> 2 */
 ```
+[2,2,1,1,2,2,2] → 2. The second pass is required unless a majority is guaranteed.
 
-**Why it works:** each decrement pairs one occurrence of the candidate with one different element and "cancels" both. A majority element has more occurrences than all other elements combined, so it cannot be fully cancelled and survives as the candidate.
-
-**Dry run {2, 2, 1, 1, 1, 2, 2}:** cand 2 (1), 2 (2), 1 → 1, 1 → 0, 1 becomes cand (1), 2 → 0, 2 becomes cand (1). Final candidate 2; verification count 4 > 3.
-
-**Alternatives:** sort and take the middle element (O(n log n)); hash counts (O(n) memory); bit-by-bit majority (for each of 32 bit positions, count ones; the majority element has the majority bit in every position).
-
-**Embedded use:** **majority voting** of redundant sensor readings or triple modular redundancy (TMR) uses the same idea for 3 values: `(a & b) | (a & c) | (b & c)` gives the bitwise majority of three words, which corrects a single corrupted copy.
-
-**Follow-up:** elements appearing more than n/3 times (at most two): Boyer–Moore with two candidates and two counters.
+**Complexity:** O(n) time, O(1) space.
 
 ### How do you search for a value in a rotated sorted array? {M}
 **Short answer:** A sorted array rotated at an unknown point (e.g. `{4, 5, 6, 7, 0, 1, 2}`) can still be searched in O(log n). At each binary-search step, at least one half is properly sorted. Check whether the target lies inside that sorted half's range; if so, search it, otherwise search the other half.
