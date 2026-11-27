@@ -764,29 +764,45 @@ DMA buffers, cache lines and memory regions may require alignment. Rounding a po
 **Interview takeaway:** Mask-based rounding requires a nonzero power-of-two alignment. Validate the input, check overflow and respect allocation bounds.
 
 ### How do you compute x % 8 or x / 8 using bit operations? {E}
-**Short answer:** For an unsigned `x` and a power-of-two divisor 2ᵏ, `x / 2ᵏ == x >> k` and `x % 2ᵏ == x & (2ᵏ - 1)`. So `x / 8 == x >> 3` and `x % 8 == x & 7`.
+For unsigned integers, division and remainder by a power of two can be calculated using shifts and masks. Since 8 = 2³, shift by three bits to divide and keep the lowest three bits to obtain the remainder.
+
+#### 1. Implementation
 
 ```c
-uint32_t div8(uint32_t x) { return x >> 3; }
-uint32_t mod8(uint32_t x) { return x & 7u; }
+uint32_t quotient  = x >> 3;
+uint32_t remainder = x & 7U;
 ```
 
-**Why:** dividing by 8 drops the last three binary digits (like dividing by 1000 drops three decimal digits), and those three dropped bits are exactly the remainder.
+For x = 29:
 
-**Example:** `x = 29 = 0b11101` → `x >> 3 = 0b11 = 3`, `x & 7 = 0b101 = 5`, and `3 * 8 + 5 = 29`.
+```text
+29 = 00011101
+29 >> 3 = 00000011 = 3
+29 & 7  = 00000101 = 5
 
-**Signed values are different.** C rounds integer division toward zero, so `-9 / 8 == -1` and `-9 % 8 == -1`. But `-9 >> 3 == -2` (arithmetic shift rounds toward minus infinity) and `-9 & 7 == 7`. That is why for `int x` the compiler emits a few extra instructions to correct the result. If the value is never negative, make it `unsigned` and you get the single instruction.
+29 = 3 * 8 + 5
+```
 
-**You rarely need to write the shift yourself.** Any optimising compiler turns `x / 8` into a shift for unsigned operands. Write the arithmetic that expresses your intent.
+#### 2. General case
 
-**Where the mask form is important: ring buffers.**
+For an unsigned value and valid k smaller than the operand width:
 
 ```c
-#define BUF_SIZE 64u                       /* must be a power of two */
-head = (head + 1u) & (BUF_SIZE - 1u);      /* wraps 63 -> 0, no division */
+uint32_t q = x >> k;
+uint32_t r = x & ((UINT32_C(1) << k) - 1);
 ```
 
-On a Cortex-M0/M0+ there is no hardware divide instruction at all, so avoiding `%` with a non-constant divisor saves a call to a slow library routine.
+The divisor is 2 to the power k. The remainder ranges from zero through divisor minus one.
+
+#### 3. Signed-number caveat
+
+On a machine using arithmetic right shift, -9 >> 3 typically produces -2, whereas -9 / 8 in modern C produces -1. A bit mask also does not reproduce C's negative remainder in general.
+
+#### 4. Embedded application
+
+Power-of-two ring buffer sizes allow unsigned indices to wrap with a mask instead of a division operation. A compiler normally optimizes constant unsigned divisions by powers of two automatically.
+
+**Interview takeaway:** Use shifts and masks for unsigned powers of two. Do not blindly substitute them for signed division and modulo.
 
 ### How do you find the single number that appears once when all others appear twice? {E}
 **Short answer:** XOR all the elements together. Every number that appears twice cancels itself (`a ^ a = 0`), and `0 ^ x = x`, so only the unique value remains. O(n) time, O(1) memory.
