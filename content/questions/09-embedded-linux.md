@@ -644,31 +644,28 @@ Userspace GPIO is unsuitable for precise high-speed bit-banging when scheduling 
 **Interview takeaway:** Use libgpiod and the documented GPIO character-device ABI; hardware ownership and timing requirements still apply.
 
 ### What is the difference between a kernel driver and a user-space driver (UIO, spidev)? {M}
-**Short answer:** A kernel driver runs in kernel space, handles interrupts directly and plugs into a subsystem (network, input, IIO, DRM), so any application can use the device through a standard interface. A user-space driver talks to the hardware through a generic kernel helper (`spidev`, `i2c-dev`, `UIO`, `VFIO`, libgpiod); it is faster to write and debug and can stay proprietary, but it has higher latency, cannot be used by other kernel subsystems, and is harder to make safe.
+A kernel driver integrates hardware into Linux's driver model and functional subsystems. A userspace driver uses kernel-provided access interfaces to implement selected device behavior in a process.
 
-| | Kernel driver | User-space driver |
-|---|---|---|
-| Interrupt latency | microseconds, top half runs immediately | scheduling latency of a process (tens of µs to ms) |
-| Crash impact | can panic the whole system | only the process dies |
-| Debugging | printk, ftrace, kgdb; reboot on mistakes | gdb, valgrind, normal tools |
-| Integration | standard interfaces (`/dev/input`, `net`, `iio`, `v4l2`), used by any app and by other drivers | custom API for your application |
-| License | must be GPL-compatible to use GPL-only kernel symbols | can be proprietary |
-| Maintenance | must track kernel API changes (unless upstreamed) | stable user-space ABI |
+| Kernel driver | Userspace driver |
+|---|---|
+| Direct integration with kernel frameworks | Uses permitted device file/API |
+| Can handle hard IRQ and low-level resources | Subject to process scheduling and access restrictions |
+| More complex kernel debugging | Easier ordinary process debugging |
+| Fault may affect kernel/system | Some faults isolated to process |
 
-**Generic helpers for user-space drivers**
+#### 1. Examples
 
-- **spidev** (`/dev/spidevB.C`): full-duplex SPI transfers with `ioctl(SPI_IOC_MESSAGE)`.
-- **i2c-dev** (`/dev/i2c-N`): `ioctl(I2C_SLAVE, addr)` then `read`/`write`, or `I2C_RDWR` for combined transactions.
-- **UIO** (`/dev/uioN`): `mmap()` the device registers; a blocking `read()` returns when an interrupt arrives (the small kernel part only acknowledges/masks it).
-- **VFIO**: like UIO but with IOMMU protection so a user-space driver can do DMA safely (used by DPDK and for PCIe devices).
+UIO can expose selected MMIO and interrupt notifications. spidev enables SPI transfers to appropriately bound devices. VFIO supports controlled device access with isolation mechanisms where configured.
 
-**When to use which**
+#### 2. Selection
 
-- Prototype or bring-up: user space (quick to iterate).
-- A sensor read once a second by one application: `i2c-dev`/`spidev` is fine.
-- Anything other applications or subsystems need (network interface, input device, display, audio), anything with tight interrupt timing, or DMA without an IOMMU: write a kernel driver, and consider upstreaming it.
+For a simple laboratory device, userspace control may be sufficient. For a touch controller integrated with the input subsystem, or a display controller requiring DRM/KMS, clocks, DMA and power management, a kernel driver is generally appropriate.
 
-**Follow-up:** "spidev in the device tree?" Bind a specific compatible that the spidev driver lists (or use `driver_override`); a plain `compatible = "spidev"` is rejected because the device tree should describe hardware, not which driver to use.
+#### 3. Security and timing
+
+A userspace driver still depends on kernel mediation and correct device ownership. Direct DMA and MMIO can affect the system if not properly isolated. A userspace implementation does not automatically meet real-time requirements.
+
+**Interview takeaway:** Choose based on functional subsystem, timing, isolation and lifecycle requirements. Userspace drivers are not a replacement for every kernel driver.
 
 ### How do you debug an embedded Linux board that does not boot? {M}
 **Short answer:** Identify the last successful boot stage before debugging. Check power, reset, boot straps, serial logs, memory initialization, image loading and root filesystem in that order as appropriate.
