@@ -556,34 +556,37 @@ Cache sizes, line sizes and policies vary. MMIO and DMA buffers need appropriate
 **Interview takeaway:** Optimize memory locality and measure cache misses. The cache is transparent for ordinary coherent CPU memory but is not automatically transparent to every DMA device.
 
 ### What is the Arm memory map, and what are "DRAM holes"? {H}
-**Short answer:** Arm systems follow a recommended physical address map so that software and SoC designs are consistent: low addresses for boot ROM/flash and on-chip memory, a region for peripherals, and DRAM above that. Because the 32-bit address space (4 GB) is shared with peripherals, a system with lots of DRAM cannot place it all below 4 GB; the parts of the DRAM that would collide with peripheral space are remapped to higher addresses (above 4 GB, in the 36-bit and 40-bit extensions of the map). The gaps this leaves in the DRAM address ranges are the "DRAM holes".
+The Arm system memory map describes which physical address ranges correspond to RAM, peripheral registers, ROM or other resources. The architecture defines certain address and memory-type rules; the SoC supplies the actual physical map.
 
-**Cortex-M fixed memory map (Armv7-M/v8-M)**
+#### 1. Illustrative system map
 
-| Range | Region | Typical content |
-|---|---|---|
-| `0x0000_0000`–`0x1FFF_FFFF` | Code | flash, boot ROM, ITCM |
-| `0x2000_0000`–`0x3FFF_FFFF` | SRAM | on-chip RAM (bit-band region on M3/M4) |
-| `0x4000_0000`–`0x5FFF_FFFF` | Peripheral | on-chip peripherals |
-| `0x6000_0000`–`0x9FFF_FFFF` | External RAM | FMC/SDRAM |
-| `0xA000_0000`–`0xDFFF_FFFF` | External device | |
-| `0xE000_0000`–`0xFFFF_FFFF` | System | NVIC, SCB, SysTick, MPU, debug (PPB) |
+```text
+0x00000000 ... boot ROM / platform regions
+0x40000000 ... MMIO peripheral window
+0x80000000 ... DRAM bank 0
+               reserved gap / inaccessible range
+               DRAM bank 1
+```
 
-Because the map is fixed, every Cortex-M part has the NVIC at `0xE000E100`, the same SysTick address, and default memory attributes (e.g. the peripheral region is Device memory, execute-never).
+These addresses are examples, not an i.MX8 or universal Arm memory map.
 
-**Cortex-A systems (Arm's "Principles of Arm Memory Maps")**
+#### 2. What is a DRAM hole?
 
-- The first 4 GB (32-bit) contains boot ROM, on-chip RAM, peripherals and the first 2 GB of DRAM (often from `0x8000_0000`).
-- The 36-bit and 40-bit maps repeat the same structure, with large DRAM windows above 4 GB (e.g. starting at `0x8_8000_0000`) and peripheral space reserved in each region.
-- A system with, say, 8 GB of DRAM therefore sees it as several non-contiguous ranges: 2 GB low and the remaining 6 GB high. The ranges reserved for peripherals and future use inside the DRAM windows are the holes.
+A DRAM hole is an address interval not usable as ordinary RAM between or within described memory banks. Causes include peripheral address windows, reserved firmware memory, secure regions, memory-controller layout and hardware address decoding.
 
-**Why a common map helps**
+A reserved region may physically contain DRAM but still be unavailable to the normal OS allocator.
 
-- The same kernel and firmware work across SoCs with different memory sizes; devices are found from the device tree or ACPI, but DRAM placement follows predictable rules.
-- 32-bit software (and 32-bit DMA masters) can still reach the low 2 GB of DRAM.
-- Moving from 32-bit to 36/40-bit physical addresses (LPAE on Armv7, Armv8-A) does not force a redesign of where peripherals sit.
+#### 3. Linux representation
 
-**Practical consequences on Linux:** the device tree `/memory` node lists several banks; DMA from 32-bit-only devices needs buffers in the low region (`ZONE_DMA32`) or an IOMMU/SMMU; and the kernel's memory zones reflect the holes.
+The device tree's memory nodes describe usable physical memory banks. Reserved-memory nodes describe carveouts such as firmware, secure buffers or device-specific regions. The kernel also discovers and reserves memory through its platform boot mechanisms.
+
+```sh
+cat /proc/iomem
+```
+
+This can show RAM and reserved/resource ranges, subject to permissions and kernel configuration.
+
+**Interview takeaway:** Physical addresses are not necessarily a contiguous range of installed DRAM. Drivers must use OS-managed resources and DMA mappings instead of inventing addresses.
 
 ### How do Arm systems keep DMA and CPU caches coherent (ACP, I/O coherency)? {H}
 **Short answer:** If a DMA master accesses main memory directly while the CPUs work through write-back caches, the two can see different data. There are two solutions. **Software coherency:** the driver cleans and invalidates cache lines around each transfer (what Cortex-M7 firmware and many Linux drivers do via the DMA API). **Hardware (I/O) coherency:** the DMA master is connected so that its accesses are checked against the CPU caches, either through the **Accelerator Coherency Port (ACP)** on the CPU cluster, or through a coherent interconnect (CCI, CCN, CMN) using the ACE-Lite protocol.
