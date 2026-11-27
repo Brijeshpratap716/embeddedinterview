@@ -128,40 +128,30 @@ With preemptive scheduling and time slicing enabled, equal-priority ready tasks 
 **Interview takeaway:** Round-robin improves sharing among peers. It does not mean every task receives equal CPU time regardless of priority or blocking behavior.
 
 ### What is a context switch and what is saved? {M}
-**Short answer:** A context switch saves the state of the running task so it can be resumed later, and restores the state of the next task. On Cortex-M, the hardware automatically stacks `R0`–`R3`, `R12`, `LR`, `PC` and `xPSR` when PendSV is entered; the PendSV handler saves the remaining registers `R4`–`R11` (and the FPU registers `S16`–`S31` if the task used the FPU) onto the task's own stack, stores the stack pointer (PSP) in the task's control block, loads the next task's PSP and registers, and returns, so the hardware unstacks the rest.
+A context switch saves enough of the outgoing execution context to resume it later and restores another task's context.
 
-**FreeRTOS-style PendSV on Cortex-M4F (simplified)**
+#### 1. Cortex-M example
 
-```asm
-PendSV_Handler:
-    mrs     r0, psp                 @ current task's stack pointer
-    tst     lr, #0x10               @ did the task use the FPU?
-    it      eq
-    vstmdbeq r0!, {s16-s31}         @ save high FP registers
-    stmdb   r0!, {r4-r11, lr}       @ save callee-saved registers + EXC_RETURN
-    ldr     r3, =pxCurrentTCB
-    ldr     r2, [r3]
-    str     r0, [r2]                @ TCB->pxTopOfStack = psp
-
-    bl      vTaskSwitchContext      @ choose the next task (with BASEPRI raised)
-
-    ldr     r2, [r3]                @ new current TCB
-    ldr     r0, [r2]                @ its saved stack pointer
-    ldmia   r0!, {r4-r11, lr}
-    tst     lr, #0x10
-    it      eq
-    vldmiaeq r0!, {s16-s31}
-    msr     psp, r0
-    bx      lr                      @ exception return restores r0-r3, r12, lr, pc, xPSR
+```text
+Task A runs using PSP_A
+Exception entry stacks R0-R3, R12, LR, PC, xPSR
+PendSV saves additional registers (typically R4-R11)
+Scheduler stores A's PSP and selects B
+Restore B's PSP and saved registers
+Exception return resumes task B
 ```
 
-**What makes up a task's context:** all general registers, PC, xPSR (flags), the stack pointer, FP registers and FPSCR if used, and on cores with an MPU the task's MPU regions. No address space switch is needed because tasks share memory.
+The exact context depends on architecture, ABI, floating-point use and RTOS port.
 
-**Cost:** on the order of 100–200 cycles (about 1 µs at 168 MHz) on Cortex-M4, more with FP context. Lazy FP stacking avoids saving FP registers for tasks that do not use the FPU.
+#### 2. What is saved?
 
-**A new task's first switch:** its stack is pre-filled at creation with a fake exception frame (PC = task function, xPSR with the Thumb bit set, LR = an error handler for tasks that return), so "restoring" it starts the task.
+General registers, stack pointer, return/execution state and additional architectural state when required. A task control block records the saved stack pointer, scheduling state and metadata. An MPU-aware port may also update protection configuration.
 
-**Why PendSV at lowest priority:** context switches never happen in the middle of an ISR, and multiple switch requests during nested interrupts collapse into one.
+#### 3. Cost
+
+Switching consumes CPU time and may disrupt cache locality. Measure on the target with representative tasks and interrupt load.
+
+**Interview takeaway:** A context switch preserves execution state, not the entire contents of memory. Hardware and software divide the saving/restoring work according to the port.
 
 ### How does an RTOS scheduler pick the next task to run? {M}
 **Short answer:** It keeps one **ready list per priority** and a **bitmap** with one bit per priority that has ready tasks. To pick the next task, it finds the highest set bit (one `CLZ` instruction on Cortex-M3+), then takes the task at the head of that priority's list (rotating it to the end for round-robin). This makes scheduling O(1), independent of the number of tasks, which is essential for deterministic timing.
