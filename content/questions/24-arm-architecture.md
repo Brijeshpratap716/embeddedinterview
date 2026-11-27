@@ -472,6 +472,14 @@ MESI is an illustrative protocol; real Arm implementations vary.
 
 **Interview takeaway:** Coherency keeps cached copies consistent; synchronization and memory barriers solve separate ordering and atomicity problems.
 
+#### Cache-line ownership: practical multicore example
+
+Assume an illustrative 64-byte cache line contains two variables. Initially both cores cache the line in shared state. Core 0 writes one variable; the coherency protocol obtains exclusive write ownership and invalidates other copies. Core 1's next read of a variable on that line requests a valid copy. The line may be supplied directly by another cache even while DRAM still contains the old value.
+
+If the cores continuously update different variables in the same cache line, ownership can repeatedly move between cores: this is false sharing. Separating hot per-core variables into different cache lines can improve throughput, at the cost of extra memory. Verify actual line size and measure the effect.
+
+Coherence of a location does not impose every desired ordering relationship across locations. Publishing a flag and associated data still requires release/acquire or another synchronization protocol. A C data race remains undefined even on coherent hardware. Non-coherent devices require a separate DMA ownership/cache-maintenance strategy.
+
 ### What is a memory barrier? {M}
 **Short answer:** A barrier constrains memory ordering. On ARM, DMB orders relevant accesses, DSB also waits for required completion, and ISB synchronizes instruction execution after context changes.
 
