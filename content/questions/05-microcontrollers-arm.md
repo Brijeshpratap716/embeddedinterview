@@ -867,33 +867,43 @@ Account for counter overflow, capture overrun, timer resolution, input filtering
 **Interview takeaway:** Input capture timestamps the signal in hardware, reducing software latency error. Counter frequency, overflow handling and edge selection determine the measurement accuracy.
 
 ### How does an ADC work and what are its key parameters? {M}
-**Short answer:** Most MCU ADCs are **successive approximation (SAR)** converters: a sample-and-hold capacitor captures the input voltage, then an internal DAC and comparator perform a binary search, deciding one bit per step from the most significant bit down. Key parameters are resolution, sampling time, conversion rate, the reference voltage, and accuracy figures (offset, gain error, INL/DNL, ENOB).
+An Analog-to-Digital Converter (ADC) converts an analog input voltage into a digital code. A common MCU ADC uses successive approximation (SAR): sample the input, compare it against internal reference levels and produce an N-bit result.
 
-**Conversion:** `code = Vin / Vref × (2^N − 1)` (approximately `Vin / Vref × 2^N`). A 12-bit ADC with Vref = 3.3 V has an LSB of 3.3 / 4096 ≈ 0.81 mV. Reading 2048 means about 1.65 V.
+#### 1. Resolution
 
-**Key parameters**
+An ideal N-bit ADC has 2^N possible codes. For a 12-bit ADC and 3.3 V reference:
 
-| Parameter | What to know |
+```text
+Codes = 0 to 4095
+Ideal LSB size = 3.3 / 4096 ≈ 0.806 mV
+```
+
+The exact transfer function and endpoint behavior depend on the ADC.
+
+#### 2. Convert a sample
+
+```c
+float voltage = (float)code * 3.3f / 4096.0f;
+```
+
+This is an ideal approximation for a unipolar straight-binary 12-bit converter. Apply calibration and the documented transfer function when needed.
+
+#### 3. Key parameters
+
+| Parameter | Meaning |
 |---|---|
-| Resolution | 10, 12, 16 bits; number of output codes |
-| Sampling time | time to charge the sampling capacitor; too short with a high source impedance gives readings that are too low |
-| Conversion rate | samples per second (e.g. 1–5 Msps on STM32) |
-| Reference voltage | accuracy and noise of Vref directly limit accuracy; use a separate filtered VREF+ pin or an external reference for precision |
-| Offset and gain error | constant and proportional errors, removable by calibration |
-| INL / DNL | non-linearity; DNL > 1 LSB means missing codes |
-| ENOB | effective number of bits after noise and distortion; often 1–2 bits below nominal |
+| Resolution | Number of output bits |
+| Sample rate | Samples per second |
+| Reference voltage | Defines input conversion range |
+| ENOB | Effective resolution including noise/distortion |
+| INL/DNL | Deviation from ideal transfer behavior |
+| Acquisition time | Time for sample capacitor to settle |
 
-**Sampling techniques**
+#### 4. Firmware example
 
-- **Timer-triggered conversions** give an exact, jitter-free sample rate (required for signal processing); software-triggered sampling in a loop does not.
-- **Scan mode + DMA:** convert several channels in sequence into a buffer with no CPU work; circular DMA with half/full interrupts gives continuous double-buffered streaming.
-- **Injected/priority channels:** sample critical signals (motor current) at precise moments in the PWM cycle.
-- **Oversampling and averaging:** averaging 4^k samples adds k bits of effective resolution for slow signals, if there is some noise (dither) present. Many MCUs have hardware oversampling.
-- **Anti-aliasing:** filter the input (RC low-pass) below half the sample rate (Nyquist), or high-frequency noise folds into the measurement.
+Configure reference, channel, sampling time and trigger; start conversion; collect the result by polling, interrupt or DMA. Timer-triggered DMA is useful for regular sample streams.
 
-**Driving the input:** the sampling capacitor (a few pF) must charge through the source impedance within the sampling time. A high-impedance sensor (e.g. a 100 kΩ divider) needs a longer sampling time, a buffer op-amp, or a capacitor at the pin (which acts as a charge reservoir).
-
-**Other ADC types:** sigma-delta (high resolution, slower: weigh scales, audio, energy metering), pipelined and flash (very fast).
+**Interview takeaway:** Resolution is not accuracy. Reference stability, analog source impedance, sampling time, noise, calibration and anti-alias filtering all affect measurement quality.
 
 ### How does a DAC work, and how do you generate a waveform with it? {M}
 **Short answer:** A DAC (digital-to-analogue converter) turns a digital code into a voltage: `Vout = code / (2^N) × Vref` (for an N-bit DAC). MCU DACs are typically 8–12 bits with a few hundred kHz to a few MHz update rate. To generate a waveform, store one period of samples in a table and have a **timer trigger** the DAC update while **DMA** feeds samples from the table in circular mode, so the output frequency is exact and the CPU is not involved.
