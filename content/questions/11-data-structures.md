@@ -141,57 +141,54 @@ O(n) time, O(1) auxiliary memory. This avoids first counting the nodes and then 
 **Interview takeaway:** Define which middle to return for even-length lists. An empty list returns NULL; a cyclic list needs separate handling.
 
 ### How does a circular (ring) buffer work? {E}
-**Short answer:** A ring buffer is a fixed-size array with a **head** (write) index and a **tail** (read) index that wrap around to the start when they reach the end. Writes advance the head, reads advance the tail, and both operations are O(1) with no dynamic memory. It is the standard structure for UART receive buffers, logging, audio and producer/consumer queues. With a power-of-two size, wrapping is a cheap bit mask, and free-running counters distinguish full from empty without wasting a slot.
+A circular buffer stores elements in a fixed-size array and wraps its read/write indices at the end. It avoids shifting existing data after every operation.
+
+#### 1. Design
+
+```text
+Slots: [0] [1] [2] [3] [4] [5] [6] [7]
+          read -> queued items -> write
+Indices wrap from 7 to 0.
+```
+
+This example keeps one slot unused so equal read and write indices mean empty.
+
+#### 2. C implementation
 
 ```c
-#include <stdbool.h>
-#include <stdint.h>
-#include <stdio.h>
+#define N 8
+struct ring {
+    unsigned head, tail;
+    unsigned char data[N];
+};
 
-#define RB_SIZE 8u                          /* power of two */
-static uint8_t  buf[RB_SIZE];
-static uint32_t head, tail;                 /* free-running: only ever incremented */
-
-static uint32_t rb_count(void) { return head - tail; }       /* unsigned wrap is fine */
-
-bool rb_put(uint8_t b)
+bool push(struct ring *r, unsigned char x)
 {
-    if (rb_count() == RB_SIZE) return false;                 /* full */
-    buf[head & (RB_SIZE - 1)] = b;
-    head++;
+    unsigned next = (r->head + 1) % N;
+    if (next == r->tail)
+        return false;
+    r->data[r->head] = x;
+    r->head = next;
     return true;
 }
 
-bool rb_get(uint8_t *b)
+bool pop(struct ring *r, unsigned char *x)
 {
-    if (rb_count() == 0) return false;                       /* empty */
-    *b = buf[tail & (RB_SIZE - 1)];
-    tail++;
+    if (r->head == r->tail)
+        return false;
+    *x = r->data[r->tail];
+    r->tail = (r->tail + 1) % N;
     return true;
-}
-
-int main(void)
-{
-    for (uint8_t i = 0; i < 10; i++) printf("%d", rb_put(i));   /* 1111111100 */
-    uint8_t v;
-    printf("\n");
-    while (rb_get(&v)) printf("%u ", v);                         /* 0 1 2 3 4 5 6 7 */
-    printf("\n");
-    return 0;
 }
 ```
 
-**Ways to tell full from empty**
+Initialize head and tail to zero. Capacity is N−1; a count or additional state can support all N slots.
 
-| Method | Cost |
-|---|---|
-| Free-running counters (above) | none; needs power-of-two size |
-| Keep one slot empty (`(head + 1) % N == tail` means full) | wastes one element |
-| Separate `count` variable | extra variable shared by both sides (harder lock-free) |
+#### 3. Embedded use
 
-**Overwrite vs reject when full:** logging and "latest value" buffers often overwrite the oldest data (advance the tail too); command queues should reject and report so nothing is silently lost.
+UART receive, audio sample queues and producer/consumer pipelines. Push/pop are O(1) and allocate no memory.
 
-**Follow-ups:** making it safe between an ISR and a task (next question), DMA-driven circular buffers (the DMA controller writes the head; firmware reads the DMA counter to know where it is), and bulk read/write with `memcpy` handling the wrap in two chunks.
+**Interview takeaway:** Define empty, full and overflow behavior explicitly. The simple implementation above is single-context only; concurrent access requires a suitable protocol.
 
 ### When is a ring buffer safe without locks? {H}
 **Short answer:** When there is exactly **one producer and one consumer**, only the producer writes `head` and only the consumer writes `tail`, each index is a word-sized variable updated with a single atomic store, and the producer writes the data **before** publishing the new head (the consumer reads the data **after** seeing the new head). On a single-core MCU, `volatile` indices plus a compiler barrier are enough; on multi-core or weakly ordered CPUs, use C11 atomics with release/acquire ordering. With several producers or consumers you need a lock, a critical section, or a CAS-based design.
