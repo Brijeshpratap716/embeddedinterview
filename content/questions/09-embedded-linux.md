@@ -325,28 +325,38 @@ Traditional initrd is an initial RAM disk image with a filesystem; initramfs is 
 **Interview takeaway:** Initramfs solves early userspace dependencies before the final root is available. It is not mandatory for every embedded Linux system.
 
 ### What is the difference between Buildroot and Yocto? {M}
-**Short answer:** Both build a complete embedded Linux image (toolchain, bootloader, kernel, root filesystem) from source. **Buildroot** is simple Makefiles plus Kconfig and produces one firmware image; it is quick to learn and build. **Yocto** (OpenEmbedded with BitBake) builds a full distribution from layered recipes with package management; it is harder to learn but scales to many products and long maintenance, and SoC vendors ship their BSPs as Yocto layers.
+Buildroot and the Yocto Project are tools for building customized embedded Linux systems, but they organize the build and distribution lifecycle differently.
 
-| | Buildroot | Yocto Project / OpenEmbedded |
-|---|---|---|
-| Model | Makefiles + Kconfig (`make menuconfig`) | BitBake recipes in layers |
-| Output | one root filesystem image | packages (ipk/deb/rpm) + images + SDK |
-| Learning curve | gentle (hours) | steep (weeks) |
-| Full build time | short (often < 1 hour) | long (hours), but shared-state cache reuses results |
-| Incremental changes | often needs a clean rebuild of affected packages | precise task-level rebuilds |
-| Package management on target | no | yes, optional package feeds |
-| Customisation | defconfig, rootfs overlay, post-build scripts, `BR2_EXTERNAL` | layers, `.bbappend`, machine/distro/image configs |
-| License compliance | `make legal-info` | built-in license manifests, SPDX/SBOM output |
-| Typical use | single, fixed-function product; small team | product families, vendor BSPs, long-term maintained products |
+| Buildroot | Yocto / OpenEmbedded |
+|---|---|
+| Simple integrated image-building workflow | Highly configurable distribution-building framework |
+| Kconfig-style package selection | BitBake recipes, layers and configuration |
+| Commonly rebuilds complete images | Supports granular metadata and package-oriented workflows |
+| Lower initial complexity | More flexible for multi-product customization |
 
-**How to answer "which would you choose?"**
+#### 1. Buildroot example
 
-- Small team, one board, a fixed image, fast iteration: **Buildroot**.
-- Several boards or product variants, a vendor BSP only in Yocto (meta-imx, meta-ti, meta-st-stm32mp, meta-qcom), need for SDKs, SBOMs, package updates, or 10-year maintenance: **Yocto**.
+```sh
+make menuconfig
+make
+```
 
-**Related tools:** Debian-based images (`debos`, `isar`, `mkosi`) when you want a full Debian userland; and Android/AOSP for Android devices.
+Select target architecture, toolchain, kernel, packages and image format. Buildroot can generate a cross-toolchain, rootfs and other configured artifacts.
 
-**Interview follow-up:** "How do you add your own application?" Buildroot: a package directory with `Config.in` and `*.mk`, ideally in a `BR2_EXTERNAL` tree. Yocto: a recipe in your own layer, added to the image with `IMAGE_INSTALL:append = " myapp"`.
+#### 2. Yocto example
+
+```sh
+source oe-init-build-env
+bitbake core-image-minimal
+```
+
+This assumes a configured OpenEmbedded/Yocto environment. The image recipe and layers determine the resulting distribution.
+
+#### 3. Selection
+
+Buildroot is attractive for a small appliance or straightforward image. Yocto is useful for maintaining multiple products, reusable BSP layers, custom distributions and detailed package/license metadata. Both require security maintenance and reproducible build practices.
+
+**Interview takeaway:** Buildroot is an integrated build system; Yocto is a distribution construction ecosystem. Choose based on product lifecycle and customization, not simply image size.
 
 ### What are Yocto layers, recipes and bbappend files? {M}
 **Short answer:** A **recipe** (`.bb`) tells BitBake how to build one piece of software. A **layer** (`meta-*`) groups recipes and configuration so that the vendor BSP, the distribution policy and your product stay separate. A **`.bbappend`** modifies a recipe from another layer without editing it.
