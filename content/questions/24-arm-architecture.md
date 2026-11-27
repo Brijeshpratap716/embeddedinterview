@@ -371,39 +371,158 @@ If the terminal descriptor is invalid, the CPU reports a translation fault; Linu
 For a TLB with 64 entries, 4 KiB pages cover 256 KiB of distinct base-page mappings; larger mappings can increase reach. This simplified calculation ignores multiple TLB levels and replacement behavior.
 
 ### How does a memory access travel from CPU to DRAM? {M}
-**Short answer:** A load uses an address in a register, translates it through the MMU, and checks caches. A cache miss can reach the coherent interconnect, memory controller and DRAM. Exact cache organization varies.
+When a user-space process accesses memory, the CPU generates a **virtual address**, which is translated into a **physical address** by the MMU. The CPU then checks the cache hierarchy before accessing DRAM.
 
-<figure style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 350" width="100%" role="img" aria-label="Load uses virtual address; TLB miss triggers page walk; cache miss reaches interconnect and possibly DRAM." font-family="system-ui,sans-serif" text-anchor="middle"><g fill="#e0f2fe" stroke="#0369a1"><rect x="210" y="10" width="260" height="40" rx="7"/><rect x="210" y="75" width="260" height="40" rx="7"/><rect x="500" y="75" width="165" height="40" rx="7"/><rect x="210" y="140" width="260" height="40" rx="7"/><rect x="10" y="140" width="165" height="40" rx="7"/><rect x="210" y="205" width="260" height="40" rx="7"/><rect x="500" y="205" width="165" height="40" rx="7"/><rect x="210" y="270" width="260" height="50" rx="7"/></g><g fill="#0c4a6e" font-size="13"><text x="340" y="35">LDR: virtual address</text><text x="340" y="100">MMU / TLB</text><text x="582" y="100">Page-table walk</text><text x="340" y="165">Cache hierarchy</text><text x="92" y="165">Hit: return bytes</text><text x="340" y="230">Coherent interconnect</text><text x="582" y="230">Peer cache may supply</text><text x="340" y="290">Memory controller</text><text x="340" y="307">DRAM if required</text></g><g stroke="#475569" stroke-width="2" fill="none"><path d="M340 50v25m-5-6 5 6 5-6 M340 115v25m-5-6 5 6 5-6 M340 180v25m-5-6 5 6 5-6 M340 245v25m-5-6 5 6 5-6 M470 95h30m-6-5 6 5-6 5 M210 160h-35m6-5-6 5 6 5 M470 225h30m-6-5 6 5-6 5"/></g><g fill="#475569" font-size="11"><text x="485" y="87">miss</text><text x="192" y="152">hit</text><text x="364" y="195">miss</text></g></svg><figcaption>Conceptual data-access flow; cache and translation lookups can overlap.</figcaption></figure>
+#### 1. Complete memory access flow
 
-```asm
-LDR X2, [X1] // X1 = virtual address
+<figure style="max-width:480px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 530" width="100%" role="img" aria-label="Memory access flow" font-family="system-ui,sans-serif"><defs><marker id="dram-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6Z" fill="#64748b"/></marker></defs><rect x="20" y="8" width="226" height="46" rx="7" fill="#e0f2fe" stroke="#64748b"/><text x="133" y="26" font-size="12" font-weight="600" fill="#0f172a" text-anchor="middle">User-space process</text><text x="133" y="42" font-size="10" fill="#334155" text-anchor="middle">int x = *ptr;</text><path d="M133 54 V67" stroke="#64748b" fill="none" marker-end="url(#dram-arrow)"/><rect x="20" y="69" width="226" height="46" rx="7" fill="#e0f2fe" stroke="#64748b"/><text x="133" y="87" font-size="12" font-weight="600" fill="#0f172a" text-anchor="middle">CPU / Load Store Unit</text><text x="133" y="103" font-size="10" fill="#334155" text-anchor="middle">Generates virtual address</text><path d="M133 115 V128" stroke="#64748b" fill="none" marker-end="url(#dram-arrow)"/><rect x="20" y="130" width="226" height="46" rx="7" fill="#e0f2fe" stroke="#64748b"/><text x="133" y="148" font-size="12" font-weight="600" fill="#0f172a" text-anchor="middle">MMU / TLB</text><text x="133" y="164" font-size="10" fill="#334155" text-anchor="middle">Virtual → Physical address</text><path d="M133 176 V189" stroke="#64748b" fill="none" marker-end="url(#dram-arrow)"/><rect x="20" y="191" width="226" height="46" rx="7" fill="#e0f2fe" stroke="#64748b"/><text x="133" y="209" font-size="12" font-weight="600" fill="#0f172a" text-anchor="middle">L1 Data Cache</text><text x="133" y="225" font-size="10" fill="#334155" text-anchor="middle">Fastest data cache</text><path d="M133 237 V250" stroke="#64748b" fill="none" marker-end="url(#dram-arrow)"/><rect x="20" y="252" width="226" height="46" rx="7" fill="#e0f2fe" stroke="#64748b"/><text x="133" y="270" font-size="12" font-weight="600" fill="#0f172a" text-anchor="middle">L2 Cache</text><text x="133" y="286" font-size="10" fill="#334155" text-anchor="middle">Larger, slower cache</text><path d="M133 298 V311" stroke="#64748b" fill="none" marker-end="url(#dram-arrow)"/><rect x="20" y="313" width="226" height="46" rx="7" fill="#e0f2fe" stroke="#64748b"/><text x="133" y="331" font-size="12" font-weight="600" fill="#0f172a" text-anchor="middle">L3 / Last Level Cache</text><text x="133" y="347" font-size="10" fill="#334155" text-anchor="middle">Often shared across cores</text><path d="M133 359 V372" stroke="#64748b" fill="none" marker-end="url(#dram-arrow)"/><rect x="20" y="374" width="226" height="46" rx="7" fill="#e0f2fe" stroke="#64748b"/><text x="133" y="392" font-size="12" font-weight="600" fill="#0f172a" text-anchor="middle">Memory Controller</text><text x="133" y="408" font-size="10" fill="#334155" text-anchor="middle">Schedules DRAM commands</text><path d="M133 420 V443" stroke="#64748b" fill="none" marker-end="url(#dram-arrow)"/><rect x="20" y="445" width="226" height="46" rx="7" fill="#dcfce7" stroke="#16a34a"/><text x="133" y="463" font-size="12" font-weight="600" fill="#0f172a" text-anchor="middle">DRAM / DDR RAM</text><text x="133" y="479" font-size="9" fill="#334155" text-anchor="middle">Channel → Rank → Bank → Row → Column</text><path d="M246 153 H264 V181 H246" stroke="#d97706" fill="none" stroke-dasharray="4 2" marker-end="url(#dram-arrow)"/><g font-size="10" fill="#b45309"><text x="270" y="150">TLB miss</text><text x="270" y="163">Page table</text><text x="270" y="176">walk</text></g><g font-size="9" fill="#64748b"><text x="143" y="247">Miss</text><text x="143" y="308">Miss</text><text x="143" y="369">Miss</text></g><path d="M20 468 H8 V92 H18" stroke="#16a34a" stroke-width="1.5" fill="none" marker-end="url(#dram-arrow)"/><text x="133" y="514" text-anchor="middle" font-size="11" fill="#15803d">Requested data returns to CPU</text></svg><figcaption>Simplified read path for a typical modern CPU. Address translation and cache lookup may overlap.</figcaption></figure>
+
+#### 2. Step-by-step explanation
+
+**Step 1: User process generates a memory request**
+
+```c
+int a = 10;
+int *ptr = &a;
+int x = *ptr;
 ```
 
-**1. Instruction:** LDR computes an effective virtual address from X1 and any offset.
+Assuming the compiler generates an actual load instruction, the CPU executes it to read memory.
 
-**2. Translation:** The MMU checks the TLB; a miss can trigger a page-table walk. Permissions and memory attributes are checked.
+For ARM64:
 
-**3. Cache lookup:** The CPU searches its cache hierarchy. Translation and cache lookup may overlap depending on implementation.
+```asm
+LDR W0, [X1]
+```
 
-**4. Cache miss:** The coherent interconnect can obtain data from another core or a shared cache. If no cached copy supplies it, the memory controller accesses DRAM and returns the cache line.
+Here, `X1` contains the virtual address.
 
-**5. Result:** The requested bytes are delivered to X2. For stores, a write-back cache may retain dirty data without immediately updating DRAM.
+**Step 2: MMU checks the TLB**
 
-**Interview takeaway:** Not every load reaches DRAM. Registers, translation, caches, coherency fabric and memory controller all participate as needed.
+The Memory Management Unit (MMU) checks the Translation Lookaside Buffer (TLB).
 
-#### Complete journey: user-process load to physical DRAM
+- **TLB hit:** Physical page address is obtained directly.
+- **TLB miss:** Hardware performs a page table walk on modern ARM64 and x86 processors.
 
-Assume a process executes LDR X2,[X1], where X1=0x40001234. Assume a valid mapping to physical page 0x80000000 and 4 KiB pages.
+The TLB caches address translations, not actual application data.
 
-1. The instruction is fetched through the instruction-side translation/cache path and decoded into the implementation's internal operations.
-2. The load/store unit generates virtual address 0x40001234. The data TLB looks up the translation for the virtual page and current address-space context.
-3. On a miss, the MMU performs the required table walk using the configured translation registers. If the mapping is valid, the physical address is 0x80000234; otherwise the access can fault before delivering data.
-4. The processor checks its data cache hierarchy using the applicable translation and memory attributes. If an L1 hit supplies the requested bytes, no external memory request is required.
-5. On a cache miss, a coherent interconnect may source the cache line from a shared cache or another core's cache. If no cache supplies the line, the request reaches the memory controller.
-6. The memory controller maps the physical address to its configured DRAM channel/rank/bank/row/column, schedules the necessary DRAM operations and retrieves data. It may exploit an already open row.
-7. Returned data fills the relevant cache or buffer according to the cache policy. The load extracts the requested eight bytes, applies the architectural byte order, and writes the result into X2.
+**Step 3: Page table walk**
 
-In an out-of-order CPU, independent instructions can execute while the load is outstanding, with architectural completion governed by the implementation and memory model. A fault can instead enter the kernel and retry the instruction after demand allocation. Stores may enter a store buffer and update a write-back cache; a dirty line can reach DRAM much later. The exact cache and controller topology is SoC-specific. Device-memory MMIO accesses take a peripheral route rather than necessarily reaching DRAM.
+For a typical Linux ARM64 system using four-level page tables:
+
+```text
+PGD → PUD → PMD → PTE
+```
+
+The MMU uses the page table base register (`TTBR0_EL1` on ARM64 for user-space addresses) to locate the page tables.
+
+The page table entry contains information such as the physical page frame, access permissions and memory attributes.
+
+**Step 4: Virtual-to-physical address translation**
+
+For a 4 KB page:
+
+<figure style="max-width:480px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 138" width="100%" role="img" aria-label="Virtual to physical address translation" font-family="system-ui,sans-serif" text-anchor="middle"><g fill="#dbeafe" stroke="#3b82f6"><rect x="4" y="5" width="208" height="37" rx="4"/><rect x="4" y="90" width="208" height="37" rx="4"/></g><g fill="#dcfce7" stroke="#16a34a"><rect x="214" y="5" width="102" height="37" rx="4"/><rect x="214" y="90" width="102" height="37" rx="4"/></g><g fill="#0f172a" font-size="11"><text x="108" y="20">Virtual page number</text><text x="108" y="34">0x12345</text><text x="265" y="20">Page offset</text><text x="265" y="34">0x678</text><text x="108" y="105">Physical page number</text><text x="108" y="119">0xABCDE</text><text x="265" y="105">Same offset</text><text x="265" y="119">0x678</text></g><path d="M108 42 V87" stroke="#3b82f6" stroke-width="1.5"/><path d="M103 81 L108 88 L113 81" fill="#3b82f6"/><rect x="56" y="52" width="104" height="24" rx="4" fill="#64748b"/><text x="108" y="68" font-size="11" fill="white">MMU translation</text><path d="M265 42 V88" stroke="#16a34a" stroke-dasharray="3 2"/></svg><figcaption>Virtual address — example</figcaption></figure>
+
+Virtual address: `0x12345678`
+
+Physical address: `0xABCDE678`
+
+The page number changes, but the page offset remains the same.
+
+**Step 5: Page fault handling (if required)**
+
+If the page is not mapped or access permissions are violated, the CPU generates a synchronous exception.
+
+The Linux kernel page fault handler may allocate a physical page, load data from a file or swap, update the page table and retry the instruction.
+
+If the access is invalid and cannot be resolved, Linux typically sends `SIGSEGV` to the process.
+
+**Step 6: CPU checks the cache hierarchy**
+
+Once the address translation and permission checks are resolved, the CPU obtains data through the cache hierarchy.
+
+| Memory level | Approximate latency |
+|---|---:|
+| L1 cache | 1 ns |
+| L2 cache | 3–5 ns |
+| L3 cache | 10–30 ns |
+| DRAM | 60–120 ns |
+
+These are illustrative values and vary by processor.
+
+If data is available in a cache, DRAM access is unnecessary. Data may also be obtained from another CPU core's cache through the cache-coherency mechanism.
+
+**Step 7: SoC interconnect and memory controller**
+
+If the cache hierarchy cannot supply the data, the request travels through the system interconnect to the memory controller.
+
+On ARM-based SoCs, this may involve an AXI or coherent interconnect.
+
+The memory controller translates the system physical address into DRAM-specific addressing:
+
+- Channel
+- Rank
+- Bank
+- Row
+- Column
+
+**Step 8: DRAM access**
+
+The memory controller issues DDR commands:
+
+| Command | Purpose |
+|---|---|
+| `ACTIVATE` | Opens a row into the row buffer |
+| `READ` | Reads the requested column data |
+| `WRITE` | Writes data into the selected location |
+| `PRECHARGE` | Closes the active row |
+
+If the required row is already open, the controller can avoid another activation.
+
+**Step 9: Data returns to CPU**
+
+The requested data returns through the memory controller and interconnect. It typically fills the appropriate caches as a cache line (commonly 64 bytes), and the requested value is delivered to the CPU register.
+
+The instruction completes.
+
+#### 3. What happens during a memory write?
+
+For a typical write-back, write-allocate cache:
+
+```c
+*ptr = 20;
+```
+
+```text
+CPU → Store Buffer → L1 Cache
+                         ↓
+                    Dirty cache line
+                         ↓
+                 Eventual write-back
+                         ↓
+                  Memory Controller
+                         ↓
+                        DRAM
+```
+
+A CPU write does not necessarily update DRAM immediately.
+
+#### 4. Important interview follow-up questions
+
+| Question | Answer |
+|---|---|
+| Does every memory access enter kernel mode? | No, only when an exception or another kernel entry is required. |
+| Does every TLB miss cause a page fault? | No, a valid page table entry can resolve it. |
+| Does every cache miss access DRAM? | No, another cache level or core may supply data. |
+| Where are page tables stored? | Physical memory; their entries can also be cached. |
+| Who configures page tables? | The OS kernel. |
+| Who translates virtual addresses? | MMU hardware. |
+| Who manages DDR timing? | Memory controller. |
+| Does `volatile` bypass CPU cache? | No. |
+
+**Interview-ready answer:** A user-space memory access generates a virtual address. The MMU translates it using the TLB or a page table walk and verifies access permissions. The CPU checks its cache hierarchy. If the data cannot be supplied by caches, the request travels through the system interconnect to the memory controller, which issues DDR commands to retrieve data from DRAM. The data returns to the CPU, completing the instruction.
+
 
 ### What happens when malloc(4 KB) is called on ARM64 Linux? {M}
 **Short answer:** The allocator may reuse a free chunk or obtain virtual memory via brk/mmap. A first write to an unbacked anonymous page can fault, causing Linux to allocate a physical page and update the mapping. Allocation is not necessarily page-aligned.
