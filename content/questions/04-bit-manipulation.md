@@ -477,43 +477,51 @@ Adjacent-bit swaps are a building block for parallel bit reversal and certain pr
 **Interview takeaway:** Separate disjoint bit groups, shift each to its destination and OR the results. This swap is its own inverse.
 
 ### How do you set all bits in a range from position l to r? {M}
-**Short answer:** Build a mask of ones from bit `l` to bit `r` and OR it in. With 0-based positions: `mask = ((1u << (r - l + 1)) - 1u) << l`, valid while the field is narrower than 32 bits.
+To set all bits in an inclusive range l through r, construct a mask with ones in those positions and OR it into the original value.
+
+#### 1. 32-bit mask construction
 
 ```c
 #include <stdint.h>
+#include <stdbool.h>
 
-/* 0-based, inclusive: l <= r <= 31 */
-uint32_t range_mask(unsigned l, unsigned r)
+bool set_range(uint32_t *x, unsigned l, unsigned r)
 {
-    unsigned width = r - l + 1;
-    uint32_t ones = (width >= 32) ? 0xFFFFFFFFu : ((1u << width) - 1u);
-    return ones << l;
+    if (!x || l > r || r >= 32)
+        return false;
+
+    uint32_t mask = (UINT32_MAX << l) &
+                    (UINT32_MAX >> (31U - r));
+    *x |= mask;
+    return true;
 }
-
-uint32_t set_range(uint32_t x, unsigned l, unsigned r)    { return x |  range_mask(l, r); }
-uint32_t clear_range(uint32_t x, unsigned l, unsigned r)  { return x & ~range_mask(l, r); }
-uint32_t toggle_range(uint32_t x, unsigned l, unsigned r) { return x ^  range_mask(l, r); }
 ```
 
-**Example:** `l = 3, r = 4` (0-based) → width 2 → `0b11 << 3` = `0b0001_1000` = 24.
+Positions are zero-based. The first mask retains bits 31:l; the second retains bits r:0. Their AND selects exactly bits r:l. Valid shifts are always between 0 and 31.
 
-**The XOR form (1-based positions).** A version often seen in practice:
+#### 2. Worked example
+
+Set bits 3 through 5 in x = 0x02.
+
+```text
+x       = 00000010
+mask    = 00111000
+x|mask  = 00111010 (0x3A)
+```
+
+With one-based positions 4 through 6, convert the bounds to zero-based positions 3 through 5 before applying the function.
+
+#### 3. Other operations on the range
 
 ```c
-int l = 4, r = 5;                                      /* 1-based positions */
-unsigned mask = ((1u << (l - 1)) - 1u) ^ ((1u << r) - 1u);
-/* (1<<3)-1 = 0b00111, (1<<5)-1 = 0b11111, XOR = 0b11000 = 24 */
+x |= mask;   // Set range
+x &= ~mask;  // Clear range
+x ^= mask;   // Toggle range
 ```
 
-`(1 << r) - 1` is ones in positions 1..r, and `(1 << (l-1)) - 1` is ones in positions 1..l-1. XOR removes the lower ones, leaving positions l..r. It is correct, but it **breaks for r = 32** (`1u << 32` is undefined), and it is easy to confuse 1-based and 0-based positions. State which you mean before you write code.
+These operate on ordinary unsigned values. Hardware registers may prohibit read-modify-write.
 
-**Kernel-style GENMASK** avoids the overflow by shifting all-ones instead:
-
-```c
-#define GENMASK(h, l) (((~0u) << (l)) & (~0u >> (31 - (h))))   /* 0-based, h >= l */
-```
-
-**Follow-up:** "Check whether all bits in the range are set": `(x & mask) == mask`. "Any bit set?": `(x & mask) != 0`.
+**Interview takeaway:** Validate bit indices and avoid a shift by the full width. This mask formula handles the complete range 0–31 without evaluating 1U << 32.
 
 ### How do you extract or insert a bit field? {E}
 **Short answer:** To read a field, shift it down and mask: `(reg >> shift) & ((1u << width) - 1)`. To write it, clear the field with the inverted mask and OR in the new value shifted into place.
