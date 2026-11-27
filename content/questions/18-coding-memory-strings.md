@@ -37,9 +37,23 @@ size_t my_strlen(const char *s)
 **Follow-ups interviewers ask**
 
 - *Why `size_t` and not `int`?* Lengths can exceed `INT_MAX`, and `size_t` is what the standard uses.
-- *Can you make it faster?* Align the pointer, then read 4 or 8 bytes at a time and test for a zero byte with `(w - 0x01010101) & ~w & 0x80808080`. Reading past the end within an aligned word is safe because it never crosses a page boundary.
+- *Can you make it faster?* Align the pointer, then read 4 or 8 bytes at a time and test for a zero byte with `(w - 0x01010101) & ~w & 0x80808080`. Reading beyond the C object is not generally valid even if the address remains on the same mapped page; optimized libraries use implementation-specific guarantees.
 - *What about NULL?* The standard does not require a check; in firmware you may add `if (!s) return 0;` defensively, but say that it hides bugs.
 - *`sizeof` vs `strlen`:* `sizeof "abc"` is 4 (includes `'\0'`) and is compile time; `strlen` is 3 and runs at run time; `sizeof` of a `char *` gives the pointer size.
+
+#### Bounded scan for firmware buffers
+
+```c
+size_t bounded_len(const char *s, size_t capacity)
+{
+    size_t n = 0;
+    while (n < capacity && s[n] != '\0')
+        ++n;
+    return n;
+}
+```
+
+If a UART receive buffer contains {'A','B','C','D'} with capacity 4, this returns 4 without reading outside the buffer. A return equal to capacity means no terminator was found. Unlike strlen, the caller can detect this malformed string safely when the supplied extent is valid.
 
 ### Implement strcpy() and a safe bounded copy. {E}
 **Short answer:** `strcpy` copies characters from `src` to `dst` one at a time, including the final `'\0'`, and returns the original `dst`. It never checks the destination size, so the safe version (`strlcpy` style) takes the buffer size, copies at most `size - 1` characters, always terminates, and returns the full source length so the caller can detect truncation.
