@@ -53,6 +53,22 @@ int main(void)
 - Min and max together: compare elements in pairs (smaller with min, larger with max) — about 1.5n comparisons instead of 2n.
 - For a fixed small array on a DSP, CMSIS-DSP has `arm_max_q15` etc., which use SIMD.
 
+#### A checked interface
+
+```c
+bool largest_checked(const int *a, size_t n, int *out)
+{
+    if (!a || !n || !out) return false;
+    int max = a[0];
+    for (size_t i=1; i<n; ++i)
+        if (a[i] > max) max = a[i];
+    *out = max;
+    return true;
+}
+```
+
+At the start of each iteration, max is the maximum of the already inspected prefix. The loop requires exactly n−1 comparisons for nonempty input. The status return distinguishes an empty array from a legitimate maximum such as INT_MIN.
+
 ### Find duplicate elements in an array. {E}
 **Short answer:** The best method depends on the constraints. If values come from a small known range (bytes, IDs 0–255), count occurrences in a table and report each value when its count reaches 2: O(n) time. Otherwise sort the array (O(n log n), no extra memory) so duplicates become neighbours, or use a hash set (O(n) average, O(n) memory). The brute-force double loop is O(n²).
 
