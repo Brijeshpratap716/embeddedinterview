@@ -735,27 +735,47 @@ Inspect kernel logs, device-tree phandles, enabled supplier drivers, power-domai
 **Interview takeaway:** Deferred probe is not a normal retry loop inside probe. Return the actual dependency error, clean up the failed attempt and let the driver core manage retries.
 
 ### What are top halves and bottom halves? {M}
-**Short answer:** Interrupt handling is split in two so that the hard IRQ handler stays short. The **top half** is the handler registered with `request_irq`: it runs in hard-interrupt context with its line masked, acknowledges the device, grabs urgent data (e.g. a status register or a received byte) and schedules the rest. The **bottom half** is deferred work that runs later with interrupts enabled: **softirqs**, **tasklets** (deprecated), **workqueues** and **threaded IRQs**.
+Linux interrupt handling often separates immediate work from deferred processing. The top half is the hard IRQ handler; bottom-half terminology refers to mechanisms that perform work later.
 
-**Why split:** while a hard IRQ handler runs, its line (and on many systems, other interrupts on that CPU) is blocked, increasing interrupt latency for everyone; it also cannot sleep, so anything involving I2C/SPI, mutexes or memory allocation with `GFP_KERNEL` must be deferred.
+#### 1. Typical flow
 
-**Typical flow for a network or DMA device**
-
+```text
+Device IRQ
+    |
+Hard IRQ: determine source, acknowledge, capture minimal state
+    |
+Schedule deferred work or wake IRQ thread
+    |
+Deferred context: process data / perform longer operation
 ```
-IRQ → top half: read & clear status, disable further device IRQs, napi_schedule() → return IRQ_HANDLED
-     → softirq (NET_RX): NAPI poll processes up to "budget" packets, re-enables device IRQs when done
+
+The exact acknowledgement order depends on device interrupt behavior.
+
+#### 2. Threaded IRQ example
+
+```c
+static irqreturn_t top(int irq, void *data)
+{
+    if (!my_irq_pending(data))
+        return IRQ_NONE;
+
+    return IRQ_WAKE_THREAD;
+}
+
+static irqreturn_t thread_fn(int irq, void *data)
+{
+    service_device(data);
+    return IRQ_HANDLED;
+}
 ```
 
-**Choosing a bottom half**
+Register with request_threaded_irq or a managed variant and appropriate flags. The hard handler must not perform a sleeping bus transaction to determine ownership.
 
-| Need | Use |
-|---|---|
-| Must sleep (I2C/SPI, mutex, GFP_KERNEL) | threaded IRQ or workqueue |
-| Very high rate, per-CPU, no sleeping | softirq (subsystem-level: networking, block, timers) or BH workqueue |
-| Delay before running | `delayed_work` (`schedule_delayed_work`) |
-| Run on a schedulable RT priority | threaded IRQ (`irq/NN-name` thread, SCHED_FIFO 50 by default) |
+#### 3. Context differences
 
-**Return values of the top half:** `IRQ_HANDLED`, `IRQ_NONE` (not my device: important for shared interrupt lines and spurious-IRQ detection) and `IRQ_WAKE_THREAD` (run the threaded handler).
+Softirq/tasklet processing normally cannot sleep. Workqueue callbacks and threaded IRQ handlers generally run in schedulable context and may sleep subject to locking and API rules.
+
+**Interview takeaway:** Minimize hard IRQ work and choose the deferred mechanism according to latency and sleeping requirements. Deferred processing is not one uniform execution context.
 
 ### What is the difference between a tasklet, a workqueue and a threaded IRQ? {H}
 **Short answer:** A **tasklet** runs in softirq context: soon after the interrupt, on the same CPU, but it cannot sleep, and tasklets are deprecated for new code. A **workqueue** item runs in a kernel thread (`kworker`) in process context, so it can sleep, at the cost of more scheduling latency. A **threaded IRQ** gives each interrupt its own kernel thread (`irq/NN-name`) with real-time priority; it can sleep and is the standard choice for devices on slow buses like I2C and SPI.
