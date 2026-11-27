@@ -110,6 +110,18 @@ Conceptually X1 holds p and X2 holds b on typical ARM64 Linux.
 
 **Interview takeaway:** Registers are not inherently typed as pointers or integers; the instruction decides how to use their bits.
 
+#### Trace the values through a real load and store
+
+Assume X1 contains the valid mapped virtual address 0x1000 and an eight-byte value 50 is stored there.
+
+```asm
+LDR X2, [X1]      // X2 becomes 50
+ADD X2, X2, #5   // X2 becomes 55
+STR X2, [X1]      // memory at that address becomes 55
+```
+
+X1 remains 0x1000 throughout. The instruction's addressing mode determines the effective address, and its operand width determines the number of bytes read or written. LDR W2 reads four bytes and zero-extends into X2; LDRSW X2 reads a signed 32-bit value and sign-extends it. For an invalid or forbidden address, LDR may generate an exception rather than return a value. With an enabled MMU, X1 usually contains a virtual address, not a DRAM physical address. A compiler can keep a C object entirely in registers, so the C example does not guarantee actual loads and stores in optimized machine code.
+
 ### What are SP, PC, LR and PSTATE? {E}
 **Short answer:** SP is the stack pointer, PC tracks instruction execution, X30 is the conventional link register, and PSTATE holds execution state including NZCV flags and interrupt masks. PC is not an ordinary general-purpose register in A64.
 
