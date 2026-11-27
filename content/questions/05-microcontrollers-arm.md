@@ -522,57 +522,38 @@ Cortex-A53 supports virtual memory and rich OS workloads. Cortex-M processors co
 **Interview takeaway:** Cortex-A53 is a particular Armv8-A core implementation, not the architecture itself. Cache sizes, memory interfaces and optional platform features depend on the actual SoC.
 
 ### What is a CPU cache, and how do you write cache-friendly code? {M}
-**Short answer:** A cache is a small, fast memory close to the CPU that keeps copies of recently used memory in fixed-size blocks called **cache lines** (32 bytes on Cortex-M7, 64 bytes on most Cortex-A). Accesses that hit in the cache take a few cycles; misses go to slower memory (tens to hundreds of cycles). Code is cache-friendly when it uses data that is close together (spatial locality) and reuses data soon (temporal locality), and when hot data structures are small and laid out in the order they are accessed.
+A CPU cache is fast memory that stores copies of recently accessed or nearby instructions/data. It reduces accesses to slower memory by exploiting temporal and spatial locality.
 
-**Key terms**
+#### 1. Typical hierarchy
 
-| Term | Meaning |
-|---|---|
-| Line | unit of transfer (e.g. 64 bytes) |
-| Set associativity | each address can go in N places (ways) within its set; 1-way = direct-mapped |
-| Hit / miss | data found / not found |
-| Write-back vs write-through | write-back updates memory only on eviction (faster); write-through writes memory every time |
-| Write-allocate | on a write miss, load the line into the cache |
-| Compulsory, capacity, conflict misses | first use; working set too big; addresses competing for the same set |
-| Coherency | keeping caches of several cores (and DMA) consistent |
-
-**Example: loop order over a 2-D array**
-
-```c
-#define N 1024
-static float m[N][N];
-
-float sum_rows(void)            /* row-major traversal: consecutive addresses, ~1 miss per 16 floats */
-{
-    float s = 0;
-    for (int i = 0; i < N; i++)
-        for (int j = 0; j < N; j++)
-            s += m[i][j];
-    return s;
-}
-
-float sum_cols(void)            /* column-major: each access 4 KB apart, a miss almost every time */
-{
-    float s = 0;
-    for (int j = 0; j < N; j++)
-        for (int i = 0; i < N; i++)
-            s += m[i][j];
-    return s;
-}
+```text
+CPU --> L1 cache --> L2 / shared cache --> DRAM
+         fastest        larger           slower
 ```
 
-The second version can be several times slower with exactly the same arithmetic.
+Data is commonly transferred in cache lines, not individual bytes. A miss may be satisfied by another cache or by memory.
 
-**Techniques**
+#### 2. Cache-friendly array traversal
 
-- Traverse arrays in memory order; prefer arrays to linked lists for hot data.
-- **Structure of arrays** vs array of structures: if a loop uses one field of many objects, store that field contiguously.
-- Keep hot fields together and cold fields elsewhere; align heavily shared structures to cache lines.
-- **Blocking/tiling** large computations (matrix multiply, image filters) so each block fits in the cache.
-- Avoid **false sharing** on multi-core systems: two cores writing different variables in the same line make the line bounce between caches; pad per-core data to a full line.
-- Prefetch (`__builtin_prefetch`) for predictable access patterns the hardware prefetcher misses.
+For a conventional C row-major array:
 
-**MCU specifics:** Cortex-M0–M4 usually have no data cache (but vendors add flash accelerators such as ST's ART); Cortex-M7 and M55/M85 have L1 caches, which must be enabled (`SCB_EnableICache()`, `SCB_EnableDCache()`) and handled carefully with DMA. TCM (tightly coupled memory) gives single-cycle, deterministic access without cache unpredictability, which is often better for real-time code.
+```c
+for (size_t r = 0; r < rows; r++)
+    for (size_t c = 0; c < cols; c++)
+        sum += matrix[r][c];
+```
+
+Adjacent columns are contiguous in memory. Reversing the loop order can create large strides and reduce locality, especially for large matrices.
+
+#### 3. Practical optimizations
+
+Use contiguous data where appropriate, avoid unnecessary pointer chasing, reuse working data before eviction, and consider loop blocking for large matrices. Separate frequently modified per-core counters to avoid false sharing when measurements justify the extra padding.
+
+#### 4. Firmware caveat
+
+Cache sizes, line sizes and policies vary. MMIO and DMA buffers need appropriate memory attributes and cache/ownership handling; ordinary cache-friendly code does not solve device coherency.
+
+**Interview takeaway:** Optimize memory locality and measure cache misses. The cache is transparent for ordinary coherent CPU memory but is not automatically transparent to every DMA device.
 
 ### What is the Arm memory map, and what are "DRAM holes"? {H}
 **Short answer:** Arm systems follow a recommended physical address map so that software and SoC designs are consistent: low addresses for boot ROM/flash and on-chip memory, a region for peripherals, and DRAM above that. Because the 32-bit address space (4 GB) is shared with peripherals, a system with lots of DRAM cannot place it all below 4 GB; the parts of the DRAM that would collide with peripheral space are remapped to higher addresses (above 4 GB, in the 36-bit and 40-bit extensions of the map). The gaps this leaves in the DRAM address ranges are the "DRAM holes".
