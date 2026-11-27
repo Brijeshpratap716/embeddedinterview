@@ -84,37 +84,24 @@ Start with system/vl.c (or the corresponding startup code in the checked-out ver
 **Interview takeaway:** Separate machine realization, vCPU execution and device/event processing. Starting QEMU does not automatically reproduce every physical SoC.
 
 ### How does QEMU's TCG translate and run guest code? {H}
-**Short answer:** TCG (Tiny Code Generator) works on **translation blocks** (TBs): a straight-line run of guest instructions ending at a branch. The target front end decodes each guest instruction into architecture-neutral TCG intermediate operations, the TCG back end optimises them and generates host machine code, and the result is cached. `cpu_exec()` looks up the TB for the current guest PC, translates it if missing, runs it, and repeats. Blocks are **chained** directly to each other so the common path does not return to the main loop.
+TCG (Tiny Code Generator) is QEMU's dynamic binary translation engine. It converts guest instructions into intermediate operations and then native host instructions.
 
-**Pipeline**
-
-```
-guest code (ARM64)
-   │  front end: target/arm/tcg/translate-a64.c  (decode, emit TCG ops)
-   ▼
-TCG ops (IR):  ld_i64 tmp, env, x1 ; add_i64 tmp, tmp, $4 ; st_i64 tmp, env, x0 ...
-   │  optimiser + register allocation: tcg/tcg.c, tcg/optimize.c   (tcg_gen_code)
-   ▼
-host code (x86-64 or ARM64) in the code cache
+```text
+Guest PC -> TB lookup
+             | miss
+             v
+Guest decoder -> TCG IR -> optimize/lower -> host code
+             |
+             v
+Translation cache -> execute TB -> next guest PC
 ```
 
-**The execution loop (`accel/tcg/cpu-exec.c`)**
+A translation block (TB) represents a sequence of guest instructions under relevant CPU-state assumptions. QEMU caches TBs and can chain compatible blocks to reduce dispatcher overhead. Guest memory accesses use generated fast paths or helpers; exceptions, MMIO and interrupt checks can return control to the execution loop.
 
-1. `cpu_exec()` → `cpu_exec_loop()`.
-2. Check for pending interrupts and exceptions (`cpu_handle_interrupt`, `cpu_handle_exception`).
-3. `tb_lookup()` finds a TB by (PC, CPU flags such as exception level); on a miss, `tb_gen_code()` translates a new one.
-4. `cpu_tb_exec()` jumps into the generated host code.
-5. The TB ends by jumping straight to the next TB (**chaining**/`goto_tb`) or returning to the loop.
+#### Example
+For ARM64 on x86-64, an ARM ADD instruction becomes TCG operations that are lowered to host arithmetic and register-state updates. Privileged operations may call C helpers.
 
-**Key ideas to mention**
-
-- **Guest CPU state** lives in a C structure (`CPUARMState env`): registers are memory fields, and the generated code loads and stores them.
-- **Helpers:** complex instructions (system registers, floating point corner cases, crypto) call C helper functions instead of being expanded inline.
-- **Softmmu:** every guest load/store goes through a software TLB that maps guest virtual addresses to host addresses. A miss calls the slow path, which walks the guest page tables and, for MMIO, calls the device model's read/write callbacks.
-- **Self-modifying code:** pages that contain translated code are write-protected in the software TLB; writing to them invalidates the affected TBs.
-- **MTTCG:** since QEMU 2.9, each vCPU can run in its own host thread, which needs correct handling of guest memory ordering (barriers and atomics are translated to host equivalents).
-
-**Debugging with TCG:** `-d in_asm,op,out_asm -D log.txt` dumps guest instructions, TCG ops and host code; `-d int` logs interrupts and exceptions, which is very useful when a guest kernel crashes early. `-singlestep`/`-one-insn-per-tb` makes each TB one instruction for precise tracing.
+**Interview takeaway:** TCG translates blocks on demand, not an entire guest binary in advance. Self-modifying code and mapping changes require appropriate TB invalidation.
 
 ### How do you use QEMU to run and debug an ARM64 Linux kernel? {M}
 **Short answer:** Use the `virt` machine: `qemu-system-aarch64 -M virt -cpu cortex-a53 -smp 2 -m 1G -nographic -kernel Image -initrd rootfs.cpio.gz -append "console=ttyAMA0"`. Add `-s -S` to make QEMU wait for GDB on port 1234, then connect `gdb vmlinux` with `target remote :1234` and debug the kernel from the first instruction.
