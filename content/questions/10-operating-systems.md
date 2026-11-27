@@ -650,12 +650,9 @@ Setting these policies may require privileges or resource limits. An uncontrolle
 **Interview takeaway:** FIFO/RR are priority-based RT policies; DEADLINE uses explicit timing budgets and deadline scheduling. A policy alone does not prove end-to-end real-time correctness.
 
 ### What is processor affinity, and when should you control it? {M}
-**Short answer:** Processor (CPU) affinity is the set of CPU cores a thread is allowed to run on. By default the scheduler may move a thread to any core; pinning it to one core or a group keeps its caches warm, avoids migration costs, and isolates time-critical work from the rest of the system.
+Processor affinity restricts the CPUs on which a task is eligible to run. It can improve cache locality or help isolate latency-sensitive workloads.
 
-```bash
-taskset -c 2 ./control_loop        # run on CPU 2 only
-taskset -pc 0-1 1234               # change affinity of PID 1234
-```
+#### 1. Linux example
 
 ```c
 #define _GNU_SOURCE
@@ -664,22 +661,29 @@ taskset -pc 0-1 1234               # change affinity of PID 1234
 cpu_set_t set;
 CPU_ZERO(&set);
 CPU_SET(2, &set);
-sched_setaffinity(0, sizeof(set), &set);     /* 0 = calling thread */
-/* or pthread_setaffinity_np(pthread_self(), sizeof(set), &set); */
+
+if (sched_setaffinity(0, sizeof set, &set) < 0) {
+    // Handle error: CPU may not be available/allowed.
+}
 ```
 
-**Benefits**
+PID 0 applies to the calling thread. CPU numbering and permitted masks depend on the system and cgroup/cpuset configuration.
 
-- **Cache locality:** the thread's data stays in that core's L1/L2.
-- **Predictable latency for real-time work:** combine with `isolcpus=` or cpusets so no other tasks run on that core, `nohz_full=` to stop the scheduler tick there, and move interrupts away (`/proc/irq/<n>/smp_affinity`).
-- **NUMA:** keep threads near the memory they use (`numactl`).
-- **Heterogeneous CPUs:** keep a heavy task on a big core, or background work on LITTLE cores.
+#### 2. Command-line example
 
-**Risks:** pinning can leave cores idle while others are overloaded, because the load balancer cannot move pinned tasks. Only pin when you have measured a benefit.
+```sh
+taskset -c 2 ./app
+```
 
-**Interrupt affinity** is the related idea for IRQs: steer a network card's interrupts to specific cores (often matched with the threads that process the packets: RSS/RPS).
+#### 3. When useful
 
-**Parallel programs:** for data-parallel work (OpenMP, a thread pool), pinning one worker per core avoids threads bouncing between cores; OpenMP has `OMP_PROC_BIND` and `OMP_PLACES` for this.
+Pin a periodic control task to a selected CPU, keep a producer/consumer close to shared cache, or separate workloads when testing latency. IRQ affinity is a separate control.
+
+#### 4. Trade-offs
+
+Pinning may reduce load-balancing flexibility and overload one CPU. Isolation also requires considering IRQs, kernel housekeeping and shared hardware contention.
+
+**Interview takeaway:** Affinity restricts placement; it does not reserve a CPU exclusively or guarantee latency. Measure whether pinning improves the actual workload.
 
 ### What are the ways a CPU can communicate with an I/O device (polling, interrupts, DMA)? {E}
 **Short answer:** With **polling** the CPU repeatedly reads a status register until the device is ready (simple, lowest latency for very fast devices, but wastes CPU time). With **interrupts** the device signals the CPU when it needs attention, and the CPU does other work meanwhile. With **DMA** a DMA controller copies whole blocks of data between the device and memory without the CPU, interrupting only when the transfer is done. Device registers are accessed through memory-mapped I/O (ARM) or a separate I/O port space (x86 `in`/`out`).
