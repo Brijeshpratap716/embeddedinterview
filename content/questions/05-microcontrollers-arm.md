@@ -800,37 +800,38 @@ SDA and SCL use open-drain/open-collector-style signaling in conventional I2C. A
 **Interview takeaway:** Open-drain makes shared low-dominant signaling possible. Choose pull-ups according to voltage, bus capacitance, sink current and rise-time requirements.
 
 ### How do timers generate PWM? {M}
-**Short answer:** A timer counts from 0 up to an auto-reload value (ARR) and then restarts, which sets the PWM period. In PWM mode, each channel compares the counter with a compare register (CCR): the output is active while the counter is below CCR and inactive after it, which sets the duty cycle. Changing CCR changes the duty cycle; changing ARR (or the prescaler) changes the frequency.
+Pulse Width Modulation (PWM) controls the fraction of a periodic signal spent high. A hardware timer generates PWM using a counter, period register and compare register.
 
-**Formulas (up-counting, STM32-style)**
+#### 1. Duty cycle
 
+```text
+Duty cycle = high time / period × 100%
 ```
+
+A 1 ms period with a 250 microsecond high pulse has 25% duty cycle.
+
+#### 2. Timer configuration
+
+For a typical edge-aligned up-counter with prescaler PSC and auto-reload ARR:
+
+```text
 f_PWM = f_timer / ((PSC + 1) × (ARR + 1))
-duty  = CCR / (ARR + 1)
-resolution = ARR + 1 steps (log2(ARR + 1) bits)
 ```
 
-**Example:** 72 MHz timer clock, PSC = 71 → 1 MHz counter (1 µs per tick); ARR = 999 → period 1000 µs = 1 kHz; CCR = 250 → 25% duty.
+If the output is active while counter < CCR, duty is approximately CCR/(ARR+1). Exact behavior at 0% and 100%, and center-aligned modes, depends on the peripheral.
 
-**Trade-off:** for a given timer clock, higher PWM frequency means fewer counts per period, so less duty-cycle resolution. 72 MHz with ARR = 71 gives 1 MHz PWM but only 72 steps (≈6 bits).
+#### 3. Example
 
-**Set-up steps**
+For an 80 MHz timer clock, PSC = 79 gives a 1 MHz counter. ARR = 999 gives 1 kHz PWM. CCR = 250 gives 25% duty.
 
-1. Enable the timer clock and configure the GPIO pin as the timer's alternate function.
-2. Set PSC and ARR; enable **ARR preload** (ARPE).
-3. Configure the channel in PWM mode 1 with **CCR preload** enabled, set polarity, enable the channel output (and on advanced timers the main output enable, MOE).
-4. Generate an update event to load the shadow registers, then start the counter.
+<div style="max-width:650px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 117" width="100%" role="img" aria-label="One kilohertz PWM with 25 percent high pulse in each period">
+<path d="M10 72 V27 H85 V72 H310 V27 H330" stroke="#16a34a" stroke-width="2" fill="none"/><path d="M10 82 H310 M10 77 V87 M310 77 V87 M10 19 H85 M10 15 V23 M85 15 V23" stroke="currentColor" fill="none"/><text x="47.5" y="13" font-size="10" text-anchor="middle" fill="currentColor">250 µs</text><text x="160" y="99" font-size="11" text-anchor="middle" fill="currentColor">Period = 1 ms</text><text x="330" y="113" font-size="10" text-anchor="end" fill="currentColor">Time →</text></svg></div>
 
-**Why preload (shadow) registers:** new ARR/CCR values are transferred at the next update event (end of period), so changing the duty cycle mid-period cannot create a glitch (an extra short or long pulse).
+#### 4. Applications
 
-**Modes and features**
+LED brightness, motor speed, power conversion and servo control. For power stages, use required complementary outputs, dead time and fault protection.
 
-- **Edge-aligned** (counts up, sawtooth) vs **center-aligned** (counts up and down, triangle): center-aligned gives symmetric pulses, and the switching of different phases is spread out, which reduces current ripple and EMI in motor control.
-- **Complementary outputs with dead time** (advanced timers): drive the high- and low-side transistors of a half bridge without both being on at the same time (shoot-through).
-- **Break input:** hardware disables outputs immediately on a fault signal.
-- **DMA bursts** to update CCR every period (LED strips like WS2812, sine generation).
-
-**Uses:** LED dimming, motor speed control, servo control (50 Hz, 1–2 ms pulses), switching power supplies, generating analogue voltages through an RC filter, buzzers.
+**Interview takeaway:** PWM frequency is controlled by the timer period; duty cycle by the compare threshold. Always calculate using the actual timer clock.
 
 ### What is input capture and how do you measure a frequency with it? {M}
 **Short answer:** In input capture mode, a timer copies (latches) its counter value into a capture register when a selected edge occurs on an input pin, and can raise an interrupt or DMA request. Capturing two consecutive rising edges gives the period in timer ticks: `period = c2 − c1` (computed with unsigned arithmetic so one counter wrap is handled automatically). Frequency = timer clock ÷ period.
