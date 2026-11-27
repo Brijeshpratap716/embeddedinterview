@@ -242,26 +242,21 @@ arm-none-eabi-gcc ... -Wl,-Map=firmware.map
 **Interview takeaway:** Map files connect linker-script intent to actual memory usage; inspect both load and run addresses.
 
 ### How do you reduce firmware code size? {M}
-**Short answer:** Measure first (map file, `nm --size-sort`, bloaty), then: compile with `-Os` (or `-Oz` with Clang), enable `-ffunction-sections -fdata-sections` with `-Wl,--gc-sections` so unused functions are removed, use link-time optimisation (`-flto`), use newlib-nano (`--specs=nano.specs`) and avoid heavy library functions (`printf` with floats, `sscanf`, `iostream`), remove unused vendor HAL code or switch to LL/register-level drivers, move constant tables to compact formats, and avoid code duplication from macros and templates.
+Reduce firmware size using measurement rather than deleting arbitrary code.
 
-**Techniques ranked by typical impact**
+#### Steps
+1. Inspect section sizes and largest symbols with size, nm and the map file.
+2. Compile with size-oriented optimization such as -Os.
+3. Use -ffunction-sections -fdata-sections and link with --gc-sections, retaining required vectors and startup sections via KEEP.
+4. Evaluate link-time optimization, lightweight formatting libraries and removal of unused features.
+5. Compare flash/RAM usage and rerun tests.
 
-| Technique | Typical saving |
-|---|---|
-| Remove floating-point `printf`/`scanf`, use integer formatting | 10–20+ KB |
-| `--gc-sections` with function/data sections | large if libraries are linked whole |
-| `-Os` vs `-O2` | 10–30% of code |
-| LTO | 5–15% (cross-module inlining, dead code removal) |
-| newlib-nano | several KB |
-| Replace vendor HAL with LL drivers | often 10–30 KB in HAL-heavy projects |
-| Thumb-2 (default on Cortex-M) vs ARM state on Cortex-A/R | ~25–30% |
-| Compress assets (fonts, images), store tables as `const` | depends |
-| Avoid inline expansion of large macros/inline functions in many places | depends |
-| Logging with IDs instead of strings (deferred logging) | string data |
+```bash
+arm-none-eabi-nm --size-sort -S firmware.elf
+arm-none-eabi-size firmware.elf
+```
 
-**Be careful:** size optimisation can make code slower (`-Os` disables some loop unrolling) — keep hot paths fast with function attributes (`__attribute__((optimize("O2")))` sparingly) or by placing them in RAM; aggressive optimisation can expose latent undefined behaviour, so run the full test suite on the optimised build.
-
-**RAM reduction:** check `.bss` and `.data` in the map file, size stacks from measured high-water marks, shrink buffers to measured needs, use `const` so tables stay in flash, and share buffers between features that never run at the same time (unions or overlays, carefully).
+**Interview takeaway:** Debug information in the ELF is not usually part of the flashed image. Code-size optimization can change timing, so validate deadlines and correctness.
 
 ### What is git bisect and how does it help? {E}
 **Short answer:** `git bisect` performs a binary search through the commit history to find the commit that introduced a bug. You mark a known-good and a known-bad commit; git checks out the commit halfway between; you test it and mark it good or bad; git repeats until it identifies the first bad commit. 1,000 commits take only about 10 steps. With a test script that returns 0 (good) or non-zero (bad), `git bisect run` automates the whole search, even including flashing and testing on hardware.
