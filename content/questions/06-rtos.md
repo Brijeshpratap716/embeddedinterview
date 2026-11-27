@@ -435,43 +435,41 @@ Repeated setting of the same bit does not count multiple events. Use a counting 
 **Interview takeaway:** Event groups represent conditions, not message payloads or event counts. Choose the wait and clear semantics carefully.
 
 ### What are FreeRTOS task notifications? {M}
-**Short answer:** Every FreeRTOS task has a built-in 32-bit notification value and state (an array of them since v10.4). Another task or an ISR can notify the task by incrementing the value, setting bits in it, or overwriting it, and the task can block waiting for a notification. Notifications are faster and use less RAM than semaphores, queues or event groups because no separate kernel object is needed, but only the owning task can wait on them and they cannot buffer multiple data items.
+A FreeRTOS task notification is a lightweight signaling mechanism associated with a task. Notifications can act as a binary/counting semaphore, bit set or small value mailbox depending on how they are used.
 
-**As a lightweight binary/counting semaphore (ISR → task)**
+#### 1. Example: DMA completion
 
 ```c
-static TaskHandle_t rx_task_handle;
-
 void DMA_IRQHandler(void)
 {
     BaseType_t woken = pdFALSE;
-    clear_dma_flags();
-    vTaskNotifyGiveFromISR(rx_task_handle, &woken);    /* increment the notification value */
-    portYIELD_FROM_ISR(woken);
-}
 
-void rx_task(void *p)
-{
-    for (;;) {
-        uint32_t n = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100));  /* pdTRUE: clear to 0 (binary) */
-        if (n == 0) { /* timeout */ continue; }
-        process_dma_buffer();
-    }
+    // Acknowledge the relevant device interrupt.
+    vTaskNotifyGiveFromISR(worker, &woken);
+    portYIELD_FROM_ISR(woken);
 }
 ```
 
-**As event bits:** `xTaskNotify(task, BIT_X, eSetBits)` and `xTaskNotifyWait(0, ULONG_MAX, &bits, timeout)`.
+The worker waits:
 
-**As a mailbox for a value:** `xTaskNotify(task, value, eSetValueWithOverwrite)`.
+```c
+uint32_t count = ulTaskNotifyTake(pdTRUE,
+                                 portMAX_DELAY);
+if (count != 0)
+    process_completed_work();
+```
 
-**Advantages:** about 45% faster than a binary semaphore and no extra RAM; ideal for "this ISR wakes that one handler task", which is the most common synchronisation in drivers.
+With pdTRUE, the notification count is cleared on successful take; use the returned count or other completion state if multiple events must be processed. With pdFALSE it decrements instead.
 
-**Limitations**
+#### 2. Why notifications are lightweight
 
-- Only one task (the target) can wait; you cannot broadcast to several tasks.
-- One 32-bit value per index: it cannot queue several data items.
-- The sender cannot block waiting for the receiver to consume a notification (no back-pressure).
-- If several unrelated sources use the same notification index, they can interfere: use separate indexes or bits.
+The notification state/value is attached to the task rather than a separately created queue or semaphore. Supported versions/configurations provide indexed notification arrays.
+
+#### 3. Limitations
+
+A notification targets a specific receiving task and is not a general multi-receiver message queue. The action selected by the sender determines whether values accumulate, overwrite or set bits.
+
+**Interview takeaway:** Task notifications are efficient for direct task signaling. Use a queue when independent messages and payload ordering must be preserved.
 
 ### Why must you use the FromISR API variants in an interrupt? {M}
 **Short answer:** Normal RTOS API functions may block (wait for space or data), and an ISR must never block because it is not a task and cannot be suspended. The `...FromISR` variants never block, use interrupt-safe critical sections, and instead of switching context immediately, they report through a `pxHigherPriorityTaskWoken` flag that a higher-priority task became ready; the ISR then requests a context switch at its exit with `portYIELD_FROM_ISR()`.
