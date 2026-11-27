@@ -55,17 +55,18 @@ Two open-drain devices can share a line with a pull-up: either can pull it low w
 **Interview takeaway:** Check pin multiplexing, voltage tolerance, drive strength, slew rate and external pulls. A correct GPIO register value alone does not guarantee a valid signal.
 
 ### How do you calculate the current-limiting resistor for an LED? {E}
-**Short answer:** **R = (V_supply − V_f) / I_f**, where V_f is the LED's forward voltage and I_f the desired current. For a red LED (V_f ≈ 2.0 V) from 3.3 V at 5 mA: R = (3.3 − 2.0) / 0.005 = **260 Ω** → use 270 Ω. Then check the GPIO's maximum output current and the total current for the port and package.
+Use R = (V_supply − V_forward)/I_LED to limit LED current.
 
-**Typical forward voltages:** red/yellow ≈ 1.8–2.2 V, green ≈ 2.0–3.2 V, blue/white ≈ 2.8–3.4 V. A white LED may barely light from 3.3 V without a resistor margin; drive it through a transistor from a higher supply or use a constant-current driver.
+#### Example
+For a red LED with 2 V forward voltage, a 3.3 V supply and 5 mA target current, R = 260 Ω. Choose a standard 270 Ω resistor, giving approximately 4.8 mA.
 
-**GPIO limits:** many MCUs allow ~20 mA absolute per pin but specify output voltage levels only at much lower currents, and have a total limit per port or package (e.g. 100–150 mA); modern LEDs are bright enough at 1–5 mA. Above a few mA or for several LEDs, use a transistor or MOSFET switch.
+```text
+GPIO HIGH --- 270 ohm --- LED ---> GND
+```
 
-**Sink vs source:** connecting the LED from VDD to the GPIO (active-low, the pin sinks current) is common because some pins sink current better than they source it; remember the inverted logic in firmware.
+The resistor dissipates about I²R = 6.3 mW. Confirm the LED's forward voltage range and GPIO output voltage at the selected current. For larger loads use a transistor or dedicated driver.
 
-**Brightness control:** PWM at a frequency above flicker perception (> 200 Hz, often 1–20 kHz); perceived brightness is non-linear, so use a gamma-corrected table.
-
-**Resistor power:** P = I² × R = 0.005² × 270 ≈ 7 mW, fine for any small resistor.
+**Interview takeaway:** Always account for GPIO current limits and worst-case forward voltage; the LED does not regulate its own current.
 
 ### How do you interface a 3.3 V MCU with a 5 V device? {M}
 **Short answer:** Check both directions against the datasheets. **3.3 V → 5 V**: the 5 V device may accept 3.3 V as a valid high (many TTL-compatible inputs need only V_IH ≈ 2.0 V); if it needs 0.7 × VDD = 3.5 V (CMOS), use a level shifter or an open-drain output with a pull-up to 5 V (only if the MCU pin is 5 V tolerant). **5 V → 3.3 V**: never connect directly unless the MCU pin is specified as 5 V tolerant; otherwise use a resistor divider, a series resistor (limiting current into the protection diode, not a robust design), or a buffer powered at 3.3 V with 5 V-tolerant inputs.
