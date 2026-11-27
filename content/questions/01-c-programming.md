@@ -6,1353 +6,842 @@ level: Beginner
 order: 1
 desc: Keywords, storage classes, scope, the preprocessor, integer rules, undefined behaviour and the questions every C interview starts with.
 ---
-Almost every embedded interview opens with C. These questions cover the language itself: types, storage classes, the preprocessor, integer conversion rules, and the corners where C stops protecting you. Each answer gives the one-line answer first, then the explanation, an example, and the traps interviewers look for.
+Concise C interview notes with language rules, practical examples and original illustrations. Examples are fragments unless a complete function is shown; include appropriate standard headers and validate target assumptions.
 
 ### What are the storage classes in C? {E}
-**Short answer:** Storage-class specifiers affect storage duration and/or linkage. Scope is determined primarily by where the declaration appears. C has `auto`, `register`, `static` and `extern`, plus `_Thread_local` since C11 (and `typedef`, which is grammatically a storage class but only creates a type alias).
+**Short answer:** Storage-class specifiers affect storage duration and linkage; scope depends on the declaration's position.
 
-| Specifier | Lifetime | Default initial value | Typical location | Linkage |
-|---|---|---|---|---|
-| `auto` (default for locals) | the enclosing block | indeterminate (garbage) | stack or register | none |
-| `register` | the enclosing block | indeterminate | a register if the compiler wants | none; you cannot take its address |
-| `static` (local) | whole program | zero | `.data` / `.bss` | none |
-| `static` (file scope) | whole program | zero | `.data` / `.bss` | internal (this file only) |
-| `extern` | whole program | zero (at the definition) | defined in another file | external |
-| `_Thread_local` | the thread | zero | per-thread storage | internal or external |
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="Automatic: block lifetime|Static: program lifetime|Thread: thread lifetime" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="116" y="45" fill="#0c4a6e" font-size="12">Automatic: block lifetime</text><rect x="234" y="8" width="212" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="340" y="45" fill="#0c4a6e" font-size="12">Static: program lifetime</text><rect x="458" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="564" y="45" fill="#0c4a6e" font-size="12">Thread: thread lifetime</text></svg></div>
 
-**Key points**
+**How it works**
 
-- You almost never write `auto` in C (in C23 it gained a new meaning: type inference, like C++).
-- `register` is only a hint; modern compilers ignore it for allocation, but it still forbids `&var`.
-- Static and global variables are zero-initialised by the start-up code (`.bss`) or copied from flash (`.data`). Locals are not initialised: reading one before assignment is undefined behaviour.
+1. An ordinary local has automatic duration.
+2. Static locals retain state.
+3. File-scope static gives internal linkage.
+4. Extern usually declares an entity defined elsewhere; _Thread_local gives thread duration (C11).
 
-**Embedded relevance:** the difference matters for RAM budgeting. A large local array lives on the stack (risk of stack overflow on a 1 KB task stack), while a `static` array is placed in `.bss` and shows up in the map file at link time, so you know about it before the device crashes.
+**Example**
 
-**Follow-up:** "Where do `static` local variables live?" In `.data` or `.bss`, not on the stack, even though their name is only visible inside the function.
+```c
+static int count; // persists
+extern int baud; // declaration
+```
+
+**Interview takeaway:** typedef is grammatically a storage-class specifier but creates an alias, not storage.
 
 ### What does the static keyword do in different contexts? {E}
-**Short answer:** `static` has two different meanings. **Inside a function**, it makes a local variable keep its value between calls (static storage duration, initialised once). **At file scope**, on a global variable or a function, it gives **internal linkage**: the name is visible only inside that `.c` file, which is how C makes things "private".
+**Short answer:** static preserves a local object's lifetime across calls or limits a file-scope name to one translation unit.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="Call 1: 1|Call 2: 2|Call 3: 3" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="116" y="45" fill="#0c4a6e" font-size="12">Call 1: 1</text><rect x="234" y="8" width="212" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="340" y="45" fill="#0c4a6e" font-size="12">Call 2: 2</text><rect x="458" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="564" y="45" fill="#0c4a6e" font-size="12">Call 3: 3</text></svg></div>
+
+**How it works**
+
+1. A static local is initialized before program startup in C.
+2. Its value persists.
+3. A file-scope static function or object has internal linkage.
+
+**Example**
 
 ```c
-static int counter;              /* file-private global: other .c files cannot see it */
-
-static void helper(void) { }     /* file-private function */
-
-int next_id(void)
-{
-    static int id = 100;         /* initialised once, before main(); keeps its value */
-    return id++;                 /* 100, 101, 102, ... */
-}
+int next(void) {
+    static int n = 0;
+    return ++n;
+} // 1, 2, 3
 ```
 
-**Details**
-
-- A static local is initialised only once, and only with a constant expression in C (C++ allows run-time initialisation on first call).
-- Its lifetime is the whole program, but its scope is still the function body.
-- File-scope `static` prevents name clashes: two files can each have a `static int count;` without a "multiple definition" link error.
-
-**Embedded uses**
-
-- Driver state that only the driver may touch: `static uint8_t rx_buf[64]; static volatile uint16_t rx_head;` in `uart.c`, with public functions as the only interface. This is C's equivalent of encapsulation.
-- Keeping state in callbacks or state machines between calls.
-
-**Pitfalls**
-
-- Mutable static local state can make a function **non-reentrant**: two tasks or an ISR calling it at the same time share the variable. Read-only static data does not inherently prevent reentrancy.
-- `static` in a header file gives every `.c` file that includes it its own private copy, which wastes memory and is rarely what you want (except for `static inline` functions, which is the normal idiom).
-- (C99) `static` inside array parameter brackets, `void f(int a[static 4])`, means "the caller passes at least 4 elements"; a third, rarely used meaning.
+**Interview takeaway:** Mutable shared static state needs synchronization; static does not inherently mean read-only.
 
 ### What is the difference between declaration and definition? {E}
-**Short answer:** A **declaration** tells the compiler that a name exists and what its type is. A **definition** is a declaration that also creates the thing: it allocates storage for a variable or provides the body of a function. Compatible declarations can be repeated. An externally linked object or function that is used generally requires exactly one external definition; internal-linkage entities are separate per translation unit.
+**Short answer:** A declaration introduces a name and type; a definition supplies the object or function body.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="Header: declaration|Source: definition|Linker: resolves" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="116" y="45" fill="#0c4a6e" font-size="12">Header: declaration</text><rect x="234" y="8" width="212" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="340" y="45" fill="#0c4a6e" font-size="12">Source: definition</text><rect x="458" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="564" y="45" fill="#0c4a6e" font-size="12">Linker: resolves</text></svg></div>
+
+**How it works**
+
+1. Put compatible declarations in headers.
+2. Define an externally linked used object once.
+3. The linker resolves references.
+
+**Example**
 
 ```c
-extern int baud;                         /* declaration only: storage is elsewhere */
-int baud = 115200;                       /* definition (allocates storage) */
-
-int add(int a, int b);                   /* declaration (prototype) */
-int add(int a, int b) { return a + b; }  /* definition */
-
-struct packet;                           /* declaration of an incomplete type */
-struct packet { uint8_t len; uint8_t data[32]; };   /* definition of the type */
+extern int speed; // declaration
+int speed = 100;  // definition
 ```
 
-**Where they go:** declarations in headers (`uart.h`), definitions in exactly one source file (`uart.c`). Every file that includes the header then agrees on the type, and the linker finds the single definition.
-
-**Tentative definitions (a C quirk):** `int x;` at file scope without an initialiser is a *tentative* definition. Older compilers merged identical tentative definitions from several files into one (the "common" model). GCC 10 changed the default to `-fno-common`, so the same code now fails with "multiple definition of `x`". The fix is the proper pattern: `extern int x;` in the header and `int x;` in one `.c` file.
-
-**Errors you get when you get it wrong**
-
-| Mistake | Error |
-|---|---|
-| declared but never defined, and used | linker: `undefined reference to 'baud'` |
-| defined in two files | linker: `multiple definition of 'baud'` |
-| declarations with different types in different files | often no error at all, just wrong behaviour (undefined behaviour) |
-
-The last row is why every `.c` file should include its own header: the compiler then checks that the definition matches the declaration.
+**Interview takeaway:** Every definition is a declaration; a file-scope int x; is a tentative definition.
 
 ### What is the use of the extern keyword? {E}
-**Short answer:** `extern` declares a variable or function that is **defined somewhere else** (usually in another `.c` file), so this file can use it and the linker connects the two. Functions are `extern` by default, so the keyword is mainly needed for global variables.
+**Short answer:** extern normally declares a name with external linkage or refers to a prior declaration's linkage.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="File A: extern|File B: definition" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="324" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="172" y="45" fill="#0c4a6e" font-size="12">File A: extern</text><rect x="346" y="8" width="324" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="508" y="45" fill="#0c4a6e" font-size="12">File B: definition</text></svg></div>
+
+**How it works**
+
+1. Declare the shared object in a header.
+2. Define it in one source file.
+3. Include the header wherever needed.
+
+**Example**
 
 ```c
-/* config.h */
-extern uint32_t g_system_clock_hz;      /* declaration */
-
-/* config.c */
-uint32_t g_system_clock_hz = 16000000;  /* the one definition */
-
-/* uart.c */
-#include "config.h"
-void uart_init(void) { uint32_t div = g_system_clock_hz / 115200; /* ... */ }
+// config.h
+extern int baud;
+// config.c
+int baud = 115200;
 ```
 
-**Rules**
-
-- `extern int x;` does not allocate memory. `extern int x = 5;` is a definition (the initialiser wins), which compilers warn about.
-- An `extern` declaration inside a function refers to a global defined elsewhere.
-- `extern "C"` in C++ is a different feature: it turns off C++ name mangling so C and C++ code can call each other. C headers used from C++ wrap their declarations in `#ifdef __cplusplus extern "C" { #endif`.
-
-**Linker errors:** if no file defines the variable, you get `undefined reference`; if two files define it, `multiple definition`.
-
-**Design advice:** many global variables shared through `extern` make firmware hard to reason about, because any file can change them. Prefer `static` variables with access functions (`clock_get_hz()`), and keep `extern` for a few genuinely global items such as linker-script symbols:
-
-```c
-extern uint32_t _sdata, _edata, _sidata;   /* defined by the linker script, used by start-up code */
-```
-
-These linker symbols have no storage of their own; only their **address** is meaningful (`&_sdata`).
+**Interview takeaway:** extern int x = 1; at file scope is a definition, not merely a declaration.
 
 ### What is the difference between const and #define? {E}
-**Short answer:** `#define` is plain text substitution done by the preprocessor before compilation: it has no type, no scope and is invisible in the debugger. `const` creates a real, typed, scoped object that the compiler checks and that can live in flash (`.rodata`). Prefer `const` or `enum` for type safety, but note that in C a `const int` is **not** a compile-time constant expression.
+**Short answer:** const qualifies a type against modification through that lvalue; #define performs preprocessor substitution.
 
-| | `#define N 10` | `const int n = 10;` | `enum { N = 10 };` |
-|---|---|---|---|
-| Handled by | preprocessor | compiler | compiler |
-| Type | none (text) | `int` | `int` |
-| Scope | from definition to end of file (or `#undef`) | block or file | block or file |
-| Visible in debugger | no | yes | yes (usually) |
-| Constant expression in C (array size at file scope, `case` label, `static` initialiser) | yes | **no** | yes |
-| Takes memory | no | possibly (often optimised away) | no |
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="Preprocessor: LIMIT|Compiler: const object" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="324" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="172" y="45" fill="#0c4a6e" font-size="12">Preprocessor: LIMIT</text><rect x="346" y="8" width="324" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="508" y="45" fill="#0c4a6e" font-size="12">Compiler: const object</text></svg></div>
+
+**How it works**
+
+1. The preprocessor replaces macros before compilation.
+2. The compiler type-checks const objects.
+3. A macro does not itself allocate storage.
+
+**Example**
 
 ```c
-#define BUF_LEN 64
-static uint8_t buf[BUF_LEN];        /* fine */
-
-const int len = 64;
-static uint8_t buf2[len];           /* error in C (OK in C++): not a constant expression */
+#define LIMIT 32
+const int limit = 32;
 ```
 
-**C23 adds `constexpr`** for objects, which fixes this: `constexpr int len = 64;` can size arrays.
-
-**Macro pitfalls that `const` avoids**
-
-- `#define MAX 100 + 1` used as `MAX * 2` gives 102, not 202 (no parentheses, no type).
-- Macros ignore scope: a `#define count 5` in a header silently breaks any variable named `count` after it.
-- Error messages show the expanded text, not the macro name.
-
-**When `#define` is still right:** conditional compilation (`#if DEBUG`), constants needed by the preprocessor, include guards, and register addresses in vendor headers. For typed constants (`const uint32_t timeout_ms = 500;`), lookup tables (`static const uint8_t crc_table[256] = {...};` in flash), and groups of related integers (`enum state { IDLE, RUN }`), use `const` and `enum`.
+**Interview takeaway:** In C, a const int is not generally an integer constant expression; use an enum or macro when needed.
 
 ### What does const int *p, int *const p and const int *const p mean? {M}
-**Short answer:** Read the declaration from the variable name outward (right to left). `const int *p` is a pointer to a constant int: you can move `p`, but not change `*p`. `int *const p` is a constant pointer to int: you can change `*p`, but `p` always points to the same place. `const int *const p` allows neither.
+**Short answer:** const before the pointed-to type protects the target through that pointer; const after * protects the pointer itself.
 
-| Declaration | Can change `p`? | Can change `*p`? | Read as |
-|---|---|---|---|
-| `const int *p` / `int const *p` | yes | no | p is a pointer to const int |
-| `int *const p = &x;` | no | yes | p is a const pointer to int |
-| `const int *const p = &x;` | no | no | p is a const pointer to const int |
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="const int *: target|int *const: pointer|both const" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="116" y="45" fill="#0c4a6e" font-size="12">const int *: target</text><rect x="234" y="8" width="212" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="340" y="45" fill="#0c4a6e" font-size="12">int *const: pointer</text><rect x="458" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="564" y="45" fill="#0c4a6e" font-size="12">both const</text></svg></div>
 
-```c
-int x = 1, y = 2;
+**How it works**
 
-const int *a = &x;  a = &y;   /* OK */      /* *a = 5;  error */
-int *const b = &x;  *b = 5;   /* OK */      /* b = &y;  error */
-const int *const c = &x;                     /* neither */
-```
+1. Read the declaration around *.
+2. Check whether reassignment of the pointer is allowed.
+3. Check whether writing through it is allowed.
 
-**Where const is placed relative to `*` is what matters:** `const` before the `*` applies to the pointed-to data; after the `*` applies to the pointer itself.
-
-**Embedded examples**
+**Example**
 
 ```c
-/* fixed address, changing contents: const pointer to volatile data */
-volatile uint32_t *const UART_DR = (volatile uint32_t *)0x40011004u;
-
-/* function promises not to modify the caller's buffer */
-size_t crc16(const uint8_t *data, size_t len);
-
-/* table of strings, all in flash: const pointers to const chars */
-static const char *const state_names[] = { "IDLE", "RUN", "ERROR" };
+int x=1, y=2;
+const int *p=&x; // p can change
+int *const q=&x; // *q can change
+const int *const r=&y; // neither via r
 ```
 
-In the last example, without the second `const`, the array of pointers is writable and so goes into RAM (`.data`), even though the strings are in flash.
-
-**Follow-up:** "Can you remove const with a cast?" You can cast `const int *` to `int *`, but writing through it is undefined behaviour if the object was originally defined `const` (it may be in flash, where the write is ignored or faults).
+**Interview takeaway:** A non-const object can still change through another valid non-const reference.
 
 ### What is the difference between a macro and an inline function? {M}
-**Short answer:** A macro is text substitution by the preprocessor: no type checking, arguments may be evaluated several times, and it is hard to debug. A `static inline` function is a real function that the compiler may expand in place: arguments are type-checked and evaluated exactly once, and it can be stepped through in a debugger. Prefer `static inline`; use macros only for what functions cannot do.
+**Short answer:** A macro expands tokens; an inline function is a typed function that the compiler may inline.
 
-| | Macro | `static inline` function |
-|---|---|---|
-| Processed by | preprocessor | compiler |
-| Type checking | none | full |
-| Argument evaluation | as many times as it appears | exactly once |
-| Scope | ignores scope | normal C scope |
-| Debugging | hard (expanded text) | normal (can set breakpoints when not inlined) |
-| Generic over types | yes | no (except via `_Generic`) |
-| Can use `#`, `##`, `__FILE__`, `__LINE__` of the caller | yes | no |
-| Can return a value from a statement block | only with GCC statement expressions | yes |
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="Macro: text expansion|Inline: typed call" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="324" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="172" y="45" fill="#0c4a6e" font-size="12">Macro: text expansion</text><rect x="346" y="8" width="324" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="508" y="45" fill="#0c4a6e" font-size="12">Inline: typed call</text></svg></div>
 
-**The classic macro bugs**
+**How it works**
+
+1. Macros substitute argument expressions wherever used.
+2. Function arguments are evaluated once per argument.
+3. The compiler decides whether to inline.
+
+**Example**
 
 ```c
-#define SQUARE(x) ((x) * (x))
-int y = SQUARE(i++);          /* i incremented twice: undefined behaviour */
-int z = SQUARE(read_adc());   /* the ADC is read twice, maybe giving different values */
-
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
-MAX(x++, y)                   /* x may be incremented twice */
+#define SQUARE(x) ((x)*(x))
+static inline int square(int x) { return x*x; }
 ```
 
-```c
-static inline int square(int x) { return x * x; }   /* no surprises */
-```
-
-**`inline` is only a hint.** The compiler decides whether to inline based on size and optimisation level; `__attribute__((always_inline))` forces it. A plain `inline` (without `static`) in C has awkward linkage rules (you need one external definition somewhere), which is why `static inline` in headers is the common idiom.
-
-**When macros are the right tool:** compile-time constants used in `#if`, stringification (`#define STR(x) #x`) and token pasting, logging with the caller's `__FILE__`/`__LINE__`, `offsetof`/`container_of`-style tricks, and type-generic helpers (with `_Generic`, or C23 `typeof`).
-
-**Code size:** inlining a large function at many call sites increases flash use; on small MCUs, check the map file and use `-Os`.
+**Interview takeaway:** SQUARE(i++) is undefined due to unsequenced modifications. inline is not a guarantee of inlining.
 
 ### Why should macro arguments and bodies be wrapped in parentheses? {E}
-**Short answer:** Macros substitute text, so operator precedence around and inside the macro can change the meaning. Put parentheses around **every use of each argument** and around the **whole body** so the macro behaves like a single value.
+**Short answer:** Parentheses protect macro arguments and the replacement expression from unexpected operator precedence.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="1+2 and 3+4|Parenthesized product: 21" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="324" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="172" y="45" fill="#0c4a6e" font-size="12">1+2 and 3+4</text><rect x="346" y="8" width="324" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="508" y="45" fill="#0c4a6e" font-size="12">Parenthesized product: 21</text></svg></div>
+
+**How it works**
+
+1. Wrap each parameter use.
+2. Wrap the entire expression.
+3. Avoid multiple evaluation of arguments with side effects.
+
+**Example**
 
 ```c
-#define DOUBLE(x) x + x
-int r = 3 * DOUBLE(2);        /* expands to 3 * 2 + 2 = 8, not 12 */
-
-#define SQUARE(x) (x * x)
-int s = SQUARE(1 + 2);        /* expands to (1 + 2 * 1 + 2) = 5, not 9 */
+#define MUL(a,b) ((a)*(b))
+// MUL(1+2,3+4) gives 21
 ```
 
-Correct versions:
-
-```c
-#define DOUBLE(x) ((x) + (x))
-#define SQUARE(x) ((x) * (x))
-```
-
-**Both kinds of parentheses are needed**
-
-- **Around arguments** `(x)`: protects against operators inside the argument (`1 + 2`).
-- **Around the body** `( ... )`: protects against operators next to the macro where it is used (`3 * DOUBLE(2)`).
-
-**Other macro hygiene rules**
-
-- Multi-statement macros: wrap in `do { ... } while (0)` (next question).
-- Arguments with side effects are still evaluated multiple times; parentheses do not fix that. Document it or use an inline function.
-- Avoid names that clash: local variables inside macros should have unusual names (`t_`), because they can shadow the caller's variables.
-- Do not end a macro definition with a semicolon (`#define X 5;`), or `if (a == X) ...` becomes a syntax error.
-
-**Hardware register macros** need the same care: `#define REG_CTRL (*(volatile uint32_t *)(BASE + 0x04u))` has parentheses around the address arithmetic and the whole dereference, so `REG_CTRL |= 1u;` works as expected.
+**Interview takeaway:** Parentheses fix precedence, not side effects or arithmetic overflow.
 
 ### Why are multi-line macros wrapped in do { } while(0)? {M}
-**Short answer:** It turns several statements into one statement that needs a trailing semicolon, so the macro behaves correctly everywhere a single statement can appear, especially in an `if`/`else` without braces. The compiler removes the "loop" completely, so it costs nothing.
+**Short answer:** do { ... } while (0) makes a multi-statement macro behave syntactically like one statement.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="if (condition)|One macro statement|else branch" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="116" y="45" fill="#0c4a6e" font-size="12">if (condition)</text><rect x="234" y="8" width="212" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="340" y="45" fill="#0c4a6e" font-size="12">One macro statement</text><rect x="458" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="564" y="45" fill="#0c4a6e" font-size="12">else branch</text></svg></div>
+
+**How it works**
+
+1. Place statements inside the block.
+2. The loop executes once.
+3. The caller adds a semicolon, preserving if/else syntax.
+
+**Example**
 
 ```c
-#define SWAP(a, b) do { int t_ = (a); (a) = (b); (b) = t_; } while (0)
-
-if (x > y)
-    SWAP(x, y);      /* one statement: works */
-else
-    other();
+#define RESET(a,b) do { (a)=0; (b)=0; } while (0)
 ```
 
-**What goes wrong without it**
-
-With only braces:
-
-```c
-#define SWAP(a, b) { int t_ = (a); (a) = (b); (b) = t_; }
-
-if (x > y)
-    SWAP(x, y);      /* expands to { ... };  <- the ';' ends the if statement */
-else                 /* error: 'else' without a previous 'if' */
-    other();
-```
-
-With no braces at all, only the first statement would be controlled by the `if`, and the rest would always run.
-
-**Alternatives**
-
-- A `static inline` function, which avoids the problem entirely and is type-checked; prefer it when possible.
-- GCC/Clang **statement expressions** `({ ... })` can also return a value, but they are a compiler extension, not standard C.
-- The comma operator `(a(), b())` works for simple expression-only macros.
-
-**Typical embedded uses:** logging macros that capture `__FILE__` and `__LINE__`, `ASSERT()` macros that call a fault handler, and critical-section helpers:
-
-```c
-#define CRITICAL(code) do { uint32_t pm_ = __get_PRIMASK(); __disable_irq(); \
-                            code; __set_PRIMASK(pm_); } while (0)
-```
+**Interview takeaway:** Avoid hidden break/continue semantics and repeated evaluation of arguments.
 
 ### What are # and ## in macros? {M}
-**Short answer:** `#` (the stringizing operator) turns a macro argument into a string literal. `##` (the token-pasting operator) joins two tokens into one. They let macros generate names and strings automatically.
+**Short answer:** # stringifies a macro argument; ## pastes tokens into a single preprocessing token.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="# hello → &quot;hello&quot;|## reg + 1 → reg1" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="324" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="172" y="45" fill="#0c4a6e" font-size="12"># hello → &quot;hello&quot;</text><rect x="346" y="8" width="324" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="508" y="45" fill="#0c4a6e" font-size="12">## reg + 1 → reg1</text></svg></div>
+
+**How it works**
+
+1. Stringification produces a string literal.
+2. Token pasting combines tokens.
+3. Use an extra expansion layer when macro values must expand before these operations.
+
+**Example**
 
 ```c
-#define STR(x)     #x
-#define XSTR(x)    STR(x)          /* two-level trick: expand x first */
-#define REG(port)  GPIO##port##_ODR
-
-STR(UART1)                         /* "UART1" */
-REG(A)                             /* GPIOA_ODR */
-
-#define VERSION 3
-STR(VERSION)                       /* "VERSION"  - argument not expanded */
-XSTR(VERSION)                      /* "3"        - expanded first, then stringized */
+#define STR(x) #x
+#define JOIN(a,b) a##b
+// STR(hello) -> "hello"
+// JOIN(reg,1) -> reg1
 ```
 
-**Why the two-level trick is needed:** an argument used with `#` or `##` is **not** macro-expanded first. Passing it through another macro (`XSTR`) expands it before it reaches `#`.
-
-**Practical uses**
-
-- **Assert and log messages** that show the failed expression: `#define ASSERT(e) do { if (!(e)) fail(#e, __FILE__, __LINE__); } while (0)`.
-- **X-macros** that keep an enum and its string names in sync:
-
-```c
-#define STATES(X) X(IDLE) X(RUN) X(ERROR)
-#define AS_ENUM(n)   ST_##n,
-#define AS_STRING(n) #n,
-
-enum state { STATES(AS_ENUM) ST_COUNT };
-static const char *const state_name[] = { STATES(AS_STRING) };
-/* ST_IDLE, ST_RUN, ST_ERROR and "IDLE", "RUN", "ERROR" from one list */
-```
-
-- **Generating register or handler names:** `#define IRQ_HANDLER(n) void n##_IRQHandler(void)`.
-- Embedding the firmware version string: `const char fw_version[] = XSTR(MAJOR) "." XSTR(MINOR);`
-
-**Rules:** the result of `##` must be a valid single token (pasting `+` and `/` is undefined), and `#` escapes quotes and backslashes in the argument.
+**Interview takeaway:** Token pasting must yield a valid preprocessing token.
 
 ### What is the difference between #include <file> and #include "file"? {E}
-**Short answer:** `#include <file>` searches only the system include directories and those given with `-I`. `#include "file"` first looks in the directory of the file that contains the `#include`, then falls back to the same paths as `<file>`. Use quotes for your project's own headers and angle brackets for the standard library and third-party SDK headers.
+**Short answer:** Quoted includes and angle-bracket includes use implementation-defined search rules.
 
-**Search order with GCC**
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="Project header search|Configured include paths" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="324" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="172" y="45" fill="#0c4a6e" font-size="12">Project header search</text><rect x="346" y="8" width="324" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="508" y="45" fill="#0c4a6e" font-size="12">Configured include paths</text></svg></div>
 
-| Form | Searched |
-|---|---|
-| `"file.h"` | directory of the current file → `-iquote` dirs → `-I` dirs → system dirs |
-| `<file.h>` | `-I` dirs → `-isystem` dirs → system dirs (e.g. the toolchain's `include/`) |
+**How it works**
 
-See the exact list with `arm-none-eabi-gcc -xc -E -v /dev/null`.
+1. Quoted includes commonly search relative to the including source first.
+2. Angle includes commonly search configured include directories.
+3. Compilers may fall back between paths.
 
-**Why it matters**
+**Example**
 
-- If your project has a header with the same name as a system one (e.g. `config.h`, `time.h`), quotes find yours first; angle brackets find the system one. Avoid such clashes.
-- Headers included with `-isystem` get fewer warnings, which is useful for noisy vendor code but can hide real problems.
+```c
+#include "board.h"
+#include <stdint.h>
+```
 
-**Good include practice**
-
-- Each header should be self-contained (include what it needs) and have include guards.
-- Each `.c` file includes its own header first, which proves the header is self-contained.
-- Do not put definitions (variables, non-inline functions) in headers.
-- Prefer forward declarations (`struct uart;`) over including big headers when only a pointer is needed; it speeds up builds and reduces coupling.
-
-**Embedded note:** vendor SDKs (CMSIS, STM32 HAL, nRF SDK) are usually added with `-I`, and you include them with angle brackets or quotes depending on the project's convention. Consistency matters more than the choice.
+**Interview takeaway:** Exact search order depends on compiler options; do not assume angle brackets mean only system headers.
 
 ### What are include guards and #pragma once? {E}
-**Short answer:** Include guards stop a header from being processed twice in the same translation unit (which would cause redefinition errors for types and inline functions). The classic form uses `#ifndef`/`#define`/`#endif`; `#pragma once` does the same in one line and is supported by all major compilers, but it is not part of the C standard.
+**Short answer:** Include guards prevent repeated processing of a header within one translation unit.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="First include: process|Later include: skip" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="324" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="172" y="45" fill="#0c4a6e" font-size="12">First include: process</text><rect x="346" y="8" width="324" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="508" y="45" fill="#0c4a6e" font-size="12">Later include: skip</text></svg></div>
+
+**How it works**
+
+1. Test a unique macro name.
+2. Define it when first included.
+3. Skip the contents on later includes.
+
+**Example**
 
 ```c
-#ifndef DRIVERS_UART_H
-#define DRIVERS_UART_H
-
-#include <stdint.h>
-
-typedef struct { uint32_t baud; uint8_t parity; } uart_cfg_t;
-void uart_init(const uart_cfg_t *cfg);
-
-#endif /* DRIVERS_UART_H */
+#ifndef BOARD_H_INCLUDED
+#define BOARD_H_INCLUDED
+void board_init(void);
+#endif
 ```
 
-```c
-#pragma once
-/* same effect */
-```
-
-**Why a header gets included twice:** `main.c` includes `uart.h` and `board.h`, and `board.h` also includes `uart.h`. Without guards, `uart_cfg_t` is defined twice and the compiler reports a redefinition.
-
-**Comparison**
-
-| | `#ifndef` guards | `#pragma once` |
-|---|---|---|
-| Standard C | yes | no (but GCC, Clang, IAR, Keil, MSVC all support it) |
-| Risk | two headers accidentally using the same guard name, so one is silently skipped | the same file reached through two different paths (symlinks, copies on a network drive) may be included twice |
-| Typing | three lines and a unique name | one line |
-
-**Naming guards:** use the path, e.g. `PROJECT_DRIVERS_UART_H`. Do not start them with an underscore followed by a capital letter (`_UART_H`): such names are reserved for the compiler and library.
-
-**MISRA C and some safety coding standards** require the standard `#ifndef` form. Otherwise either is fine; pick one and use it consistently.
-
-**Guards do not help across translation units:** if a header *defines* a global variable (`int counter = 0;`), every `.c` file that includes it gets its own definition and the linker reports "multiple definition". Headers should only declare (`extern int counter;`).
+**Interview takeaway:** pragma once is widely supported but not standard C; guards are portable.
 
 ### What is the difference between typedef and #define for creating type names? {E}
-**Short answer:** `typedef` creates a real alias for a type that the compiler understands, with normal scope rules. `#define` only replaces text, which breaks with pointer types and can surprise you in declarations. Use `typedef` for types.
+**Short answer:** typedef creates a type alias understood by the compiler; a macro replaces tokens.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="typedef: type alias|macro: token replacement" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="324" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="172" y="45" fill="#0c4a6e" font-size="12">typedef: type alias</text><rect x="346" y="8" width="324" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="508" y="45" fill="#0c4a6e" font-size="12">macro: token replacement</text></svg></div>
+
+**How it works**
+
+1. A typedef participates in declarator rules.
+2. A macro simply expands wherever its name appears.
+
+**Example**
 
 ```c
-typedef char *str_t;
-#define STR_T char *
-
-str_t a, b;     /* a and b are both char *            */
-STR_T c, d;     /* becomes "char * c, d;": c is char *, d is just char! */
+typedef int *IntPtr;
+IntPtr a,b; // both pointers
+#define PTR int *
+PTR c,d; // c pointer, d int
 ```
 
-**Other differences**
-
-| | `typedef` | `#define` |
-|---|---|---|
-| Processed by | compiler | preprocessor |
-| Scope | block/file scope like any declaration | until `#undef` or end of file |
-| Works with complex types (function pointers, arrays) | yes | fragile |
-| Can be combined with `unsigned`, etc. | no (`unsigned my_int` is an error) | yes (text) |
-| Debugger shows the name | usually | no |
-
-**Readable function-pointer types (a very common use):**
-
-```c
-typedef void (*isr_t)(void);
-isr_t vector_table[64];            /* array of 64 function pointers */
-
-typedef int (*cmd_handler_t)(int argc, char **argv);
-```
-
-**Struct typedefs:**
-
-```c
-typedef struct uart uart_t;        /* opaque type: users cannot see inside */
-uart_t *uart_open(int port);
-```
-
-Opaque types like this are good encapsulation in C: the struct is only defined in `uart.c`.
-
-**Style notes:** names ending in `_t` are reserved by POSIX for its own types, so some projects avoid that suffix; and hiding a pointer inside a typedef (`typedef struct x *xptr;`) is discouraged by many style guides (including Linux), because it hides that the value is a pointer.
+**Interview takeaway:** typedef does not create a distinct new type in C.
 
 ### What is undefined behaviour? Give examples. {M}
-**Short answer:** Undefined behaviour (UB) means the C standard places **no requirements** on what happens. The program may crash, give a wrong result, or appear to work. Worse, the optimiser assumes UB never happens and transforms code on that basis, so a bug can be invisible at `-O0` and appear at `-O2`, or remove a safety check entirely.
+**Short answer:** Undefined behavior means the C standard places no requirements on the program's behavior for that operation.
 
-**Common examples**
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="Invalid operation|No guaranteed outcome" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="324" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="172" y="45" fill="#0c4a6e" font-size="12">Invalid operation</text><rect x="346" y="8" width="324" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="508" y="45" fill="#0c4a6e" font-size="12">No guaranteed outcome</text></svg></div>
 
-| Example | Why it is UB |
-|---|---|
-| `INT_MAX + 1` | signed integer overflow (unsigned wraps and is defined) |
-| `*p` where `p` is NULL, freed, or out of scope | invalid pointer dereference |
-| `int x; return x + 1;` | reading an uninitialised automatic variable |
-| `a[10]` for `int a[10]` | out-of-bounds access |
-| `1 << 32` on a 32-bit int, `x << -1` | shift by ≥ width or negative |
-| `i = i++;` | unsequenced modifications |
-| accessing a `float` through an `int *` | strict aliasing violation |
-| modifying a string literal: `char *s = "hi"; s[0] = 'H';` | literals may be in read-only memory |
-| returning without a value from a non-void function and using the result | missing return |
-| `INT_MIN / -1`, `x / 0` | division overflow / by zero |
+**How it works**
 
-**How the optimiser exploits UB**
+1. Examples include signed overflow, invalid pointer dereference and out-of-bounds access.
+2. The optimizer may assume such operations never occur.
+3. Validate preconditions instead.
+
+**Example**
 
 ```c
-int check(int x)
-{
-    if (x + 1 < x)          /* intended overflow check */
-        return -1;          /* compiler: signed overflow can't happen, so this is never true */
-    return x + 1;           /* the check is deleted */
+int a[2]={0};
+// a[2]=1; // undefined
+// int x=INT_MAX; ++x; // signed overflow
+```
+
+**Interview takeaway:** A program that appears to work in debug mode may fail after optimization.
+
+### What is a sequence point? {H}
+**Short answer:** A sequence point is a point where preceding evaluations are complete and later evaluations have not begun; modern C also describes sequenced-before relations.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="First full expression|Sequence boundary|Next expression" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="116" y="45" fill="#0c4a6e" font-size="12">First full expression</text><rect x="234" y="8" width="212" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="340" y="45" fill="#0c4a6e" font-size="12">Sequence boundary</text><rect x="458" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="564" y="45" fill="#0c4a6e" font-size="12">Next expression</text></svg></div>
+
+**How it works**
+
+1. Separate statements sequence their full expressions; && and || sequence their operands when the second is evaluated.
+2. Unsequenced conflicting accesses to the same scalar can be undefined.
+
+**Example**
+
+```c
+int i=0;
+i++; i++; // defined
+// i = i++ + 1; // undefined in C
+```
+
+**Interview takeaway:** Function argument evaluation order is generally unspecified; do not rely on it.
+
+### What is the size of an int, and what are fixed-width types? {E}
+**Short answer:** The size of int is implementation-defined subject to standard minimum ranges; fixed-width typedefs express exact widths when provided.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="16-bit int possible|32-bit int common|uint32_t: exactly 32 bits" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="116" y="45" fill="#0c4a6e" font-size="12">16-bit int possible</text><rect x="234" y="8" width="212" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="340" y="45" fill="#0c4a6e" font-size="12">32-bit int common</text><rect x="458" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="564" y="45" fill="#0c4a6e" font-size="12">uint32_t: exactly 32 bits</text></svg></div>
+
+**How it works**
+
+1. Inspect sizeof and CHAR_BIT.
+2. Use uint32_t for exactly 32 unsigned bits when available.
+3. Choose size_t for object sizes.
+
+**Example**
+
+```c
+#include <stdint.h>
+uint32_t reg_value = 0;
+// sizeof(int) depends on target
+```
+
+**Interview takeaway:** Use inttypes.h format macros for fixed-width values where needed.
+
+### Is char signed or unsigned, and why does it matter? {M}
+**Short answer:** Plain char may be signed or unsigned depending on the implementation.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="0xFF: signed often -1|0xFF: unsigned 255" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="324" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="172" y="45" fill="#0c4a6e" font-size="12">0xFF: signed often -1</text><rect x="346" y="8" width="324" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="508" y="45" fill="#0c4a6e" font-size="12">0xFF: unsigned 255</text></svg></div>
+
+**How it works**
+
+1. Use char for text.
+2. Signed char or unsigned char when signedness matters.
+3. Cast byte values before indexing or calling ctype functions.
+
+**Example**
+
+```c
+unsigned char byte = 0xff;
+// value is 255 on 8-bit-byte targets
+```
+
+**Interview takeaway:** Never assume plain char is unsigned. CHAR_BIT need not be 8.
+
+### What is integer promotion? {M}
+**Short answer:** Integer promotions convert small integer types to int if it can represent their values, otherwise to unsigned int.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="8-bit operands|Promoted arithmetic|Conversion on assignment" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="116" y="45" fill="#0c4a6e" font-size="12">8-bit operands</text><rect x="234" y="8" width="212" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="340" y="45" fill="#0c4a6e" font-size="12">Promoted arithmetic</text><rect x="458" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="564" y="45" fill="#0c4a6e" font-size="12">Conversion on assignment</text></svg></div>
+
+**How it works**
+
+1. Promotions happen before many arithmetic and bitwise operations.
+2. The operation uses the promoted type.
+3. Assignment converts the result back.
+
+**Example**
+
+```c
+uint8_t a=250,b=10;
+int sum=a+b; // 260 on usual targets
+uint8_t wrap=(uint8_t)sum; // 4
+```
+
+**Interview takeaway:** Use unsigned types of the intended width for bit operations; inspect promotion effects.
+
+### What happens when you compare signed and unsigned integers? {M}
+**Short answer:** Mixed signed/unsigned expressions follow usual arithmetic conversions, which can turn a negative value into a large unsigned one.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="-1 signed|Converted to UINT_MAX|Compare with 1" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="116" y="45" fill="#0c4a6e" font-size="12">-1 signed</text><rect x="234" y="8" width="212" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="340" y="45" fill="#0c4a6e" font-size="12">Converted to UINT_MAX</text><rect x="458" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="564" y="45" fill="#0c4a6e" font-size="12">Compare with 1</text></svg></div>
+
+**How it works**
+
+1. Determine operand ranks and representable ranges.
+2. Convert to the common type.
+3. Compare the converted values.
+
+**Example**
+
+```c
+int a=-1;
+unsigned int b=1;
+// a < b is false
+```
+
+**Interview takeaway:** Check for negativity before converting to an unsigned size or index.
+
+### What is the difference between ++i and i++? {E}
+**Short answer:** Prefix increment produces the incremented value; postfix produces the previous value while also incrementing the object.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="Prefix: increment then value|Postfix: old value then update" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="324" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="172" y="45" fill="#0c4a6e" font-size="12">Prefix: increment then value</text><rect x="346" y="8" width="324" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="508" y="45" fill="#0c4a6e" font-size="12">Postfix: old value then update</text></svg></div>
+
+**How it works**
+
+1. Evaluate the expression.
+2. Update the object.
+3. Use the prefix or postfix result as required.
+
+**Example**
+
+```c
+int i=3;
+int a=++i; // a=4,i=4
+int b=i++; // b=4,i=5
+```
+
+**Interview takeaway:** As standalone statements both increment once; avoid multiple unsequenced modifications.
+
+### What is the difference between a structure and a union? {E}
+**Short answer:** A struct stores separate members; a union overlays members in shared storage.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="Struct: A | B|Union: overlapping A/B" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="116" y="45" fill="#0c4a6e" font-size="12">Struct: A</text><rect x="234" y="8" width="212" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="340" y="45" fill="#0c4a6e" font-size="12">B</text><rect x="458" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="564" y="45" fill="#0c4a6e" font-size="12">Union: overlapping A/B</text></svg></div>
+
+**How it works**
+
+1. Struct members occupy distinct regions with possible padding.
+2. Union members start at the same address.
+3. The union is large and aligned enough for its members.
+
+**Example**
+
+```c
+struct pair { int a,b; };
+union word { uint32_t n; unsigned char bytes[4]; };
+```
+
+**Interview takeaway:** Union representation reinterpretation is implementation-sensitive and may produce invalid representations; use explicit conversions for protocols.
+
+### What is structure padding and how do you avoid it? {M}
+**Short answer:** Padding is unused space inserted to meet member and overall structure alignment.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="a + padding|b: 4 bytes|c + tail padding" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="116" y="45" fill="#0c4a6e" font-size="12">a + padding</text><rect x="234" y="8" width="212" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="340" y="45" fill="#0c4a6e" font-size="12">b: 4 bytes</text><rect x="458" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="564" y="45" fill="#0c4a6e" font-size="12">c + tail padding</text></svg></div>
+
+**How it works**
+
+1. Lay out members at suitably aligned offsets.
+2. Round structure size for array alignment.
+3. Reorder members to reduce holes where appropriate.
+
+**Example**
+
+```c
+struct s { char a; int b; char c; };
+// Typical 4-byte int ABI: size 12, not 6.
+```
+
+**Interview takeaway:** Do not assume layout across compilers. Packed accesses can be unaligned; serialize fields explicitly.
+
+### What are bit-fields and what are their drawbacks? {M}
+**Short answer:** Bit-fields store members with specified bit widths inside implementation-defined allocation units.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="ready: 1 bit|mode: 3 bits|implementation layout" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="116" y="45" fill="#0c4a6e" font-size="12">ready: 1 bit</text><rect x="234" y="8" width="212" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="340" y="45" fill="#0c4a6e" font-size="12">mode: 3 bits</text><rect x="458" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="564" y="45" fill="#0c4a6e" font-size="12">implementation layout</text></svg></div>
+
+**How it works**
+
+1. Declare widths.
+2. The compiler selects layout and access strategy.
+3. Reads and writes may use a whole-unit read-modify-write.
+
+**Example**
+
+```c
+struct flags { unsigned ready:1; unsigned mode:3; };
+```
+
+**Interview takeaway:** Bit-field order, packing and access width are not portable; masks are usually safer for MMIO.
+
+### What is an enum and how big is it? {E}
+**Short answer:** An enum defines named integer constants and an enumerated type whose representation depends on language version and implementation.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="IDLE: 0|RUN: 1|ERROR: 2" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="116" y="45" fill="#0c4a6e" font-size="12">IDLE: 0</text><rect x="234" y="8" width="212" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="340" y="45" fill="#0c4a6e" font-size="12">RUN: 1</text><rect x="458" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="564" y="45" fill="#0c4a6e" font-size="12">ERROR: 2</text></svg></div>
+
+**How it works**
+
+1. Assign explicit or automatic values.
+2. Use names for state and configuration.
+3. Check sizeof when ABI matters.
+
+**Example**
+
+```c
+enum state { IDLE, RUN, ERROR };
+enum state s=IDLE;
+```
+
+**Interview takeaway:** Do not assume sizeof(enum) equals sizeof(int), especially with compiler options or C23 fixed underlying types.
+
+### What is the difference between malloc, calloc, realloc and free? {E}
+**Short answer:** malloc allocates uninitialized storage, calloc allocates zeroed bytes, realloc changes allocation size, and free releases it.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="Allocate|Resize if needed|Free" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="116" y="45" fill="#0c4a6e" font-size="12">Allocate</text><rect x="234" y="8" width="212" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="340" y="45" fill="#0c4a6e" font-size="12">Resize if needed</text><rect x="458" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="564" y="45" fill="#0c4a6e" font-size="12">Free</text></svg></div>
+
+**How it works**
+
+1. Check allocation results.
+2. Use a temporary pointer for realloc.
+3. Free only valid allocated pointers once.
+
+**Example**
+
+```c
+int *p=calloc(4,sizeof *p);
+if (p) {
+    int *q=realloc(p,8*sizeof *p);
+    if (q) p=q;
+    free(p);
 }
 ```
 
-Correct: `if (x == INT_MAX) return -1;`.
-
-**Related categories (often asked together)**
-
-- **Unspecified behaviour:** one of several valid outcomes, not documented: order of evaluation of function arguments (`f(a(), b())`).
-- **Implementation-defined behaviour:** the compiler must choose and document: `sizeof(int)`, right shift of negative numbers, whether `char` is signed.
-
-**Finding UB:** `-Wall -Wextra`, `-fsanitize=undefined,address` on a host build of your code, static analysers (cppcheck, clang-tidy, PC-lint, Polyspace), and MISRA C rules, many of which exist precisely to avoid UB.
-
-### What is a sequence point? {H}
-**Short answer:** A sequence point is a point in the execution where all side effects of earlier evaluations are complete and none of the later ones have started. If an object is modified twice, or modified and also read for another purpose, without a sequence point (in C11 terms, without being "sequenced before") between them, the behaviour is undefined.
-
-**Where sequence points are (C99 terms)**
-
-- At the end of a full expression (the `;`, the condition of `if`/`while`/`for`, a `return` expression).
-- After the first operand of `&&`, `||`, `?:` and the comma operator.
-- After evaluating a function's arguments, just before the call.
-
-**Undefined examples**
-
-```c
-i = i++ + 1;        /* i modified twice */
-a[i] = i++;         /* i read (for the index) and modified, unsequenced */
-f(i++, i++);        /* the two arguments are unsequenced relative to each other */
-x = y++ * y++;      /* y modified twice */
-```
-
-**Well-defined examples**
-
-```c
-i++, j = i;               /* comma operator: i++ completes first */
-if (p != NULL && p->ok)   /* && sequences and short-circuits */
-x = (i++ > 0) ? i : 0;    /* ?: sequences after the condition */
-```
-
-**C11 terminology:** "sequenced before", "unsequenced" and "indeterminately sequenced" replaced "sequence point". The practical rule is unchanged: **do not modify a variable more than once in one expression, and do not read it elsewhere in an expression that modifies it.**
-
-**Note on function arguments:** the order in which `f(a(), b())` calls `a` and `b` is **unspecified** (either order is allowed, but it is not UB as long as they do not touch the same object without sequencing). Code that depends on that order is still a bug.
-
-**Embedded twist:** reading a `volatile` hardware register twice in one expression (`STATUS + STATUS`) gives unspecified order of the two reads; with registers that clear on read, that matters. Read into a local first.
-
-### What is the size of an int, and what are fixed-width types? {E}
-**Short answer:** The C standard only fixes minimum ranges: `char` at least 8 bits, `short` and `int` at least 16, `long` at least 32, `long long` at least 64. The actual sizes depend on the compiler and target: `int` is 16 bits on 8-bit AVR and MSP430, and 32 bits on ARM Cortex-M, ARM64 and x86. For hardware registers and data formats use the fixed-width types from `<stdint.h>`.
-
-**Typical data models**
-
-| Type | AVR (8-bit) | Cortex-M (ILP32) | ARM64 / x86-64 Linux (LP64) | 64-bit Windows (LLP64) |
-|---|---|---|---|---|
-| `char` | 8 | 8 | 8 | 8 |
-| `short` | 16 | 16 | 16 | 16 |
-| `int` | 16 | 32 | 32 | 32 |
-| `long` | 32 | 32 | 64 | 32 |
-| pointer | 16 | 32 | 64 | 64 |
-
-**`<stdint.h>` types**
-
-- **Exact width:** `int8_t`, `uint16_t`, `uint32_t`, `int64_t` — for registers, protocol fields, file formats.
-- **Least:** `uint_least16_t` — at least 16 bits (portable even to unusual DSPs without 8-bit types).
-- **Fast:** `uint_fast16_t` — the fastest type with at least 16 bits (often 32 bits on Arm, avoiding extra masking instructions).
-- `intptr_t`/`uintptr_t` — an integer that can hold a pointer.
-- `size_t` (sizes and indexes, unsigned), `ptrdiff_t` (pointer differences, signed).
-
-**printf formats:** use `<inttypes.h>` macros, e.g. `printf("%" PRIu32 "\n", x);`, because `uint32_t` is `unsigned long` on some toolchains and `unsigned int` on others.
-
-**Common bugs from assuming sizes**
-
-- Storing a pointer in an `int` (breaks on 64-bit).
-- `long` timestamps that overflow on ILP32 but not on the PC where tests run.
-- A loop `for (uint8_t i = 0; i < 300; i++)` never ends: `i` wraps at 255.
-
-**Check sizes at compile time:** `_Static_assert(sizeof(struct header) == 16, "header must be 16 bytes");`.
-
-### Is char signed or unsigned, and why does it matter? {M}
-**Short answer:** It is implementation-defined. Plain `char` is a distinct type from both `signed char` and `unsigned char`, and it behaves like one of them depending on the platform: **signed on x86** (and on Arm for Windows/macOS), **unsigned on most Arm Linux and Arm bare-metal toolchains** (AAPCS), PowerPC and RISC-V. Code that stores byte values above 127 in a plain `char` can behave differently on different targets.
-
-```c
-char c = 0xE9;            /* 233 if unsigned, -23 if signed */
-if (c > 127) { ... }      /* never true where char is signed */
-
-int table[256];
-table[c]++;               /* table[-23] where char is signed: out of bounds! */
-
-while ((c = getchar()) != EOF) { ... }   /* bug: getchar returns int; with unsigned char
-                                            the loop never ends, with signed char a 0xFF byte
-                                            looks like EOF */
-```
-
-**Rules to follow**
-
-- Use `char` only for text.
-- Use `uint8_t` (or `unsigned char`) for raw bytes, buffers, and protocol data.
-- Cast to `unsigned char` before passing a `char` to `<ctype.h>` functions (`isdigit((unsigned char)c)`) and before using it as an array index.
-- Store the result of `getchar()`/`fgetc()` in an `int`.
-- GCC options `-funsigned-char` / `-fsigned-char` force one behaviour; `-Wchar-subscripts` warns on indexing with `char`.
-
-**Related trivia:** `sizeof(char)` is 1 by definition (a "byte" in C is a `char`, which is `CHAR_BIT` bits, almost always 8). In C, a character constant like `'a'` has type `int`, so `sizeof('a')` is 4 on a 32-bit target, while in C++ it is `char` and `sizeof('a')` is 1.
-
-### What is integer promotion? {M}
-**Short answer:** Before most arithmetic, any integer type smaller than `int` (`char`, `short`, `uint8_t`, `uint16_t`, bit-fields) is converted to `int` (or to `unsigned int` if `int` cannot hold all its values). The operation is done in `int`, and the result is only narrowed again if you store it into a smaller type. This leads to surprising results with `~`, shifts and comparisons.
-
-```c
-uint8_t a = 0xFF;
-if (~a == 0x00) { }          /* never true: ~a is int ~255 = 0xFFFFFF00 (-256) */
-if ((uint8_t)~a == 0x00) { } /* true */
-
-uint8_t x = 200, y = 100;
-uint8_t z = x + y;           /* computed as int 300, stored as 300 % 256 = 44 */
-int     w = x + y;           /* 300: no overflow, because the math was done in int */
-
-uint16_t u = 0xFFFF;
-uint32_t r = u * u;          /* u promoted to *signed* int on 32-bit targets:
-                                65535 * 65535 overflows int -> undefined behaviour! */
-uint32_t ok = (uint32_t)u * u;
-```
-
-**Usual arithmetic conversions** (what happens after promotion when the two operands differ): the operand with the "lower" type is converted to the other's type; if one is unsigned and has the same or greater rank, the signed one becomes unsigned.
-
-**Where it bites in embedded code**
-
-- **Inverting a byte mask:** `reg8 &= ~MASK8;` is fine (the result is truncated back), but comparisons with `~byte` are not.
-- **Shifts:** `uint8_t b = 0x80; uint32_t v = b << 24;` promotes `b` to signed `int`, and `0x80 << 24` overflows into the sign bit: undefined behaviour. Write `(uint32_t)b << 24`.
-- **Checksums** accumulated in a `uint8_t` behave correctly only because the result is truncated on every assignment.
-- On 16-bit MCUs (`int` = 16 bits), `uint16_t` promotes to `unsigned int`, so the same code behaves differently than on a 32-bit Arm.
-
-**MISRA C** has the "essential type" rules exactly to catch these issues; compiler warnings such as `-Wconversion` and `-Wsign-conversion` help too.
-
-### What happens when you compare signed and unsigned integers? {M}
-**Short answer:** If the two operands have the same rank (e.g. `int` and `unsigned int`), the usual arithmetic conversions convert the **signed** one to **unsigned**. A negative number becomes a very large positive one, so comparisons give the "wrong" answer.
-
-```c
-int i = -1;
-unsigned int u = 1;
-if (i < u) puts("less");       /* not printed: -1 becomes 0xFFFFFFFF */
-
-if (-1 < sizeof(int)) puts("yes");   /* not printed: sizeof is size_t (unsigned) */
-
-for (unsigned i = 10; i >= 0; i--) { }   /* infinite loop: unsigned is always >= 0 */
-
-size_t len = strlen(s);
-if (len - 1 >= 0) { }          /* always true; if len is 0, len - 1 wraps to SIZE_MAX */
-```
-
-**When it does not happen:** if the signed type is wider and can represent all values of the unsigned one, the unsigned operand is converted to the signed type instead. `long long x = -1; unsigned int u = 1; x < u` is true, because `u` becomes `long long`. Small types (`uint8_t`, `uint16_t`) are promoted to `int` first, so `int8_t a = -1; uint8_t b = 1; a < b` is true.
-
-**How to avoid it**
-
-- Compile with `-Wall -Wextra` (which includes `-Wsign-compare`) and fix every warning.
-- Use one signedness consistently for sizes and indexes (`size_t`), and check for negative values before converting signed to unsigned.
-- Compare explicitly: `if (i < 0 || (unsigned)i < u)`.
-- For "count down to zero" with unsigned indices, use `for (size_t i = n; i-- > 0; )`.
-
-**C23** adds checked-arithmetic helpers (`ckd_add`, `ckd_sub`, `ckd_mul` in `<stdckdint.h>`), and GCC/Clang have `__builtin_add_overflow` for overflow-safe arithmetic.
-
-### What is the difference between ++i and i++? {E}
-**Short answer:** `++i` (pre-increment) increments `i` and gives the **new** value. `i++` (post-increment) gives the **old** value, and `i` is incremented as a side effect. Used alone as a statement, for example in a `for` loop, they generate identical code for integers; the difference only matters when the result is used.
-
-```c
-int i = 5;
-int a = ++i;    /* i = 6, a = 6 */
-int b = i++;    /* b = 6, i = 7 */
-
-while (n--)  { }    /* tests the old value: runs n times */
-while (--n)  { }    /* tests the new value: runs n - 1 times */
-```
-
-**Common uses of post-increment**
-
-```c
-buf[len++] = byte;              /* store at len, then advance */
-*dst++ = *src++;                /* copy one element, advance both pointers */
-```
-
-`*p++` means `*(p++)`: increment the **pointer**, return the old pointed value. `(*p)++` increments the **value**.
-
-**Performance:** for built-in types any modern compiler produces the same code. In C++, for class types such as iterators, `i++` has to make a copy of the old value, so `++i` is preferred out of habit.
-
-**Undefined behaviour reminder:** do not use the same variable twice in an expression that increments it: `a[i] = i++;` and `i = i++;` are undefined.
-
-**Interview puzzle:** what does this print?
-
-```c
-int x = 5;
-printf("%d %d\n", x++, x);   /* undefined: x is read and modified unsequenced */
-```
-
-The correct answer is "it is undefined"; any specific output is a guess about a particular compiler.
-
-### What is the difference between a structure and a union? {E}
-**Short answer:** In a `struct`, every member has its own storage, so all members hold values at the same time and the size is at least the sum of the members (plus padding). In a `union`, all members **share the same storage**; the size is that of the largest member (plus padding), and only the member last written holds a meaningful value.
-
-```c
-struct s { uint8_t a; uint32_t b; };   /* 8 bytes on 32-bit Arm: a, 3 padding, b */
-union  u { uint8_t a; uint32_t b; };   /* 4 bytes: a and b overlap */
-```
-
-**Uses of unions**
-
-1. **Variant types (tagged unions):** one value that can be one of several types, with an enum saying which.
-
-```c
-typedef enum { MSG_TEMP, MSG_ACCEL } msg_type_t;
-typedef struct {
-    msg_type_t type;
-    union {
-        int16_t temp_c10;                 /* used when type == MSG_TEMP */
-        struct { int16_t x, y, z; } acc;  /* used when type == MSG_ACCEL */
-    } u;
-} msg_t;                                  /* size of the largest variant, not the sum */
-```
-
-2. **Saving RAM** when different data is never needed at the same time.
-
-3. **Viewing the same bytes differently** (type punning):
-
-```c
-typedef union {
-    uint32_t word;
-    uint8_t  byte[4];
-    float    f;
-} reg32_t;
-```
-
-**Type punning rules:** in C (C99 TC3 onward) reading a different member than the one written is allowed and reinterprets the bytes. In C++ it is undefined behaviour (use `memcpy` or `std::bit_cast`). The **byte order** you see in `byte[]` depends on endianness, and the result is not portable between little- and big-endian systems.
-
-**Do not use unions or structs to map network or file formats directly** unless you control padding, packing and endianness; serialise field by field instead.
-
-### What is structure padding and how do you avoid it? {M}
-**Short answer:** The compiler inserts unused **padding bytes** between members (and at the end) so that each member starts at an address that is a multiple of its alignment, and so that arrays of the struct keep every element aligned. To reduce padding, order members from largest alignment to smallest. To remove it entirely, use `__attribute__((packed))` or `#pragma pack(1)`, but packed members may be accessed unaligned, which is slower and can fault on some cores.
-
-```c
-struct a { char c; int i; char d; };   /* 12 bytes on 32-bit Arm */
-/* offset: c 0, padding 1-3, i 4-7, d 8, padding 9-11 */
-
-struct b { int i; char c; char d; };   /* 8 bytes */
-/* offset: i 0-3, c 4, d 5, padding 6-7 */
-```
-
-**Why the trailing padding in `struct b`?** The struct's alignment is 4 (its largest member). In an array `struct b arr[2]`, `arr[1].i` must be 4-byte aligned, so the size is rounded up to a multiple of 4.
-
-**Checking layout**
-
-```c
-#include <stddef.h>
-_Static_assert(offsetof(struct b, c) == 4, "layout changed");
-_Static_assert(sizeof(struct b) == 8, "size changed");
-```
-
-`pahole` (from dwarves) prints the layout and holes of every struct in an ELF file with debug info.
-
-**Packed structs and their costs**
-
-```c
-struct __attribute__((packed)) hdr { uint8_t type; uint32_t len; };   /* 5 bytes */
-```
-
-- Accessing `len` needs an unaligned access. Cortex-M3/M4/M7 handle unaligned 32-bit loads in hardware (slower); **Cortex-M0/M0+** and older Arm cores fault, so the compiler must generate byte-by-byte accesses (correct but slower and larger).
-- Taking the address of a packed member (`uint32_t *p = &h.len;`) and using it as a normal pointer can produce unaligned accesses the compiler does not know about (GCC warns with `-Waddress-of-packed-member`).
-- Packed structs are fine for matching a wire format when you also handle endianness; many projects still prefer explicit serialisation with shifts and `memcpy`.
-
-**Memory saving on MCUs:** reordering members in large arrays of structs can save a significant amount of RAM with no runtime cost.
-
-### What are bit-fields and what are their drawbacks? {M}
-**Short answer:** Bit-fields let you declare struct members that are a given number of bits wide, so several flags or small values share one word and can be accessed by name. Their drawbacks are that bit order, padding, whether a field can cross a storage unit, and the signedness of plain `int` fields are all implementation-defined, and writing one field is a non-atomic read-modify-write of the whole storage unit.
-
-```c
-struct status {
-    unsigned ready : 1;
-    unsigned error : 1;
-    unsigned mode  : 3;     /* values 0..7 */
-    unsigned       : 3;     /* unnamed padding bits */
-};
-
-struct status s = {0};
-s.mode = 5;
-s.ready = 1;
-```
-
-**Advantages:** compact storage (e.g. thousands of flags in a table), readable code, the compiler generates the masks and shifts.
-
-**Drawbacks in detail**
-
-- **Layout is not portable:** one compiler puts the first field at the least significant bit, another (or the same compiler on a big-endian target) at the most significant. This makes bit-fields unsuitable for matching hardware registers or network formats across compilers.
-- **Access width:** the compiler may use a byte or halfword access to update a field. Some peripheral registers only accept 32-bit accesses. (GCC's `-fstrict-volatile-bitfields`, the default for Arm EABI, uses the declared type's width for volatile bit-fields, which helps but is still compiler-specific.)
-- **Not atomic:** `s.ready = 1` reads the word, modifies one bit and writes it back. If an ISR modifies `s.error` in between, the update is lost.
-- **No address:** `&s.mode` is not allowed, and there are no arrays of bit-fields.
-- **Signedness:** `int x : 3;` may be signed or unsigned depending on the compiler. Always use `unsigned` (or `_Bool`) explicitly.
-
-**What most embedded teams do:** use explicit masks and shifts (`#define CTRL_MODE_Pos 2`, `#define CTRL_MODE_Msk (7u << CTRL_MODE_Pos)`) for hardware registers and wire formats, and use bit-fields only for internal data whose layout does not matter.
-
-**Note:** some vendor headers (e.g. TI C2000, older Microchip) do define registers as bit-field unions; that works because the vendor controls the compiler. Do not copy the pattern to portable code.
-
-### What is an enum and how big is it? {E}
-**Short answer:** An `enum` defines a set of named integer constants. In C the constants have type `int`, but the size of the enum **type** is implementation-defined: it must be able to hold all its values, and most compilers use `int` (4 bytes). Options such as `-fshort-enums` (the default in some Arm bare-metal ABIs and toolchains) make it the smallest type that fits, often 1 byte.
-
-```c
-enum state { IDLE, RUN, ERROR = 10, SHUTDOWN };   /* 0, 1, 10, 11 */
-enum state s = RUN;
-```
-
-**Why use enums instead of `#define`**
-
-- They are typed integer constant expressions (usable as array sizes and `case` labels).
-- Debuggers show names instead of numbers.
-- Compilers warn about unhandled cases in a `switch` without a `default` (`-Wswitch`).
-- Values are assigned automatically and stay consistent when items are added.
-
-**Pitfalls**
-
-- **Size differs between builds:** a struct containing an `enum` can have a different layout if one library was built with `-fshort-enums` and another without; the linker cannot detect this. For structs that cross a module, ABI, file or network boundary, store a fixed-width integer (`uint8_t state;`) and convert.
-- **C does not enforce enum ranges:** `enum state s = 42;` compiles. Validate values that come from outside (a received message).
-- Enum constants are `int`; values larger than `INT_MAX` were not allowed before C23.
-
-**C23 improvements:** you can fix the underlying type: `enum state : uint8_t { IDLE, RUN };`, which makes the size explicit and portable.
-
-**Useful patterns:** a final `STATE_COUNT` member to size lookup tables (`const char *names[STATE_COUNT]`), and X-macros to generate the enum and its string names from one list.
-
-### What is the difference between malloc, calloc, realloc and free? {E}
-**Short answer:** `malloc(n)` allocates `n` bytes with **uninitialised** contents. `calloc(count, size)` allocates `count * size` bytes, **zeroed**, and checks the multiplication for overflow. `realloc(p, n)` resizes a block, possibly moving it to a new address. `free(p)` releases a block; `free(NULL)` does nothing.
-
-```c
-int *a = malloc(10 * sizeof *a);          /* garbage values */
-int *b = calloc(10, sizeof *b);           /* all zero */
-if (a == NULL || b == NULL) { /* handle failure */ }
-
-int *tmp = realloc(a, 20 * sizeof *a);    /* keep the old pointer until success */
-if (tmp == NULL) { free(a); /* error */ }
-else a = tmp;
-
-free(a);
-free(b);
-a = b = NULL;                              /* avoid dangling pointers */
-```
-
-**Details worth mentioning**
-
-- `realloc` may move the block: any other pointers into the old block are now invalid.
-- `p = realloc(p, n);` is a classic leak: if `realloc` fails, it returns `NULL` and the original block is lost.
-- `realloc(NULL, n)` behaves like `malloc(n)`. `realloc(p, 0)` is implementation-defined (and deprecated in C23), so do not rely on it to free.
-- `malloc(0)` may return NULL or a unique pointer; do not dereference it.
-- Write `sizeof *p` rather than `sizeof(int)` so the size stays correct if the type changes.
-- Every allocation must be freed exactly once: double free and use-after-free are undefined behaviour and common security bugs.
-
-**Why many embedded projects avoid the heap**
-
-- **Fragmentation:** after many allocations and frees of different sizes, free memory is split into pieces too small to use, and an allocation fails even though plenty of memory is free in total. On a device that must run for years, this is a real failure mode.
-- **Non-deterministic timing:** allocation time depends on the heap state, which is a problem for real-time code.
-- **Failure handling:** what does an airbag controller do if `malloc` returns NULL?
-
-MISRA C and many safety standards ban dynamic allocation after initialisation. Alternatives: static allocation, fixed-size **memory pools** (allocate and free in O(1), no fragmentation), and allocating everything once at start-up.
+**Interview takeaway:** calloc zeroes bytes, not necessarily all typed representations; avoid realloc(p,0) portability issues.
 
 ### What is the difference between strcpy, strncpy and memcpy? {M}
-**Short answer:** `strcpy(d, s)` copies a string including its `'\0'` with **no bounds check**. `strncpy(d, s, n)` copies at most `n` characters and pads the rest with zeros, but does **not** add a terminator if the source is `n` characters or longer. `memcpy(d, s, n)` copies exactly `n` bytes regardless of content, and is undefined if the buffers overlap (use `memmove` then).
+**Short answer:** strcpy copies a terminated string; strncpy copies/pads up to n characters; memcpy copies exactly n bytes.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="String copy: includes NUL|Byte copy: exact length" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="324" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="172" y="45" fill="#0c4a6e" font-size="12">String copy: includes NUL</text><rect x="346" y="8" width="324" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="508" y="45" fill="#0c4a6e" font-size="12">Byte copy: exact length</text></svg></div>
+
+**How it works**
+
+1. Determine source and destination bounds.
+2. Ensure termination for strings.
+3. Use memmove instead of memcpy for overlap.
+
+**Example**
 
 ```c
 char dst[8];
-
-strcpy(dst, "this is too long");     /* buffer overflow: writes past dst */
-
-strncpy(dst, "abcdefgh", sizeof dst); /* copies 8 chars, NO '\0': dst is not a string */
-dst[sizeof dst - 1] = '\0';           /* you must terminate it yourself */
-
-memcpy(dst, src, 8);                  /* exactly 8 bytes; overlapping src/dst is UB */
-memmove(buf + 1, buf, 7);             /* overlapping: use memmove */
+// source is a valid string of length <= 7:
+strcpy(dst,"hello");
+memcpy(dst,"OK",3);
 ```
 
-| | Stops at `'\0'` | Bounds | Terminates | Pads | Overlap |
-|---|---|---|---|---|---|
-| `strcpy` | yes | none | yes | no | UB |
-| `strncpy` | yes (then pads) | n | only if `strlen(s) < n` | with zeros up to n | UB |
-| `memcpy` | no | n | not applicable | no | UB |
-| `memmove` | no | n | not applicable | no | safe |
-
-**Why `strncpy` exists:** it was designed for fixed-width, zero-padded fields (old Unix directory entries), not as a "safe strcpy". Padding a 4 KB buffer when copying a short string is also wasted time.
-
-**Safer patterns**
-
-```c
-snprintf(dst, sizeof dst, "%s", src);        /* always terminates, truncates safely */
-
-size_t n = strlen(src);                      /* or a bounded strnlen */
-if (n >= sizeof dst) n = sizeof dst - 1;
-memcpy(dst, src, n);
-dst[n] = '\0';
-```
-
-`strlcpy` (BSD, glibc 2.38+, and many embedded libraries) copies, always terminates, and returns the source length so you can detect truncation. C11 Annex K `strcpy_s` exists but is rarely implemented.
-
-**Embedded note:** these functions are a frequent source of overflows when parsing input from a UART or network. Always know the size of the destination, and prefer length-carrying buffers (`ptr + len`) over relying on `'\0'` in binary protocols.
+**Interview takeaway:** strncpy may omit the terminator when source length is at least n; it is not a universal safe strcpy.
 
 ### What is the difference between an array and a pointer? {M}
-**Short answer:** An array is a block of contiguous objects; a pointer is a variable that holds an address. In most expressions an array name **decays** into a pointer to its first element, which is why they often look interchangeable. They differ in `sizeof`, in `&`, in assignment, and in how they are stored.
+**Short answer:** An array is an object containing consecutive elements; a pointer is a separate object that can refer to an element.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="Array: 1 2 3 4|Pointer: address of a[0]" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="324" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="172" y="45" fill="#0c4a6e" font-size="12">Array: 1 2 3 4</text><rect x="346" y="8" width="324" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="508" y="45" fill="#0c4a6e" font-size="12">Pointer: address of a[0]</text></svg></div>
+
+**How it works**
+
+1. Array expressions usually decay to pointers.
+2. Sizeof on an actual array measures all elements.
+3. Pointer arithmetic follows the element type.
+
+**Example**
 
 ```c
-int arr[10];
-int *ptr = arr;          /* arr decays to &arr[0] */
-
-sizeof arr               /* 40: the whole array */
-sizeof ptr               /* 4 on 32-bit, 8 on 64-bit: just the pointer */
-
-&arr                     /* type int (*)[10]: pointer to the whole array */
-&ptr                     /* type int **: address of the pointer variable */
-
-arr = ptr;               /* error: an array is not assignable */
-ptr = arr + 1;           /* fine */
-
-arr[3] == *(arr + 3) == *(ptr + 3) == ptr[3] == 3[arr]   /* all the same element */
+int a[4]={1,2,3,4};
+int *p=a;
+// sizeof a == 4*sizeof(int)
 ```
 
-**Where an array does not decay:** as the operand of `sizeof`, of `&`, and as a string literal used to initialise a `char` array.
-
-**Function parameters:** `void f(int a[10])` is exactly the same as `void f(int *a)`. The `10` is ignored, and `sizeof a` inside `f` gives the pointer size, a classic bug:
-
-```c
-void clear(int a[10]) { memset(a, 0, sizeof a); }   /* clears only 4 or 8 bytes! */
-void clear(int *a, size_t n) { memset(a, 0, n * sizeof *a); }   /* correct */
-```
-
-**Storage difference:**
-
-```c
-char s1[] = "hello";     /* an array of 6 chars, writable copy */
-char *s2  = "hello";     /* a pointer to a string literal, which must not be modified */
-```
-
-**Multi-dimensional arrays:** `int m[3][4]` decays to `int (*)[4]` (pointer to a row), not to `int **`. Passing it to a function expecting `int **` is wrong; declare `void f(int m[][4])` or `void f(int (*m)[4])`.
-
-**Count elements safely:** `#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))` works only on real arrays, not on pointers; GCC/Clang can be made to reject pointers with a `__builtin_types_compatible_p` check (as the Linux kernel's version does).
+**Interview takeaway:** Arrays cannot be assigned as whole objects; a pointer does not carry an array length.
 
 ### What is a function pointer and where is it used? {M}
-**Short answer:** A function pointer holds the address of a function so the function can be called indirectly, chosen at run time. Embedded code uses them for interrupt vector tables, driver callbacks, state machines, command tables and "operations" structures that give C a form of polymorphism.
+**Short answer:** A function pointer holds a callable function reference with a compatible signature.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="Caller|Function pointer|Callback" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="116" y="45" fill="#0c4a6e" font-size="12">Caller</text><rect x="234" y="8" width="212" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="340" y="45" fill="#0c4a6e" font-size="12">Function pointer</text><rect x="458" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="564" y="45" fill="#0c4a6e" font-size="12">Callback</text></svg></div>
+
+**How it works**
+
+1. Declare the signature.
+2. Assign a matching function.
+3. Invoke it through the pointer.
+4. Use it for callbacks or dispatch.
+
+**Example**
 
 ```c
-#include <stdint.h>
-#include <stddef.h>
-
-typedef void (*event_cb_t)(uint8_t event, void *ctx);
-
-static event_cb_t user_cb;
-static void *user_ctx;
-
-void button_register(event_cb_t cb, void *ctx) { user_cb = cb; user_ctx = ctx; }
-
-void button_isr(void)
-{
-    if (user_cb != NULL)          /* always check before calling */
-        user_cb(1, user_ctx);
-}
+int add(int a,int b){return a+b;}
+int (*op)(int,int)=add;
+// op(2,3) returns 5
 ```
 
-**Common embedded uses**
-
-- **Vector table:** an array of function pointers placed at the start of flash; the CPU reads the handler address from it on each interrupt.
-
-```c
-__attribute__((section(".isr_vector")))
-void (*const vector_table[])(void) = { (void (*)(void))&_estack, Reset_Handler, NMI_Handler, /* ... */ };
-```
-
-- **Callbacks:** a driver calls application code when data arrives, without depending on the application.
-- **State machines:** a table indexed by state (and event) that gives the handler to run.
-- **Driver operations structures:** `struct sensor_ops { int (*init)(void); int (*read)(int16_t *v); };`, which lets the same code drive different sensors (like Linux's `struct file_operations`).
-- **Command parsers:** a table of `{ "name", handler }` pairs.
-
-**Syntax help**
-
-```c
-int (*fp)(int, int);          /* pointer to function taking two ints, returning int */
-int *fp2(int, int);           /* a function returning int* — not a pointer! */
-int (*ops[4])(int, int);      /* array of 4 function pointers */
-```
-
-Use a `typedef` to keep declarations readable.
-
-**Safety and performance notes**
-
-- Calling a NULL or corrupted function pointer jumps to a random address; on a Cortex-M this typically ends in a HardFault (or executes the vector table as code if the pointer is 0). Check for NULL and consider placing tables in flash (`const`) so they cannot be corrupted at run time.
-- Indirect calls prevent inlining and can be slightly slower.
-- The `void *ctx` parameter lets one callback serve several instances (C's version of a "this" pointer).
+**Interview takeaway:** Calling through an incompatible function pointer type is undefined.
 
 ### What is the difference between call by value and call by reference? {E}
-**Short answer:** C always passes arguments **by value**: the function receives a copy, so changing the parameter does not change the caller's variable. To let a function modify the caller's data, you pass a **pointer** to it, which is what people call "call by reference" in C. (C++ has true references; C does not.)
+**Short answer:** C passes every argument by value. Passing a pointer value lets the callee modify the pointed-to object.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="Caller x|Copied pointer|Write through pointer" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="116" y="45" fill="#0c4a6e" font-size="12">Caller x</text><rect x="234" y="8" width="212" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="340" y="45" fill="#0c4a6e" font-size="12">Copied pointer</text><rect x="458" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="564" y="45" fill="#0c4a6e" font-size="12">Write through pointer</text></svg></div>
+
+**How it works**
+
+1. A normal parameter is a copy.
+2. Pass &object to share access.
+3. Dereference inside the function.
+
+**Example**
 
 ```c
-void inc_value(int x)    { x++; }           /* changes only the local copy */
-void inc_ref(int *x)     { (*x)++; }         /* changes the caller's variable */
-
-int n = 5;
-inc_value(n);   /* n is still 5 */
-inc_ref(&n);    /* n is now 6 */
+void set(int *p){*p=10;}
+int x=0;
+// set(&x); // x=10
 ```
 
-**Passing a pointer is still pass-by-value**: the pointer itself is copied. So a function cannot change *which* object the caller's pointer points to, unless you pass a pointer to the pointer:
-
-```c
-void alloc_buf(uint8_t **out, size_t n) { *out = malloc(n); }
-uint8_t *buf;
-alloc_buf(&buf, 64);
-```
-
-**Arrays** are passed as a pointer to their first element, so the function can modify the caller's array.
-
-**Structs** are copied when passed by value. A 100-byte config struct passed by value costs 100 bytes of stack and a copy on every call. Embedded code usually passes `const struct cfg *` for read-only access (no copy, and the `const` documents and enforces that the function will not modify it):
-
-```c
-void uart_init(const uart_cfg_t *cfg);
-```
-
-**Returning values:** returning small structs by value is fine and often efficient (the AAPCS returns structs up to 4 bytes in `r0`, larger ones through memory provided by the caller). For several results, return a status and write results through pointer parameters, or return a small struct.
+**Interview takeaway:** To change the caller's pointer itself, pass a pointer to that pointer.
 
 ### What is recursion and why is it avoided in embedded code? {E}
-**Short answer:** Recursion is a function calling itself (directly or through other functions). Each call uses a new stack frame. It is avoided in embedded systems because the maximum stack depth depends on the input and cannot easily be bounded at compile time, stacks are small (often 512 bytes to a few KB per task), and a stack overflow on a microcontroller without an MPU silently corrupts other memory. MISRA C forbids recursion.
+**Short answer:** Recursion is a function calling itself, directly or indirectly.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="fact(3)|fact(2)|fact(1)" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="116" y="45" fill="#0c4a6e" font-size="12">fact(3)</text><rect x="234" y="8" width="212" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="340" y="45" fill="#0c4a6e" font-size="12">fact(2)</text><rect x="458" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="564" y="45" fill="#0c4a6e" font-size="12">fact(1)</text></svg></div>
+
+**How it works**
+
+1. Define a base case.
+2. Reduce the problem at each call.
+3. Each active invocation may require a stack frame.
+
+**Example**
 
 ```c
-/* recursive: stack use grows with n */
-unsigned fact_rec(unsigned n) { return n <= 1 ? 1 : n * fact_rec(n - 1); }
-
-/* iterative: constant stack use */
-unsigned fact_iter(unsigned n)
-{
-    unsigned r = 1;
-    while (n > 1) r *= n--;
-    return r;
+unsigned fact(unsigned n){
+    return n<=1 ? 1 : n*fact(n-1);
 }
 ```
 
-**Problems in detail**
-
-- **Unbounded stack:** a recursive tree walk on a degenerate (linked-list shaped) tree goes as deep as the number of nodes.
-- **Static analysis:** tools that compute worst-case stack usage (`-fstack-usage` + call-graph analysis, StackAnalyzer) cannot give a bound for recursive call cycles.
-- **Silent corruption:** on a Cortex-M without stack limit checking, the stack grows into `.bss` or another task's stack. The failure appears somewhere else, much later.
-- **Timing:** deep recursion takes variable time, bad for real-time code.
-
-**How to replace recursion**
-
-- Tail-recursive functions become simple loops.
-- Tree and graph traversals use an explicit stack (a fixed-size array) with a checked maximum depth.
-- Divide-and-conquer sorting: use heapsort or an iterative merge sort, or quicksort that recurses only on the smaller part (bounding depth to log₂ n) and loops on the larger.
-
-**If you must use recursion:** prove a maximum depth (e.g. a parser limited to 8 nesting levels), check it at run time, and size the stack for it. Cortex-M33 (Armv8-M) has stack limit registers (`MSPLIM`/`PSPLIM`) that fault on overflow instead of corrupting memory.
+**Interview takeaway:** Limit input for stack and arithmetic bounds; iterative algorithms often have more predictable stack usage.
 
 ### What are the stages of compilation in C? {E}
-**Short answer:** There are four stages. **Preprocessing** expands `#include`, macros and conditional compilation. **Compilation** translates the preprocessed C into assembly. **Assembly** turns that into a relocatable object file (`.o`). **Linking** combines object files and libraries, resolves symbols, and places code and data at addresses defined by the linker script, producing an executable (ELF).
+**Short answer:** A typical C toolchain preprocesses, compiles, assembles and links source into an executable or firmware image.
 
-```bash
-arm-none-eabi-gcc -E main.c -o main.i      # 1. preprocess
-arm-none-eabi-gcc -S main.i -o main.s      # 2. compile to assembly
-arm-none-eabi-gcc -c main.s -o main.o      # 3. assemble to object file
-arm-none-eabi-gcc main.o uart.o -T stm32.ld -o firmware.elf   # 4. link
-arm-none-eabi-objcopy -O binary firmware.elf firmware.bin     # for flashing
-arm-none-eabi-objcopy -O ihex   firmware.elf firmware.hex
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="Source|Preprocessor|Compiler / assembler|Linker" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="156" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="88" y="45" fill="#0c4a6e" font-size="12">Source</text><rect x="178" y="8" width="156" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="256" y="45" fill="#0c4a6e" font-size="12">Preprocessor</text><rect x="346" y="8" width="156" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="424" y="45" fill="#0c4a6e" font-size="12">Compiler / assembler</text><rect x="514" y="8" width="156" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="592" y="45" fill="#0c4a6e" font-size="12">Linker</text></svg></div>
+
+**How it works**
+
+1. Expand includes and macros.
+2. Translate C to machine instructions via compiler/assembler.
+3. Resolve symbols and place sections at link time.
+
+**Example**
+
+```sh
+gcc -E main.c -o main.i
+gcc -S main.i -o main.s
+gcc -c main.s -o main.o
+gcc main.o -o main
 ```
 
-**What each stage produces and checks**
-
-| Stage | Output | Errors you see |
-|---|---|---|
-| Preprocessor | `.i` (pure C, no `#` lines except line markers) | missing header, bad macro |
-| Compiler | `.s` assembly | syntax and type errors, warnings |
-| Assembler | `.o` with sections (`.text`, `.data`, `.bss`, `.rodata`), a symbol table and relocations | rare (invalid inline assembly) |
-| Linker | `.elf` (plus a `.map` file with `-Wl,-Map=...`) | undefined reference, multiple definition, region `FLASH` overflowed |
-
-**Useful inspection tools:** `nm` (symbols), `objdump -d` (disassembly), `readelf -S` (sections), `size` (text/data/bss sizes), and the **map file**, which shows where every function and variable ended up and how much flash and RAM is used.
-
-**Embedded specifics**
-
-- The **linker script** (`.ld`) defines the memory regions (FLASH, RAM) and where each section goes.
-- The **start-up code** (often `startup_xxx.s`) is linked in and runs before `main`.
-- `-ffunction-sections -fdata-sections` plus `-Wl,--gc-sections` let the linker remove unused functions, which saves a lot of flash.
-- **LTO** (`-flto`) does optimisation across files at link time.
+**Interview takeaway:** A linker script controls embedded section addresses; an ELF can be converted to a flashable binary.
 
 ### What is the difference between a .bss and a .data section? {E}
-**Short answer:** `.data` holds global and static variables with **non-zero initial values**; the values are stored in flash and copied into RAM by the start-up code. `.bss` holds global and static variables that are **zero or uninitialised**; only its size is stored, and the start-up code fills that RAM with zeros. `.rodata` holds constants (in flash), and `.text` holds code.
+**Short answer:** .data normally contains initialized writable static objects; .bss reserves zero-initialized static storage.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="Flash: initial data|RAM: .data copy|RAM: .bss zero" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="116" y="45" fill="#0c4a6e" font-size="12">Flash: initial data</text><rect x="234" y="8" width="212" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="340" y="45" fill="#0c4a6e" font-size="12">RAM: .data copy</text><rect x="458" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="564" y="45" fill="#0c4a6e" font-size="12">RAM: .bss zero</text></svg></div>
+
+**How it works**
+
+1. The linker records section locations.
+2. Startup copies initial .data values from load storage to RAM when required.
+3. Startup clears .bss before C code runs.
+
+**Example**
 
 ```c
-int counter;                  /* .bss  (zero)                         */
-int baud = 115200;            /* .data (initial value in flash, copy in RAM) */
-static uint8_t buf[512];      /* .bss                                 */
-const uint8_t lut[256] = {1}; /* .rodata (flash only)                 */
-void f(void) { }              /* .text                                */
-int x = 0;                    /* .bss: explicitly zero still goes in .bss with GCC */
+static int counter=5; // usually .data
+static int flags;     // usually .bss
 ```
 
-**Memory cost of each section on an MCU**
-
-| Section | Flash | RAM |
-|---|---|---|
-| `.text` | yes | no |
-| `.rodata` | yes | no |
-| `.data` | yes (initial values) | yes (the variables) |
-| `.bss` | no | yes |
-| stack, heap | no | yes |
-
-**Start-up code (simplified):**
-
-```c
-extern uint32_t _sidata, _sdata, _edata, _sbss, _ebss;   /* from the linker script */
-
-void Reset_Handler(void)
-{
-    uint32_t *src = &_sidata, *dst = &_sdata;
-    while (dst < &_edata) *dst++ = *src++;      /* copy .data from flash to RAM */
-    for (dst = &_sbss; dst < &_ebss; ) *dst++ = 0;  /* zero .bss */
-    SystemInit();
-    main();
-    for (;;) { }
-}
-```
-
-**Practical consequences**
-
-- Making a large table `const` moves it from `.data` (flash **and** RAM) to `.rodata` (flash only). On a 20 KB RAM part this can be the difference between fitting and not fitting.
-- A big `.bss` makes boot slightly slower (zeroing) but costs no flash.
-- Variables that must survive a reset (e.g. a crash counter or a bootloader flag) go in a separate `.noinit` section that the start-up code does not touch.
-
-**Check sizes:** `arm-none-eabi-size firmware.elf` prints `text data bss`. Flash used = text + data; RAM used = data + bss (plus stack and heap).
+**Interview takeaway:** Actual section names and placement are toolchain-specific; explicit zero may also be placed in .bss.
 
 ### What is a dangling pointer, a wild pointer and a NULL pointer? {E}
-**Short answer:** A **NULL pointer** deliberately points to nothing; dereferencing it is undefined behaviour. A **wild pointer** is an uninitialised pointer containing a random address. A **dangling pointer** still holds the address of an object that no longer exists: memory that was freed, or a local variable whose function has returned.
+**Short answer:** A dangling pointer refers to an object whose lifetime ended; a wild pointer is uninitialized; a null pointer intentionally refers to no object.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="Wild: unknown|Dangling: expired|NULL: no object" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="116" y="45" fill="#0c4a6e" font-size="12">Wild: unknown</text><rect x="234" y="8" width="212" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="340" y="45" fill="#0c4a6e" font-size="12">Dangling: expired</text><rect x="458" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="564" y="45" fill="#0c4a6e" font-size="12">NULL: no object</text></svg></div>
+
+**How it works**
+
+1. Initialize pointers.
+2. Check allocations.
+3. Avoid use after free or scope exit.
+4. Clear a pointer when useful after releasing ownership.
+
+**Example**
 
 ```c
-int *wild;                  /* wild: indeterminate value */
-*wild = 5;                  /* writes to a random address */
-
-int *dang = malloc(sizeof *dang);
-free(dang);
-*dang = 5;                  /* dangling: use after free */
-
-int *get_local(void)
-{
-    int x = 42;
-    return &x;              /* dangling: x is gone when the function returns */
-}
-
-int *np = NULL;
-*np = 1;                    /* NULL dereference: undefined behaviour */
+int *p=malloc(sizeof *p);
+if(p){free(p);p=NULL;}
 ```
 
-**Why they are dangerous in embedded systems**
-
-- On a Cortex-M, address 0 is usually the start of flash (or the vector table). A NULL **read** returns the initial stack pointer value instead of faulting, and a NULL **write** may be silently ignored or cause a bus fault depending on the memory map. Bugs survive testing.
-- A dangling pointer to a stack frame may "work" until an interrupt or another call overwrites that stack area.
-
-**Prevention**
-
-- Initialise every pointer, to a valid object or `NULL`.
-- Set pointers to `NULL` after `free()` (and avoid keeping several copies of an owning pointer).
-- Never return the address of a non-static local.
-- Check pointers from callers and from allocation (`if (p == NULL)`).
-- Use the **MPU** to make the first few hundred bytes at address 0 inaccessible so NULL dereferences fault immediately.
-- Run code on the host with **AddressSanitizer** (`-fsanitize=address`) and use static analysis to catch use-after-free and uninitialised use.
-
-**Interview follow-up:** "Is `free(NULL)` safe?" Yes, it does nothing. "Is double `free` safe?" No, it is undefined behaviour and can corrupt the heap.
+**Interview takeaway:** Clearing one pointer does not repair other aliases to the released object.
 
 ### What is the volatile keyword? {E}
-**Short answer:** `volatile` tells the compiler that an object can change, or that accessing it has effects, outside the normal flow of the program it can see (hardware, an ISR, another core, a debugger). So every read and write written in the source must actually be performed, in program order relative to other volatile accesses, and cannot be cached in a register, merged or removed.
+**Short answer:** volatile tells the compiler that accesses through a qualified lvalue have observable significance under implementation rules.
 
-**Three classic cases where it is required**
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="CPU access|Volatile register|Hardware state" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="116" y="45" fill="#0c4a6e" font-size="12">CPU access</text><rect x="234" y="8" width="212" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="340" y="45" fill="#0c4a6e" font-size="12">Volatile register</text><rect x="458" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="564" y="45" fill="#0c4a6e" font-size="12">Hardware state</text></svg></div>
 
-1. **Memory-mapped hardware registers:** the value changes on its own (status registers), and writes have effects (sending a byte).
-2. **Variables shared with an interrupt handler:** the main loop must re-read a flag that the ISR sets.
-3. **Variables modified by another thread or core in bare-metal code without an OS** (although proper synchronisation is still needed; see below).
+**How it works**
+
+1. Use it for appropriate MMIO and platform-defined interrupt flags.
+2. Perform the actual required accesses.
+3. Use locks/atomics for thread communication.
+
+**Example**
 
 ```c
-static volatile bool data_ready;           /* set in the ISR */
-
-void USART1_IRQHandler(void) { data_ready = true; }
-
-int main(void)
-{
-    while (!data_ready) { }   /* without volatile, the compiler may read once and loop forever */
-    /* ... */
-}
+#define STATUS (*(volatile uint32_t *)0x40000000u)
+// Read only if this address is valid on the target.
 ```
 
-**What volatile does not do**
-
-- It does **not** make operations atomic: `volatile uint32_t count; count++;` is still load–add–store and can lose updates.
-- It does **not** order non-volatile accesses around it, and it does not add CPU memory barriers (on multi-core systems or with DMA you need `__DMB()`/`atomic_thread_fence()` as well).
-- It is **not** a replacement for mutexes or atomics in multi-threaded code (C11 `_Atomic` is the right tool there).
-
-**Cost:** every access goes to memory, which prevents optimisations. Only mark what needs it.
-
-The Embedded C topic covers `volatile` in more depth, including pointer declarations and the C++20 changes.
+**Interview takeaway:** Volatile does not guarantee atomicity, cache coherency or ordering of ordinary memory.
 
 ### Can a variable be both const and volatile? What is the difference between them? {M}
-**Short answer:** Yes. `const` means **this program** must not write the object; `volatile` means **something else** may change it (or that reading it has side effects), so every access must really happen. Together they describe a read-only hardware register: you cannot write it, but you must re-read it every time.
+**Short answer:** const volatile permits observation of externally changing data while preventing writes through that qualified lvalue.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="Hardware updates|CPU reads|CPU writes disallowed" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="116" y="45" fill="#0c4a6e" font-size="12">Hardware updates</text><rect x="234" y="8" width="212" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="340" y="45" fill="#0c4a6e" font-size="12">CPU reads</text><rect x="458" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="564" y="45" fill="#0c4a6e" font-size="12">CPU writes disallowed</text></svg></div>
+
+**How it works**
+
+1. Const restricts modification through the lvalue.
+2. Volatile preserves required observable accesses.
+3. Hardware can still change the register.
+
+**Example**
 
 ```c
-#define USART_SR (*(const volatile uint32_t *)0x40011000u)
-
-while ((USART_SR & TXE) == 0) { }   /* re-read on every iteration; USART_SR = 0 is a compile error */
+const volatile uint32_t *status =
+    (const volatile uint32_t *)0x40000000u;
 ```
 
-**const vs volatile**
-
-| | `const` | `volatile` |
-|---|---|---|
-| Promise made by | the programmer: "this code will not modify it" | the programmer: "it can change outside the program's control" |
-| Effect on the compiler | rejects writes; may place the object in flash (`.rodata`); may assume the value never changes | must perform every read/write; cannot cache, merge or remove accesses |
-| Typical use | lookup tables, configuration, function parameters that must not be modified | hardware registers, ISR-shared flags, memory written by DMA |
-| Combined | `const volatile`: read-only register, or a variable this module only reads but an ISR or hardware writes |
-
-**Other examples of `const volatile`**
-
-- A free-running timer counter that software only reads.
-- A shared variable that the main loop only reads and an ISR writes: in the main module it could be declared `extern const volatile uint32_t g_ticks;` so the main code cannot write it by accident.
-- A configuration word in flash that the bootloader or a debugger might rewrite.
-
-**Order of qualifiers:** `const volatile uint32_t`, `volatile const uint32_t` and `uint32_t const volatile` are all the same.
+**Interview takeaway:** Typical example is a read-only status register. Valid address and access width are platform-specific.
 
 ### What does the restrict keyword mean? {H}
-**Short answer:** `restrict` (C99) applies to a pointer and is a promise from the programmer that, for the lifetime of that pointer, the object it points to is accessed **only through that pointer** (or pointers derived from it). This lets the compiler assume no aliasing, keep values in registers and vectorise loops. If the promise is broken, the behaviour is undefined.
+**Short answer:** restrict expresses an access association that lets the compiler assume certain accesses to modified objects do not alias during the block execution.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="Source region|Separate destination region" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="324" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="172" y="45" fill="#0c4a6e" font-size="12">Source region</text><rect x="346" y="8" width="324" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="508" y="45" fill="#0c4a6e" font-size="12">Separate destination region</text></svg></div>
+
+**How it works**
+
+1. Use it only when the caller satisfies its aliasing contract.
+2. Optimize independent accesses.
+3. Violations can cause undefined behavior.
+
+**Example**
 
 ```c
-void add(int *restrict dst, const int *restrict a, const int *restrict b, size_t n)
-{
-    for (size_t i = 0; i < n; i++)
-        dst[i] = a[i] + b[i];
+void copy(int *restrict d,const int *restrict s,size_t n){
+    for(size_t i=0;i<n;i++)d[i]=s[i];
 }
 ```
 
-**Why it helps**
-
-Without `restrict`, the compiler must assume `dst` might overlap `a` or `b`. After every store to `dst[i]`, it has to reload `a` and `b` from memory, and it cannot safely load several elements at once with SIMD (Neon/Helium) instructions. With `restrict`, it can.
-
-A smaller example of the effect:
-
-```c
-int f(int *p, int *q) { *p = 1; *q = 2; return *p; }        /* must reload *p: q may equal p */
-int g(int *restrict p, int *restrict q) { *p = 1; *q = 2; return *p; }   /* returns 1 directly */
-```
-
-**Standard library uses:** `memcpy(void *restrict dst, const void *restrict src, size_t n)` is declared with `restrict`, which is the formal reason overlapping buffers are undefined for `memcpy` (and why `memmove`, without `restrict`, must exist). `printf`, `strcpy` and `sprintf` use it too.
-
-**When to use it:** performance-critical loops in DSP code (filters, FFT, image processing) on Cortex-M4/M7/M55 and Cortex-A, where you know the buffers never overlap. Check the generated assembly to confirm it helped.
-
-**Notes:** C++ has no `restrict` keyword (compilers offer `__restrict__`/`__restrict`). It only matters for optimisation; removing it never changes the meaning of a correct program.
+**Interview takeaway:** This copy contract requires non-overlapping accessed regions; restrict is not a runtime check.
 
 ### What is the difference between exit() and return from main? {E}
-**Short answer:** In a hosted program, returning from `main` is equivalent to calling `exit()` with the returned value: functions registered with `atexit()` run, open `FILE` streams are flushed and closed, and temporary files are removed. `_Exit()` / `_exit()` terminate immediately **without** that cleanup. On a bare-metal microcontroller there is nobody to return to, so `main` should never return.
+**Short answer:** Returning from main in a hosted C program is equivalent to calling exit with the returned status; exit can terminate from other functions.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="main return|Normal termination|Exit status" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="116" y="45" fill="#0c4a6e" font-size="12">main return</text><rect x="234" y="8" width="212" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="340" y="45" fill="#0c4a6e" font-size="12">Normal termination</text><rect x="458" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="564" y="45" fill="#0c4a6e" font-size="12">Exit status</text></svg></div>
+
+**How it works**
+
+1. Normal exit invokes registered atexit handlers and flushes/closes streams as specified.
+2. Returning from another function only returns to its caller.
+
+**Example**
 
 ```c
-#include <stdio.h>
-#include <stdlib.h>
-
-static void cleanup(void) { puts("cleanup"); }
-
-int main(void)
-{
-    atexit(cleanup);
-    printf("work");          /* buffered */
-    return 0;                /* or exit(0): flushes "work", prints "cleanup" */
-    /* _exit(0) here would lose "work" (unflushed) and skip cleanup */
-}
+int main(void){ return 0; }
+// equivalent normal termination: exit(0);
 ```
 
-**Differences that can matter**
-
-- `exit()` can be called from any function; `return` only leaves `main` when written in `main`.
-- After `return` from `main`, `main`'s local variables are gone before `atexit` handlers run, so a handler must not use pointers to them (for example, a `setvbuf` buffer that is a local array in `main`).
-- Exit status: `EXIT_SUCCESS` (0) and `EXIT_FAILURE`; only the low 8 bits reach the parent on POSIX.
-- In a multi-threaded program, `exit()` (or returning from `main`) ends **all** threads.
-- In a child process after a failed `exec()`, use `_exit()` so the child does not flush the parent's copied stdio buffers a second time.
-
-**Bare metal**
-
-- The start-up code calls `main()` and, if it returns, typically falls into an infinite loop (`b .`) or calls `exit()`, which in newlib may loop forever or trigger a semihosting exit.
-- Firmware therefore ends with a super loop or starts the RTOS scheduler, which never returns:
-
-```c
-int main(void)
-{
-    board_init();
-    vTaskStartScheduler();   /* does not return */
-    for (;;) { }             /* reached only if the scheduler could not start */
-}
-```
+**Interview takeaway:** Bare-metal startup may define different behavior after main returns; _Exit and abort have different cleanup semantics.
 
 ### How do variadic functions work? {M}
-**Short answer:** A variadic function such as `printf` has at least one fixed parameter followed by `...`. It reads the extra arguments with the `<stdarg.h>` macros `va_start`, `va_arg`, `va_end` (and `va_copy`). The function has no way to know how many arguments were passed or their types, so a fixed parameter (a count or a format string) must tell it.
+**Short answer:** Variadic functions accept a variable number of arguments using stdarg.h.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="Count / format|va_list|Read promoted arguments" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="116" y="45" fill="#0c4a6e" font-size="12">Count / format</text><rect x="234" y="8" width="212" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="340" y="45" fill="#0c4a6e" font-size="12">va_list</text><rect x="458" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="564" y="45" fill="#0c4a6e" font-size="12">Read promoted arguments</text></svg></div>
+
+**How it works**
+
+1. Use va_start with the last named parameter in pre-C23 style.
+2. Retrieve promoted argument types using va_arg.
+3. Finish with va_end.
+
+**Example**
 
 ```c
 #include <stdarg.h>
-#include <stdio.h>
-
-int sum(int count, ...)
-{
-    va_list ap;
-    int s = 0;
-    va_start(ap, count);              /* start after the last fixed parameter */
-    while (count--)
-        s += va_arg(ap, int);         /* read the next argument as an int */
-    va_end(ap);
-    return s;
-}
-
-/* a logging wrapper that forwards to vprintf */
-void log_msg(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
-void log_msg(const char *fmt, ...)
-{
-    va_list ap;
-    va_start(ap, fmt);
-    printf("[%lu] ", (unsigned long)0 /* tick */);
-    vprintf(fmt, ap);
-    va_end(ap);
+int sum(int n,...){
+    va_list ap; va_start(ap,n);
+    int s=0;
+    for(int i=0;i<n;i++)s+=va_arg(ap,int);
+    va_end(ap);return s;
 }
 ```
 
-**Rules and pitfalls**
-
-- **Default argument promotions** apply to the variable arguments: `char` and `short` become `int`, `float` becomes `double`. So `va_arg(ap, char)` or `va_arg(ap, float)` is wrong; use `int` and `double`.
-- Reading more arguments than were passed, or with the wrong type, is undefined behaviour. `printf("%d", 3.5)` and `printf("%s", 42)` are classic bugs.
-- The `format` attribute lets GCC/Clang check format strings in your own wrappers, catching those bugs at compile time.
-- To pass the arguments on, write a `v` version that takes a `va_list` (like `vprintf`), because you cannot forward `...` directly.
-- Use `va_copy` if you need to traverse the list twice.
-
-**How it works underneath:** on Arm (AAPCS), the first four integer arguments are in registers `r0`–`r3`, and the rest are on the stack. `va_start` makes the callee save the register arguments to memory so `va_arg` can walk them like an array. Floating-point variadic arguments go in integer registers or on the stack even with a hardware FPU (the variadic calling convention is the soft-float one).
-
-**Embedded notes:** a full `printf` implementation can add 10–30 KB of flash; small projects use `newlib-nano` (`--specs=nano.specs`), a minimal printf, or deferred/binary logging where the device sends a format ID and raw arguments and a PC tool formats them (Trice, defmt, Zephyr dictionary logging). Avoid `printf` in ISRs (slow and usually not reentrant).
+**Interview takeaway:** The caller and function must agree on argument count and types; float promotes to double.
 
 ### What is conditional compilation, and how is it used in embedded projects? {E}
-**Short answer:** Conditional compilation uses preprocessor directives (`#if`, `#ifdef`, `#ifndef`, `#elif`, `#else`, `#endif`, and the `defined()` operator) to include or exclude code before it is compiled. Embedded projects use it to build one code base for several boards and MCUs, to enable debug features, and to select features at build time.
+**Short answer:** Conditional compilation includes or excludes source before compilation based on preprocessor conditions.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="Board selection|Preprocessor|Selected source" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="116" y="45" fill="#0c4a6e" font-size="12">Board selection</text><rect x="234" y="8" width="212" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="340" y="45" fill="#0c4a6e" font-size="12">Preprocessor</text><rect x="458" y="8" width="212" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="564" y="45" fill="#0c4a6e" font-size="12">Selected source</text></svg></div>
+
+**How it works**
+
+1. Define configuration macros in build settings or headers.
+2. Select code using #if.
+3. Compile and test each supported configuration.
+
+**Example**
 
 ```c
-#if defined(BOARD_REV_B)
-#  define LED_PIN 5
-#elif defined(BOARD_REV_A)
-#  define LED_PIN 3
+#if defined(BOARD_A)
+#define LED_PIN 3
 #else
-#  error "Unknown board revision"
-#endif
-
-#ifndef UART_BAUD
-#  define UART_BAUD 115200u          /* default that can be overridden with -DUART_BAUD=9600 */
-#endif
-
-#if DEBUG_LEVEL >= 2
-#  define LOG_DEBUG(...) log_msg(__VA_ARGS__)
-#else
-#  define LOG_DEBUG(...) do { } while (0)   /* compiled out completely */
+#define LED_PIN 7
 #endif
 ```
 
-**Where the symbols come from:** `-D` options on the compiler command line (set by Make/CMake per build configuration), a generated `config.h` (Kconfig in Zephyr and Linux, `sdkconfig.h` in ESP-IDF), and compiler-predefined macros (`__ARM_ARCH`, `__GNUC__`, `__BYTE_ORDER__`, `__ARM_FEATURE_DSP`).
-
-**`#ifdef` vs `#if`**
-
-- `#ifdef X` checks only whether `X` is defined, even if it is defined as 0.
-- `#if X` evaluates its value; an undefined `X` silently counts as 0. GCC's `-Wundef` warns about that, which catches typos like `#if DEBUG_LEVLE > 1`.
-- Kconfig-style systems prefer `#if IS_ENABLED(CONFIG_FOO)` or `if (IS_ENABLED(CONFIG_FOO))` in C code, so both branches are still compiled and type-checked.
-
-**Good practice**
-
-- Use `#error` to stop the build when a required option is missing or inconsistent.
-- Keep `#ifdef` blocks small; large conditional regions make code hard to read and test. Prefer separate source files per platform, selected by the build system (`uart_stm32.c`, `uart_nrf.c`).
-- Remember that code inside a disabled `#if` is not compiled at all, so it can rot. CI should build all configurations.
+**Interview takeaway:** Unlike a runtime if, excluded code is not compiled; configuration combinations still need testing.
 
 ### What is _Static_assert and why is it useful? {M}
-**Short answer:** `_Static_assert(condition, "message")` (C11; `static_assert` with `<assert.h>`, and a keyword in C23) checks a constant expression **at compile time**. If the condition is false, the build fails with your message. It costs nothing at run time, so it is ideal for checking assumptions about sizes, layouts and configuration that would otherwise cause subtle run-time bugs.
+**Short answer:** _Static_assert checks a constant condition at compile time, failing compilation when false.
+
+<div style="max-width:680px;margin:14px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 84" width="100%" role="img" aria-label="Compile-time condition|Pass or diagnostic" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="10" y="8" width="324" height="66" rx="7" fill="#e0f2fe" stroke="#0369a1"/><text x="172" y="45" fill="#0c4a6e" font-size="12">Compile-time condition</text><rect x="346" y="8" width="324" height="66" rx="7" fill="#dcfce7" stroke="#0369a1"/><text x="508" y="45" fill="#0c4a6e" font-size="12">Pass or diagnostic</text></svg></div>
+
+**How it works**
+
+1. Express a required ABI, size or configuration invariant.
+2. Give a diagnostic message.
+3. Fix the violation before running firmware.
+
+**Example**
 
 ```c
-#include <assert.h>
-#include <stddef.h>
 #include <stdint.h>
-
-typedef struct {
-    uint8_t  type;
-    uint8_t  flags;
-    uint16_t length;
-    uint32_t crc;
-} __attribute__((packed)) frame_hdr_t;
-
-static_assert(sizeof(frame_hdr_t) == 8, "frame header must be 8 bytes on the wire");
-static_assert(offsetof(frame_hdr_t, crc) == 4, "crc must be at offset 4");
-
-#define RX_BUF_SIZE 128u
-static_assert((RX_BUF_SIZE & (RX_BUF_SIZE - 1u)) == 0, "RX_BUF_SIZE must be a power of two");
-
-static_assert(sizeof(void *) == 4, "this driver assumes a 32-bit target");
+_Static_assert(sizeof(uint32_t)==4,"requires 8-bit bytes");
 ```
 
-**Typical uses in firmware**
+**Interview takeaway:** C11 introduced _Static_assert; C23 also uses static_assert as a keyword. It is not a runtime assertion.
 
-- Struct sizes and offsets that must match hardware, a protocol, flash layout or a bootloader.
-- Ring-buffer sizes that must be powers of two (for `& (size - 1)` wrapping).
-- Lookup tables that must have one entry per enum value: `static_assert(ARRAY_SIZE(state_names) == STATE_COUNT, "...");` catches a forgotten table entry when someone adds a state.
-- Timer and baud-rate calculations that must fit in a register's range.
-- Assumptions about type sizes and endianness when porting.
-
-**Compared with `assert()`:** `assert()` checks at run time, costs code, and disappears with `NDEBUG`. `static_assert` can only check things known at compile time but catches them before the code ever runs.
-
-**Before C11**, projects used tricks such as declaring an array with a negative size when the condition is false: `typedef char check_size[(sizeof(x) == 8) ? 1 : -1];`. You may still see this in older code.
