@@ -520,3 +520,36 @@ The condition variable must be created with `pthread_condattr_setclock(&attr, CL
 | Bare metal | poll the flag and a hardware counter with a wrap-safe deadline check |
 
 **Design rule:** every wait for hardware or another component should have a timeout and a defined recovery action, so one failure cannot hang the whole system.
+
+### How do you publish data safely between two threads using C11 atomics? {M}
+**Short answer:** Publish a ready flag with release semantics after writing data. A reader that observes the publication using an acquire load can then safely access the published data.
+
+```c
+#include <stdatomic.h>
+static int data;
+static atomic_int ready = 0;
+
+void producer(void)
+{
+    data = 100;
+    atomic_store_explicit(&ready, 1, memory_order_release);
+}
+int consumer(void)
+{
+    if (atomic_load_explicit(&ready, memory_order_acquire))
+        return data;
+    return -1;
+}
+```
+
+```text
+Producer                    Consumer
+data = 100                  load ready (acquire)
+store ready (release) ---> if ready == 1: read data
+```
+
+**Why:** If the acquire load reads the release store, the producer's preceding write happens-before the consumer's read.
+
+**Limitation:** This is one-time publication. Reusing the buffer concurrently requires a separate ownership protocol or lock. Volatile alone is not sufficient.
+
+**Interview takeaway:** Acquire/release creates a synchronization relationship without requiring sequential consistency for every operation.
