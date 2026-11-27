@@ -963,12 +963,13 @@ Test every valid state/event pair, repeated START while BUSY, initialization ret
 
 static _Atomic uint32_t flags;
 
-static inline void flag_set(unsigned n)    { atomic_fetch_or_explicit(&flags,  1u << n,  memory_order_relaxed); }
-static inline void flag_clear(unsigned n)  { atomic_fetch_and_explicit(&flags, ~(1u << n), memory_order_relaxed); }
-static inline bool flag_test(unsigned n)   { return (atomic_load_explicit(&flags, memory_order_relaxed) >> n) & 1u; }
+static inline void flag_set(unsigned n)    { if (n >= 32) return; atomic_fetch_or_explicit(&flags,  UINT32_C(1) << n,  memory_order_relaxed); }
+static inline void flag_clear(unsigned n)  { if (n >= 32) return; atomic_fetch_and_explicit(&flags, ~(UINT32_C(1) << n), memory_order_relaxed); }
+static inline bool flag_test(unsigned n)   { return n < 32 && ((atomic_load_explicit(&flags, memory_order_relaxed) >> n) & 1u); }
 static inline bool flag_test_and_clear(unsigned n)
 {
-    return (atomic_fetch_and_explicit(&flags, ~(1u << n), memory_order_acq_rel) >> n) & 1u;
+    if (n >= 32) return false;
+    return (atomic_fetch_and_explicit(&flags, ~(UINT32_C(1) << n), memory_order_acq_rel) >> n) & 1u;
 }
 ```
 
@@ -995,6 +996,20 @@ task: flags = r | 0b0010   (0b0011)  ← the ISR's bit is lost
 | Linux `set_bit()`, `clear_bit()`, `test_and_set_bit()` | kernel atomic bitops |
 
 **Test-and-set:** `atomic_fetch_or` returns the old value, so `if (!(atomic_fetch_or(&flags, BIT) & BIT))` tells you whether this caller was the one that set it — useful for "only one context may start this operation".
+
+#### Validate the bit index and define event semantics
+
+```c
+bool set_event(unsigned n)
+{
+    if (n >= 32) return false;
+    atomic_fetch_or_explicit(&flags, UINT32_C(1) << n,
+                             memory_order_release);
+    return true;
+}
+```
+
+A producer can write associated data before publishing the flag; a consumer uses an acquire operation that observes the publication. This only works with a complete payload ownership protocol: multiple producers writing the same non-atomic payload can still race. Repeated set operations coalesce into one flag, so use a counter or queue if every event matters. Atomic operations on ordinary RAM are not interchangeable with special MMIO register operations.
 
 ### Parse a hardware status register into named fields. {E}
 **Short answer:** Read the register **once** into a local variable, then extract each field with mask-then-shift: `(val & FIELD_Msk) >> FIELD_Pos`. Define every field's position and mask once in macros (or use `FIELD_GET`/`GENMASK` style helpers), and fill a struct of named values that the rest of the code uses.
