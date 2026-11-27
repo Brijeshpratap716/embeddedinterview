@@ -9,55 +9,158 @@ desc: volatile, ISRs, registers, critical sections, start-up code, linker script
 Embedded C is ordinary C plus the rules that come from sharing memory with hardware and interrupts. These are the questions that decide most firmware interviews. Each answer gives the short version you should say first, then the details, code, and the follow-up questions you are likely to get.
 
 ### What is volatile and when must you use it? {E}
-The `volatile` qualifier tells the compiler that accesses through a volatile-qualified lvalue are observable and must be performed according to the target's volatile semantics. It is particularly important when hardware changes a value independently of the program.
+`volatile` tells the compiler that the value of a variable may change unexpectedly, outside the normal program flow.
 
-#### 1. Hardware register example
+It prevents the compiler from optimizing away required read and write operations on that variable.
+
+#### 1. What happens at the assembly level?
+
+**Without volatile:**
 
 ```c
-#include <stdint.h>
-#define STATUS (*(volatile uint32_t *)0x40000000U)
-#define READY  (1U << 0)
+int flag = 0;
 
-while (!(STATUS & READY)) {
-    // Wait for the device.
+while (flag == 0);
+```
+
+The compiler may load `flag` only once and reuse its value.
+
+ARM assembly (illustrative):
+
+```asm
+    LDR R0, [R1]
+loop:
+    CMP R0, #0
+    BEQ loop
+```
+
+Even if hardware or an ISR changes `flag`, the loop may never exit because the CPU keeps checking R0.
+
+**With volatile:**
+
+```c
+volatile int flag = 0;
+
+while (flag == 0);
+```
+
+ARM assembly:
+
+```asm
+loop:
+    LDR R0, [R1]
+    CMP R0, #0
+    BEQ loop
+```
+
+Now the compiler generates a load on every iteration, so the CPU can observe the updated value.
+
+Similarly, for writes:
+
+```c
+volatile int x;
+
+x = 10;
+x = 20;
+```
+
+ARM assembly:
+
+```asm
+MOV R0, #10
+STR R0, [R1]
+
+MOV R0, #20
+STR R0, [R1]
+```
+
+Without `volatile`, the compiler may eliminate the first store because the value is overwritten.
+
+#### 2. Where is volatile used and why?
+
+**A. Memory-mapped hardware registers**
+
+```c
+#define STATUS (*(volatile unsigned int *)0x40000000)
+
+while (!(STATUS & 1));
+```
+
+Hardware can update the status register independently of the CPU. Therefore, every polling iteration must perform a fresh read.
+
+**B. Variables shared between ISR and main code**
+
+```c
+volatile int flag = 0;
+
+void ISR(void)
+{
+    flag = 1;
+}
+
+int main(void)
+{
+    while (!flag);
+    return 0;
 }
 ```
 
-Assume this is a documented 32-bit status register. Each evaluation reads the register again. Without volatile, an optimizer could reuse an earlier value instead of observing subsequent hardware changes.
+The ISR changes `flag` asynchronously, so the compiler must not eliminate repeated reads.
 
-#### 2. Interrupt-shared flag
+**C. Hardware read-only registers**
 
 ```c
-static volatile unsigned int done;
-
-void Timer_IRQHandler(void)
-{
-    // Acknowledge the timer interrupt first.
-    done = 1;
-}
-
-void wait_for_timer(void)
-{
-    while (!done) {
-    }
-}
+const volatile unsigned int *status =
+    (const volatile unsigned int *)0x40000000;
 ```
 
-This simple bare-metal example assumes the target supports indivisible accesses to the flag and the required ISR semantics. Real firmware should use a timeout and an ISR-safe synchronization mechanism for more complex data.
+- `const`: Software cannot modify the register through this pointer.
+- `volatile`: Hardware can modify the register.
 
-#### 3. What volatile does not do
+**D. Memory modified by DMA**
+
+```c
+volatile unsigned int dma_done;
+
+while (!dma_done);
+```
+
+If DMA hardware updates this memory location, repeated reads are required. However, cache coherency and memory ordering must be handled separately.
+
+#### 3. What volatile does NOT guarantee
 
 | Property | Guaranteed? |
 |---|---|
-| Required volatile accesses | Yes, under implementation rules |
-| Atomic increment | No |
-| Thread synchronization | No |
-| CPU memory ordering | No |
-| DMA cache coherency | No |
+| Prevent elimination of required loads (`LDR`) | Yes |
+| Prevent elimination of required stores (`STR`) | Yes |
+| Atomicity | No |
+| Thread safety | No |
+| Cache coherency | No |
+| Memory barriers | No |
+| Direct DRAM access | No |
 
-In Linux drivers use readl/writel for MMIO and appropriate atomics, locks or READ_ONCE/WRITE_ONCE as part of a correct synchronization protocol.
+For example:
 
-**Interview takeaway:** Volatile controls compiler-visible accesses; it is not a general synchronization primitive.
+```c
+volatile int count = 0;
+count++;
+```
+
+ARM assembly:
+
+```asm
+LDR R0, [R1]
+ADD R0, R0, #1
+STR R0, [R1]
+```
+
+An interrupt or another CPU core can interfere between these instructions. Therefore, `volatile` does not make an operation atomic.
+
+#### 4. What does the interviewer want to hear?
+
+**Volatile is a compiler-level qualifier that prevents the compiler from eliminating required memory accesses or reusing a previously loaded register value instead of performing a required read. On ARM, this typically results in LDR and STR instructions for the respective reads and writes. It is primarily used for memory-mapped hardware registers, ISR-shared variables and hardware-modified memory. However, it does not guarantee atomicity, thread safety, memory ordering or cache coherency.**
+
+**Important:** `volatile` controls compiler optimization, not CPU caching. A volatile load can still be served from the CPU cache, depending on the memory attributes.
 
 ### Does volatile make a variable thread-safe or atomic? {M}
 No. `volatile` does not make an operation atomic, nor does it prevent data races between threads.
