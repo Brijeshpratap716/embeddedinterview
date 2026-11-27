@@ -325,6 +325,19 @@ MRS X0, TTBR0_EL1 // privileged: table base
 
 **Interview takeaway:** The MMU provides translation, isolation and memory attributes; the TLB accelerates translation.
 
+#### Worked four-level page-table example
+
+Assume 48-bit virtual addressing, 4 KiB granules and eight-byte translation descriptors.
+
+```text
+VA [47:39] [38:30] [29:21] [20:12] [11:0]
+       L0      L1      L2      L3     offset
+```
+
+Each level uses a nine-bit index (512 entries). TTBR0_EL1 or TTBR1_EL1 selects the applicable root. A table descriptor supplies the base of the next table; a valid terminal page descriptor supplies the physical page base and attributes. Supported block descriptors can terminate the walk at a higher level. The low 12-bit offset is combined with the page base for a 4 KiB page.
+
+Attributes control read/write privilege, executable permission, cacheability and shareability. An invalid descriptor can cause a translation fault; a valid mapping with insufficient permission can cause a permission fault. TLB entries cache the result, so the hardware need not repeat the complete walk for each load. The granule and address width determine the actual table layout; 4 KiB and four levels are examples, not universal ARM64 requirements.
+
 ### What is a TLB and what happens on a TLB miss? {M}
 **Short answer:** The TLB caches address translations. On a miss, hardware normally walks translation tables; a valid translation can refill the TLB. Invalid mappings or permission violations can cause a fault.
 
