@@ -6,18 +6,13 @@ date: 2026-11-20
 order: 3
 ---
 
-A **character driver** exposes a device file (e.g. /dev/echofifo) and handles user-space operations through file_operations.
+A character driver exposes a device file such as /dev/echofifo.
 
-## Driver flow
+**Flow:** Application → system call → VFS → file_operations → driver → hardware or buffer.
 
-```text
-Application → open/read/write/poll → System call → VFS
-→ Driver file_operations → Device or kernel buffer
-```
+## Complete C example
 
-This example uses a misc device, a kernel FIFO, a mutex and a wait queue. Reads block until data arrives; writes return an error when the FIFO is full.
-
-## Complete example
+This misc driver implements blocking reads, FIFO writes, poll and synchronization.
 
 ```c
 // SPDX-License-Identifier: GPL-2.0
@@ -108,7 +103,6 @@ static const struct file_operations echo_fops = {
     .read = echo_read,
     .write = echo_write,
     .poll = echo_poll,
-    .llseek = no_llseek,
 };
 
 static struct miscdevice echo_dev = {
@@ -122,43 +116,22 @@ module_misc_device(echo_dev);
 MODULE_LICENSE("GPL");
 ```
 
-For kernels where no_llseek is unavailable, omit .llseek. Save as echofifo.c.
-
-## Build and test
-
-```makefile
-obj-m += echofifo.o
-```
-
-```sh
-make -C /lib/modules/$(uname -r)/build M="$PWD" modules
-sudo insmod echofifo.ko
-# Terminal 1:
-sudo cat /dev/echofifo
-# Terminal 2:
-echo hello | sudo tee /dev/echofifo
-# Stop cat before unloading:
-sudo rmmod echofifo
-```
-
-## Important functions
+## Key functions
 
 | Function | Purpose |
 |---|---|
-| misc_register() | Registers misc character device |
-| kfifo_from_user() / kfifo_to_user() | Transfers data between user space and FIFO |
-| mutex_lock_interruptible() | Serializes process-context access |
-| wait_event_interruptible() | Sleeps until data is available or a signal arrives |
-| wake_up_interruptible() | Wakes waiting tasks |
-| poll_wait() | Registers readiness notification |
+| misc_register() | Registers the character device |
+| read / write | Transfers data to/from userspace |
+| kfifo_to_user / kfifo_from_user | Safely copies data |
+| mutex_lock | Serializes access; user-copy may sleep |
+| wait_event_interruptible | Blocks a reader when FIFO is empty |
+| wake_up_interruptible | Notifies readers and poll waiters |
+| poll_wait | Registers readiness notification |
 
-## Interview follow-ups
+## Build and test
 
-- **Normal cdev registration:** alloc_chrdev_region → cdev_init → cdev_add → class_create → device_create.
-- **Why not dereference user pointers?** Use copy_to_user/copy_from_user to safely access user memory.
-- **Why mutex?** User-copy can sleep. Never hold a spinlock across a user-copy operation.
-- **Multiple readers?** Recheck FIFO state under the mutex after waking.
-- **Real hardware?** Match the device tree in probe(), map registers, request IRQ and use the appropriate kernel subsystem (IIO, input, DRM/KMS, etc.).
-- **Debugging:** dmesg, dynamic debug, strace and lockdep.
+Save as echofifo.c. Set the Kbuild Makefile to obj-m += echofifo.o. Build using make -C /lib/modules/$(uname -r)/build M="$PWD" modules. Load with sudo insmod echofifo.ko, read /dev/echofifo in one terminal and write to it in another (root permissions required). Stop readers before unloading.
 
-This is an illustrative module; build and test against your target kernel before use.
+For a conventional character driver, use alloc_chrdev_region → cdev_init → cdev_add → class_create → device_create.
+
+This example must be built and tested against the target kernel.

@@ -6,65 +6,56 @@ date: 2026-11-20
 order: 2
 ---
 
-A microcontroller typically stores code and constants in **flash**, and writable variables in **SRAM**.
+A microcontroller stores code and constants in flash and writable data in RAM.
 
 ## Memory sections
 
-| Section | Contents | Runtime location |
+| Section | Content | Location |
 |---|---|---|
-| .isr_vector | Interrupt vector table | Usually flash |
-| .text | Program code | Usually flash |
-| .rodata | Constants and string literals | Usually flash |
-| .data | Initialised writable globals/statics | RAM (initial values in flash) |
-| .bss | Zero-initialised globals/statics | RAM |
+| .text | Program instructions | Flash |
+| .rodata | Read-only data | Flash |
+| .data | Initialized writable globals/statics | RAM; initial values in flash |
+| .bss | Zero-initialized globals/statics | RAM |
 | Heap | Dynamic allocation | RAM |
-| Stack | Function frames, saved registers, locals | RAM |
+| Stack | Function frames and local variables | RAM |
 
 ```c
-const int table[] = {1, 2};  // usually .rodata
+#include <stdlib.h>
+
+const int table[] = {1, 2}; // Usually .rodata
 int count = 10;             // .data
 int buffer[100];            // .bss
 
-void f(void)
+void example(void)
 {
     static int calls;       // .bss
-    int local = 5;          // stack or register
+    int local = 5;          // Stack or register
+    int *p = malloc(sizeof *p); // Heap allocation
+    free(p);
 }
 ```
 
-## Reset to main()
+## Before main()
 
-1. CPU loads the initial stack pointer and reset-handler address from the vector table.
-2. Startup code initializes hardware and C runtime: copies .data from flash into RAM and clears .bss.
-3. Runs constructors if required, then calls main(). Exact ordering of SystemInit() is platform-dependent.
+CPU loads SP and reset handler from the vector table. Startup code initializes the C runtime by copying .data from flash to RAM and zeroing .bss.
 
-## Linker script
+Illustrative C startup loops (symbols supplied by the linker):
 
-```ld
-MEMORY
+```c
+#include <stdint.h>
+extern uint32_t _sidata, _sdata, _edata, _sbss, _ebss;
+
+void init_memory(void)
 {
-    FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = 512K
-    RAM   (rwx) : ORIGIN = 0x20000000, LENGTH = 128K
+    uint32_t *src = &_sidata;
+    for (uint32_t *dst = &_sdata; dst < &_edata;)
+        *dst++ = *src++;
+
+    for (uint32_t *dst = &_sbss; dst < &_ebss;)
+        *dst++ = 0;
 }
-.data : {
-    _sdata = .;
-    *(.data*)
-    _edata = .;
-} > RAM AT> FLASH
-_sidata = LOADADDR(.data);
 ```
 
-Example STM32 addresses; actual addresses and sizes depend on the device.
+Hardware initialization and constructors run as required before main(); exact order is platform-dependent.
 
-## Heap, stack and memory usage
-
-The heap often grows upward and the stack downward. A collision may corrupt memory. Detect overflow using stack high-water marks, MPU guards or stack-limit registers. RTOS tasks normally have separate stacks.
-
-```sh
-arm-none-eabi-size firmware.elf
-# Linker option: -Wl,-Map=firmware.map
-```
-
-Typically flash usage is approximately text + data, and static RAM usage is data + bss. Include extra sections, reserved memory, heap and stacks when calculating actual usage.
-
-**Interview point:** .data needs an initial-value copy from flash; .bss needs zeroing, not stored initial values.
+Heap often grows up and stack down; overflow may corrupt RAM. Use stack guards and high-water marks. Check section sizes with arm-none-eabi-size and the linker map.

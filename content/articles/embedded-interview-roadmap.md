@@ -6,38 +6,22 @@ date: 2026-11-20
 order: 6
 ---
 
-Embedded interviews test C, hardware, OS fundamentals, coding, domain knowledge and debugging.
+Embedded interviews test C programming, hardware, operating systems and debugging.
 
-## Interview rounds
+## What to prepare
 
-| Round | What to prepare |
+| Topic | Key concepts |
 |---|---|
-| Screening | CV, projects and role fit |
-| Coding | C, pointers, arrays, bit manipulation, ring buffers |
-| Fundamentals | Interrupts, memory, RTOS, peripherals |
-| Domain | Linux drivers, firmware, BSP, display or automotive |
-| Design | Requirements, architecture, timing and error handling |
-| Behavioural | Ownership, teamwork and debugging stories |
+| C | Pointers, memory, volatile, static, const, bit operations |
+| Coding | Arrays, linked lists, ring buffers, strings |
+| ARM | Registers, exceptions, interrupts, MMU and caches |
+| RTOS / OS | Scheduling, synchronization, deadlocks |
+| Interfaces | UART, SPI, I2C, CAN, DMA |
+| Linux | Boot flow, device tree, kernel drivers |
+| Debugging | GDB, JTAG, logs and logic analyser |
 
-## Six-week preparation plan
+## How to prepare
 
-| Week | Topics |
-|---|---|
-| 1 | C, pointers, memory and bit manipulation |
-| 2 | Embedded C, ARM and microcontrollers |
-| 3 | RTOS, OS and concurrency |
-| 4 | UART, SPI, I2C, CAN and hardware |
-| 5 | Role-specific topics: Linux drivers, BSP or firmware |
-| 6 | Coding practice and mock interviews |
+Study one topic at a time, solve C coding problems daily and practise explaining your projects. For design questions, discuss requirements, data flow, timing and error handling. For debugging questions, explain the symptom, root cause, fix and verification.
 
-Solve one or two coding problems and a short quiz daily.
-
-## How to answer
-
-- Start with a definition, then explain how it works and give an example.
-- Explain limitations and edge cases, such as overflow, NULL, alignment and concurrency.
-- For design questions, clarify requirements, draw a block diagram and discuss timing, errors and testing.
-- For debugging stories, use STAR (situation, task, action, result). Explain the symptom, measurements, root cause and fix.
-- Explain your own contribution rather than only describing the project or HAL.
-
-Start with the [roadmap](../../roadmap/) and practise the topics relevant to your job description.
+Follow the [roadmap](../../roadmap/) and focus on the job description.

@@ -6,35 +6,36 @@ date: 2026-11-20
 order: 5
 ---
 
-**Interrupt latency** is the time from an interrupt request to the first ISR instruction. **Response time** includes the time needed to perform the required action. **Jitter** is the variation in latency.
+**Interrupt latency:** Time from an interrupt request to the first ISR instruction. **Jitter:** Variation in latency. **Response time:** Time until the required action occurs.
 
 ## Cortex-M interrupt flow
 
-```text
-Peripheral IRQ → NVIC → CPU stacks registers
-→ Fetch ISR address from vector table → Execute ISR
+Peripheral → NVIC → CPU saves R0–R3, R12, LR, PC and xPSR → Fetch ISR address → Execute ISR.
+
+Ideal entry latency (zero memory wait states): Cortex-M0 = 16 cycles, M0+ = 15, M3/M4 = 12.
+
+## Measure using a GPIO
+
+Example STM32 EXTI interrupt (registers and handler depend on the MCU):
+
+```c
+void EXTI0_IRQHandler(void)
+{
+    GPIOA->BSRR = (1u << 5);  // GPIO high
+    EXTI->PR = (1u << 0);     // Clear pending IRQ (W1C)
+    GPIOA->BSRR = (1u << 21); // GPIO low
+}
 ```
 
-Ideal minimum entry latency with zero-wait-state memory: Cortex-M0 = 16 cycles, M0+ = 15, M3/M4 = 12.
+Configure the GPIO and EXTI first. On an oscilloscope, measure from the external interrupt edge to the GPIO rising edge. The GPIO write adds a small measurement overhead.
 
-The hardware stacks R0–R3, R12, LR, PC and xPSR. FPU context, if needed, adds overhead; lazy stacking can defer it.
+## Causes and solutions
 
-## What increases latency?
+| Cause | Solution |
+|---|---|
+| Disabled interrupts | Short critical sections; BASEPRI where supported |
+| Higher-priority ISR | Keep ISRs short and assign priorities by deadline |
+| Flash wait states / bus contention | Fast RAM or TCM |
+| FPU context / sleep wake-up | Lazy stacking / suitable sleep mode |
 
-- Disabled interrupts or higher-priority ISRs.
-- Flash wait states, cache misses and DMA bus contention.
-- FPU context stacking and low-power wake-up delays.
-
-## How to measure
-
-Trigger an interrupt using an external signal and toggle a GPIO at ISR entry. Measure the time between edges on an oscilloscope. Repeated measurements show jitter. Where supported, use the DWT cycle counter with an event timestamp.
-
-## How to reduce latency
-
-- Keep ISRs and critical sections short; defer long work to tasks.
-- Assign priorities according to deadlines (lower number means higher priority).
-- Use BASEPRI on supported cores instead of global masking. FreeRTOS ISRs above the syscall-priority threshold must not call RTOS APIs.
-- Place critical code in fast RAM or TCM; use lazy FPU stacking where supported.
-- Use timers or DMA for time-critical actions instead of software interrupts.
-
-**Interview answer:** Cortex-M4 has an ideal entry latency of 12 cycles, but masking, preemption, memory delays and wake-up time increase real latency. Measure it using GPIO and minimise critical sections.
+Use DMA or hardware timers where possible; defer lengthy work to RTOS tasks.

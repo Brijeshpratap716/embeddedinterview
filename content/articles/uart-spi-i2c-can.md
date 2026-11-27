@@ -6,45 +6,53 @@ date: 2026-11-20
 order: 4
 ---
 
-UART, SPI, I2C and CAN are common serial communication interfaces. Choose based on speed, pin count, distance and reliability.
-
 ## Comparison
 
 | Feature | UART | SPI | I2C | CAN |
 |---|---|---|---|---|
 | Signals | TX, RX | SCLK, MOSI, MISO, CS | SDA, SCL | CAN_H, CAN_L |
-| Clock | Asynchronous | Synchronous | Synchronous | Asynchronous bit timing |
-| Topology | Point-to-point | Controller + peripherals | Shared addressed bus | Multi-controller bus |
-| Addressing | None | Chip select | 7/10-bit address | Message ID |
-| Typical speed | 9.6 kbps–3 Mbps | 1–100 MHz | 100 kHz–1 MHz | Up to 1 Mbps classic; faster CAN FD data phase |
-| Error handling | Optional parity, framing | Application-specific | ACK/NACK, not integrity checking | CRC, ACK, retransmission, fault confinement |
+| Clock | Async | Sync | Sync | Async bit timing |
+| Selection | Point-to-point | Chip select | 7/10-bit address | Message ID |
+| Speed (typical) | 9.6 kbps–3 Mbps | 1–100 MHz | 100 kHz–1 MHz | Up to 1 Mbps classic |
+| Error handling | Parity / framing | Application-specific | ACK/NACK | CRC, ACK, retry |
+| Use | Debug, GPS | Display, flash | Sensors | Automotive |
 
-Speeds depend on devices, wiring and configuration.
+Actual speed depends on hardware and wiring.
 
-## How each works
+## How they work
 
-- **UART:** Start bit, data bits, optional parity and stop bit. Both ends agree on baud rate.
-- **SPI:** Clock shifts data between controller and peripheral, typically full duplex. Chip select chooses the peripheral. CPOL/CPHA define clock timing.
-- **I2C:** Open-drain lines with pull-up resistors. START → address → ACK → data → STOP. Supports arbitration and clock stretching where implemented.
-- **CAN:** Differential signalling and nondestructive arbitration. Dominant bits override recessive bits; lower numerical IDs generally win within the same frame format.
+- **UART:** Start bit → data → optional parity → stop bit. Both devices agree on baud rate.
+- **SPI:** Select peripheral with CS, then exchange bits on clock edges. CPOL/CPHA select timing.
+- **I2C:** START → address → ACK → data → STOP. Open-drain lines need pull-up resistors.
+- **CAN:** Differential signalling, nondestructive arbitration and error handling. Lower IDs generally have higher priority for the same frame format. Usually terminate both ends with 120 Ω.
 
-## When to use which?
+## C examples
 
-| Application | Choice |
-|---|---|
-| Debug console or GPS module | UART |
-| Fast display, ADC or flash | SPI |
-| Multiple low-speed sensors | I2C |
-| Automotive or industrial network | CAN |
+Illustrative STM32 HAL calls; assume initialized peripheral handles, GPIO and a matching MCU HAL version.
 
-## Common interview questions
+```c
+// UART: send a byte
+uint8_t tx = 0x55;
+HAL_UART_Transmit(&huart1, &tx, 1, 100);
 
-**Why does I2C need pull-ups?** Open-drain devices pull low; resistors restore the high level.
+// SPI: exchange one byte (assert/deassert CS as needed)
+uint8_t rx;
+HAL_SPI_TransmitReceive(&hspi1, &tx, &rx, 1, 100);
 
-**Same I2C address?** Change address pins, use a multiplexer or separate buses.
+// I2C: read one byte from register 0x10 of device 0x50
+HAL_I2C_Mem_Read(&hi2c1, 0x50 << 1, 0x10,
+                 I2C_MEMADD_SIZE_8BIT, &rx, 1, 100);
+```
 
-**How to detect an SPI device?** Read a known ID register; SPI has no built-in ACK.
+For classic CAN using STM32 bxCAN HAL:
 
-**Why CAN termination?** Typically 120 Ω at each end of the bus to match impedance and reduce reflections.
+```c
+CAN_TxHeaderTypeDef hdr = {
+    .StdId = 0x123, .IDE = CAN_ID_STD,
+    .RTR = CAN_RTR_DATA, .DLC = 1
+};
+uint32_t mailbox;
+HAL_CAN_AddTxMessage(&hcan1, &hdr, &tx, &mailbox);
+```
 
-**Long cable?** Prefer CAN or an appropriate differential transceiver such as RS-485 rather than raw board-level UART, SPI or I2C.
+Production code must check return values and handle timeouts/errors.
