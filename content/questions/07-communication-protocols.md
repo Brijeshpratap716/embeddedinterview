@@ -831,26 +831,39 @@ Distinguish human-facing register numbers from zero-based protocol offsets. Chec
 **Interview takeaway:** Modbus defines message semantics; RTU and TCP define different framing/transport conventions. The device-specific register map is essential.
 
 ### What layers does an embedded Ethernet interface involve? {M}
-**Short answer:** The **MAC** (media access controller), usually inside the MCU or SoC, builds and checks frames (preamble, addresses, CRC) and moves them to and from memory with DMA descriptors. The **PHY**, often an external chip, handles the physical signalling on the cable (10/100/1000BASE-T, auto-negotiation, link detection). They connect through a data interface (**MII**, **RMII**, **RGMII**, **SGMII**) and a management bus (**MDIO/MDC**) that reads and writes PHY registers. A TCP/IP stack (lwIP, Zephyr's stack, FreeRTOS+TCP, or Linux) runs above the MAC driver.
+An embedded Ethernet interface consists of physical signaling hardware, a MAC, driver-managed buffers and higher-layer network software.
 
-| Interface | Data width / clock | Speed | Notes |
-|---|---|---|---|
-| MII | 4 bits, 25 MHz TX and RX clocks | 100 Mbps | 16 pins |
-| RMII | 2 bits, 50 MHz reference clock | 100 Mbps | fewer pins; the 50 MHz clock must come from the PHY or MCU, not both |
-| RGMII | 4 bits, DDR at 125 MHz | 1 Gbps | needs ~2 ns clock delays (in PHY, MAC or PCB) |
-| SGMII | serial differential | 1 Gbps | SerDes |
+#### 1. Layer flow
 
-**Bring-up checklist and common issues**
+```text
+Application (MQTT / HTTP / custom)
+            |
+TCP or UDP
+            |
+IP / network stack
+            |
+Ethernet MAC driver / DMA descriptors
+            |
+MAC -- MII/RMII/RGMII/etc. -- PHY
+            |
+Magnetics / connector / network medium
+```
 
-1. PHY reset and strap pins: the PHY address and mode (MII/RMII) are often set by pins at reset; wrong straps → no MDIO response.
-2. Read PHY ID registers (2 and 3) over MDIO to confirm communication.
-3. Reference clock: for RMII, exactly one 50 MHz source, with the right direction configured on both sides.
-4. RGMII delays: no delay or double delay → CRC errors or no traffic (`phy-mode = "rgmii-id"` etc. on Linux).
-5. Check link status and auto-negotiation result (speed/duplex) and configure the MAC to match.
-6. DMA descriptors, buffer alignment and cache maintenance in the MAC driver.
-7. Magnetics, cable and LEDs; check with `ethtool` on Linux.
+The physical interface varies; the diagram represents a common copper Ethernet design.
 
-**Above the MAC:** ARP, IP, ICMP, UDP, TCP, DHCP, DNS; MCU stacks need tuning of buffer counts and sizes for RAM. Automotive Ethernet (100BASE-T1, 1000BASE-T1) uses a single twisted pair and a different PHY, with protocols such as SOME/IP and AVB/TSN on top.
+#### 2. MAC versus PHY
+
+The MAC handles Ethernet frame transmission/reception and related control. The PHY converts data to physical-medium signaling, handles link negotiation where applicable, and exposes link status. MDIO is commonly used to manage PHY registers.
+
+#### 3. Driver responsibilities
+
+Configure DMA rings and buffer ownership, handle interrupts or polling, maintain cache coherency, report link state and pass packets to the network stack. Linux often uses NAPI for efficient receive processing.
+
+#### 4. Debugging
+
+Check PHY power/clock/reset, link state, interface timing, MAC address, descriptor ownership and packet counters. A working link does not guarantee valid IP configuration.
+
+**Interview takeaway:** Ethernet link, MAC frame delivery and IP/application connectivity are separate layers. Debug each layer with appropriate evidence.
 
 ### What is the difference between TCP and UDP for embedded devices? {E}
 **Short answer:** **TCP** provides a reliable, ordered, connection-oriented byte stream with retransmission, flow control and congestion control, at the cost of RAM for buffers and state, and higher latency when packets are lost. **UDP** sends independent datagrams with no delivery or ordering guarantee and no connection, so it is lighter and has lower, more predictable latency, but the application must handle loss if it matters.
