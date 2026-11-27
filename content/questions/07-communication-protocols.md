@@ -257,31 +257,33 @@ Start at a conservative frequency, verify commands and responses, then increase 
 **Interview takeaway:** Maximum SPI clock is a hardware timing limit, not a guarantee of reliable communication. Configure and measure the real clock.
 
 ### How do you connect multiple SPI devices? {E}
-**Short answer:** Usually with **independent chip selects**: all devices share SCLK, MOSI and MISO, and each has its own CS line; only the selected device drives MISO, the others keep it high-impedance. Alternatively, **daisy-chain** devices that support it: each device's data output feeds the next device's input and they share one CS, so data shifts through the chain like one long shift register.
+A single SPI controller can communicate with multiple targets by sharing clock and data lines and providing a separate chip-select signal for each target.
 
+#### 1. Typical wiring
+
+```text
+Controller SCLK, MOSI ----+---- Target A
+                          +---- Target B
+Controller MISO <---------+---- shared return
+Controller CS_A -------------- A select
+Controller CS_B -------------- B select
 ```
-Independent chip selects               Daisy chain
-MCU SCLK ─┬─────┬─────┬                MCU MOSI → [Dev1] → [Dev2] → [Dev3] → MCU MISO
-MCU MOSI ─┼──┬──┼──┬──┼──┬             shared SCLK and one CS
-MCU MISO ─┼──┼──┼──┼──┼──┼
-CS0 ──────┘  │  │  │  │  │   Dev0
-CS1 ─────────┼──┘  │  │  │   Dev1
-CS2 ─────────┼─────┘  ...
-```
 
-**Independent CS details**
+Only the selected target should drive the shared MISO line. Nonselected targets must release it if the bus is shared.
 
-- MISO must be tri-stated by every deselected device; some devices do not do this properly (check the datasheet or add a buffer).
-- Different devices may need different SPI modes and speeds: reconfigure the peripheral before each transaction, and on a shared bus with an RTOS, protect it with a mutex.
-- Put pull-ups on CS lines so devices stay deselected while the MCU is in reset.
-- Running out of CS pins: use a GPIO expander, a 3-to-8 decoder (74HC138), or a demultiplexer.
+#### 2. Transaction sequence
 
-**Daisy chain details**
+Select the correct target, configure its mode/speed if needed, assert its CS, transfer command/data, and deassert CS according to its timing requirements. Do not switch device configuration while a transfer is active.
 
-- Common with shift registers (74HC595), LED drivers and some ADCs/DACs.
-- To update N devices you clock out N frames, last device first, then raise CS to latch all of them together.
+#### 3. Other topologies
 
-**On Linux:** each device on the bus has its own `reg` (chip select number) under the SPI controller in the device tree; the SPI core handles CS and mode per device.
+Some targets support daisy chaining or address selection through an external decoder. These are device-specific alternatives and not universally supported by SPI.
+
+#### 4. Firmware synchronization
+
+If multiple tasks share one SPI controller, serialize entire transactions, including configuration and chip select. An RTOS mutex or single bus-owner task can prevent interleaving.
+
+**Interview takeaway:** SPI has no standard in-band device addressing. Chip selection and bus ownership determine which target communicates.
 
 ### What are Dual, Quad and Octal SPI? {M}
 **Short answer:** They are SPI extensions that transfer 2, 4 or 8 bits per clock using bidirectional data lines (IO0–IO7) instead of a single MOSI/MISO pair, multiplying throughput. Quad SPI (QSPI) NOR flash is the standard way to add external code and data storage to MCUs, and many controllers support **execute-in-place (XIP)**, mapping the flash into the address space so the CPU can run code directly from it. Octal SPI and HyperBus reach hundreds of MB/s for external RAM and frame buffers.
