@@ -362,6 +362,14 @@ LDR X0, [X1] // translation performed if needed
 
 **Interview takeaway:** TLB miss means translation is not cached; page fault means the access cannot proceed with the current translation state.
 
+#### A TLB miss with a valid mapping versus a page fault
+
+Consider two successive accesses to VA 0x40001234 with a 4 KiB page. On the first access the TLB may lack a matching translation. Hardware walks the tables, finds the physical page base 0x80000000, checks attributes and proceeds to PA 0x80000234. The second access can reuse the translation. A page-table walk can itself hit CPU caches or dedicated walk caches rather than reading DRAM for every descriptor.
+
+If the terminal descriptor is invalid, the CPU reports a translation fault; Linux checks whether the address belongs to a valid VMA and can install a mapping. If the address is outside a permitted region, a userspace access may instead result in SIGSEGV. Permission faults can also implement legitimate copy-on-write.
+
+For a TLB with 64 entries, 4 KiB pages cover 256 KiB of distinct base-page mappings; larger mappings can increase reach. This simplified calculation ignores multiple TLB levels and replacement behavior.
+
 ### How does a memory access travel from CPU to DRAM? {M}
 **Short answer:** A load uses an address in a register, translates it through the MMU, and checks caches. A cache miss can reach the coherent interconnect, memory controller and DRAM. Exact cache organization varies.
 
