@@ -21,9 +21,13 @@ You can find my full professional background on [LinkedIn](https://www.linkedin.
 
 - **Short answer first, then the detail.** Every question starts with the two or three sentences you would actually say in an interview, followed by the explanation, a worked example, the code and the follow-up questions interviewers ask next.
 - **Embedded first.** Registers, ISRs, DMA, caches, RTOS behaviour and kernel internals, not generic programming trivia.
-- **Tested code.** Every practice problem's reference solution compiles cleanly with `-Wall -Wextra` and passes its tests, and the C examples in the answers are compiled and run before they are published.
+- **Practice with test cases.** The coding editor runs a test harness and provides a reference solution. We aim for accurate, practical examples and welcome reproducible bug reports; results may vary by compiler, target and toolchain.
 - **Free, no sign-up.** Your progress is stored in your own browser.
 
 ## Found a mistake?
 
 Embedded systems are full of "it depends". If you spot an error, disagree with an answer, or want to suggest a question from an interview you faced, please [get in touch](../contact/). Corrections from readers make the site better for everyone.
+
+## Editorial independence
+
+EmbeddedInterview.com is an independent educational resource. References to employers or other companies describe professional experience or interview preparation topics, not endorsement or affiliation. Community posts reflect individual contributors' experiences. Readers can report technical errors through the contact page.

@@ -242,6 +242,18 @@ def inline(text):
     return re.sub(r"`([^`]+)`", r"<code>\1</code>", t)
 
 
+TOPIC_SEO = {
+    "embedded-c": ("Embedded C Interview Questions and Answers", "Prepare for embedded C interviews with questions on volatile, interrupts, registers, memory-mapped I/O, startup code, linker scripts and firmware."),
+    "c-programming": ("C Programming Interview Questions for Embedded Engineers", "Practice C programming interview questions on pointers, arrays, structures, memory, macros and bitwise operations for embedded software roles."),
+    "linux-device-drivers": ("Linux Device Driver Interview Questions and Answers", "Prepare for Linux device driver interviews: kernel modules, character drivers, interrupts, DMA, device tree, synchronization and driver debugging."),
+    "arm-architecture": ("ARM Architecture Interview Questions and Answers", "Prepare for ARM architecture interviews: registers, exception levels, MMU, TLB, caches, barriers, interrupts, boot and virtualization."),
+    "microcontrollers-arm": ("ARM Cortex-M and Microcontroller Interview Questions", "Study ARM Cortex-M and microcontroller interview questions on reset, startup, NVIC, exceptions, GPIO, timers and DMA."),
+    "rtos": ("RTOS Interview Questions and Answers", "Practice RTOS interview questions on real-time scheduling, tasks, semaphores, mutexes, priority inversion and inter-task communication."),
+    "embedded-linux": ("Embedded Linux Interview Questions and Answers", "Prepare for embedded Linux and BSP interviews with bootloaders, kernel boot, device tree, root filesystems and board bring-up."),
+    "virtualization": ("QEMU, KVM and Virtualization Interview Questions", "Prepare for virtualization interviews covering QEMU, KVM, hypervisors, virtual CPUs, memory virtualization and device emulation."),
+}
+
+
 def build_topics(topics):
     total = sum(len(t["qs"]) for t in topics)
     # topics index
@@ -251,6 +263,7 @@ def build_topics(topics):
 <section class="wrap grid cards">{cards}</section>""", "All embedded systems interview topics: C, pointers, Embedded C, RTOS, ARM Cortex-M, protocols, Linux drivers.", "topics/"))
 
     for t in topics:
+        seo_title, seo_desc = TOPIC_SEO.get(t["slug"], (f"{t['title']} Interview Questions and Answers", t.get("desc", "")))
         rows = []
         for i, q in enumerate(t["qs"], 1):
             qid = f"{t['slug']}/{q['slug']}"
@@ -258,11 +271,11 @@ def build_topics(topics):
 <summary><span class="num">{i:02d}</span><span class="qt">{inline(q['q'])}</span>{badge(q['d'])}<span class="tick" title="Mark as done">✓</span></summary>
 <div class="ans">{md(q['md'])}<p class="permalink"><a href="{url(q['slug'] + '/')}">Open as page →</a> <button class="mark" data-id="{qid}">Mark as done</button></p></div>
 </details>""")
-        schema = {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [
-            {"@type": "Question", "name": q["q"], "acceptedAnswer": {"@type": "Answer", "text": plain(q["md"], 600)}} for q in t["qs"]]}
+        schema = {"@context": "https://schema.org", "@type": "CollectionPage", "name": seo_title,
+                  "description": seo_desc, "url": SITE_URL + "/topics/" + t["slug"] + "/"}
         body = f"""
 <section class="wrap pagehead"><div class="crumbs"><a href="../{url('')}">Topics</a> / {html.escape(t['title'])}</div>
-<h1><span class="ticon">{t.get('icon','')}</span>{html.escape(t['title'])}</h1>
+<h1><span class="ticon" aria-hidden="true">{t.get('icon','')}</span>{html.escape(seo_title)}</h1>
 <div class="lead">{md(t['intro'])}</div>
 <p class="byline">Written by <a href="../../{url('about/')}">Brijesh Pratap Singh</a>, senior embedded software engineer (Qualcomm, Intel, Boeing)</p>
 <div class="meta"><span>{len(t['qs'])} questions</span><span>Level: {t.get('level','')}</span><span class="prog" data-topic="{t['slug']}" data-total="{len(t['qs'])}"></span></div>
@@ -270,7 +283,7 @@ def build_topics(topics):
 </section>
 <section class="wrap qlist">{''.join(rows)}</section>"""
         write(f"topics/{t['slug']}/index.html", page(f"topics/{t['slug']}/index.html",
-              f"{t['title']} Interview Questions", body, t.get("desc", ""), "topics/", schema))
+              seo_title, body, seo_desc, "topics/", schema))
 
         # single question pages
         for i, q in enumerate(t["qs"]):
@@ -279,9 +292,9 @@ def build_topics(topics):
             qid = f"{t['slug']}/{q['slug']}"
             pn = '<div class="pn">' + (f'<a href="../{url(prev["slug"] + "/")}">← {inline(prev["q"])}</a>' if prev else "<span></span>") + \
                  (f'<a class="r" href="../{url(nxt["slug"] + "/")}">{inline(nxt["q"])} →</a>' if nxt else "<span></span>") + "</div>"
-            schema = {"@context": "https://schema.org", "@type": "QAPage", "mainEntity": {
-                "@type": "Question", "name": q["q"], "answerCount": 1,
-                "acceptedAnswer": {"@type": "Answer", "text": plain(q["md"], 1000), "author": AUTHOR}}}
+            schema = {"@context": "https://schema.org", "@type": "Article", "headline": q["q"],
+                      "description": plain(q["md"]), "author": AUTHOR,
+                      "mainEntityOfPage": SITE_URL + "/topics/" + t["slug"] + "/" + q["slug"] + "/"}
             body = f"""
 <article class="wrap narrow single">
 <div class="crumbs"><a href="../../{url('')}">Topics</a> / <a href="../{url('')}">{html.escape(t['title'])}</a> / Q{i+1}</div>
@@ -312,12 +325,12 @@ def build_question_bank(topics):
                         f'<td class="tt">{html.escape(t["title"])}</td><td>{badge(q["d"])}</td></tr>')
     opts = "".join(f'<option value="{t["slug"]}">{html.escape(t["title"])}</option>' for t in topics)
     body = f"""
-<section class="wrap pagehead"><h1>All Embedded Interview Questions</h1><p class="lead">All {total} embedded interview questions and answers on one page: Embedded C, pointers, bit manipulation, ARM Cortex-M, RTOS, I2C/SPI/UART/CAN and Linux device drivers. Filter by topic and difficulty and track what you have finished.</p>
+<section class="wrap pagehead"><h1>Embedded Systems Interview Questions and Answers</h1><p class="lead">All {total} embedded interview questions and answers on one page: Embedded C, pointers, bit manipulation, ARM Cortex-M, RTOS, I2C/SPI/UART/CAN and Linux device drivers. Filter by topic and difficulty and track what you have finished.</p>
 <div class="filters bank"><input id="bankQ" type="search" placeholder="Filter questions…"><select id="bankT"><option value="">All topics</option>{opts}</select>
 <select id="bankD"><option value="">All levels</option><option value="E">Easy</option><option value="M">Medium</option><option value="H">Hard</option></select>
 <label class="chk"><input type="checkbox" id="bankTodo"> Hide done</label><span class="count" id="bankCount"></span></div></section>
 <section class="wrap"><table class="tbl" id="bank"><thead><tr><th></th><th>Question</th><th>Topic</th><th>Level</th></tr></thead><tbody>{''.join(rows)}</tbody></table></section>"""
-    write("questions/index.html", page("questions/index.html", f"{total} Embedded Interview Questions and Answers (Embedded C, RTOS, Linux)", body,
+    write("questions/index.html", page("questions/index.html", f"{total} Embedded Systems Interview Questions and Answers", body,
           f"All {total} embedded interview questions and answers in one list: Embedded C, pointers, bit manipulation, ARM Cortex-M, RTOS, I2C, SPI, UART, CAN and Linux device drivers. Filter by topic and difficulty.", "questions/"))
 
 
@@ -409,12 +422,12 @@ def build_problems(problems):
                     f'<td><a href="{url(p["slug"] + "/")}">{html.escape(p["title"])}</a></td><td class="tt">{html.escape(p["category"])}</td><td>{badge(p["difficulty"])}</td></tr>')
     opts = "".join(f'<option value="{slugify(c)}">{html.escape(c)}</option>' for c in cats)
     body = f"""
-<section class="wrap pagehead"><h1>Coding Practice</h1><p class="lead">{len(problems)} hands-on embedded C and C++ problems: bit manipulation, registers, drivers, buffers, RTOS patterns and parsers. Choose C or C++, write your code in the browser, press Run, and the test harness checks your solution. Each problem has a hint, a reference solution and an explanation.</p>
+<section class="wrap pagehead"><h1>Embedded C and C++ Coding Interview Questions</h1><p class="lead">{len(problems)} hands-on embedded C and C++ problems: bit manipulation, registers, drivers, buffers, RTOS patterns and parsers. Choose C or C++, write your code in the browser, press Run, and the test harness checks your solution. Each problem has a hint, a reference solution and an explanation.</p>
 <div class="filters bank"><input id="bankQ" type="search" placeholder="Filter problems…"><select id="bankT"><option value="">All categories</option>{opts}</select>
 <select id="bankD"><option value="">All levels</option><option value="E">Easy</option><option value="M">Medium</option><option value="H">Hard</option></select>
 <label class="chk"><input type="checkbox" id="bankTodo"> Hide solved</label><span class="count" id="bankCount"></span></div></section>
 <section class="wrap"><table class="tbl" id="bank"><thead><tr><th></th><th>#</th><th>Problem</th><th>Category</th><th>Level</th></tr></thead><tbody>{''.join(rows)}</tbody></table></section>"""
-    write("problems/index.html", page("problems/index.html", "Embedded C and C++ Coding Problems", body,
+    write("problems/index.html", page("problems/index.html", "Embedded C and C++ Coding Interview Questions", body,
           "Embedded C and C++ coding practice problems with hints and solutions: bit manipulation, ring buffers, drivers, RTOS.", "problems/"))
 
     for i, p in enumerate(problems):
@@ -475,6 +488,7 @@ def build_articles(articles):
 <div class="crumbs"><a href="../{url('')}">Articles</a> / {html.escape(a.get('tag',''))}</div>
 <h1>{html.escape(a['title'])}</h1>
 <div class="meta"><span>{reading_time(a['body'])} min read</span><span>{a.get('date','')}</span></div>
+<p class="byline">By <a href="../../{url('about/')}">Brijesh Pratap Singh</a> · Embedded software engineer</p>
 {f'<nav class="toc"><b>On this page</b>{toc}</nav>' if toc else ''}
 <div class="prose">{body_html}</div>
 </article>""", a.get("desc", ""), "articles/", schema))
@@ -499,7 +513,8 @@ def build_quiz():
 
 
 def simple_page(path, title, mdtext, desc, active=""):
-    write(path, page(path, title, f'<article class="wrap narrow single"><h1>{html.escape(title)}</h1><div class="prose">{md(mdtext)}</div></article>', desc, active))
+    schema = {"@context": "https://schema.org", "@type": "ProfilePage", "mainEntity": AUTHOR} if path == "about/index.html" else None
+    write(path, page(path, title, f'<article class="wrap narrow single"><h1>{html.escape(title)}</h1><div class="prose">{md(mdtext)}</div></article>', desc, active, schema))
 
 
 def build_home(topics, problems, articles, nquiz):
@@ -557,6 +572,19 @@ def build_home(topics, problems, articles, nquiz):
   </nav>
 </div>
 <section class="wrap home-top" id="learn"><div class="sechead"><h2>Embedded interview questions by topic</h2><a href="{url('topics/')}">All topics →</a></div><p class="home-section-intro">Build your foundations or revise the topics that matter most for your next interview.</p><div class="home-topic-links" aria-label="Popular topics"><a href="{url('topics/c-programming/')}">C programming</a><a href="{url('topics/embedded-c/')}">Embedded C</a><a href="{url('topics/microcontrollers-arm/')}">ARM Cortex-M</a><a href="{url('topics/rtos/')}">RTOS</a><a href="{url('topics/linux-device-drivers/')}">Linux device drivers</a><a href="{url('topics/embedded-linux/')}">Embedded Linux</a></div><div class="grid cards">{cards}</div></section>
+<section class="wrap home-why" aria-labelledby="home-why-title">
+<div class="home-why-inner">
+<div><p class="home-small-label">YOUR INTERVIEW PREPARATION ROADMAP</p><h2 id="home-why-title">Looking for the best embedded systems interview preparation website?</h2>
+<p>Choose a resource that covers both the fundamentals and real embedded engineering problems. EmbeddedInterview.com brings together {total:,} technical questions and answers, {len(problems)} coding exercises and {len(topics)} topics in one free platform for freshers and experienced engineers.</p>
+<a class="btn" href="{url('roadmap/')}">Explore the preparation roadmap →</a></div>
+<div class="home-why-links">
+<a href="{url('topics/embedded-c/')}"><strong>Embedded C interview questions</strong><span>Volatile, pointers, interrupts, startup and registers.</span></a>
+<a href="{url('problems/')}"><strong>C/C++ coding interview practice</strong><span>Browser editor, test cases, hints and solutions.</span></a>
+<a href="{url('topics/arm-architecture/')}"><strong>ARM architecture interview questions</strong><span>Exceptions, memory barriers, MMU and caches.</span></a><a href="{url('topics/rtos/')}"><strong>RTOS interview questions</strong><span>Scheduling, synchronization and real-time concepts.</span></a>
+<a href="{url('topics/linux-device-drivers/')}"><strong>Linux device driver interview questions</strong><span>Kernel, BSP, device tree, memory and driver fundamentals.</span></a>
+<a href="{url('companies/')}"><strong>Company interview preparation</strong><span>Company guides and <span>community interview experiences</span>.</span></a>
+</div></div></section>
+<section class="wrap home-author"><div class="home-author-mark" aria-hidden="true">BP</div><div><p class="home-small-label">ABOUT THE FOUNDER</p><h2>Built from embedded engineering experience</h2><p>Created by <a href="{url('about/')}">Brijesh Pratap Singh</a>, an embedded software engineer with about seven years of industry experience spanning Qualcomm, Intel, Boeing and Cyient, including firmware, Linux device drivers, graphics and virtualization. This is an independent learning resource, not affiliated with or endorsed by these companies.</p><a href="{url('about/')}">About the author and editorial approach →</a></div></section>
 <section class="wrap two">
 <div class="panel"><div class="sechead"><h2>Practice problems</h2><a href="{url('problems/')}">See all →</a></div>{prob}</div>
 <div class="panel"><div class="sechead"><h2>Latest articles</h2><a href="{url('articles/')}">See all →</a></div>{arts}</div>
@@ -855,7 +883,7 @@ def build_companies():
         body = f"""
 <article class="wrap narrow single">
 <div class="crumbs"><a href="../{url('')}">Company guides</a> / {html.escape(c['title'])}</div>
-<h1>{html.escape(c['title'])} Embedded Interview Guide</h1>
+<h1>{html.escape(c['title'])} Embedded Interview Questions and Preparation Guide</h1>
 {meta}{intro}
 <div class="prose">{body_html}</div>
 {cta}
