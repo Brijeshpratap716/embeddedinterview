@@ -1134,28 +1134,40 @@ Debug access can be restricted by production security configuration. Debugger re
 **Interview takeaway:** SWD saves pins; JTAG supports broader scan-chain functions. Debug capability depends on the target's debug architecture and access permissions.
 
 ### Do ARM64 registers X0, X1 and X2 contain data or memory addresses? {E}
-**Short answer:** Both. AArch64 has 31 general-purpose registers (X0–X30), each 64 bits wide. Their W-register aliases access the lower 32 bits. A register holds bits; the instruction determines whether they represent an integer, an address, or something else.
+ARM64 general-purpose registers X0, X1 and X2 contain 64-bit bit patterns. They have no inherent C data type: the instruction decides whether a value is interpreted as data or an address.
+
+#### 1. Register used for data
 
 ```asm
-MOV X1, #10
-MOV X2, #20
-ADD X3, X1, X2       // X3 = 30; no data-memory access
+MOV X0, #10
+MOV X1, #20
+ADD X2, X0, X1
 ```
 
-Now assume virtual address 0x1000 is valid, readable and contains the 64-bit value 50:
+X2 now contains the integer value 30.
+
+#### 2. Register used as address
 
 ```asm
-MOV X1, #0x1000
-LDR X2, [X1]         // X2 = 50
-STR X2, [X1]         // write 50 back to that address
+// X1 already contains a valid readable address.
+LDR X0, [X1]
 ```
+
+X1 holds the effective base address; the CPU reads eight bytes using the applicable memory translation and attributes, placing the loaded value in X0.
 
 ```text
-X1 = 0x1000 ----> Memory[0x1000] = 50
-X2 = 50     <---- LDR reads the value
+X1 = 0x1000 --> memory at 0x1000 contains 50
+                  LDR X0, [X1]
+X0 = 50
 ```
 
-With the MMU enabled, the load/store address is translated and checked; data may come from cache rather than DRAM. MOV copies a value, LDR loads from memory, and STR stores to memory. In C, a pointer holds an address while dereferencing it accesses the object at that address.
+The address in a normal Linux process is virtual and must be mapped with suitable permissions.
+
+#### 3. W-register relationship
+
+W0 names the low 32 bits of X0. Writing W0 clears the upper 32 bits of X0. LDR W0 loads a 32-bit value; LDR X0 loads a 64-bit value.
+
+**Interview takeaway:** Registers can hold integers, addresses, masks or other bit patterns. The instruction and software convention determine interpretation.
 
 ### What is cache coherency in a multicore ARM system? {M}
 **Short answer:** Cache coherency ensures that cores accessing the same coherent memory location do not continue using stale cached copies after a write becomes visible.
