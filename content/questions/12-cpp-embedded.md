@@ -176,53 +176,37 @@ std::move casts an expression to an rvalue category that permits move-aware over
 **Interview takeaway:** Move semantics encode transfer of ownership, not just heap optimization. Moved-from objects must remain valid according to their documented state; avoid duplicate resource release.
 
 ### What are constexpr and consteval? {M}
-**Short answer:** `constexpr` marks variables and functions that **can** be evaluated at compile time; when used where a constant is required (array sizes, template arguments, `static_assert`, `constexpr` variables), the compiler must evaluate them, so lookup tables, register values and configuration checks cost no run-time code or RAM. `consteval` (C++20) marks functions that **must** be evaluated at compile time — calling one with run-time values is an error. `constinit` (C++20) guarantees a variable is initialised statically (no run-time constructor, no initialisation-order problems).
+`constexpr` allows expressions/functions to participate in compile-time evaluation when requirements are satisfied. `consteval` declares an immediate function whose potentially evaluated calls must produce constant expressions under the language rules.
+
+#### 1. Example
 
 ```cpp
-#include <array>
-#include <cstdint>
-#include <cstdio>
-
-constexpr uint32_t SYSCLK = 84'000'000;
-
-void baud_rate_out_of_range();                       // not constexpr: calling it at compile time is an error
-
-consteval uint32_t baud_div(uint32_t baud)           // must be compile time
+constexpr unsigned mask(unsigned bit)
 {
-    uint32_t div = (SYSCLK + baud / 2) / baud;
-    if (div < 16 || div > 0xFFFF) baud_rate_out_of_range();   // error checks become compile errors
-    return div;                                      // (works with -fno-exceptions, unlike throw)
+    return 1u << bit;
 }
 
-constexpr std::array<uint8_t, 256> make_crc8_table()
-{
-    std::array<uint8_t, 256> t{};
-    for (int i = 0; i < 256; i++) {
-        uint8_t c = static_cast<uint8_t>(i);
-        for (int b = 0; b < 8; b++) c = (c & 0x80) ? static_cast<uint8_t>((c << 1) ^ 0x07) : static_cast<uint8_t>(c << 1);
-        t[i] = c;
-    }
-    return t;
-}
-
-constexpr auto CRC8_TABLE = make_crc8_table();       // computed by the compiler, placed in flash
-static_assert(CRC8_TABLE[1] == 0x07, "table check");
-
-constinit uint32_t uart_brr = baud_div(115200);      // static init, no constructor at startup
-
-int main()
-{
-    std::printf("BRR=%u crc[0x31]=0x%02X\n", (unsigned)uart_brr, CRC8_TABLE[0x31]);
-}
+constexpr unsigned ENABLE = mask(3);
 ```
 
-**Why it is useful in firmware**
+mask can also be called with a runtime value, provided the shift count is valid.
 
-- Tables (CRC, sine, gamma, calibration curves) generated at compile time end up in flash, not RAM, with no start-up cost.
-- Configuration errors (impossible baud rates, PLL settings out of range, buffer sizes not powers of two) become compile errors via `static_assert` or `consteval`.
-- Replaces many macros with type-safe functions.
+```cpp
+consteval unsigned register_offset(unsigned n)
+{
+    return 4u * n;
+}
 
-**Note:** a `constexpr` function called with run-time arguments simply runs at run time; to force compile-time evaluation, assign the result to a `constexpr` variable or use `consteval`.
+constexpr unsigned OFFSET = register_offset(5);
+```
+
+This uses C++20 immediate functions; a call requiring runtime evaluation is not allowed.
+
+#### 2. Embedded applications
+
+Compile-time register masks, lookup tables, configuration validation and fixed-size buffer calculations. Use static_assert for invalid constant configuration.
+
+**Interview takeaway:** constexpr permits constant evaluation; consteval requires it for immediate calls. Neither implies that arbitrary runtime operations or MMIO reads can be evaluated at compile time.
 
 ### Why are exceptions and RTTI often disabled in embedded C++? {M}
 **Short answer:** **Exceptions** add unwind tables and support code (often tens of KB of flash), make worst-case timing hard to bound (unwinding cost depends on the call stack), may allocate memory for the exception object, and add hidden control-flow paths that safety standards dislike. **RTTI** (`typeid`, `dynamic_cast`) adds type-information tables for every polymorphic class. Many teams compile with `-fno-exceptions -fno-rtti` and use error codes, `std::optional`, or `std::expected` (C++23, or a small equivalent) instead.
