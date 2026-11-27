@@ -285,6 +285,12 @@ If `L1[1]` points to a table at 0x8000_0000 and that table's entry 3 maps frame 
 
 **Virtualisation follow-up:** with two-stage translation (guest page tables + hypervisor stage 2), each guest table access is itself translated, so a TLB miss can take up to 24 memory accesses with 4-level tables in both stages.
 
+#### Complete numerical walk
+
+Consider VA=0x00403123. With the example's 10/10/12 split, L1 index=1, L2 index=3, offset=0x123. If the L1 table starts at 0x1000, read entry at 0x1004. Suppose it contains 0x2001, selecting an L2 table at 0x2000. Read L2 entry at 0x200C; if it is 0x9007, the mapping is valid, writable and accessible to user mode. Result PA=0x9123.
+
+This is a teaching format, not an ARM architectural descriptor encoding. A real MMU checks permissions and attributes at all relevant levels, supports architecture-defined granules/block mappings and can cache the result in a TLB. Validate table addresses and simulated physical reads against the emulated memory backing.
+
 ### Look up which guest memory region contains a guest physical address. {M}
 **Short answer:** Keep the guest's RAM regions (guest physical start, size, host virtual address) in an array sorted by start address and binary-search for the last region whose start is ≤ the address. If the address (and the whole access length) lies inside that region, translate it with `host = region.hva + (gpa − region.gpa)`; otherwise it is not RAM — typically an MMIO address that must be emulated by a device model.
 
