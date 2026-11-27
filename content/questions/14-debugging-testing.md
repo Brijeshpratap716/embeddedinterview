@@ -223,22 +223,23 @@ For cross-compilation, the toolchain file selects target compilers and relevant 
 **Interview takeaway:** CMake is not a compiler; it describes and generates the build. Make can be used directly or as a generated backend.
 
 ### What does a map file tell you? {M}
-**Short answer:** The linker map file (`-Wl,-Map=app.map`) shows where everything ended up in memory: the memory regions and how full they are, the address and size of every section (`.text`, `.rodata`, `.data`, `.bss`, stacks, heap), which object files and library members contributed to each section, the address of every symbol, which sections were discarded by `--gc-sections`, and why library objects were pulled in. It is the primary tool for understanding and reducing flash and RAM usage and for mapping crash addresses to functions.
+A linker map records output sections, addresses, sizes and contributing object files/symbols.
 
-**What to look for**
+#### Example
+```text
+.text    0x08000000  0x4000
+.rodata  0x08004000  0x0800
+.data    0x20000000  0x0100  (load image in flash)
+.bss     0x20000100  0x1000
+```
 
-| Question | Where in the map |
-|---|---|
-| How much flash/RAM is used? | memory configuration and the end addresses of sections (or `arm-none-eabi-size`) |
-| What is using all the flash? | sizes per input section/object under `.text` and `.rodata` |
-| Why is `printf`/float code present? | "archive member included to satisfy reference by file (symbol)" lines at the top |
-| Where is a variable or function? | symbol addresses (for watchpoints, crash analysis) |
-| Is a buffer in the right RAM (DTCM, non-cacheable, backup SRAM)? | output section placement |
-| Initialised data cost | `.data` takes space in **both** flash (initial values) and RAM |
+Use it to locate unexpectedly large functions, alignment padding, memory-region overflow, discarded sections and symbol placement. Initialized data generally consumes RAM plus a flash initialization image; BSS consumes RAM but normally no corresponding initialized bytes.
 
-**Helpful tools:** `arm-none-eabi-nm --size-sort -S -C app.elf | tail -30` (largest symbols), `bloaty`, puncover (per-function code and stack size in a web view), Amap / MapViewer GUIs, and `size -A` for per-section totals.
+```bash
+arm-none-eabi-gcc ... -Wl,-Map=firmware.map
+```
 
-**Interview example:** "Flash grew by 20 KB after a small change; the map file showed `_dtoa_r` and floating-point emulation pulled in by a `%f` in one debug message. Removing it (or using a fixed-point print) recovered the space."
+**Interview takeaway:** Map files connect linker-script intent to actual memory usage; inspect both load and run addresses.
 
 ### How do you reduce firmware code size? {M}
 **Short answer:** Measure first (map file, `nm --size-sort`, bloaty), then: compile with `-Os` (or `-Oz` with Clang), enable `-ffunction-sections -fdata-sections` with `-Wl,--gc-sections` so unused functions are removed, use link-time optimisation (`-flto`), use newlib-nano (`--specs=nano.specs`) and avoid heavy library functions (`printf` with floats, `sscanf`, `iostream`), remove unused vendor HAL code or switch to LL/register-level drivers, move constant tables to compact formats, and avoid code duplication from macros and templates.
