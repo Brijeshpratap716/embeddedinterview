@@ -1026,42 +1026,41 @@ Startup code, interrupt wrappers, bootloader transitions, RTOS context switching
 **Interview takeaway:** AAPCS is a software interface contract, not merely a list of registers. Incorrect stack alignment or register preservation can break otherwise correct C code.
 
 ### What are compiler intrinsics, and when should you use them instead of inline assembly? {M}
-**Short answer:** Intrinsics are functions provided by the compiler (or by headers such as CMSIS) that map directly to specific machine instructions: `__WFI()`, `__DSB()`, `__REV()`, `__CLZ()`, `__LDREXW()`, saturating and SIMD operations. The compiler understands them, so it can still optimise around them and check types. Use intrinsics whenever one exists; use inline assembly only for instructions or sequences that have no intrinsic.
+Compiler intrinsics are compiler-recognized functions or built-ins that expose architecture-specific operations or optimization information. They often translate directly into special instructions.
 
-**Common Cortex-M intrinsics (CMSIS)**
-
-| Intrinsic | Instruction | Use |
-|---|---|---|
-| `__enable_irq()`, `__disable_irq()` | `CPSIE i`, `CPSID i` | critical sections |
-| `__get_PRIMASK()`, `__set_BASEPRI()` | `MRS`/`MSR` | interrupt masking |
-| `__WFI()`, `__WFE()`, `__SEV()` | `WFI`, `WFE`, `SEV` | sleep and event signalling |
-| `__DMB()`, `__DSB()`, `__ISB()` | barriers | ordering |
-| `__REV()`, `__REV16()`, `__RBIT()` | byte/bit reverse | endianness, CRCs |
-| `__CLZ()` | count leading zeros | priority bitmaps, log2, normalisation |
-| `__LDREXW()`, `__STREXW()`, `__CLREX()` | exclusive access | lock-free atomics |
-| `__SSAT()`, `__USAT()` | saturate | DSP clipping |
-| `__SADD16()`, `__SMLAD()`, `__QADD()` | DSP/SIMD (Cortex-M4/M7/M33) | fixed-point filters, CMSIS-DSP |
-
-**GCC/Clang built-ins:** `__builtin_clz`, `__builtin_ctz`, `__builtin_popcount`, `__builtin_bswap32`, `__builtin_expect` (branch hints), `__builtin_unreachable`, and `__atomic_*`/`__sync_*` for atomics. Arm's **ACLE** (`<arm_acle.h>`) and **Neon/Helium** intrinsics (`<arm_neon.h>`, `<arm_mve.h>`) give SIMD operations on Cortex-A and Cortex-M55/M85.
-
-**Why intrinsics beat inline assembly**
-
-- The compiler knows exactly what the instruction reads, writes and clobbers, so it allocates registers and schedules code around it.
-- Portable across compilers that implement CMSIS/ACLE (GCC, Clang, Arm Compiler, IAR).
-- Type-checked, readable, and they do not block optimisation of the surrounding function.
-
-**When you still need inline assembly:** special register access with no wrapper, exact instruction sequences (context switching, fault handler entry that must read the stack pointer before the compiler touches it), and timing-critical code. Use the extended GCC syntax with correct constraints and clobbers:
+#### 1. Example: count leading zeros
 
 ```c
-static inline uint32_t get_ipsr(void)
+unsigned leading_zeros(unsigned int x)
 {
-    uint32_t r;
-    __asm volatile ("mrs %0, ipsr" : "=r" (r));   /* output in any register */
-    return r;
+    return x ? __builtin_clz(x) : sizeof(x) * CHAR_BIT;
 }
 ```
 
-Write whole functions that need full control (PendSV context switch) as `__attribute__((naked))` or in a separate `.S` file.
+GCC and Clang can use an appropriate CPU instruction, such as CLZ on Arm. The zero check matters because the traditional __builtin_clz is undefined for zero.
+
+#### 2. CMSIS intrinsics
+
+```c
+__disable_irq();
+__DMB();
+// Protected operation as appropriate
+__enable_irq();
+```
+
+These illustrate processor-control intrinsics. In reusable critical sections save and restore the previous interrupt mask rather than blindly enabling interrupts.
+
+#### 3. Intrinsics vs inline assembly
+
+| Intrinsic | Inline assembly |
+|---|---|
+| Compiler understands its documented semantics | Compiler relies on explicit operands and clobbers |
+| Easier register allocation | More control over instruction sequence |
+| Usually simpler to maintain | Requires precise constraints and target expertise |
+
+Use inline assembly for operations not exposed by a suitable intrinsic, or when a carefully specified instruction sequence is essential.
+
+**Interview takeaway:** Prefer documented intrinsics where possible. Check their target requirements, edge cases and ordering semantics; an intrinsic does not automatically imply a memory barrier.
 
 ### How do you implement a delay without blocking the CPU? {M}
 **Short answer:** Use a free-running time base (e.g. a 1 ms SysTick counter or a hardware timer) and compare timestamps instead of spinning in a delay loop. Record the start time, return to the main loop, and check later whether the required time has elapsed. Use unsigned arithmetic `(now - start) >= interval` so the check keeps working when the counter wraps around.
