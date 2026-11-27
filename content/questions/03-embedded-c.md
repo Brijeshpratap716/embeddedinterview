@@ -60,40 +60,48 @@ In Linux drivers use readl/writel for MMIO and appropriate atomics, locks or REA
 **Interview takeaway:** Volatile controls compiler-visible accesses; it is not a general synchronization primitive.
 
 ### Does volatile make a variable thread-safe or atomic? {M}
-**Short answer:** No. `volatile` only stops the **compiler** from caching, merging or removing accesses. It does not make read-modify-write operations atomic, does not make multi-word accesses atomic, and does not stop the **CPU** (or other cores, caches and bus) from reordering memory accesses.
+No. `volatile` does not make an operation atomic, nor does it prevent data races between threads.
 
-**Three ways volatile is not enough**
-
-1. **Read-modify-write:** `volatile uint32_t count; count++;` compiles to load, add, store. An ISR that also increments `count` between the load and the store loses one increment.
-2. **Multi-word data:** a 64-bit `volatile uint64_t ticks` on a 32-bit Cortex-M is read with two 32-bit loads. If the timer ISR updates it between them (e.g. when the low word wraps from `0xFFFFFFFF` to 0), the reader sees a torn value that is off by about 4 billion.
-3. **Ordering between variables:** writing `data = x; ready = true;` with both volatile guarantees the compiler keeps the order, but on a multi-core system or with write buffers, another core may see `ready` before `data` without a barrier (`__DMB()`, or C11 release/acquire).
-
-**The right tools**
-
-| Situation | Tool |
-|---|---|
-| Main code ↔ ISR on a single-core MCU | short critical section (disable/mask interrupts), or a single aligned 32-bit word that only one side writes |
-| Counters/flags shared between threads | C11 `<stdatomic.h>` (`atomic_fetch_add`), compiled to `LDREX`/`STREX` on Cortex-M3+ |
-| Complex shared data between tasks | RTOS mutex, or message queues (do not share at all) |
-| Multi-core / DMA ordering | memory barriers or acquire/release atomics, plus cache maintenance |
-| Linux kernel | `atomic_t`, `READ_ONCE`/`WRITE_ONCE`, spinlocks, RCU |
-
-**Reading a 64-bit counter safely without disabling interrupts:**
+#### 1. Why an increment is unsafe
 
 ```c
-uint64_t read_ticks64(void)
+volatile unsigned int count;
+void increment(void)
 {
-    uint32_t hi1, lo, hi2;
-    do {
-        hi1 = g_ticks_hi;          /* volatile, updated by the ISR */
-        lo  = g_ticks_lo;
-        hi2 = g_ticks_hi;
-    } while (hi1 != hi2);          /* retry if the ISR changed the high word meanwhile */
-    return ((uint64_t)hi1 << 32) | lo;
+    count++;
 }
 ```
 
-**Interview line:** Volatile is for observable accesses such as MMIO; atomics and locks are for concurrency. A simple ISR flag may use volatile under platform-specific atomicity and interrupt rules. For portable threaded C, volatile alone never prevents a data race.
+A typical increment involves a load, arithmetic and store. Consider two cores starting with count = 0.
+
+| Step | Core A | Core B |
+|---|---|---|
+| 1 | Read 0 | Read 0 |
+| 2 | Calculate 1 | Calculate 1 |
+| 3 | Store 1 | Store 1 |
+
+Two increments can lose an update. In C threads, conflicting unsynchronized accesses to a non-atomic object also constitute undefined behaviour; the table illustrates the hardware problem, not a guaranteed C execution.
+
+#### 2. Correct solution using C11 atomics
+
+```c
+#include <stdatomic.h>
+static atomic_uint count;
+
+void increment(void)
+{
+    atomic_fetch_add_explicit(&count, 1,
+                              memory_order_relaxed);
+}
+```
+
+The operation atomically updates the counter. Relaxed ordering is sufficient for a standalone statistic, not for publishing related data.
+
+#### 3. Bare-metal alternative
+
+On a single-core Cortex-M, save the interrupt mask, disable relevant interrupts, update the shared object and restore the mask. This does not protect against other cores or DMA. Verify that an atomic implementation is lock-free and suitable for ISR use before calling it from an ISR.
+
+**Interview takeaway:** Use volatile for hardware access; use atomics, locks or interrupt-safe critical sections for shared-state synchronization.
 
 ### Can a pointer be volatile? Explain the declarations. {M}
 **Short answer:** Yes; the position of `volatile` relative to `*` decides what is volatile, exactly like `const`. `volatile int *p` is a pointer to volatile data (the normal case for registers). `int *volatile p` is a volatile pointer to normal data (the pointer variable itself may be changed by an ISR). `volatile int *volatile p` makes both volatile.
