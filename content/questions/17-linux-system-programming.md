@@ -9,69 +9,28 @@ desc: Signals, fork bombs and resource limits, pthread_exit, /proc /sys /dev, pe
 Linux system programming questions test whether you can write and debug real programs on embedded Linux: how processes get signals, how files and permissions work, how memory mapping and the page cache behave, and how network servers handle many clients. Each answer gives the short version first, then working code or commands, and the follow-ups interviewers usually ask.
 
 ### What are signals, and how are they delivered and handled? {M}
-**Short answer:** A signal is an asynchronous notification sent to a process by the kernel, another process (`kill()`), or the process itself. Each signal has a default action (terminate, terminate with core dump, ignore, stop, continue). A process can change the action for most signals by installing a handler with `sigaction()` or ignoring them, but `SIGKILL` and `SIGSTOP` can never be caught, blocked or ignored. The kernel delivers a pending signal when the process next returns from the kernel to user mode, by making it jump to the handler on its own stack.
+Signals are asynchronous notifications delivered to a process or thread. They can originate from the kernel, another permitted process or the program itself.
 
-**Common signals**
-
-| Signal | Default | Typical cause | How often |
-|---|---|---|---|
-| `SIGINT` (2) | terminate | Ctrl-C | common |
-| `SIGTERM` (15) | terminate | polite shutdown request (`kill`, systemd stop) | common |
-| `SIGKILL` (9) | terminate (uncatchable) | `kill -9`, OOM killer | when things go wrong |
-| `SIGSEGV` (11) | core dump | invalid memory access | bugs |
-| `SIGBUS` | core dump | unaligned/invalid physical access, truncated mmap file | rare |
-| `SIGILL` | core dump | illegal instruction | rare |
-| `SIGFPE` | core dump | integer divide by zero | rare |
-| `SIGCHLD` | ignore | child exited or stopped | very frequent in shells/servers |
-| `SIGPIPE` | terminate | write to a pipe/socket with no reader | frequent in network code |
-| `SIGALRM` | terminate | `alarm()` timer | depends |
-| `SIGHUP` | terminate | terminal closed; by convention "reload config" for daemons | occasional |
-| `SIGSTOP`/`SIGTSTP`, `SIGCONT` | stop / continue | Ctrl-Z, `fg` | interactive use |
-| `SIGUSR1`/`SIGUSR2` | terminate | application-defined | as designed |
-
-**Installing a handler correctly**
+#### Delivery
+A signal becomes pending, then is delivered to an eligible thread when unblocked. The kernel applies the default action or arranges execution of an installed handler in userspace. On return, the saved context is restored.
 
 ```c
-#include <signal.h>
-#include <string.h>
-#include <unistd.h>
-
 static volatile sig_atomic_t stop;
-
-static void on_term(int sig)
+static void handler(int sig)
 {
     (void)sig;
-    stop = 1;                     /* only set a flag: handler must be async-signal-safe */
+    stop = 1;
 }
-
-int main(void)
-{
-    struct sigaction sa;
-    memset(&sa, 0, sizeof sa);
-    sa.sa_handler = on_term;
-    sigemptyset(&sa.sa_mask);
-    sigaction(SIGTERM, &sa, NULL);
-    sigaction(SIGINT, &sa, NULL);
-    signal(SIGPIPE, SIG_IGN);     /* get EPIPE from write() instead of dying */
-
-    while (!stop) {
-        /* main loop work */
-        pause();
-    }
-    /* clean shutdown: flush files, close sockets */
-    return 0;
-}
+/* In main, check errors: */
+struct sigaction sa = {0};
+sa.sa_handler = handler;
+sigemptyset(&sa.sa_mask);
+sigaction(SIGINT, &sa, NULL);
 ```
 
-**Rules for handlers**
+Use sigaction rather than relying on historical signal() semantics. Standard signals can coalesce; real-time signals can queue. SIGKILL and SIGSTOP cannot be caught or blocked.
 
-- The handler can run **between any two instructions** of the main program. Only call **async-signal-safe** functions (`write`, `_exit`, `sem_post`, setting a `volatile sig_atomic_t`). `printf`, `malloc` and most library functions are not safe: if the main code was inside `malloc` holding its lock, calling `malloc` in the handler deadlocks.
-- Prefer `sigaction` over `signal()`, whose semantics differ between systems.
-- Use `SA_RESTART` so slow system calls are restarted instead of failing with `EINTR`, or handle `EINTR` explicitly.
-
-**Better designs for real programs:** block the signals and receive them as file descriptor events with **`signalfd()`** (fits into an `epoll` loop), or use the **self-pipe trick** (the handler writes a byte to a pipe watched by the main loop).
-
-**When to write a custom handler:** graceful shutdown on `SIGTERM` (save state, close files), reloading configuration on `SIGHUP`, reaping children on `SIGCHLD`, and ignoring `SIGPIPE` in network servers. Catching `SIGSEGV` to "recover" is almost always wrong; at most log a backtrace and exit.
+**Interview takeaway:** A handler is not a normal thread. Call only async-signal-safe functions there; use a flag, self-pipe or signalfd-based design to defer work.
 
 ### What happens when a program executes an illegal instruction or accesses invalid memory? {M}
 **Short answer:** The CPU raises a synchronous exception into the kernel (an undefined-instruction exception, or a data/instruction abort for a bad memory access). The kernel decides whether the fault can be fixed (for example, a page fault on a valid but not-yet-mapped page). If not, it sends the faulting thread a signal: **`SIGILL`** for an illegal instruction, **`SIGSEGV`** for an invalid address or permission violation, **`SIGBUS`** for some alignment or hardware errors, **`SIGFPE`** for arithmetic errors. The default action terminates the process and may write a core dump.
