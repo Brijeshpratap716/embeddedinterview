@@ -673,6 +673,20 @@ atomic_inc(&counter);
 
 **Interview takeaway:** Exclusives make the update conditional on reservation validity; ordering semantics and atomicity are distinct.
 
+#### Two-core exclusive retry trace
+
+| Step | Core 0 | Core 1 |
+|---|---|---|
+| Initial | counter=10 | counter=10 |
+| Load-exclusive | reads 10, reserves | reads 10, reserves |
+| Add | computes 11 | computes 11 |
+| Store-exclusive | succeeds, status 0 | fails if reservation invalidated |
+| Retry | done | reloads 11, computes 12, stores successfully |
+
+The exclusive monitor tracks the relevant reservation granule; interference, context changes and other permitted conditions can cause failure, not just an explicit write to the exact C object. Code must handle failure by retrying. A store-exclusive status value is not the stored data. Use the architecture's width, alignment and memory-type restrictions, and keep the exclusive sequence short.
+
+For pure counter increments, LDXR/STXR can provide relaxed atomicity; LDAXR/STLXR add ordering. LSE instructions such as LDADD and ordering variants can avoid an explicit software retry loop when supported. In C or Linux, prefer compiler atomic or kernel atomic APIs to handwritten inline assembly unless the low-level implementation itself is the subject. A retry loop is not a bounded-time guarantee under contention.
+
 ### What is the difference between normal and device memory? {M}
 **Short answer:** Normal memory is suitable for RAM and may be cacheable. Device memory has stricter access attributes suitable for MMIO registers. Linux drivers use ioremap and appropriate I/O accessors.
 
