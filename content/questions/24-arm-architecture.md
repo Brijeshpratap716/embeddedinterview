@@ -65,6 +65,20 @@ ADD X0, X1, X2 // 64-bit operation
 
 **Interview takeaway:** Execution state determines the instruction set and register model; it does not by itself determine physical address width.
 
+#### Register and instruction examples
+
+```asm
+// AArch64 (A64)
+ADD X0, X1, X2
+LDR W3, [X4]
+
+// AArch32 (example A32 syntax)
+ADD R0, R1, R2
+LDR R3, [R4]
+```
+
+AArch64 provides 31 general-purpose X registers with 32-bit W views; AArch32 provides a different register and execution model, including R13/SP, R14/LR and R15/PC. A64 instructions are fixed 32-bit encodings even though many operands are 64 bits. Thumb instructions can use 16-bit or 32-bit encodings. An AArch64 kernel may support 32-bit userspace if the CPU and kernel configuration support AArch32 at EL0. Executable format, ABI, system-call convention and libraries must match the execution state. Do not equate 64-bit registers with a full 64-bit implemented virtual or physical address range.
+
 ### Do ARM64 registers contain data or addresses? {E}
 **Short answer:** Both. X0–X30 hold 64-bit values; instructions determine whether those bits represent data or an address. Writing Wn zeroes the upper 32 bits of Xn.
 
