@@ -235,31 +235,37 @@ Software saves other registers when necessary, for example during an RTOS contex
 **Interview takeaway:** Cortex-M hardware stacks a basic context automatically, not every register. EXC_RETURN encodes the return mode and stack/frame information.
 
 ### What is the NVIC? {E}
-**Short answer:** The **Nested Vectored Interrupt Controller** is the interrupt controller built into every Cortex-M core. It enables and disables each external interrupt, records pending interrupts, assigns programmable priorities, lets higher-priority interrupts pre-empt lower ones (nesting), and fetches the handler address directly from the vector table (vectored), with hardware optimisations such as tail-chaining and late arrival.
+NVIC stands for Nested Vectored Interrupt Controller. It is part of the Cortex-M interrupt subsystem and controls external interrupt enabling, pending state, prioritization and delivery.
 
-**What it provides**
+#### 1. Interrupt flow
 
-- **Enable/disable per IRQ:** `NVIC_EnableIRQ(USART2_IRQn)`, `NVIC_DisableIRQ()` (registers `ISER`/`ICER`).
-- **Pending state:** set or clear by software (`NVIC_SetPendingIRQ`, `NVIC_ClearPendingIRQ`), useful for testing or deferring work to a software-triggered interrupt.
-- **Active state:** which interrupts are currently running (nesting).
-- **Priorities:** 2 bits on Cortex-M0/M0+ (4 levels), typically 3–8 bits on M3/M4/M7/M33 (e.g. 16 levels on STM32), set with `NVIC_SetPriority()`.
-- **Priority grouping** into pre-emption priority and sub-priority (not on v6-M).
-- **Number of interrupts:** up to 32 on Armv6-M, up to 240 on Armv7-M, up to 480 on Armv8-M Mainline, depending on the chip.
-
-**Typical set-up**
-
-```c
-NVIC_SetPriority(USART2_IRQn, 5);     /* CMSIS shifts into the implemented bits */
-NVIC_ClearPendingIRQ(USART2_IRQn);    /* drop anything pending from before */
-NVIC_EnableIRQ(USART2_IRQn);
-USART2->CR1 |= USART_CR1_RXNEIE;      /* and enable the source inside the peripheral */
+```text
+Peripheral event --> IRQ pending in NVIC
+                    |
+               Priority / mask check
+                    |
+               Cortex-M exception entry
+                    |
+               ISR services peripheral
 ```
 
-An interrupt reaches the CPU only if it is enabled **both** in the peripheral and in the NVIC (and not masked by `PRIMASK`/`BASEPRI`).
+Multiple interrupts may be pending simultaneously. The processor can preempt a lower-priority handler when a higher-urgency interrupt becomes eligible.
 
-**Level vs pulse interrupts:** most peripheral interrupts are level-sensitive: the line stays asserted until the peripheral's flag is cleared. If the handler does not clear it, the interrupt is taken again immediately after return.
+#### 2. CMSIS configuration example
 
-**Related:** system exceptions (SysTick, PendSV, SVC, faults) are configured in the **SCB** (`SCB->SHPR`), not the NVIC. **WIC** (wake-up interrupt controller) lets interrupts wake the core from deep sleep when the NVIC clock is stopped. Cortex-A systems use the **GIC** instead.
+```c
+NVIC_SetPriority(USART1_IRQn, 3);
+NVIC_ClearPendingIRQ(USART1_IRQn);
+NVIC_EnableIRQ(USART1_IRQn);
+```
+
+Configure and clear the peripheral's interrupt condition separately before enabling the source as appropriate. Clearing NVIC pending does not necessarily clear the device's own interrupt flag.
+
+#### 3. Priority convention
+
+Lower numerical priority means higher urgency. Only a target-specific number of priority bits are implemented. Priority grouping, when supported, determines the preemption/subpriority split.
+
+**Interview takeaway:** NVIC controls processor interrupt delivery, not peripheral event generation. Configure both the device and interrupt controller correctly.
 
 ### What are tail-chaining and late arrival? {H}
 **Short answer:** Both are hardware optimisations in the Cortex-M exception model. **Tail-chaining:** when an interrupt handler finishes and another interrupt is already pending, the core skips the unstacking and re-stacking and goes straight into the next handler (6 cycles instead of about 24 on Cortex-M3/M4). **Late arrival:** if a higher-priority interrupt arrives while the core is still stacking for a lower-priority one, the core uses the same stack frame and runs the higher-priority handler first.
