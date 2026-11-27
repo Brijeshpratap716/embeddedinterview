@@ -1112,42 +1112,50 @@ A task may block using an RTOS delay or wait for a timer event, allowing other r
 **Interview takeaway:** Use elapsed-time checks, hardware timers or RTOS waits rather than spin delays for long waits. Time resolution and scheduling jitter determine actual timing accuracy.
 
 ### What is a super loop (foreground/background) architecture? {E}
-**Short answer:** A super loop is the simplest firmware structure: `main()` initialises the hardware and then runs an infinite loop that calls each task function in turn. Interrupts (the **foreground**) handle time-critical events quickly and set flags or fill buffers; the loop (the **background**) does the processing. It needs no RTOS and is easy to understand, but the response time of every task depends on the total time of one pass of the loop.
+A super loop is a cooperative firmware architecture in which the main function repeatedly calls short service routines. Interrupts handle asynchronous hardware events.
+
+#### 1. Basic implementation
 
 ```c
 int main(void)
 {
-    clock_init();
-    gpio_init();
-    uart_init();
-    adc_init();
+    board_init();
 
     for (;;) {
-        if (uart_rx_available()) handle_command();   /* each task must return quickly */
-        if (adc_flag)            { adc_flag = false; filter_sample(); }
-        update_display();
-        kick_watchdog_if_healthy();
-        __WFI();                                     /* sleep until the next interrupt */
+        button_service();
+        uart_service();
+        control_service();
+        watchdog_service();
     }
 }
 ```
 
-**Rules for making it work**
+Each service routine checks whether work is pending, performs a bounded amount of work and returns.
 
-- Every task must be **non-blocking**: do a small amount of work and return; long operations become state machines.
-- ISRs do the minimum (capture data, set flags).
-- Use timestamps for periodic work instead of delay loops.
-- Measure the worst-case loop time; the worst-case response time of a task is about one full loop.
+#### 2. Foreground/background communication
 
-**Advantages:** tiny code size, no RTOS licensing or learning curve, fully deterministic order, easy to debug, no stack-per-task overhead.
+```text
+Hardware IRQ --> ISR --> queue / event
+                              |
+                              v
+main loop --> input --> process --> output
+     ^                                  |
+     +----------------------------------+
+```
 
-**Disadvantages and when to move on**
+The ISR captures events quickly. Foreground code performs parsing and application-level processing. Shared data needs an appropriate synchronization protocol.
 
-- A slow task (writing to flash, a long calculation) delays all others.
-- Priorities are only possible through ISRs or by reordering/skipping work.
-- Complex timing requirements, many independent activities, or blocking protocol stacks (TCP/IP, USB, Bluetooth) become hard to manage.
+#### 3. Advantages and limitations
 
-**Next steps up:** a **cooperative scheduler** (time-triggered task table, each task run at its period), event-driven frameworks (active objects with event queues, e.g. QP), or a pre-emptive **RTOS** (FreeRTOS, Zephyr).
+| Advantage | Limitation |
+|---|---|
+| Simple control flow | No preemptive task scheduling |
+| Low memory overhead | One slow service delays all others |
+| Easy on small MCUs | Complex timing becomes difficult |
+
+Use nonblocking drivers, explicit state machines and event-driven processing. If multiple independent deadlines become difficult to satisfy, an RTOS may be a better fit.
+
+**Interview takeaway:** A super loop is cooperative: every service must return promptly. Interrupts alone do not guarantee the foreground loop meets deadlines.
 
 ### How do you write a state machine in C? {M}
 **Short answer:** Represent the states with an `enum`. Either use a **`switch` on the current state** inside a function that receives events (clear for small machines), or a **table** indexed by state and event that gives the next state and an action function (scales well and maps directly to a state diagram). Always handle unexpected events explicitly.
