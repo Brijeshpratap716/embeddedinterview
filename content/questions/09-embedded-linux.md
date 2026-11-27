@@ -668,24 +668,30 @@ A userspace driver still depends on kernel mediation and correct device ownershi
 **Interview takeaway:** Choose based on functional subsystem, timing, isolation and lifecycle requirements. Userspace drivers are not a replacement for every kernel driver.
 
 ### How do you debug an embedded Linux board that does not boot? {M}
-**Short answer:** Identify the last successful boot stage before debugging. Check power, reset, boot straps, serial logs, memory initialization, image loading and root filesystem in that order as appropriate.
+When an embedded Linux board does not boot, identify the last verified stage before changing software. A failure before UART output has different causes from a root-filesystem panic.
 
-```text
-Power/reset -> Boot ROM -> SPL / firmware -> U-Boot
-                                           |
-                                           v
-Userspace <- rootfs <- Linux kernel <- image + DTB
-```
+#### 1. Debug checklist
 
-| Last visible stage | First checks |
+| Last evidence | Investigate |
 |---|---|
-| No ROM/early output | Rails, reset, clocks, boot mode, debug interface |
-| SPL starts | DRAM training and clock configuration |
-| U-Boot starts | Image format, load addresses, DTB, boot arguments |
-| Kernel starts | earlycon, console, device tree, root device |
-| VFS panic | root=, filesystem support, initramfs |
-| PID 1 starts | init executable, mounts, dependencies |
+| No activity | Power rails, reset, reference clock, boot straps |
+| Boot ROM / early firmware only | Boot image layout, authentication, SRAM/DRAM setup |
+| U-Boot prompt | Storage reads, image/DTB validity, load addresses |
+| Kernel starts then hangs | Early console, DTB, CPU state, memory or driver initialization |
+| Cannot mount root | root=, storage driver, filesystem and partition |
+| PID 1 failure | Rootfs contents, executable ABI, libraries and init configuration |
 
-**Example:** A VFS unable-to-mount-root panic suggests checking storage driver availability, root device identification and filesystem configuration rather than debugging SPL.
+#### 2. Practical tools
 
-**Interview takeaway:** Locate the failing handoff using evidence from UART, JTAG and logs; boot stages vary by SoC.
+Use serial logs first. Inspect bootloader environment and image metadata. JTAG can halt early firmware when console output is unavailable. Linux earlycon, initcall_debug and appropriate loglevel can expose later initialization problems.
+
+#### 3. Example
+
+If Linux reports that it cannot open the root device, verify the actual partition identifier, built-in storage controller driver or required initramfs, and filesystem support. Changing DDR timing is unlikely to address a clearly diagnosed root-mount problem.
+
+#### 4. Compare a known-good image
+
+Change one variable at a time and record evidence. Preserve recovery access and avoid overwriting known-good boot slots without a backup.
+
+**Interview takeaway:** Boot debugging is stage isolation. Confirm hardware, firmware handoff, kernel initialization and rootfs/userspace independently.
+
