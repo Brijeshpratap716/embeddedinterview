@@ -1366,35 +1366,28 @@ Inspect runtime status and usage counts where exposed in sysfs, relevant PM logs
 **Interview takeaway:** Runtime PM saves power per device; system PM coordinates sleep across devices. Correct usage counts, ordering and asynchronous teardown are critical.
 
 ### What is PREEMPT_RT and what changes for drivers? {H}
-**Short answer:** PREEMPT_RT (merged into mainline in 6.12, `CONFIG_PREEMPT_RT`) turns Linux into a real-time OS with bounded latencies of typically tens of microseconds. It makes almost all kernel code pre-emptible: interrupt handlers run in **threads** with configurable priorities, `spinlock_t` and `rwlock_t` become **sleeping rt_mutexes with priority inheritance**, softirqs run in thread context, and long non-pre-emptible sections are broken up. Drivers must not rely on "spinlock means interrupts and pre-emption are off".
+PREEMPT_RT is the Linux real-time preemption infrastructure designed to reduce worst-case scheduling latency. It changes several kernel execution and locking mechanisms to make more work preemptible.
 
-**What changes**
+#### 1. Important changes
 
-| | Standard kernel | PREEMPT_RT |
-|---|---|---|
-| Hard IRQ handlers | run in interrupt context | forced into threads (`irq/NN-name`, SCHED_FIFO 50) unless `IRQF_NO_THREAD` |
-| `spinlock_t` | spins, disables pre-emption | sleeping lock (rt_mutex) with priority inheritance |
-| `raw_spinlock_t` | spins | still spins: only for very short, truly atomic sections (IRQ chips, scheduler) |
-| `local_irq_disable()` around data | common (bad) practice | breaks: use proper locks (`local_lock`) |
-| Softirqs | after IRQs, or ksoftirqd | in thread context, per-CPU, pre-emptible |
-| Memory allocation under spinlock | allowed with `GFP_ATOMIC` | spinlocks can sleep, so allocations in raw-spinlock or hard-IRQ sections are forbidden |
+- Many interrupts execute in schedulable IRQ threads.
+- Many spinlock_t locks use RT-mutex-based semantics with priority inheritance.
+- raw_spinlock_t retains strict non-sleeping spinlock semantics.
+- Kernel code must follow context and lock rules specific to the RT configuration.
 
-**Driver guidelines for RT**
+Not every interrupt is threaded, and not every lock becomes sleepable.
 
-- Use threaded IRQs and normal `spinlock_t`; use `raw_spinlock_t` only where required (interrupt controller, clock event code) and keep those sections tiny.
-- Do not disable interrupts or pre-emption to protect data; use locks or `local_lock_t` for per-CPU data.
-- Avoid unbounded loops with locks held.
-- Mark interrupt handlers that must stay in hard IRQ context with `IRQF_NO_THREAD` (timers, IPIs) and keep them minimal.
+#### 2. Driver implications
 
-**Tuning a real-time system**
+Keep true hard-IRQ handlers short, avoid long raw-spinlocked sections and minimize interrupt-disabled regions. Do not assume spin_lock_irqsave has identical hard-interrupt masking semantics on PREEMPT_RT and non-RT kernels.
 
-1. RT application threads use `SCHED_FIFO` with priorities above the IRQ threads they don't depend on; set the relevant IRQ thread priorities with `chrt`.
-2. `mlockall(MCL_CURRENT | MCL_FUTURE)` and pre-fault stacks/heap to avoid page faults.
-3. Isolate CPUs (`isolcpus=`, `nohz_full=`, `rcu_nocbs=`, `irqaffinity=`) for critical threads.
-4. Disable deep CPU idle states and frequency scaling for lowest latency, or accept the trade-off.
-5. Measure with `cyclictest` under load (`stress-ng`, `hackbench`), and find latency sources with `ftrace` (osnoise, timerlat tracers, `rtla`).
+Threaded IRQ priorities and task priorities can affect response latency; analyze dependencies rather than simply raising every priority.
 
-**Limits:** RT Linux gives bounded latency for most workloads but is not formally certified for hard safety-critical use; those systems pair Linux with an RTOS on another core or a hypervisor.
+#### 3. Measure latency
+
+Use tools such as cyclictest for scheduling-latency measurements and ftrace or hardware trace to identify long preemption/interrupt-disabled sections. Test representative I/O and CPU load.
+
+**Interview takeaway:** PREEMPT_RT improves predictability, not automatic hard-real-time guarantees. Drivers must still obey context rules and bound their worst-case blocking and execution times.
 
 ### How do you write a user-space driver, and when is it a good idea (UIO, VFIO, spidev, libgpiod)? {M}
 **Short answer:** Some devices can be driven from user space using generic kernel interfaces: **UIO** maps device registers into a process and delivers interrupts via `read()` on `/dev/uioN`; **VFIO** does the same with IOMMU protection and full DMA support (used by DPDK, SPDK and QEMU device pass-through); **spidev**, **i2c-dev** and **libgpiod** (`/dev/gpiochipN` character device) expose buses and GPIOs. User-space drivers are easier to develop and debug and avoid GPL constraints, but they have higher latency for interrupts, cannot integrate with kernel subsystems (network stack, filesystems, input), and need care with security.
