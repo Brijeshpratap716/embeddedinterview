@@ -210,31 +210,21 @@ Illustrative only: QEMU has more complete event handling and not all hardware ex
 **Interview takeaway:** KVM_RUN enters guest execution; the kernel handles many traps internally and reports selected exits to the VMM.
 
 ### What causes a VM exit on ARM, and how is an MMIO access handled? {H}
-**Short answer:** A VM exit (a trap to EL2) happens when the guest does something the hypervisor configured to trap: accessing an address with no stage-2 mapping (MMIO to an emulated device), executing `HVC`/`SMC` (e.g. PSCI calls to start or stop CPUs), `WFI`/`WFE` when it has nothing to do, accessing trapped system registers, or when a physical interrupt arrives that the host must handle. KVM handles most of these in the kernel; MMIO to a QEMU device is passed to user space as `KVM_EXIT_MMIO`.
+An ARM guest exits to EL2 when a configured trap or virtualization-related exception occurs. Examples include stage-2 translation faults, trapped system-register accesses, hypercalls and physical interrupts.
 
-**Exit reasons (reported in `ESR_EL2`, the syndrome register)**
+#### MMIO example
+```text
+Guest LDR/STR -> stage-1 VA to IPA
+             -> stage-2 fault for emulated MMIO
+             -> EL2/KVM handles abort
+             -> KVM_EXIT_MMIO to QEMU if needed
+             -> device callback reads/writes register
+             -> KVM_RUN resumes guest
+```
 
-| Cause | Typical handling |
-|---|---|
-| Stage-2 **data abort** on an unmapped IPA | MMIO: decode the access, in-kernel device (vGIC, ITS) or `KVM_EXIT_MMIO` to QEMU; RAM not yet mapped: allocate/map the page and retry |
-| `HVC` / `SMC` | PSCI (`CPU_ON`, `CPU_OFF`, `SYSTEM_RESET`) handled in KVM; others forwarded |
-| `WFI` | put the vCPU thread to sleep until it has an interrupt (frees the physical CPU) |
-| System register access (trapped by `HCR_EL2`/fine-grained traps) | emulate in KVM (e.g. performance counters, debug, cache maintenance by set/way) |
-| Physical IRQ while guest runs | exit to the host so the host kernel handles it, then maybe inject a virtual IRQ |
-| Stage-2 permission fault | dirty-page tracking for live migration, copy-on-write |
+KVM decodes or otherwise handles supported accesses and provides address, direction, size and data to userspace where required. QEMU dispatches to the mapped device region; read results are supplied back before re-entry.
 
-**MMIO step by step (guest writes a UART register)**
-
-1. Guest executes `STR w1, [x0]` where `x0` = `0x09000000` (the PL011 on `virt`).
-2. Stage-1 translation (guest page tables) gives IPA `0x09000000`. Stage 2 has **no mapping** there, so the CPU takes a data abort to EL2.
-3. KVM reads `ESR_EL2` (which register, access size, read or write — the "ISV" valid syndrome) and `HPFAR_EL2` (the faulting IPA).
-4. The address is not an in-kernel device, so KVM fills `kvm_run->mmio` (`phys_addr`, `len`, `is_write`, `data`) and returns from `KVM_RUN` with `KVM_EXIT_MMIO`.
-5. QEMU calls `address_space_rw()`, which finds the PL011 `MemoryRegion` and calls `pl011_write()`; the character goes to the host terminal.
-6. QEMU calls `KVM_RUN` again; KVM advances the guest PC past the store and resumes.
-
-**Cost:** an exit to user space takes several microseconds. That is why heavily used devices are moved into the kernel (vGIC, arch timer, vhost-net) or replaced by paravirtual virtio devices that batch requests.
-
-**Gotcha:** if the guest uses an instruction that does not give a valid syndrome (e.g. a load/store pair or writeback addressing to MMIO), KVM cannot decode it and reports an error; guest drivers must use simple accessors (`readl`/`writel`) for MMIO.
+**Interview takeaway:** Not every guest exception is a VM exit, and not every exit requires QEMU. Guest system calls normally stay within the guest EL0/EL1 relationship.
 
 ### What is two-stage address translation (stage 2, IPA)? {H}
 **Short answer:** With virtualization there are two page-table walks. **Stage 1** is owned by the guest OS and translates guest virtual addresses (VA) to **intermediate physical addresses (IPA)**, which the guest thinks are physical. **Stage 2** is owned by the hypervisor and translates IPAs to real physical addresses (PA). The guest cannot see or change stage 2, so it can only reach memory the hypervisor has given it.
