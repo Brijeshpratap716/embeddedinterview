@@ -206,35 +206,96 @@ The linker resolves the reference in `file2.c` to the definition in `file1.c`.
 **Interview takeaway:** Every definition is a declaration, but every declaration is not necessarily a definition.
 
 ### What is the use of the extern keyword? {E}
-**Short answer:** `extern` declares a variable or function that is **defined somewhere else** (usually in another `.c` file), so this file can use it and the linker connects the two. Functions are `extern` by default, so the keyword is mainly needed for global variables.
+The `extern` keyword in C is used to **declare a variable or function that is defined elsewhere**, typically in another source file.
+
+It allows multiple source files to access the same global variable without creating separate copies.
+
+#### 1. Using extern with variables
+
+**file1.c**
 
 ```c
-/* config.h */
-extern uint32_t g_system_clock_hz;      /* declaration */
-
-/* config.c */
-uint32_t g_system_clock_hz = 16000000;  /* the one definition */
-
-/* uart.c */
-#include "config.h"
-void uart_init(void) { uint32_t div = g_system_clock_hz / 115200; /* ... */ }
+int count = 100;
 ```
 
-**Rules**
-
-- `extern int x;` does not allocate memory. `extern int x = 5;` is a definition (the initialiser wins), which compilers warn about.
-- An `extern` declaration inside a function refers to a global defined elsewhere.
-- `extern "C"` in C++ is a different feature: it turns off C++ name mangling so C and C++ code can call each other. C headers used from C++ wrap their declarations in `#ifdef __cplusplus extern "C" { #endif`.
-
-**Linker errors:** if no file defines the variable, you get `undefined reference`; if two files define it, `multiple definition`.
-
-**Design advice:** many global variables shared through `extern` make firmware hard to reason about, because any file can change them. Prefer `static` variables with access functions (`clock_get_hz()`), and keep `extern` for a few genuinely global items such as linker-script symbols:
+**file2.c**
 
 ```c
-extern uint32_t _sdata, _edata, _sidata;   /* defined by the linker script, used by start-up code */
+extern int count;
+
+void fun(void)
+{
+    printf("%d", count);
+}
 ```
 
-These linker symbols have no storage of their own; only their **address** is meaningful (`&_sdata`).
+**Output:** `100`
+
+The compiler knows the type of `count` through its declaration, and the linker resolves its reference to the definition in `file1.c`.
+
+<div style="max-width:680px;margin:16px 0">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 172" width="100%" role="img" aria-label="Both source files reference the same count variable in shared memory">
+  <rect x="8" y="5" width="148" height="65" rx="6" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/>
+  <text x="82" y="22" font-size="12" font-weight="600" text-anchor="middle" fill="currentColor">file1.c</text>
+  <text x="82" y="40" font-size="11" font-family="monospace" text-anchor="middle" fill="currentColor">int count = 100;</text>
+  <text x="82" y="57" font-size="10" text-anchor="middle" fill="currentColor">Definition</text>
+  <rect x="184" y="5" width="148" height="65" rx="6" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/>
+  <text x="258" y="22" font-size="12" font-weight="600" text-anchor="middle" fill="currentColor">file2.c</text>
+  <text x="258" y="40" font-size="11" font-family="monospace" text-anchor="middle" fill="currentColor">extern int count;</text>
+  <text x="258" y="57" font-size="10" text-anchor="middle" fill="currentColor">Declaration</text>
+  <path d="M82 70 V91 H170 M258 70 V91 H170 V116" stroke="currentColor" fill="none" stroke-width="1.3"/>
+  <path d="M165 111 L170 116 L175 111" stroke="currentColor" fill="none"/>
+  <rect x="85" y="116" width="170" height="43" rx="6" fill="#eab308" fill-opacity=".12" stroke="#ca8a04"/>
+  <text x="170" y="133" font-size="12" font-weight="600" text-anchor="middle" fill="currentColor">Shared memory (.data)</text>
+  <text x="170" y="150" font-size="12" font-family="monospace" text-anchor="middle" fill="currentColor">count = 100</text>
+</svg>
+</div>
+
+Both source files access the same memory location.
+
+#### 2. Using extern with functions
+
+**file1.c**
+
+```c
+void driver_init(void)
+{
+    printf("Driver initialized");
+}
+```
+
+**file2.c**
+
+```c
+extern void driver_init(void);
+
+void fun(void)
+{
+    driver_init();
+}
+```
+
+For ordinary function declarations, `extern` is implicit, so explicitly writing it is generally unnecessary.
+
+#### 3. Does extern allocate memory?
+
+```c
+extern int a;       // Declaration
+int a = 10;         // Definition
+extern int b = 20;  // Definition at file scope
+```
+
+An `extern` variable declaration without an initializer normally does not allocate memory. However, an `extern` declaration with an initializer at file scope is a definition.
+
+#### 4. Difference between static and extern
+
+| `static` (file scope) | `extern` (normally) |
+|---|---|
+| Internal linkage | External linkage |
+| Symbol restricted to current translation unit | Symbol accessible across translation units |
+| Used for hiding module-specific data | Used for sharing variables and functions |
+
+**Interview takeaway:** `extern` allows multiple source files to share the same global variable or function. The compiler checks its declaration, and the linker resolves its reference to the corresponding definition.
 
 ### What is the difference between const and #define? {E}
 **Short answer:** `#define` is plain text substitution done by the preprocessor before compilation: it has no type, no scope and is invisible in the debugger. `const` creates a real, typed, scoped object that the compiler checks and that can live in flash (`.rodata`). Prefer `const` or `enum` for type safety, but note that in C a `const int` is **not** a compile-time constant expression.
