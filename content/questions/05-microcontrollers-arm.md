@@ -329,32 +329,36 @@ FreeRTOS ports may prohibit high-urgency interrupts from using RTOS APIs above a
 **Interview takeaway:** Lower number means higher urgency, but preemption grouping, interrupt masks and RTOS constraints determine whether an interrupt can actually preempt another.
 
 ### What is the difference between PRIMASK, FAULTMASK and BASEPRI? {H}
-**Short answer:** All three are special registers that mask (block) exceptions. **PRIMASK** = 1 blocks every exception with configurable priority, leaving only NMI and HardFault; `__disable_irq()` sets it. **FAULTMASK** = 1 also blocks HardFault (only NMI remains); it is meant for fault handlers and is cleared automatically on exception return. **BASEPRI** = n blocks only exceptions whose priority value is ≥ n, so more urgent interrupts still run.
+PRIMASK, BASEPRI and FAULTMASK are Cortex-M special registers that control exception masking. Their availability varies by architecture; BASEPRI and FAULTMASK are absent on Cortex-M0/M0+.
 
-| Register | Blocks | Available on | Typical use |
-|---|---|---|---|
-| PRIMASK | all configurable-priority exceptions | all Cortex-M | short critical sections, `__disable_irq()` |
-| FAULTMASK | the above + HardFault | Armv7-M, Armv8-M Mainline | fault handlers that must not be interrupted; running at priority −1 |
-| BASEPRI | priorities numerically ≥ BASEPRI (0 = no masking) | Armv7-M, Armv8-M Mainline | RTOS critical sections that leave high-priority interrupts running |
+| Register | Effect |
+|---|---|
+| PRIMASK = 1 | Masks configurable-priority exceptions |
+| BASEPRI nonzero | Masks configurable exceptions at or below the specified urgency threshold |
+| FAULTMASK = 1 | Masks all exceptions except NMI |
+
+NMI and HardFault are not masked by PRIMASK or BASEPRI. BASEPRI = 0 disables BASEPRI-based masking.
+
+#### 1. PRIMASK example
 
 ```c
-/* RTOS-style critical section that leaves priorities 0-4 running */
-uint32_t old = __get_BASEPRI();
-__set_BASEPRI(5u << (8u - __NVIC_PRIO_BITS));   /* mask priority values >= 5 */
-/* ... critical work ... */
-__set_BASEPRI(old);
+uint32_t saved = __get_PRIMASK();
+__disable_irq();
+// Short shared-state update
+__set_PRIMASK(saved);
 ```
 
-`__set_BASEPRI_MAX()` (the `BASEPRI_MAX` alias) only raises the masking level, never lowers it, which makes nested use safe.
+This restores the prior state rather than enabling interrupts unconditionally.
 
-**Why BASEPRI matters:** with `PRIMASK`, every critical section adds latency to every interrupt. With `BASEPRI`, the kernel's critical sections do not delay the most time-critical interrupts at all (e.g. a motor-control PWM interrupt), as long as those interrupts do not call kernel APIs.
+#### 2. BASEPRI use
 
-**Armv6-M (Cortex-M0/M0+)** has only PRIMASK, so RTOS critical sections there disable all interrupts.
+An RTOS may mask lower-urgency interrupts while allowing time-critical higher-urgency interrupts to execute. The hardware threshold uses the implemented priority field encoding, not necessarily the unshifted logical number passed to NVIC_SetPriority.
 
-**Other notes**
+#### 3. FAULTMASK use
 
-- Masking also delays the exception, it does not lose it: pending interrupts are taken when the mask is lifted.
-- On Armv8-M with TrustZone, each security state has its own PRIMASK/FAULTMASK/BASEPRI, and Secure code can optionally deprioritise Non-secure interrupts.
+FAULTMASK is a specialized mechanism for carefully controlled fault-handling or recovery paths. It is not an ordinary critical-section mechanism and can prevent normal fault handling.
+
+**Interview takeaway:** PRIMASK masks most configurable interrupts, BASEPRI selectively masks by urgency, and FAULTMASK masks nearly all exceptions. Use the platform's established synchronization APIs.
 
 ### What causes a HardFault and how do you debug one? {M}
 **Short answer:** A HardFault is the catch-all fault on Cortex-M. Common causes: accessing an invalid address (NULL or wild pointer, freed memory), stack overflow, executing from a non-executable or invalid address, branching to an address without the Thumb bit, unaligned multi-word accesses, divide by zero (if trapping is enabled), undefined instructions, and MemManage/BusFault/UsageFault faults escalated because their handlers are disabled. Debug it by capturing the stacked registers to find the faulting PC, then reading the fault status registers.
