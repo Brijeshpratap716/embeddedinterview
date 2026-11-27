@@ -54,42 +54,33 @@ Linux represents schedulable tasks using task_struct. Threads created with suita
 **Interview takeaway:** Threads share memory, not a single execution context. Shared objects require synchronization; separate processes may also explicitly share memory.
 
 ### What are the states of a process, and how does a process move between them? {E}
-**Short answer:** The textbook states are **New** → **Ready** (waiting for a CPU) → **Running** → **Blocked/Waiting** (waiting for I/O or an event) → back to Ready, and finally **Terminated**. The scheduler moves processes between Ready and Running; system calls and interrupts move them to and from Blocked.
+A process or thread moves between execution states according to scheduling, waiting and termination.
 
+```text
+New -> Ready -> Running -> Exited
+         ^       |
+         |       v
+         +---- Blocked (event / I/O / timeout)
+Running -> Ready on preemption
 ```
-          admit             dispatch
-  New ──────────► Ready ◄──────────────► Running ──── exit ───► Terminated (zombie)
-                    ▲        preempt /        │
-                    │        time slice       │ wait for I/O, sleep, lock
-                    │                         ▼
-                    └──── event done ──── Blocked
+
+#### 1. Typical states
+
+Ready means eligible but not necessarily running. Running means executing on a CPU. Blocked means waiting for an event. A stopped task is paused by a control mechanism, and a terminated task may retain exit status until reaped.
+
+#### 2. Linux example
+
+```sh
+ps -eo pid,stat,comm
 ```
 
-**Transitions and what causes them**
+Common state letters include R (running/runnable), S (interruptible sleep), D (uninterruptible sleep), T (stopped) and Z (zombie). These are Linux-specific reporting categories.
 
-| Transition | Cause |
-|---|---|
-| Ready → Running | the scheduler picks this process (dispatch) |
-| Running → Ready | pre-empted: time slice used up, or a higher-priority task woke up |
-| Running → Blocked | it asked for something not yet available: `read()` on an empty pipe, `sleep()`, waiting on a mutex |
-| Blocked → Ready | the event happened (the interrupt handler or another task wakes it); it does **not** go straight to Running |
-| Running → Terminated | `exit()` or a fatal signal; it stays a **zombie** until the parent calls `wait()` |
+#### 3. Transition example
 
-**Linux state letters (in `ps` and `top`)**
+A read from an empty blocking pipe puts a thread to sleep. A writer supplies data, waking the reader; the scheduler later selects it to run.
 
-| Letter | Kernel state | Meaning |
-|---|---|---|
-| `R` | `TASK_RUNNING` | running or ready (Linux does not separate them) |
-| `S` | `TASK_INTERRUPTIBLE` | sleeping, can be woken by a signal |
-| `D` | `TASK_UNINTERRUPTIBLE` | sleeping, cannot be interrupted (usually waiting for disk or a driver) |
-| `T` | stopped | `SIGSTOP`/Ctrl-Z, or traced by a debugger |
-| `Z` | `EXIT_ZOMBIE` | exited, waiting to be reaped |
-| `I` | idle kernel thread | – |
-
-**Interview follow-ups**
-
-- "Why can't you kill a process in `D` state?" It is waiting inside the kernel in a section that cannot be interrupted safely; a signal is only acted on when it returns. Many processes stuck in `D` point to a hung storage device or a driver bug.
-- "How does this relate to scheduling?" The scheduler only chooses among **Ready** tasks; a blocked task uses no CPU time, which is why blocking I/O is efficient and busy-waiting is not.
+**Interview takeaway:** Waking a task makes it eligible; it does not guarantee immediate execution. Linux R includes runnable tasks as well as currently running ones.
 
 ### What information does the OS keep about each process (the PCB / task_struct)? {M}
 **Short answer:** The OS keeps a **process control block** for every process; in Linux this is `struct task_struct`. It holds three kinds of information: **identity** (PID, parent, user and group IDs), **saved execution context** (registers, stack pointer, program counter, memory map) so the process can be resumed after a context switch, and **scheduling and accounting** data (state, priority, policy, CPU time used, statistics), plus pointers to resources (open files, signal handlers).
