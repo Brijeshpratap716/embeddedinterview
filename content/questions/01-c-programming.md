@@ -1222,29 +1222,56 @@ These types express the intended register, protocol or data width independently 
 **Interview takeaway:** Never assume `sizeof(int)` is 4 or that a C byte is always 8 bits. Use fixed-width types for hardware and protocol fields when available, and `<inttypes.h>` format macros when printing them.
 
 ### Is char signed or unsigned, and why does it matter? {M}
-**Short answer:** It is implementation-defined. Plain `char` is a distinct type from both `signed char` and `unsigned char`, and it behaves like one of them depending on the platform: **signed on x86** (and on Arm for Windows/macOS), **unsigned on most Arm Linux and Arm bare-metal toolchains** (AAPCS), PowerPC and RISC-V. Code that stores byte values above 127 in a plain `char` can behave differently on different targets.
+C has three distinct character types: `char`, `signed char` and `unsigned char`. Whether plain `char` behaves as signed or unsigned is **implementation-defined**.
+
+#### 1. Range on typical 8-bit-byte systems
+
+| Type | Range |
+|---|---|
+| `signed char` | -128 to 127 |
+| `unsigned char` | 0 to 255 |
+| `char` | Depends on compiler and target |
+
+#### 2. Example
 
 ```c
-char c = 0xE9;            /* 233 if unsigned, -23 if signed */
-if (c > 127) { ... }      /* never true where char is signed */
+#include <stdio.h>
 
-int table[256];
-table[c]++;               /* table[-23] where char is signed: out of bounds! */
+unsigned char a = 0xFF;
+char b = (char)a;
 
-while ((c = getchar()) != EOF) { ... }   /* bug: getchar returns int; with unsigned char
-                                            the loop never ends, with signed char a 0xFF byte
-                                            looks like EOF */
+printf("%u\n", (unsigned int)a);
+printf("%d\n", (int)b);
 ```
 
-**Rules to follow**
+The first line prints 255. The second commonly prints -1 when plain char is signed, or 255 when it is unsigned. The conversion to a signed type when the value is not representable is implementation-dependent in traditional C.
 
-- Use `char` only for text.
-- Use `uint8_t` (or `unsigned char`) for raw bytes, buffers, and protocol data.
-- Cast to `unsigned char` before passing a `char` to `<ctype.h>` functions (`isdigit((unsigned char)c)`) and before using it as an array index.
-- Store the result of `getchar()`/`fgetc()` in an `int`.
-- GCC options `-funsigned-char` / `-fsigned-char` force one behaviour; `-Wchar-subscripts` warns on indexing with `char`.
+#### 3. Why it matters in embedded systems
 
-**Related trivia:** `sizeof(char)` is 1 by definition (a "byte" in C is a `char`, which is `CHAR_BIT` bits, almost always 8). In C, a character constant like `'a'` has type `int`, so `sizeof('a')` is 4 on a 32-bit target, while in C++ it is `char` and `sizeof('a')` is 1.
+A binary protocol may contain the byte 0xFF. Using signed char can turn this byte into a negative value after integer promotion, affecting comparisons, indexing and bit shifts.
+
+```c
+unsigned char rx = 0xFF;
+
+if (rx == 0xFF)
+    handle_command();
+```
+
+Use unsigned char for object representations or `uint8_t` for exactly eight bits where available.
+
+#### 4. Check the target
+
+```c
+#include <limits.h>
+
+#if CHAR_MIN < 0
+    // Plain char is signed.
+#else
+    // Plain char is unsigned.
+#endif
+```
+
+**Interview takeaway:** Use plain char for text and explicitly signed or unsigned types when numeric interpretation matters. Cast to unsigned char before passing a potentially negative char to character classification functions such as `isalpha()`.
 
 ### What is integer promotion? {M}
 **Short answer:** Before most arithmetic, any integer type smaller than `int` (`char`, `short`, `uint8_t`, `uint16_t`, bit-fields) is converted to `int` (or to `unsigned int` if `int` cannot hold all its values). The operation is done in `int`, and the result is only narrowed again if you store it into a smaller type. This leads to surprising results with `~`, shifts and comparisons.
