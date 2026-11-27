@@ -146,24 +146,20 @@ Real filters have finite roll-off, so sampling is usually higher than the theore
 **Interview takeaway:** Increasing digital filtering after sampling cannot undo aliasing that already occurred at the ADC.
 
 ### What is a low-pass RC filter and how do you find its cut-off frequency? {E}
-**Short answer:** A resistor in series with the signal and a capacitor to ground form a first-order low-pass filter: low frequencies pass, high frequencies are attenuated at −20 dB per decade above the cut-off frequency **f_c = 1 / (2π R C)**, where the output is −3 dB (about 70.7% of the input amplitude). Example: R = 10 kΩ, C = 100 nF → f_c = 1 / (2π × 10⁴ × 10⁻⁷) ≈ **159 Hz**.
+A first-order RC low-pass filter passes low frequencies and attenuates high frequencies. Its cutoff is fc = 1/(2πRC).
 
-**Time domain:** the time constant τ = R × C (1 ms in the example); after a step, the output reaches 63% after τ and ~99% after 5τ. This matters for debounce circuits and for how fast an ADC input settles after switching channels.
+```text
+Vin --- R ---+--- Vout
+             |
+             C
+             |
+            GND
+```
 
-**Uses on a board**
+#### Example
+R = 10 kΩ and C = 100 nF produce a 1 ms time constant and cutoff of approximately 159 Hz. At cutoff the amplitude is about 70.7% of the low-frequency amplitude (−3 dB). The asymptotic attenuation above cutoff is 20 dB per decade.
 
-- Anti-aliasing before ADCs.
-- Button debouncing (often with a Schmitt-trigger input).
-- Smoothing PWM into a DC voltage (cheap DAC): choose f_c well below the PWM frequency; ripple falls as the PWM frequency rises.
-- Filtering noise on reset lines and slow control signals.
-
-**Design trade-offs**
-
-- A large R reduces current but raises output impedance (the load, e.g. an ADC sampling capacitor, can disturb the filter) and thermal noise.
-- Higher-order filters (two RC stages, active Sallen-Key filters) give a steeper roll-off.
-- High-pass RC (capacitor in series, resistor to ground) blocks DC: same f_c formula.
-
-**Digital equivalent:** the first-order IIR (exponential moving average) `y += α (x − y)` with α ≈ 2π f_c / f_s for f_c ≪ f_s.
+**Interview takeaway:** Consider ADC input impedance and acquisition time when choosing the resistor; loading changes the ideal response.
 
 ### What is a DAC, and how can you generate an analog voltage with PWM? {E}
 **Short answer:** A DAC (digital-to-analog converter) produces an output voltage proportional to a digital code: `V_out = code / (2^N − 1) × V_ref`. Many MCUs have 12-bit DACs for waveform generation, audio, biasing and setpoints. Without a DAC, a **PWM output followed by a low-pass filter** gives an average voltage `V_out = duty × V_high`; resolution comes from the PWM timer's counts and the ripple from the filter.
