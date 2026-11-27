@@ -841,28 +841,41 @@ PREEMPT_RT changes the implementation of many locks and threads many interrupts.
 **Interview takeaway:** Atomic context is about whether scheduling/sleeping is allowed, not whether every operation is a single atomic CPU instruction.
 
 ### What is the difference between a spinlock and a mutex in the kernel? {M}
-**Short answer:** A **spinlock** busy-waits until the lock is free and disables pre-emption while held, so it can be used in atomic and interrupt context but must only protect very short critical sections that never sleep. A **mutex** puts the waiting task to sleep, so it can only be used in process context, but the holder may sleep (e.g. do I2C transfers) and hold it longer; it also enforces ownership.
+A mutex provides sleepable mutual exclusion; a spinlock provides a short critical-section mechanism with context rules suitable for non-sleeping synchronization on ordinary non-RT kernels.
 
-| | Spinlock | Mutex |
-|---|---|---|
-| Waiting | busy-waits (spins) | sleeps (other tasks run) |
-| Usable in IRQ/softirq context | yes | no |
-| May sleep while held | no | yes |
-| Pre-emption while held | disabled | allowed |
-| Hold time | very short (microseconds) | can be longer |
-| Ownership | no | yes; only the owner unlocks, debug checks |
-| On PREEMPT_RT | becomes a sleeping rt_mutex (except `raw_spinlock_t`) | rt_mutex with priority inheritance |
+| Mutex | Spinlock (ordinary non-RT kernel) |
+|---|---|
+| Waiter may sleep | Waiter spins when contended |
+| Process/thread context | Short non-sleeping sections |
+| Has owner | Not used as a sleepable ownership mutex |
+| Suitable for longer sleepable operations | Suitable for brief shared-state updates |
 
-**Other primitives**
+#### 1. Mutex example
 
-- **Semaphore:** counting, can be released by another task; rarely the right choice for new code.
-- **rwlock / rw_semaphore:** many readers or one writer.
-- **Completion:** "wait until X is done" (`wait_for_completion`, `complete`).
-- **Atomics and RCU:** lock-free options for counters and read-mostly data.
+```c
+mutex_lock(&d->lock);
+ret = i2c_smbus_read_byte_data(d->client, REG_STATUS);
+mutex_unlock(&d->lock);
+```
 
-**Rule of thumb:** if the critical section can sleep or is long → mutex. If it is short or the data is touched from interrupt context → spinlock (with the correct irq variant). Never hold a spinlock while calling a function that might sleep.
+I2C transfers may sleep, so they must not be placed under an ordinary non-sleeping spinlock.
 
-**On a single-CPU kernel** without `CONFIG_SMP`, spinlocks reduce to disabling pre-emption (and interrupts for the `_irqsave` variants), because there is no other CPU to race with — but the code must still be written correctly for SMP.
+#### 2. Spinlock example
+
+```c
+unsigned long flags;
+spin_lock_irqsave(&d->lock, flags);
+d->pending |= EVENT_RX;
+spin_unlock_irqrestore(&d->lock, flags);
+```
+
+The short update may be shared with interrupt context, provided the lock design is correct for the target kernel.
+
+#### 3. PREEMPT_RT
+
+On PREEMPT_RT, spinlock_t uses different underlying semantics and many IRQs are threaded; raw_spinlock_t retains strict spinning behavior. Follow RT-specific locking rules.
+
+**Interview takeaway:** Use mutexes when sleeping is allowed and spinlocks for short appropriate critical sections. Never hold a non-sleeping lock across an operation that may sleep.
 
 ### When should you use spin_lock_irqsave? {H}
 **Short answer:** Use `spin_lock_irqsave` when the data protected by the lock is also accessed from a **hard interrupt handler**. If process-context code takes a plain `spin_lock` and the interrupt fires on the same CPU, the handler spins forever on a lock that its own CPU holds, and the CPU deadlocks. `spin_lock_irqsave(&lock, flags)` disables local interrupts and saves their previous state, so it is safe from any context.
