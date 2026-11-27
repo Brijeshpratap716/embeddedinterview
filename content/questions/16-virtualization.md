@@ -24,31 +24,19 @@ An ARM64 i.MX8 guest on an x86-64 laptop needs TCG for CPU execution. An ARM64 g
 **Interview takeaway:** QEMU is a machine emulator and VMM. TCG and KVM are alternative CPU execution accelerators; both may use software device models.
 
 ### What is a hypervisor, and what is the difference between type 1 and type 2? {E}
-**Short answer:** A hypervisor (virtual machine monitor) creates and runs virtual machines, sharing the physical CPU, memory and devices between them while keeping them isolated. A **type 1** (bare-metal) hypervisor runs directly on the hardware (Xen, VMware ESXi, QNX Hypervisor, many automotive hypervisors). A **type 2** (hosted) hypervisor runs as a program on a normal OS (VirtualBox, QEMU with TCG). **KVM** turns Linux itself into a hypervisor, so it is usually described as type 1, with QEMU as its user-space helper.
+A hypervisor controls execution and resource isolation for multiple virtual machines.
 
-**What a hypervisor must provide**
-
-- **CPU virtualization:** each VM has virtual CPUs; privileged operations by the guest kernel are trapped and handled.
-- **Memory virtualization:** each VM sees its own "physical" memory, mapped by the hypervisor to real RAM (stage-2 / EPT page tables).
-- **Device and interrupt virtualization:** emulated devices, paravirtual devices (virtio) or real devices passed through (VFIO with an IOMMU/SMMU).
-- **Isolation:** a crash or attack in one VM must not affect the others.
-
-**Where KVM fits**
-
-```
-+-------------------+   +-------------------+
-| Guest OS (EL1)    |   | Guest OS (EL1)    |
-| QEMU process      |   | QEMU process      |   <- user space on the host
-+-------------------+---+-------------------+
-|        Linux kernel + KVM (EL2 with VHE)  |   <- host OS *is* the hypervisor
-+-------------------------------------------+
-|                Hardware                   |
-+-------------------------------------------+
+```text
+Type 1: Hardware -> Hypervisor -> Guest VMs
+Type 2: Hardware -> Host OS -> Hosted VMM -> Guest VMs
 ```
 
-**Embedded and automotive angle:** a single SoC runs a safety-relevant instrument cluster (an RTOS or Linux) next to the infotainment system (Android) under a type-1 hypervisor. The hypervisor guarantees that an Android crash cannot take the cluster down. Examples: QNX Hypervisor, Xen (with the Arm safety work), PikeOS, ACRN (x86), and KVM-based solutions.
+A bare-metal hypervisor owns hardware resource management directly. A hosted virtualization product relies on a host OS for services such as scheduling, file I/O and device access.
 
-**Related terms:** *paravirtualization* (the guest knows it is virtualized and calls the hypervisor directly, e.g. virtio, Xen PV), *full virtualization* (an unmodified guest), and *containers*, which share one kernel and are not virtual machines.
+#### KVM nuance
+Linux KVM adds virtualization functionality to the host kernel. QEMU runs in userspace and uses KVM ioctls to create and run guests. It is often classified as a type-1 hypervisor because guest execution is managed by kernel/hardware virtualization, although the system has a general-purpose host OS.
+
+**Interview takeaway:** Explain the architecture rather than forcing every product into a rigid type-1/type-2 label.
 
 ### What are the ARMv8 exception levels, and how does virtualization use EL2? {M}
 **Short answer:** ARMv8-A has four exception levels: **EL0** user applications, **EL1** the OS kernel, **EL2** the hypervisor, and **EL3** the secure monitor (firmware such as TF-A that switches between Normal and Secure worlds). A guest kernel runs at EL1 and its applications at EL0, exactly as on bare metal; EL2 configures what traps to it and controls the second stage of address translation, which is how the hypervisor stays in control.
