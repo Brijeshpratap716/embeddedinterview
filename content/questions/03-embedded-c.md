@@ -1375,29 +1375,41 @@ Some systems request a hardware reset after recording the desired boot slot, all
 **Interview takeaway:** The final branch is only one step. Correct image validation, vector configuration, interrupt/peripheral cleanup and stack/processor state are essential.
 
 ### What is MISRA C? {E}
-**Short answer:** MISRA C is a set of coding guidelines for writing safe, secure, portable and reliable C in critical systems. It was created for the automotive industry by the Motor Industry Software Reliability Association, and is now used in aerospace, medical, railway and industrial devices. Rules restrict language features that commonly cause undefined behaviour or bugs, such as unchecked dynamic memory, recursion, unrestricted `goto`, implicit conversions between "essential types", and unions used for type punning. Compliance is checked with static analysis tools.
+MISRA C is a set of coding guidelines for developing reliable, maintainable and portable C software, especially in safety-related embedded applications. It restricts or controls language constructs that are difficult to analyze or prone to errors.
 
-**Structure**
+#### 1. Why MISRA C is used
 
-- **Directives** (process-level, partly not checkable by tools, e.g. "all code shall be traceable to requirements") and **rules** (checkable on the source).
-- Each is **Mandatory** (no deviations allowed), **Required** (deviations need a documented, approved justification), or **Advisory**.
-- **Decidable** vs **undecidable** rules: some can always be checked by a tool, others only partly.
+C allows unchecked pointers, implicit conversions and operations with undefined or implementation-defined behavior. These are particularly problematic in automotive, industrial and other safety-related firmware.
 
-**Example rules (paraphrased)**
+#### 2. Example: explicit range checking
 
-- No dynamic memory allocation from the heap (Rule 21.3).
-- Functions shall not call themselves, directly or indirectly (Rule 17.2).
-- The value of an expression shall not be assigned to an object with a narrower essential type (Rule 10.3).
-- A `switch` statement shall have a `default` label (Rule 16.4).
-- The return value of a non-void function shall be used (Rule 17.7).
-- No implicit conversion of a signed value to unsigned in arithmetic (essential type model).
-- Octal constants shall not be used (`010` is 8, a common mistake).
+```c
+bool store_value(int32_t input, uint8_t *out)
+{
+    if ((out == NULL) || (input < 0) || (input > 255)) {
+        return false;
+    }
 
-**Editions:** MISRA C:1998, :2004, :2012 (with amendments adding security rules and C11 support), and the consolidated **MISRA C:2023** (adds C11/C18 coverage, including threads and atomics). **MISRA C++:2023** covers modern C++.
+    *out = (uint8_t)input;
+    return true;
+}
+```
 
-**Tools:** PC-lint Plus, Polyspace, Coverity, Parasoft C/C++test, Helix QAC, LDRA, Klocwork, cppcheck's MISRA addon (partial), and compiler-integrated checkers (IAR C-STAT, Arm, Green Hills).
+The code makes its range assumptions explicit before narrowing. It illustrates the reasoning behind safer coding guidelines, not a claim of complete MISRA compliance.
 
-**How it is used in practice:** projects agree a "compliance plan" (which rules apply), integrate the checker into CI, document deviations with justifications, and record compliance evidence for standards such as **ISO 26262** (automotive), **IEC 61508** (industrial), **IEC 62304** (medical) and **DO-178C** (avionics). Related standards: **CERT C** (security-focused) and **AUTOSAR C++14** guidelines.
+#### 3. How compliance is established
+
+1. Identify the applicable MISRA C edition and project requirements.
+2. Configure compiler warnings and static analysis.
+3. Review findings, including rules that require manual examination.
+4. Document justified deviations using the project's approved process.
+5. Verify compliance as code changes.
+
+#### 4. MISRA vs functional safety
+
+MISRA guides source-code practices. Functional safety standards such as ISO 26262 address broader lifecycle activities, hazard analysis and safety verification. Passing a MISRA checker is not proof that software is safe or bug-free.
+
+**Interview takeaway:** MISRA C reduces language-related risks through defined coding rules and a documented compliance process; it is not a compiler mode or a substitute for testing.
 
 ### What are a HAL and a BSP, and how do they differ? {M}
 Both are layers that keep application code independent of the hardware, but at different levels.
