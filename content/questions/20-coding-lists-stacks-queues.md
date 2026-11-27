@@ -1083,7 +1083,10 @@ long eval_postfix(const char *s, int *ok)
     long st[64]; int top = 0;
     *ok = 1;
     for (; *s; s++) {
-        if (isdigit((unsigned char)*s)) { st[top++] = *s - '0'; continue; }
+        if (isdigit((unsigned char)*s)) {
+            if (top == 64) { *ok = 0; return 0; }
+            st[top++] = *s - '0'; continue;
+        }
         if (*s == ' ') continue;
         if (top < 2) { *ok = 0; return 0; }
         long b = st[--top], a = st[--top];               /* order matters for - and / */
@@ -1122,6 +1125,10 @@ long eval_postfix(const char *s, int *ok)
 **Prefix (Polish) notation:** evaluate right to left with the same stack method.
 
 **Where it appears in embedded work:** RPN calculators, Forth-like scripting and bytecode interpreters (stack machines such as the JVM or WebAssembly), and configurable formulas for sensor scaling stored as postfix tokens in EEPROM.
+
+#### Operand ordering and arithmetic safety
+
+For postfix 82-, push 8, push 2, pop right operand 2 then left operand 8 and push 6. For 82/, the result is 4, not 0. A valid binary expression has sufficient operands at each operator and exactly one value remaining at the end. Reject stack overflow, division by zero and signed arithmetic overflow (including LONG_MIN divided by -1). The compact example assumes representable intermediate arithmetic; for untrusted expressions use checked addition, subtraction and multiplication. Multi-digit and negative literals require tokenization.
 
 ### Implement an LRU cache. {H}
 **Short answer:** Combine a **hash map** (key → node, for O(1) lookup) with a **doubly linked list** ordered by recency (most recently used at the front). `get` finds the node, moves it to the front and returns its value. `put` updates an existing node and moves it to the front, or, for a new key, evicts the node at the back if the cache is full, then inserts the new node at the front. Both operations are O(1).
