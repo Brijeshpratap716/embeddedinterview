@@ -275,26 +275,29 @@ Address-space identifiers distinguish cached translations for different processe
 **Interview takeaway:** TLB caches translations, not application data. State your timing assumptions before computing effective access time; a TLB miss is not automatically a page fault.
 
 ### Why is the page size usually 4 KB? What happens with smaller or larger pages? {M}
-**Short answer:** 4 KB is a compromise. Smaller pages waste less memory inside partly used pages (internal fragmentation) but need more page-table entries and more TLB entries for the same memory. Larger pages reduce page-table size and TLB misses and make disk I/O more efficient, but waste more memory and make copy-on-write and paging coarser. Modern systems keep a small base page and add huge pages where they help.
+4 KiB is a common base page size because it balances mapping granularity, page-table overhead, memory fragmentation and TLB coverage. It is not a universal architectural requirement.
 
-| | Smaller pages (e.g. 512 B) | Larger pages (e.g. 64 KB, 2 MB) |
-|---|---|---|
-| Internal fragmentation | low (average waste ½ page per region) | high |
-| Page-table size | large (8× more entries than 4 KB) | small |
-| TLB reach / misses | small reach, more misses | large reach, fewer misses |
-| Page-fault count | more faults, each cheap | fewer faults, each costs more (zeroing/copying more data) |
-| Copy-on-write after fork | fine-grained | copies a lot for a small write |
-| Disk I/O for swapping | many small transfers (inefficient) | fewer large transfers |
+#### 1. Comparison
 
-**What real systems do**
+| Smaller pages | Larger pages |
+|---|---|
+| Finer protection/allocation granularity | Greater TLB coverage per entry |
+| Less internal fragmentation | Fewer page-table entries |
+| More mappings for the same memory range | Larger allocation/fragmentation constraints |
 
-- x86-64: 4 KB base pages, with 2 MB and 1 GB huge pages.
-- ARM64: the kernel chooses a **granule** of 4 KB, 16 KB or 64 KB at build time. Apple silicon uses 16 KB pages; some server distributions use 64 KB pages to reduce TLB pressure. Software that assumes 4 KB (hard-coded `4096`, alignment of `mmap` offsets) breaks on these systems, so use `sysconf(_SC_PAGESIZE)`.
-- Linux **Transparent Huge Pages (THP)** automatically uses 2 MB pages for large anonymous memory; **hugetlbfs** reserves them explicitly. Recent kernels add "large folios" / mTHP (multi-size) to use 16–64 KB blocks with 4 KB page tables.
+#### 2. Example
 
-**Numbers to show the trade-off:** a process using 1 GB of memory needs 262,144 entries with 4 KB pages, but only 512 with 2 MB pages.
+Mapping 2 MiB using 4 KiB pages requires 512 base-page translations. If the CPU and OS support a 2 MiB block or huge-page mapping, one larger translation may cover the entire range.
 
-**Follow-up: "When is virtual memory unnecessary?"** Small single-application systems such as microcontrollers: there is only one program, all code is trusted and linked together, and real-time predictability matters more than isolation. An MPU gives enough protection there.
+#### 3. ARM64
+
+AArch64 supports different translation granules depending on implementation and kernel configuration, commonly 4 KiB, 16 KiB or 64 KiB. Huge/block mappings are additional possibilities.
+
+#### 4. Embedded impact
+
+Large mappings may benefit large contiguous buffers, but memory availability, alignment and isolation requirements matter. DMA/IOMMU page sizes can differ from CPU page sizes.
+
+**Interview takeaway:** Page size trades fragmentation and mapping flexibility against translation overhead. Check the actual system with getconf PAGESIZE instead of assuming 4096.
 
 ### What are page replacement algorithms (FIFO, LRU, Clock), and what is Belady's anomaly? {M}
 **Short answer:** When physical memory is full and a new page is needed, the OS must choose a victim page to evict. **FIFO** evicts the oldest page; **Optimal** evicts the page used furthest in the future (impossible in practice, used as a benchmark); **LRU** evicts the page unused for the longest time; **Clock (second chance)** approximates LRU cheaply with a reference bit. **Belady's anomaly** is FIFO's surprising behaviour of sometimes causing *more* faults with *more* frames.
