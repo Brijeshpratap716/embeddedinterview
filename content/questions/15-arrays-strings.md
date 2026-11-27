@@ -27,46 +27,30 @@ Example: [1, 2, 4, 5] → 3. The sum formula n(n+1)/2 also works but can overflo
 **Complexity:** O(n) time, O(1) space. XOR does not validate malformed input.
 
 ### How do you find the second largest element in an array? {E}
-**Short answer:** Scan once, keeping `largest` and `second`. When a value beats `largest`, the old largest becomes `second`; when a value is between them (and not equal to `largest`), it becomes `second`. Start both at `INT_MIN`, not 0, so negative arrays work.
+Track the largest and second-largest distinct values during one scan. Use flags rather than INT_MIN as a sentinel, because INT_MIN can be a valid result.
 
 ```c
-#include <limits.h>
-#include <stdbool.h>
-#include <stddef.h>
-
-/* returns false if there is no distinct second largest */
-bool second_largest(const int *arr, size_t n, int *out)
+bool second_largest(const int a[], size_t n, int *out)
 {
-    int first = INT_MIN, second = INT_MIN;
-    bool found = false;
-
-    for (size_t i = 0; i < n; i++) {
-        if (arr[i] > first) {
-            second = first;
-            first = arr[i];
-            if (i > 0) found = true;          /* a previous value now sits in second */
-        } else if (arr[i] < first && (arr[i] > second || !found)) {
-            second = arr[i];
-            found = true;
+    int first = 0, second = 0;
+    bool f = false, s = false;
+    for (size_t i = 0; i < n; ++i) {
+        int x = a[i];
+        if (!f || x > first) {
+            if (f) { second = first; s = true; }
+            first = x; f = true;
+        } else if (x < first && (!s || x > second)) {
+            second = x; s = true;
         }
     }
-    if (found) *out = second;
-    return found;
+    if (s) *out = second;
+    return s;
 }
-/* {96, 54, 4, 69, 4, 6, 3, 4, 0} -> 69 */
 ```
 
-**Dry run for {96, 54, 69}:** 96 → first=96. 54 → between, second=54. 69 → between and > 54, second=69. Answer 69.
+[4, 9, 9, 3] returns 4. [9, 9] returns false.
 
-**Mistakes interviewers look for**
-
-1. **Initialising to 0.** `int max = 0, sec = 0;` gives the wrong answer for `{-5, -2, -9}` (it returns 0, which is not in the array). Use `INT_MIN` or the first element.
-2. **Duplicates of the maximum.** For `{7, 7, 3}` the second largest *distinct* value is 3. The `arr[i] < first` check stops the second 7 from being taken.
-3. **No answer exists:** an array of one element or all equal values. Return a status instead of a magic number.
-
-**Complexity:** O(n) time and O(1) space, one pass. Sorting (O(n log n)) and picking the second-from-end is acceptable only if the interviewer allows it, and you still need to skip duplicates.
-
-**Follow-up:** "k-th largest?" Use a min-heap of size k (O(n log k)) or quickselect (average O(n)).
+**Complexity:** O(n) time and O(1) space.
 
 ### How do you check whether an array is sorted? {E}
 **Short answer:** Compare each element with the one before it, starting at index 1. If any `arr[i] < arr[i-1]`, it is not sorted (for non-decreasing order). Return as soon as you find a violation.
