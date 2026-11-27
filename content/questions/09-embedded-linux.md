@@ -295,34 +295,34 @@ This reports the command line the kernel received. Built-in kernel parameters, m
 **Interview takeaway:** bootargs configures the kernel at boot; it is not the same as U-Boot bootcmd, which determines the bootloader commands that run.
 
 ### What is an initramfs and when is it needed? {M}
-**Short answer:** An initramfs is a small root filesystem packed as a cpio archive, which the kernel unpacks into a RAM-based filesystem (tmpfs/ramfs) and runs `/init` from before the real root filesystem is mounted. It is needed when mounting the real root needs work that the kernel alone cannot do: loading storage drivers built as modules, decrypting, assembling RAID/LVM, picking an A/B slot, or checking integrity.
+An initramfs is an initial root filesystem unpacked into RAM during Linux boot. It provides early userspace before the final root filesystem is available.
 
-**How it works**
+#### 1. Boot sequence
 
-1. The bootloader loads the initramfs into RAM and passes its address (or it is built into the kernel image with `CONFIG_INITRAMFS_SOURCE`).
-2. The kernel unpacks it into `rootfs` (a tmpfs) early in boot.
-3. If `/init` exists, the kernel runs it as PID 1.
-4. `/init` does the setup, mounts the real root at e.g. `/new_root`, then calls `switch_root` (which deletes the initramfs contents to free RAM and `exec`s the real `/sbin/init`).
+```text
+Kernel starts
+    -> unpack built-in/external initramfs archive
+    -> execute /init if present
+    -> discover storage / unlock or assemble volumes
+    -> mount final root filesystem
+    -> switch_root and execute final init
+```
 
-**Typical reasons to use one**
+An initramfs commonly uses a compressed cpio archive. It may be built into the kernel or loaded separately by the bootloader.
 
-- Root is on a device whose driver is a module (common on generic distro kernels).
-- **Encrypted root** (LUKS/dm-crypt): unlock with a key from a TPM, OP-TEE or the user.
-- **dm-verity** for a verified read-only root.
-- **A/B slot selection**, factory reset, or a recovery shell.
-- Root over the network, iSCSI, or an overlay of a read-only image plus a writable partition.
+#### 2. When needed
 
-**initramfs vs the older initrd**
+Use it when root storage requires early modules, encryption unlock, RAID assembly, network setup or recovery logic. Some embedded systems keep their entire root filesystem in RAM. A kernel with all necessary root drivers built in can often mount its final root directly.
 
-| initrd (old) | initramfs |
-|---|---|
-| a block-device image (ext2) in a RAM disk | a cpio archive unpacked into tmpfs |
-| needs a filesystem driver and a fixed-size RAM disk | no block layer, grows as needed |
-| uses `pivot_root` | uses `switch_root` |
+#### 3. Minimal content
 
-**Embedded uses:** some small products run **entirely from an initramfs** (the whole system in RAM, nothing writable on flash to get corrupted). Recovery/update images are often a kernel plus initramfs.
+A functional early userspace may contain /init, BusyBox or other required binaries, libraries if dynamically linked, and access to appropriate device nodes and virtual filesystems.
 
-**Cost:** extra boot time to load and unpack it, and RAM usage. If you do not need it, booting straight to a root partition is faster.
+#### 4. initramfs vs initrd
+
+Traditional initrd is an initial RAM disk image with a filesystem; initramfs is an archive unpacked into the kernel's initial rootfs. The terms are sometimes used loosely.
+
+**Interview takeaway:** Initramfs solves early userspace dependencies before the final root is available. It is not mandatory for every embedded Linux system.
 
 ### What is the difference between Buildroot and Yocto? {M}
 **Short answer:** Both build a complete embedded Linux image (toolchain, bootloader, kernel, root filesystem) from source. **Buildroot** is simple Makefiles plus Kconfig and produces one firmware image; it is quick to learn and build. **Yocto** (OpenEmbedded with BitBake) builds a full distribution from layered recipes with package management; it is harder to learn but scales to many products and long maintenance, and SoC vendors ship their BSPs as Yocto layers.
