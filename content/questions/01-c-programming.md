@@ -1372,38 +1372,51 @@ No. If a higher-ranked signed type can represent all values of the unsigned oper
 **Interview takeaway:** Do not mix signed error values and unsigned lengths without checking their ranges. Enable compiler warnings such as `-Wsign-compare`.
 
 ### What is the difference between ++i and i++? {E}
-**Short answer:** `++i` (pre-increment) increments `i` and gives the **new** value. `i++` (post-increment) gives the **old** value, and `i` is incremented as a side effect. Used alone as a statement, for example in a `for` loop, they generate identical code for integers; the difference only matters when the result is used.
+Both operators increment a variable by one. The difference is the **value produced by the expression**.
+
+#### 1. Pre-increment (++i)
 
 ```c
 int i = 5;
-int a = ++i;    /* i = 6, a = 6 */
-int b = i++;    /* b = 6, i = 7 */
-
-while (n--)  { }    /* tests the old value: runs n times */
-while (--n)  { }    /* tests the new value: runs n - 1 times */
+int a = ++i;
 ```
 
-**Common uses of post-increment**
+The expression produces the incremented value.
+
+**Result:** `i = 6, a = 6`
+
+#### 2. Post-increment (i++)
 
 ```c
-buf[len++] = byte;              /* store at len, then advance */
-*dst++ = *src++;                /* copy one element, advance both pointers */
+int i = 5;
+int a = i++;
 ```
 
-`*p++` means `*(p++)`: increment the **pointer**, return the old pointed value. `(*p)++` increments the **value**.
+The expression produces the original value, while i is also incremented.
 
-**Performance:** for built-in types any modern compiler produces the same code. In C++, for class types such as iterators, `i++` has to make a copy of the old value, so `++i` is preferred out of habit.
+**Result:** `i = 6, a = 5`
 
-**Undefined behaviour reminder:** do not use the same variable twice in an expression that increments it: `a[i] = i++;` and `i = i++;` are undefined.
+| Expression | Value assigned to a | Final i (initially 5) |
+|---|---:|---:|
+| `a = ++i;` | 6 | 6 |
+| `a = i++;` | 5 | 6 |
 
-**Interview puzzle:** what does this print?
+#### 3. Embedded example
 
 ```c
-int x = 5;
-printf("%d %d\n", x++, x);   /* undefined: x is read and modified unsequenced */
+uint8_t buffer[4] = {10,20,30,40};
+unsigned int index = 0;
+
+uint8_t value = buffer[index++];
 ```
 
-The correct answer is "it is undefined"; any specific output is a guess about a particular compiler.
+The code reads buffer[0], which contains 10, and then index becomes 1 by the end of the statement.
+
+#### 4. Is one faster?
+
+When the expression result is unused, `++i;` and `i++;` perform the same update for an ordinary C integer. Optimizing compilers normally generate equivalent code.
+
+**Interview takeaway:** Prefix produces the new value, postfix produces the old value. Avoid expressions such as `i++ + ++i`, which contain unsequenced modifications and cause undefined behaviour.
 
 ### What is the difference between a structure and a union? {E}
 **Short answer:** In a `struct`, every member has its own storage, so all members hold values at the same time and the size is at least the sum of the members (plus padding). In a `union`, all members **share the same storage**; the size is that of the largest member (plus padding), and only the member last written holds a meaningful value.
