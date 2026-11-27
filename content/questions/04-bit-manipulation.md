@@ -1103,19 +1103,42 @@ For even parity, the transmitted parity bit equals the parity of the data bits, 
 **Interview takeaway:** Bit parity is the XOR of every bit, not merely whether the numeric value is odd or even.
 
 ### How do you swap the two nibbles of a byte? {E}
-A byte has two 4-bit nibbles. Shift the low nibble up, shift the high nibble down, and combine:
+A nibble is a group of four bits. An eight-bit byte contains a high nibble (bits 7:4) and low nibble (bits 3:0).
+
+#### 1. C implementation
 
 ```c
 uint8_t swap_nibbles(uint8_t x)
 {
-    return (uint8_t)((x << 4) | (x >> 4));
+    return (uint8_t)(((x & 0x0FU) << 4) |
+                     ((x & 0xF0U) >> 4));
 }
-/* 0x5A -> 0xA5, 0x12 -> 0x21 */
 ```
 
-Because `x` is promoted to `int` before shifting, `x << 4` can be up to 12 bits wide; the cast back to `uint8_t` discards the extra bits. The equivalent with explicit masks is `((x & 0x0F) << 4) | ((x & 0xF0) >> 4)`.
+The first mask isolates the low nibble and shifts it left. The second isolates the high nibble and shifts it right.
 
-Uses: converting between packed BCD digit orders, some display and LCD controllers that expect nibble-swapped data, and as the first stage of reversing bits. Interviewers often extend it to swapping adjacent bits (masks `0x55`/`0xAA`) or reversing all bits of a byte.
+#### 2. Worked example
+
+```text
+Input  : 0xAB = 1010 1011
+High   : A
+Low    : B
+Output : 0xBA = 1011 1010
+```
+
+#### 3. Shorter version
+
+```c
+return (uint8_t)((x << 4) | (x >> 4));
+```
+
+For uint8_t, conversion back to eight bits discards the extra high bits. The explicit mask version communicates the intended operation more clearly.
+
+#### 4. Embedded use
+
+Nibble operations appear in packed BCD fields, hexadecimal representation and device-specific formats. Swap the nibbles only if the format requires that ordering.
+
+**Interview takeaway:** A nibble swap exchanges two four-bit groups. It is not bit reversal or 32-bit byte swapping.
 
 ### How do you check whether a number has alternating bits? {E}
 **Short answer:** XOR the number with itself shifted right by one. For alternating bits, the result contains consecutive ones from the least significant bit through its highest set bit.
