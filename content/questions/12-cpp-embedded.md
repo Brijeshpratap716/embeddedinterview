@@ -314,48 +314,33 @@ Ordinary new normally throws std::bad_alloc on failure; nothrow new can return n
 **Interview takeaway:** C++ object lifetime is separate from raw storage. Embedded projects can use custom allocation policies, but constructors/destructors must still be respected.
 
 ### What is placement new and when is it used in embedded code? {M}
-**Short answer:** Placement new (`new (address) T(args)`) constructs an object in memory you already own — a static buffer, a memory pool slot or a memory-mapped region — without allocating anything. You are then responsible for calling the destructor explicitly (`obj->~T()`) and for the memory's alignment and lifetime. It is how fixed-capacity containers, `std::optional`, object pools and "construct later" singletons work without a heap.
+Placement new constructs an object at an already supplied memory address without allocating new storage.
+
+#### 1. Example
 
 ```cpp
-#include <cstddef>
-#include <cstdio>
 #include <new>
+#include <cstddef>
 
-class Driver {
-public:
-    explicit Driver(int port) : port_(port) { std::printf("init port %d\n", port_); }
-    ~Driver() { std::printf("deinit port %d\n", port_); }
-private:
-    int port_;
+struct Widget {
+    int x;
+    explicit Widget(int n) : x(n) {}
 };
 
-alignas(Driver) static std::byte storage[sizeof(Driver)];   // static memory, correct alignment
-static Driver *drv;
+alignas(Widget) unsigned char storage[sizeof(Widget)];
 
-void driver_start(int port) { drv = new (storage) Driver(port); }   // construct in place
-void driver_stop() { drv->~Driver(); drv = nullptr; }              // explicit destructor call
-
-int main()
-{
-    driver_start(2);      // construct after the clocks/board are set up, not before main()
-    driver_stop();
-    driver_start(3);      // reuse the same storage
-    driver_stop();
-}
+Widget* p = ::new (static_cast<void*>(storage)) Widget(42);
+// Use p->x.
+p->~Widget();
 ```
 
-**Typical uses**
+The storage must have sufficient size and alignment, and no conflicting live object. Explicit destruction ends the object's lifetime; the original storage remains.
 
-- Delaying construction of global objects until hardware is ready (avoids static initialisation order problems).
-- Object pools: fixed array of raw storage slots, construct with placement new, destroy explicitly, mark the slot free.
-- Fixed-capacity containers (ETL's `etl::vector<T, N>`, `std::inplace_vector` in C++26).
+#### 2. Embedded use
 
-**Rules**
+Construct objects in fixed pools, statically reserved memory or custom arenas. Handle constructor failure according to the configured C++ runtime. Reusing storage may require careful lifetime/pointer rules; use the returned pointer and documented mechanisms.
 
-- Storage must be correctly aligned (`alignas(T)`) and large enough.
-- Don't call `delete` on a placement-new object; call the destructor.
-- In modern C++, `std::launder` may be needed when reusing storage for a new object accessed through an old pointer; `std::construct_at` / `std::destroy_at` (C++20) are cleaner spellings.
-- Prefer `std::optional<T>` for the simple "maybe constructed" case: it handles storage, alignment and destruction for you.
+**Interview takeaway:** Placement new is construction, not allocation. Do not call ordinary delete on an object constructed in a raw static buffer.
 
 ### What does volatile mean in C++ and what changed in C++20? {H}
 **Short answer:** As in C, `volatile` tells the compiler that every read and write of the object is an observable side effect (e.g. a hardware register), so it must not optimise accesses away, merge them, or reorder them relative to other volatile accesses. It does **not** make operations atomic and does not provide memory ordering for multi-threaded code — use `std::atomic` for that. C++20 **deprecated** compound operations on volatile objects (`++`, `--`, `+=`, `|=` ...), volatile function parameters and return types, because they suggest an atomic read-modify-write that does not exist; write explicit loads and stores instead.
