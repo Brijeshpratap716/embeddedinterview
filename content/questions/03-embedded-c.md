@@ -607,48 +607,28 @@ A linker map also identifies object files, symbol addresses and memory usage.
 **Interview takeaway:** The compiler creates sections; the linker script places them. Startup code and hardware memory configuration must agree with the script.
 
 ### What is the vector table? {E}
-**Short answer:** The vector table is an array of addresses that the CPU uses to find handlers for exceptions and interrupts. On Cortex-M it is at address 0 by default (relocatable with `SCB->VTOR`): entry 0 is the initial main stack pointer, entry 1 is the reset handler, then the system exception handlers (NMI, HardFault, MemManage, BusFault, UsageFault, SVCall, DebugMonitor, PendSV, SysTick), followed by one entry per peripheral interrupt (IRQ0, IRQ1, ...).
+A vector table contains the information needed to enter exception and interrupt handlers. Its format depends on the architecture.
 
-| Offset | Entry | Exception number |
-|---|---|---|
-| 0x00 | Initial MSP value | – |
-| 0x04 | Reset | 1 |
-| 0x08 | NMI | 2 |
-| 0x0C | HardFault | 3 |
-| 0x10–0x18 | MemManage, BusFault, UsageFault (not on M0/M0+) | 4–6 |
-| 0x1C–0x28 | SecureFault (v8-M) / reserved | 7–10 |
-| 0x2C | SVCall | 11 |
-| 0x30 | DebugMonitor | 12 |
-| 0x38 | PendSV | 14 |
-| 0x3C | SysTick | 15 |
-| 0x40 + 4·n | IRQn (peripheral interrupts) | 16 + n |
+#### 1. Cortex-M vector table
 
-**In C (GCC):**
+<div style="max-width:600px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 199" width="100%" role="img" aria-label="Cortex-M vector table: initial MSP, reset, core exceptions and external IRQs">
+<rect x="8" y="5" width="85" height="30" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="50" y="24" font-size="11" text-anchor="middle" fill="currentColor">0x00</text><rect x="93" y="5" width="239" height="30" fill="#16a34a" fill-opacity=".11" stroke="#16a34a"/><text x="212" y="24" font-size="11" text-anchor="middle" fill="currentColor">Initial MSP value</text><rect x="8" y="36" width="85" height="30" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="50" y="55" font-size="11" text-anchor="middle" fill="currentColor">0x04</text><rect x="93" y="36" width="239" height="30" fill="#16a34a" fill-opacity=".11" stroke="#16a34a"/><text x="212" y="55" font-size="11" text-anchor="middle" fill="currentColor">Reset_Handler</text><rect x="8" y="67" width="85" height="30" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="50" y="86" font-size="11" text-anchor="middle" fill="currentColor">0x08</text><rect x="93" y="67" width="239" height="30" fill="#16a34a" fill-opacity=".11" stroke="#16a34a"/><text x="212" y="86" font-size="11" text-anchor="middle" fill="currentColor">NMI_Handler</text><rect x="8" y="98" width="85" height="30" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="50" y="117" font-size="11" text-anchor="middle" fill="currentColor">0x0C</text><rect x="93" y="98" width="239" height="30" fill="#16a34a" fill-opacity=".11" stroke="#16a34a"/><text x="212" y="117" font-size="11" text-anchor="middle" fill="currentColor">HardFault_Handler</text><rect x="8" y="129" width="85" height="30" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="50" y="148" font-size="11" text-anchor="middle" fill="currentColor">...</text><rect x="93" y="129" width="239" height="30" fill="#16a34a" fill-opacity=".11" stroke="#16a34a"/><text x="212" y="148" font-size="11" text-anchor="middle" fill="currentColor">Other core exceptions</text><rect x="8" y="160" width="85" height="30" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="50" y="179" font-size="11" text-anchor="middle" fill="currentColor">0x40</text><rect x="93" y="160" width="239" height="30" fill="#16a34a" fill-opacity=".11" stroke="#16a34a"/><text x="212" y="179" font-size="11" text-anchor="middle" fill="currentColor">External IRQ 0 handler</text></svg></div>
 
-```c
-extern uint32_t _estack;
-void Reset_Handler(void);
-void Default_Handler(void) { for (;;) { } }
-void NMI_Handler(void)       __attribute__((weak, alias("Default_Handler")));
-void HardFault_Handler(void) __attribute__((weak, alias("Default_Handler")));
-void USART2_IRQHandler(void) __attribute__((weak, alias("Default_Handler")));
+Offsets are relative to the vector base. At reset, Cortex-M obtains the initial main stack pointer from the first entry and the reset-handler address from the second.
 
-__attribute__((section(".isr_vector"), used))
-void (*const vector_table[])(void) = {
-    (void (*)(void))&_estack,
-    Reset_Handler,
-    NMI_Handler,
-    HardFault_Handler,
-    /* ... */
-};
-```
+#### 2. Interrupt dispatch
 
-**Details**
+For a typical external interrupt number n, the exception number is 16+n. The processor uses the corresponding vector entry after accepting the exception.
 
-- Handler addresses have bit 0 set (Thumb state); the compiler/linker does this automatically for function addresses.
-- `VTOR` alignment: the table must be aligned to a power of two at least as large as the table (e.g. 512 bytes for up to 128 entries); check the core's rules.
-- Relocating the table to RAM lets you change handlers at run time and is needed by bootloaders (the application sets `VTOR` to its own table).
-- Cortex-A uses a different scheme: a table of **instructions** (branches) per exception type, located via `VBAR_ELx`, and a separate interrupt controller (GIC) provides the interrupt number.
+#### 3. Relocation
+
+On cores supporting VTOR, privileged firmware can select another correctly aligned vector table. A bootloader may configure VTOR for the application. Some cores instead use platform-specific remapping or other mechanisms.
+
+#### 4. Difference from Cortex-A
+
+AArch64 uses exception vector instruction slots at offsets from VBAR_ELx rather than a Cortex-M-style array of handler pointers.
+
+**Interview takeaway:** The vector table is an architecture-defined interface between hardware exception entry and software handlers. Its placement, alignment and entry format must match the target.
 
 ### What are weak symbols? {M}
 **Short answer:** A weak symbol is a definition that the linker uses only if no normal (strong) definition with the same name exists. Start-up files define every interrupt handler as a weak alias of a default handler, so when you write a function with the exact same name in your code, your strong definition replaces it, without editing the start-up file.
