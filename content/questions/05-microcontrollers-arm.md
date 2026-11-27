@@ -1009,37 +1009,40 @@ Deeper modes reduce idle power but may increase wake latency and initialization 
 **Interview takeaway:** Select the deepest mode that still meets wake-latency, state-retention and peripheral requirements. Measure actual current, not just datasheet mode labels.
 
 ### What is the difference between WFI and WFE? {H}
-**Short answer:** `WFI` (Wait For Interrupt) puts the core to sleep until an interrupt (or debug request or reset) arrives. `WFE` (Wait For Event) sleeps until an **event**: an interrupt, an event signalled by another core with `SEV`, an external event input, or a pending event that is already latched. If the event register is already set when `WFE` executes, it clears it and continues immediately without sleeping.
+WFI (Wait For Interrupt) and WFE (Wait For Event) are Arm architectural hints used to reduce active waiting. They differ primarily in their wake conditions.
 
-| | WFI | WFE |
-|---|---|---|
-| Wakes on | interrupts (even if masked by PRIMASK, the core still wakes) | events: interrupts (with `SEVONPEND`, even disabled ones), `SEV` from another core, external event line |
-| Event register | not used | if set, `WFE` clears it and does not sleep |
-| Typical use | idle loops, low-power waiting for an interrupt | multi-core spinlocks, waiting for another core, low-overhead polling |
+#### 1. WFI
 
-**Why the event register exists:** to avoid a race. If core B executes `SEV` just **before** core A executes `WFE`, the event is latched, so A does not miss it and sleep forever.
-
-**Spinlock usage on Arm (multi-core)**
+WFI commonly waits until an interrupt or another architecturally permitted wake condition occurs. Operating systems and firmware use it in idle paths.
 
 ```asm
-retry:
-    LDAXR   w1, [x0]        // load-acquire exclusive
-    CBNZ    w1, wait        // lock held by someone else
-    STXR    w2, w3, [x0]    // try to take it
-    CBNZ    w2, retry
-    RET
-wait:
-    WFE                     // sleep until the holder releases and signals
-    B       retry
+WFI
 ```
 
-The unlock is a store-release; clearing the exclusive monitor of a waiting core generates an event automatically on Armv8 (older code used an explicit `SEV`).
+It does not guarantee a particular low-power state or sleep duration.
 
-**Masked interrupts and WFI:** a common idiom for race-free sleep is `__disable_irq(); if (!work_pending) __WFI(); __enable_irq();`. The core still wakes on the interrupt (it is pending), and the ISR runs after `__enable_irq()`, so a wake-up between the check and the sleep is not lost.
+#### 2. WFE
 
-**SEVONPEND** (`SCB->SCR`): makes any newly pending interrupt, even a disabled one, generate an event for `WFE`. Useful to wake on a peripheral flag without running an ISR.
+WFE checks the processor's event state and may wait for an event. An already-recorded event can cause immediate return. SEV signals an event to relevant processors.
 
-**Practical rule:** use `WFI` for "sleep until something needs attention" in idle loops (RTOS idle hooks use it); use `WFE` for synchronisation between cores and in lock implementations.
+```asm
+WFE
+SEV
+```
+
+They are separate operations used in platform-defined waiting and notification protocols; the example does not imply a required pairing in one thread.
+
+#### 3. Waiting for shared state
+
+A lock waiter may use WFE within a carefully designed loop that rechecks the lock state. The corresponding unlock path uses the required atomic release operation and event notification when applicable. WFE itself does not provide acquire semantics.
+
+| WFI | WFE |
+|---|---|
+| Common in idle/interrupt-driven waits | Common in event-based waits |
+| Wake conditions include qualifying interrupts | Wake conditions include events |
+| May return without prolonged sleep | May return immediately if event state is set |
+
+**Interview takeaway:** Both are hints, not synchronization primitives. Always recheck the condition after waking and follow the architecture's event/interrupt protocol.
 
 ### What is the difference between flash and EEPROM, and what is wear levelling? {M}
 **Short answer:** Both are non-volatile memories. **Flash** is erased in large blocks (sectors or pages, typically 1–128 KB on MCUs) and programming can only change bits from 1 to 0; to change a 0 back to 1 you must erase the whole block. **EEPROM** can usually be erased and written byte by byte. Both wear out after a limited number of erase/write cycles (typically 10,000 for MCU flash, 100,000 to 1,000,000 for EEPROM). **Wear levelling** spreads writes across many locations so no single block reaches its limit early.
