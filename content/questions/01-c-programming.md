@@ -2515,37 +2515,67 @@ A defined macro with value zero still satisfies #ifdef. Use #if FEATURE when you
 **Interview takeaway:** Conditional compilation is essential for portable BSPs and firmware variants. Test each supported build configuration; code excluded in one build may contain errors that only appear in another.
 
 ### What is _Static_assert and why is it useful? {M}
-**Short answer:** `_Static_assert(condition, "message")` (C11; `static_assert` with `<assert.h>`, and a keyword in C23) checks a constant expression **at compile time**. If the condition is false, the build fails with your message. It costs nothing at run time, so it is ideal for checking assumptions about sizes, layouts and configuration that would otherwise cause subtle run-time bugs.
+`_Static_assert` is a C11 language feature that verifies an integer constant expression at compile time. If the expression is false, the compiler must issue a diagnostic.
+
+#### 1. Syntax
 
 ```c
-#include <assert.h>
-#include <stddef.h>
-#include <stdint.h>
-
-typedef struct {
-    uint8_t  type;
-    uint8_t  flags;
-    uint16_t length;
-    uint32_t crc;
-} __attribute__((packed)) frame_hdr_t;
-
-static_assert(sizeof(frame_hdr_t) == 8, "frame header must be 8 bytes on the wire");
-static_assert(offsetof(frame_hdr_t, crc) == 4, "crc must be at offset 4");
-
-#define RX_BUF_SIZE 128u
-static_assert((RX_BUF_SIZE & (RX_BUF_SIZE - 1u)) == 0, "RX_BUF_SIZE must be a power of two");
-
-static_assert(sizeof(void *) == 4, "this driver assumes a 32-bit target");
+_Static_assert(condition, "error message");
 ```
 
-**Typical uses in firmware**
+Example:
 
-- Struct sizes and offsets that must match hardware, a protocol, flash layout or a bootloader.
-- Ring-buffer sizes that must be powers of two (for `& (size - 1)` wrapping).
-- Lookup tables that must have one entry per enum value: `static_assert(ARRAY_SIZE(state_names) == STATE_COUNT, "...");` catches a forgotten table entry when someone adds a state.
-- Timer and baud-rate calculations that must fit in a register's range.
-- Assumptions about type sizes and endianness when porting.
+```c
+#include <limits.h>
 
-**Compared with `assert()`:** `assert()` checks at run time, costs code, and disappears with `NDEBUG`. `static_assert` can only check things known at compile time but catches them before the code ever runs.
+_Static_assert(CHAR_BIT == 8, "Expected 8-bit bytes");
+_Static_assert(sizeof(int) == 4, "Expected 4-byte int");
+```
 
-**Before C11**, projects used tricks such as declaring an array with a negative size when the condition is false: `typedef char check_size[(sizeof(x) == 8) ? 1 : -1];`. You may still see this in older code.
+These checks detect unsupported platform assumptions at build time.
+
+#### 2. Embedded hardware register layout
+
+```c
+#include <stdint.h>
+#include <stddef.h>
+
+struct Registers {
+    volatile uint32_t control;
+    volatile uint32_t status;
+    volatile uint32_t data;
+};
+
+_Static_assert(offsetof(struct Registers, status) == 4,
+               "Unexpected STATUS offset");
+_Static_assert(offsetof(struct Registers, data) == 8,
+               "Unexpected DATA offset");
+```
+
+The expected offsets must come from the actual hardware manual. The assertions catch unexpected compiler layout differences.
+
+#### 3. Configuration checks
+
+```c
+#define BUFFER_SIZE 256U
+
+_Static_assert(BUFFER_SIZE != 0 &&
+               (BUFFER_SIZE & (BUFFER_SIZE - 1)) == 0,
+               "Buffer size must be a power of two");
+```
+
+Useful for ring buffers that use a power-of-two mask for index wrapping.
+
+#### 4. Difference between static assertion and runtime assert
+
+| _Static_assert | assert() |
+|---|---|
+| Checked at compile time | Checked during execution when enabled |
+| Requires constant expression | Can check runtime values |
+| No runtime check or overhead | May terminate on failure |
+| Not disabled by NDEBUG | Can be disabled by NDEBUG |
+
+C11 provides static_assert through assert.h as a macro; C23 adds static_assert as a keyword.
+
+**Interview takeaway:** Use static assertions to catch incorrect sizes, offsets, alignment and build-time configurations before firmware runs. They complement rather than replace runtime validation.
+
