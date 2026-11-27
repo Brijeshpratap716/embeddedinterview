@@ -1709,43 +1709,67 @@ Dynamic allocation can fail, fragment the heap and introduce unpredictable laten
 **Interview takeaway:** Check allocation failures, guard size calculations against overflow, use a temporary pointer for realloc, and avoid zero-size realloc for portable behaviour.
 
 ### What is the difference between strcpy, strncpy and memcpy? {M}
-**Short answer:** `strcpy(d, s)` copies a string including its `'\0'` with **no bounds check**. `strncpy(d, s, n)` copies at most `n` characters and pads the rest with zeros, but does **not** add a terminator if the source is `n` characters or longer. `memcpy(d, s, n)` copies exactly `n` bytes regardless of content, and is undefined if the buffers overlap (use `memmove` then).
+All three copy data, but they differ in how they determine the length and whether they treat the input as a string.
+
+#### 1. strcpy()
+
+Copies a null-terminated string, including its terminating zero.
 
 ```c
 char dst[8];
-
-strcpy(dst, "this is too long");     /* buffer overflow: writes past dst */
-
-strncpy(dst, "abcdefgh", sizeof dst); /* copies 8 chars, NO '\0': dst is not a string */
-dst[sizeof dst - 1] = '\0';           /* you must terminate it yourself */
-
-memcpy(dst, src, 8);                  /* exactly 8 bytes; overlapping src/dst is UB */
-memmove(buf + 1, buf, 7);             /* overlapping: use memmove */
+strcpy(dst, "hello");
 ```
 
-| | Stops at `'\0'` | Bounds | Terminates | Pads | Overlap |
-|---|---|---|---|---|---|
-| `strcpy` | yes | none | yes | no | UB |
-| `strncpy` | yes (then pads) | n | only if `strlen(s) < n` | with zeros up to n | UB |
-| `memcpy` | no | n | not applicable | no | UB |
-| `memmove` | no | n | not applicable | no | safe |
+Six bytes are copied. The destination must have enough space.
 
-**Why `strncpy` exists:** it was designed for fixed-width, zero-padded fields (old Unix directory entries), not as a "safe strcpy". Padding a 4 KB buffer when copying a short string is also wasted time.
+#### 2. strncpy()
 
-**Safer patterns**
+Copies up to n characters and pads the destination with zero bytes if the source string is shorter than n.
 
 ```c
-snprintf(dst, sizeof dst, "%s", src);        /* always terminates, truncates safely */
-
-size_t n = strlen(src);                      /* or a bounded strnlen */
-if (n >= sizeof dst) n = sizeof dst - 1;
-memcpy(dst, src, n);
-dst[n] = '\0';
+char dst[4];
+strncpy(dst, "hello", sizeof dst);
 ```
 
-`strlcpy` (BSD, glibc 2.38+, and many embedded libraries) copies, always terminates, and returns the source length so you can detect truncation. C11 Annex K `strcpy_s` exists but is rarely implemented.
+The buffer contains h, e, l, l and has no null terminator. Do not use it as a C string until it is terminated safely.
 
-**Embedded note:** these functions are a frequent source of overflows when parsing input from a UART or network. Always know the size of the destination, and prefer length-carrying buffers (`ptr + len`) over relying on `'\0'` in binary protocols.
+```c
+char dst[8];
+strncpy(dst, src, sizeof dst - 1);
+dst[sizeof dst - 1] = '\0';
+```
+
+This deliberately truncates long input.
+
+#### 3. memcpy()
+
+Copies exactly n bytes, including any zero bytes inside binary data.
+
+```c
+uint8_t src[] = {1, 0, 3};
+uint8_t dst[3];
+
+memcpy(dst, src, sizeof src);
+```
+
+All three bytes are copied.
+
+| Function | Copy length | Termination |
+|---|---|---|
+| strcpy | Through first NUL | Copies NUL |
+| strncpy | Exactly n destination bytes | Not guaranteed |
+| memcpy | Exactly n bytes | No string semantics |
+
+#### 4. What about overlapping memory?
+
+Use memmove instead of memcpy when source and destination overlap.
+
+```c
+char s[] = "ABCDE";
+memmove(s + 1, s, 4);  // "AABCD"
+```
+
+**Interview takeaway:** Use string APIs for properly bounded strings, memcpy for non-overlapping binary data, and memmove for overlapping byte ranges. None of these functions knows the destination capacity automatically.
 
 ### What is the difference between an array and a pointer? {M}
 **Short answer:** An array is a block of contiguous objects; a pointer is a variable that holds an address. In most expressions an array name **decays** into a pointer to its first element, which is why they often look interchangeable. They differ in `sizeof`, in `&`, in assignment, and in how they are stored.
