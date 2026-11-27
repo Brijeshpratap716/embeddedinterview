@@ -1179,6 +1179,10 @@ int rle_compress(const char *in, char *out, size_t out_size)
 
 **Complexity:** O(n) time; output space depends on the input pattern.
 
+#### Encoding can increase the output size
+
+"abcd" becomes "a1b1c1d1": eight bytes plus NUL, compared with four input bytes. For this text format, reserve at least 2n+1 bytes as a conservative bound when arithmetic is representable, or calculate required space. Runs containing decimal digit characters make this simple representation ambiguous to decode; use an explicit binary (value,count) format or escaping when arbitrary input is required. Source and destination must not overlap.
+
 ### Find the longest substring without repeating characters. {M}
 **Short answer:** Use a sliding window `[start, i]` that never contains a repeated character, plus a table storing the last index where each character was seen. For each new character, if its last occurrence is inside the window, move `start` to just after that occurrence; then record the new index and update the best length. Every character is processed once: O(n) time, O(1) space.
 
