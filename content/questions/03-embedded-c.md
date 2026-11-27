@@ -552,51 +552,59 @@ Check the vector table, initial stack address, reset PC, flash/RAM placement, cl
 **Interview takeaway:** main is not the processor's reset entry. Hardware and startup code establish the conditions required for valid C execution.
 
 ### What is a linker script and what does it contain? {M}
-**Short answer:** A linker script tells the linker what memory the target has and where each output section (code, constants, initialised data, zeroed data, stack, heap) goes. It defines `MEMORY` regions (start address, size, permissions) and a `SECTIONS` command mapping input sections to output sections and regions, and it exports symbols (such as `_sdata`, `_ebss`, `_estack`) that the start-up code uses.
+A linker script describes how object-file sections are combined and placed in the target's memory. It also defines symbols used by startup code and reserves memory for special purposes.
+
+#### 1. Example GNU linker script fragment
 
 ```ld
-MEMORY
-{
-  FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = 512K
-  RAM   (rwx) : ORIGIN = 0x20000000, LENGTH = 128K
+MEMORY {
+    FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = 512K
+    RAM   (rwx) : ORIGIN = 0x20000000, LENGTH = 128K
 }
 
-_estack = ORIGIN(RAM) + LENGTH(RAM);       /* initial stack pointer: top of RAM */
+SECTIONS {
+    .text : {
+        KEEP(*(.isr_vector))
+        *(.text*) *(.rodata*)
+    } > FLASH
 
-SECTIONS
-{
-  .isr_vector : { KEEP(*(.isr_vector)) } > FLASH       /* KEEP: never garbage-collect */
+    .data : {
+        _sdata = .;
+        *(.data*)
+        _edata = .;
+    } > RAM AT> FLASH
 
-  .text : { *(.text*) *(.rodata*) . = ALIGN(4); } > FLASH
+    _sidata = LOADADDR(.data);
 
-  _sidata = LOADADDR(.data);
-  .data : { _sdata = .; *(.data*) . = ALIGN(4); _edata = .; } > RAM AT> FLASH
-
-  .bss (NOLOAD) : { _sbss = .; *(.bss*) *(COMMON) . = ALIGN(4); _ebss = .; } > RAM
-
-  .noinit (NOLOAD) : { *(.noinit*) } > RAM             /* not zeroed at start-up */
-
-  ._user_heap_stack : { . = ALIGN(8); . += 0x1000; . += 0x800; } > RAM   /* reserve heap + stack, fail link if no room */
+    .bss (NOLOAD) : {
+        _sbss = .;
+        *(.bss*) *(COMMON)
+        _ebss = .;
+    } > RAM
 }
 ```
 
-**Key concepts**
+The addresses and sizes are illustrative. A production script also handles alignment, stack, heap, entry point, runtime sections and platform-specific requirements.
 
-- **VMA vs LMA:** `.data` has a run address (VMA) in RAM and a load address (LMA) in flash (`> RAM AT> FLASH`). The start-up code copies from LMA to VMA.
-- **`KEEP`** stops `--gc-sections` from removing sections nothing references explicitly (vector table, init arrays).
-- **`NOLOAD`** sections take no space in the output image.
-- **Symbols** defined in the script have an address but no storage; in C you use `&_sdata`.
-- The linker fails with "region `RAM' overflowed" if things do not fit, which is better than finding out at run time.
+#### 2. VMA and LMA
 
-**Common reasons to edit a linker script**
+| Term | Meaning |
+|---|---|
+| VMA | Address where a section resides during execution |
+| LMA | Address where its initial image is loaded or stored |
 
-- Leave room for a **bootloader** (application starts at `0x08008000`), or for configuration/calibration data in a reserved flash sector.
-- Place time-critical code in RAM or ITCM, and DMA buffers in a specific (non-cacheable or DMA-reachable) RAM bank.
-- Add a `.noinit` area for crash logs or a bootloader-to-application mailbox.
-- Use external memory (QSPI flash for graphics, SDRAM for frame buffers).
-- Insert a firmware header (version, CRC, size) at a fixed offset.
+For .data, the VMA is RAM and the LMA is commonly flash. Startup copies from _sidata into [_sdata, _edata).
 
-**Check the result** in the map file (`-Wl,-Map=fw.map`) and with `arm-none-eabi-size -A fw.elf`.
+#### 3. Inspect placement
+
+```sh
+arm-none-eabi-readelf -S firmware.elf
+arm-none-eabi-size firmware.elf
+```
+
+A linker map also identifies object files, symbol addresses and memory usage.
+
+**Interview takeaway:** The compiler creates sections; the linker script places them. Startup code and hardware memory configuration must agree with the script.
 
 ### What is the vector table? {E}
 **Short answer:** The vector table is an array of addresses that the CPU uses to find handlers for exceptions and interrupts. On Cortex-M it is at address 0 by default (relocatable with `SCB->VTOR`): entry 0 is the initial main stack pointer, entry 1 is the reset handler, then the system exception handlers (NMI, HardFault, MemManage, BusFault, UsageFault, SVCall, DebugMonitor, PendSV, SysTick), followed by one entry per peripheral interrupt (IRQ0, IRQ1, ...).
