@@ -293,50 +293,62 @@ Initialize links before use, remove a node from all relevant lists before freein
 **Interview takeaway:** Intrusive lists embed membership in the object. They reduce allocation overhead but require explicit ownership and lifetime discipline.
 
 ### How do you implement a stack and a queue with fixed arrays? {E}
-**Short answer:** A **stack** (LIFO) needs an array and a `top` index: push writes `a[top++]`, pop reads `a[--top]`, checking for full (`top == N`) and empty (`top == 0`). A **queue** (FIFO) is a ring buffer with head and tail indices. Both give O(1) operations with no dynamic allocation, which is why firmware prefers them to linked implementations.
+A stack uses LIFO (last in, first out); a queue uses FIFO (first in, first out). Both can be implemented with fixed arrays for deterministic storage.
+
+#### 1. Stack
 
 ```c
-#include <stdbool.h>
-#include <stdio.h>
+#define N 16
+struct stack {
+    int a[N];
+    unsigned count;
+};
 
-#define N 4
-typedef struct { int a[N]; int top; } istack_t;
-
-bool push(istack_t *s, int v) { if (s->top == N) return false; s->a[s->top++] = v; return true; }
-bool pop(istack_t *s, int *v) { if (s->top == 0) return false; *v = s->a[--s->top]; return true; }
-
-typedef struct { int a[N]; unsigned head, tail, count; } iqueue_t;
-
-bool enqueue(iqueue_t *q, int v)
+bool push(struct stack *s, int v)
 {
-    if (q->count == N) return false;
-    q->a[q->tail] = v; q->tail = (q->tail + 1) % N; q->count++;
-    return true;
-}
-bool dequeue(iqueue_t *q, int *v)
-{
-    if (q->count == 0) return false;
-    *v = q->a[q->head]; q->head = (q->head + 1) % N; q->count--;
+    if (s->count == N) return false;
+    s->a[s->count++] = v;
     return true;
 }
 
-int main(void)
+bool pop(struct stack *s, int *v)
 {
-    istack_t s = {0}; iqueue_t q = {0}; int v;
-    for (int i = 1; i <= 3; i++) { push(&s, i); enqueue(&q, i); }
-    while (pop(&s, &v)) printf("%d ", v);         /* 3 2 1 */
-    printf("| ");
-    while (dequeue(&q, &v)) printf("%d ", v);     /* 1 2 3 */
-    printf("\n");
-    return 0;
+    if (!s->count) return false;
+    *v = s->a[--s->count];
+    return true;
 }
 ```
 
-**Embedded uses:** stacks for expression evaluation, undo, depth-first traversal without recursion, and parsing nested structures; queues for events, commands and data between ISRs and tasks.
+#### 2. Queue
 
-**Variants:** a **deque** (double-ended queue, push/pop at both ends with a ring buffer), a **priority queue** (heap, next question), and a **stack that returns its minimum in O(1)** (keep a second stack of minimums; see the coding topics).
+```c
+struct queue {
+    int a[N];
+    unsigned head, tail, count;
+};
 
-**Error handling:** always report overflow and underflow (return codes, counters) rather than silently overwriting; in safety-critical code, overflow is often treated as a fault.
+bool enqueue(struct queue *q, int v)
+{
+    if (q->count == N) return false;
+    q->a[q->tail] = v;
+    q->tail = (q->tail + 1) % N;
+    q->count++;
+    return true;
+}
+
+bool dequeue(struct queue *q, int *v)
+{
+    if (!q->count) return false;
+    *v = q->a[q->head];
+    q->head = (q->head + 1) % N;
+    q->count--;
+    return true;
+}
+```
+
+Initialize structures to zero and supply valid output pointers. These are single-context implementations. All operations are O(1).
+
+**Interview takeaway:** Check overflow and underflow. A circular queue avoids moving elements; a stack needs only a top/count index.
 
 ### What is a binary heap, and how do you use it as a priority queue or timer queue? {M}
 **Short answer:** A binary heap is a complete binary tree stored in an array where each parent is ≤ its children (min-heap). The smallest element is always at index 0, insertion and removal of the minimum take O(log n) by "sifting" elements up or down, and no pointers or allocation are needed. That makes it a good fixed-size **priority queue**, for example a software timer queue ordered by expiry time or an event scheduler.
