@@ -195,24 +195,35 @@ RS-485 does not define application addressing or error checking. Modbus RTU is a
 **Interview takeaway:** UART is the framing mechanism; RS-232 and RS-485 are electrical standards. Choose the transceiver and topology separately from the serial protocol.
 
 ### What are the SPI modes (CPOL and CPHA)? {M}
-**Short answer:** **CPOL** (clock polarity) sets the idle level of SCLK: 0 = idle low, 1 = idle high. **CPHA** (clock phase) sets which edge samples data: 0 = sample on the first (leading) edge, 1 = sample on the second (trailing) edge. The four combinations are SPI modes 0–3, and the controller must use the mode the device's datasheet specifies.
+SPI has four clock modes determined by clock polarity (CPOL) and clock phase (CPHA).
 
-| Mode | CPOL | CPHA | Idle clock | Data sampled on | Data changes on |
-|---|---|---|---|---|---|
-| 0 | 0 | 0 | low | rising edge | falling edge |
-| 1 | 0 | 1 | low | falling edge | rising edge |
-| 2 | 1 | 0 | high | falling edge | rising edge |
-| 3 | 1 | 1 | high | rising edge | falling edge |
+#### 1. Mode table
 
-**Most devices use mode 0 or 3** (many support both, since in both cases data is sampled on the rising edge).
+| Mode | CPOL | CPHA | Idle SCLK | Sample edge |
+|---|---:|---:|---|---|
+| 0 | 0 | 0 | Low | Rising |
+| 1 | 0 | 1 | Low | Falling |
+| 2 | 1 | 0 | High | Falling |
+| 3 | 1 | 1 | High | Rising |
 
-**Symptoms of the wrong mode:** data shifted by one bit (values doubled or halved), the first or last bit wrong, or garbage that changes with clock speed.
+CPHA = 0 samples on the first active edge; CPHA = 1 samples on the second edge. Data is normally shifted on the opposite edge.
 
-**With CPHA = 0**, the first data bit must be on the line **before** the first clock edge, so the device outputs it as soon as chip select goes active; some controllers need a delay between CS assertion and the first clock.
+#### 2. Mode 0 timing
 
-**Other SPI settings to match:** bit order (MSB first is most common), word size (8/16 bits), chip-select polarity (usually active low), maximum clock frequency, and the timing between CS and clock (setup/hold times in the datasheet).
+```text
+CS   ----\__________________/----
+SCLK _____/‾\_/‾\_/‾\_/‾\_____
+          ^   ^   ^   ^
+          sample rising edges
+```
 
-**On Linux:** `spi-cpol` and `spi-cpha` properties in the device tree, or `SPI_MODE_0..3` with spidev.
+The first data bit must be valid before the first sampling edge. Setup and hold times must satisfy the target datasheet.
+
+#### 3. Debugging wrong mode
+
+A wrong CPHA may cause bit shifts or unstable samples. Wrong CPOL changes idle level and edge interpretation. Capture CS, SCLK and data with a logic analyzer and compare to the target timing diagram.
+
+**Interview takeaway:** Configure both endpoints for the same SPI mode. CPOL defines idle level; CPHA defines which edge samples data.
 
 ### How do you choose and configure the SPI clock? {M}
 **Short answer:** Use the highest clock that the **device** supports (from its datasheet's maximum SCLK and timing parameters), that the **MCU's SPI peripheral** can generate (usually the peripheral clock divided by a power of two), and that the **board** can carry with clean edges (trace length, capacitance, level shifters, connectors). Then check timing: setup and hold times, the device's output delay on MISO at that frequency, and the CS-to-clock delays.
