@@ -347,36 +347,47 @@ Being reentrant does not automatically mean a function is safe to call in a hard
 **Interview takeaway:** Reentrancy is about overlapping invocations. Separate per-call state is often the simplest solution.
 
 ### What is the difference between reentrant and thread-safe? {H}
-**Short answer:** A **thread-safe** function works correctly when called from several threads at the same time; it may achieve that with locks. A **reentrant** function works correctly when a call is interrupted and the **same** function is called again on the same execution context (ISR, signal handler, recursion) before the first call finishes. A function that uses a mutex is thread-safe but **not** reentrant: if an ISR interrupts it while it holds the lock and calls it again, the ISR waits forever for a lock that can only be released by the code it interrupted.
+A **thread-safe** function behaves correctly when multiple threads call it concurrently. A **reentrant** function can also tolerate an overlapping invocation, such as a nested call, without corrupting the interrupted invocation.
 
-| | Reentrant | Thread-safe |
-|---|---|---|
-| Problem it solves | interruption and re-entry on the same core/thread | concurrent calls from different threads |
-| Typical technique | no shared state; caller-provided buffers | locks around shared state, or no shared state |
-| Mutex inside | breaks reentrancy (deadlock from an ISR or signal handler) | fine |
-| Example | `strtok_r`, `memcpy` | `malloc` in glibc (locks), `printf` (locks the stream) |
-
-**Examples**
+#### 1. Thread-safe but unsuitable for reentry
 
 ```c
-static uint32_t total;
-static mutex_t m;
-
-void add_threadsafe(uint32_t v)        /* thread-safe, NOT reentrant */
+void increment(void)
 {
-    mutex_lock(&m);
-    total += v;
-    mutex_unlock(&m);
+    mutex_lock(&lock);
+    count++;
+    mutex_unlock(&lock);
 }
-
-uint32_t add_pure(uint32_t a, uint32_t b) { return a + b; }   /* both */
 ```
 
-**Which functions are both:** those with no shared mutable state (pure functions of their arguments), or that update shared state with a single atomic operation that also works from interrupts (e.g. `atomic_fetch_add` on a lock-free atomic).
+The mutex serializes threads. However, an interrupt or nested invocation that tries to acquire the same non-recursive mutex can deadlock if the first invocation holds it. A blocking mutex is generally forbidden in an ISR.
 
-**Async-signal-safe** is the POSIX term for functions that may be called from a signal handler: it is a strict form of reentrancy. `write()`, `_exit()` and `sem_post()` are; `printf()` and `malloc()` are not.
+#### 2. Reentrant alternative
 
-**Practical rule for firmware:** functions used from ISRs must be reentrant (no locks, no static buffers). Functions used only by tasks can use RTOS mutexes for thread safety.
+```c
+uint32_t checksum(const uint8_t *buf, size_t n)
+{
+    uint32_t sum = 0;
+    for (size_t i = 0; i < n; i++)
+        sum += buf[i];
+    return sum;
+}
+```
+
+Each call owns its accumulator. Concurrent calls can share immutable input safely, provided the buffers remain valid and are not modified concurrently.
+
+| Property | Thread-safe | Reentrant |
+|---|---|---|
+| Concurrent threads | Correct | Often correct with independent state |
+| Nested invocation | Not necessarily safe | Must tolerate supported reentry |
+| Blocking lock | May be acceptable | May defeat reentry |
+| ISR suitability | Not implied | Still requires ISR-safe operations |
+
+#### 3. Firmware use
+
+Keep interrupt-side algorithms small, bounded and independent of mutable shared scratch buffers. A function may be safe in one execution model but unsafe in another; document the supported contexts.
+
+**Interview takeaway:** Thread safety does not automatically imply reentrancy or interrupt safety. Design around ownership and the actual concurrency model.
 
 ### How do you set, clear, toggle and test a bit in a register? {E}
 **Short answer:** Build a single-bit mask with `1u << n`, then OR it to set, AND with its complement to clear, XOR to toggle, and AND to test. For multi-bit fields, clear the field with an inverted mask and OR in the new value.
