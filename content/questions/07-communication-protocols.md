@@ -866,27 +866,28 @@ Check PHY power/clock/reset, link state, interface timing, MAC address, descript
 **Interview takeaway:** Ethernet link, MAC frame delivery and IP/application connectivity are separate layers. Debug each layer with appropriate evidence.
 
 ### What is the difference between TCP and UDP for embedded devices? {E}
-**Short answer:** **TCP** provides a reliable, ordered, connection-oriented byte stream with retransmission, flow control and congestion control, at the cost of RAM for buffers and state, and higher latency when packets are lost. **UDP** sends independent datagrams with no delivery or ordering guarantee and no connection, so it is lighter and has lower, more predictable latency, but the application must handle loss if it matters.
+TCP and UDP are transport protocols over IP. TCP provides a reliable ordered byte stream; UDP provides individual datagrams without inherent delivery, ordering or duplicate-suppression guarantees.
 
-| | TCP | UDP |
-|---|---|---|
-| Connection | 3-way handshake, teardown | none |
-| Reliability and ordering | yes | no |
-| Message boundaries | no (byte stream) | yes (datagrams) |
-| Flow/congestion control | yes | no |
-| Overhead | 20+ byte header, ACKs, state per connection, buffers | 8-byte header |
-| Latency under loss | retransmission delays (head-of-line blocking) | none, data is just lost |
-| Multicast/broadcast | no | yes |
-| Embedded protocols | MQTT, HTTP(S), Modbus TCP, FTP | CoAP, DNS, DHCP, SNTP, mDNS, syslog, RTP, QUIC |
+| TCP | UDP |
+|---|---|
+| Connection-oriented | Connectionless transport |
+| Retransmission and flow/congestion control | Application handles needed reliability |
+| Byte stream, no message boundaries | Preserves datagram boundaries |
+| Often suitable for reliable configuration/data | Often suitable for latency-sensitive telemetry |
 
-**Choosing**
+#### 1. TCP example
 
-- Use **TCP** for commands and data that must arrive intact and in order (configuration, firmware updates, MQTT telemetry).
-- Use **UDP** for real-time streams where late data is useless (audio, control loops, sensor streams), discovery (mDNS), and very constrained devices (CoAP with its own lightweight reliability), or when you need broadcast/multicast.
+A firmware configuration server receives a stream of bytes. One send does not necessarily correspond to one recv. Define message framing, handle partial sends/reads and detect connection failures.
 
-**Embedded resource notes:** each TCP connection needs a TCB plus send/receive buffers (several KB in lwIP); MCUs often limit simultaneous connections. TLS on top of TCP adds tens of KB of RAM (mbedTLS); DTLS is TLS for UDP.
+#### 2. UDP example
 
-**Interview follow-up:** "How would you make UDP reliable?" Sequence numbers, ACKs, retransmission timers and duplicate detection (CoAP confirmable messages, or QUIC, which builds a reliable, encrypted transport on UDP).
+A sensor broadcasts or sends periodic datagrams. Include sequence numbers and timestamps if missing or stale data must be detected. Avoid oversized datagrams and design for packet loss.
+
+#### 3. Security
+
+TCP and UDP do not provide encryption by themselves. Use suitable TLS, DTLS or another authenticated transport/protocol when required.
+
+**Interview takeaway:** Choose based on whether every byte must arrive in order or whether timely individual messages are more important. Neither protocol guarantees a real-time deadline.
 
 ### What is MQTT, and how do you make an MQTT client secure? {M}
 **Short answer:** MQTT is a lightweight **publish/subscribe** messaging protocol over TCP, widely used in IoT. Devices connect to a **broker**, **publish** messages to hierarchical **topics** (e.g. `factory/line1/temp`) and **subscribe** to topics they are interested in; the broker forwards messages, so senders and receivers never talk directly. It offers three **QoS** levels, retained messages, a "last will" message for unexpected disconnects, and keep-alive. Security comes from **TLS** (encryption and server authentication), **client authentication** (X.509 client certificates or username/password/tokens), and **authorisation** (each client can only publish/subscribe to its own topics).
