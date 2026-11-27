@@ -315,6 +315,16 @@ Shifting **left** (`memmove(buf, buf + 2, 5)`) is safe forwards, because each by
 
 **Complexity:** O(n) time, O(1) extra space. A word-sized optimisation works in both directions just like `memcpy`.
 
+#### Choosing a copy direction
+
+| Source offsets | Destination offsets | Correct approach |
+|---|---|---|
+| 0–4 | 2–6 | Backward |
+| 2–6 | 0–4 | Forward |
+| 0–4 | 8–12 | Either |
+
+On conventional flat-address systems, uintptr_t ordering implements the overlap test. ISO C does not generally define relational comparisons between unrelated object pointers, and pointer-to-integer address ordering is implementation-dependent. For fully portable application code use the standard memmove rather than reproducing platform-specific internals.
+
 ### Implement your own memset(). {E}
 **Short answer:** Fill `n` bytes starting at `dst` with the byte value `(unsigned char)c` and return `dst`. A faster version writes single bytes until the pointer is aligned, then writes 32-bit words containing the byte repeated four times (`0x01010101 * b`), then finishes the tail bytes.
 
