@@ -570,66 +570,35 @@ A very short scheduling quantum can improve responsiveness but increases context
 **Interview takeaway:** There is no universally best scheduler. Evaluate it against workload objectives and worst-case timing requirements.
 
 ### Compare FCFS, SJF, SRTF and Round Robin with a worked example. {M}
-**Short answer:** **FCFS** runs jobs in arrival order (simple, but short jobs wait behind long ones). **SJF** picks the shortest next CPU burst (optimal average waiting time if bursts are known, non-pre-emptive). **SRTF** is the pre-emptive version: a newly arrived job pre-empts the current one if its burst is shorter than the remaining time. **Round Robin** gives each job a fixed time slice in turn (fair, good response time; performance depends on the quantum).
+FCFS, SJF, SRTF and Round Robin are classical CPU scheduling algorithms. Consider three jobs arriving at time zero, with burst lengths A=6, B=2, C=4 ms. Ignore context-switch overhead.
 
-**Example processes (times in ms)**
+#### 1. Gantt charts
 
-| Process | Arrival | Burst |
-|---|---|---|
-| P1 | 0 | 8 |
-| P2 | 1 | 4 |
-| P3 | 2 | 9 |
-| P4 | 3 | 5 |
-
-Waiting time = finish − arrival − burst.
-
-**FCFS**
-
-```
-| P1 0-8 | P2 8-12 | P3 12-21 | P4 21-26 |
+```text
+FCFS:  0 -- A -- 6 - B - 8 -- C -- 12
+SJF:   0 - B - 2 -- C -- 6 -- A -- 12
+SRTF:  same as SJF here (all arrive together)
+RR (2 ms):
+       0 A 2 B 4 C 6 A 8 C 10 A 12
 ```
 
-Waiting: P1 0, P2 7, P3 10, P4 18 → **average 8.75 ms**.
+#### 2. Waiting time comparison
 
-**SJF (non-pre-emptive):** at t = 0 only P1 is there, so it runs to completion. At t = 8 the shortest is P2 (4), then P4 (5), then P3 (9).
+Waiting = completion − arrival − burst (for these CPU-only jobs).
 
-```
-| P1 0-8 | P2 8-12 | P4 12-17 | P3 17-26 |
-```
+| Algorithm | A | B | C | Average |
+|---|---:|---:|---:|---:|
+| FCFS | 0 | 6 | 8 | 4.67 ms |
+| SJF / SRTF | 6 | 0 | 2 | 2.67 ms |
+| Round Robin | 6 | 2 | 6 | 4.67 ms |
 
-Waiting: P1 0, P2 7, P4 9, P3 15 → **average 7.75 ms**.
+#### 3. Differences
 
-**SRTF (pre-emptive SJF):** at t = 1, P2 (4) is shorter than P1's remaining 7, so P2 pre-empts.
+FCFS uses arrival order; SJF chooses the shortest known job without preemption. SRTF is preemptive and can replace a running job when a shorter remaining job arrives. RR rotates runnable jobs using a quantum.
 
-```
-| P1 0-1 | P2 1-5 | P4 5-10 | P1 10-17 | P3 17-26 |
-```
+SJF requires knowledge or estimation of burst lengths. SRTF can starve long jobs under continuous short arrivals; RR trades waiting time and overhead for responsiveness.
 
-Waiting: P1 17−0−8 = 9, P2 0, P3 15, P4 2 → **average 6.5 ms** (the best of the four).
-
-**Round Robin, quantum 4 ms** (new arrivals join the queue before a pre-empted job is re-queued)
-
-```
-| P1 0-4 | P2 4-8 | P3 8-12 | P4 12-16 | P1 16-20 | P3 20-24 | P4 24-25 | P3 25-26 |
-```
-
-Finish: P1 20, P2 8, P3 26, P4 25. Waiting: P1 12, P2 3, P3 15, P4 17 → **average 11.75 ms**, worse average waiting, but every job got the CPU within 12 ms of arriving (best worst-case response).
-
-**Comparison**
-
-| Algorithm | Pre-emptive | Avg waiting | Starvation? | Notes |
-|---|---|---|---|---|
-| FCFS | no | poor (convoy effect) | no | simplest |
-| SJF | no | optimal among non-pre-emptive | yes, for long jobs | needs burst prediction |
-| SRTF | yes | optimal | yes | more context switches |
-| RR | yes | often worse | no | response time bounded by (n−1) × quantum |
-| Priority | either | depends | yes, fixed by **aging** | RTOS default |
-
-**Predicting bursts:** real schedulers do not know burst lengths, so SJF uses an exponential average of previous bursts: `τ(n+1) = α·t(n) + (1−α)·τ(n)`.
-
-**Related: SETF (shortest elapsed time first)** picks the job that has run the *least* so far. It needs no prediction and favours new and short jobs, the idea behind multilevel feedback queues: new jobs start at high priority and sink as they use CPU time.
-
-**Quantum choice for RR:** too small → overhead dominates; too large → becomes FCFS. A rule of thumb: 80% of CPU bursts should be shorter than the quantum.
+**Interview takeaway:** State arrival times, tie-breaking and quantum before computing scheduling metrics. SJF and SRTF differ when new jobs arrive during execution.
 
 ### How does the Linux scheduler work (CFS and EEVDF)? {H}
 **Short answer:** For normal tasks, Linux tries to give each runnable task a fair share of CPU time weighted by its nice value. **CFS** (Completely Fair Scheduler, 2.6.23 to 6.5) tracked each task's **virtual runtime** (actual runtime scaled by its weight), kept runnable tasks in a **red-black tree** sorted by vruntime, and always ran the task with the smallest vruntime (the leftmost node). Since Linux 6.6, **EEVDF** (Earliest Eligible Virtual Deadline First) replaced CFS's picking rule: it still uses weighted virtual time, but among tasks that are "eligible" (not ahead of their fair share) it picks the one with the earliest **virtual deadline**, which gives better latency control.
