@@ -825,48 +825,53 @@ This decodes a two-byte big-endian field regardless of CPU byte order. Both byte
 **Interview takeaway:** Endianness is byte order, not bit order. Use explicit conversions such as ntohl/htonl or Linux endian helpers where appropriate.
 
 ### How do you swap the endianness of a 32-bit value? {E}
-**Short answer:** Move each byte to its mirrored position with shifts and masks, or use the compiler built-in `__builtin_bswap32()`, which compiles to a single `REV` instruction on Arm. For network code use `htonl()`/`ntohl()`, which swap only when the host is little-endian.
+Swapping endianness of a 32-bit value means reversing its four bytes while preserving the bits within each byte.
+
+#### 1. Example
+
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 158" width="100%" role="img" aria-label="Byte swapping reverses byte positions in a 32-bit integer" font-family="system-ui,sans-serif"><text x="10" y="16" font-size="11" font-weight="600" fill="currentColor">Input: 0x12345678 (shown most significant byte first)</text><rect x="10" y="24" width="80" height="30" fill="#3b82f6" fill-opacity=".14" stroke="#3b82f6"/><text x="50" y="43" text-anchor="middle" font-size="12" fill="currentColor">12</text><text x="50" y="68" text-anchor="middle" font-size="10" fill="currentColor">bits 31–24</text><rect x="90" y="24" width="80" height="30" fill="#3b82f6" fill-opacity=".14" stroke="#3b82f6"/><text x="130" y="43" text-anchor="middle" font-size="12" fill="currentColor">34</text><text x="130" y="68" text-anchor="middle" font-size="10" fill="currentColor">bits 23–16</text><rect x="170" y="24" width="80" height="30" fill="#3b82f6" fill-opacity=".14" stroke="#3b82f6"/><text x="210" y="43" text-anchor="middle" font-size="12" fill="currentColor">56</text><text x="210" y="68" text-anchor="middle" font-size="10" fill="currentColor">bits 15–8</text><rect x="250" y="24" width="80" height="30" fill="#3b82f6" fill-opacity=".14" stroke="#3b82f6"/><text x="290" y="43" text-anchor="middle" font-size="12" fill="currentColor">78</text><text x="290" y="68" text-anchor="middle" font-size="10" fill="currentColor">bits 7–0</text><text x="10" y="92" font-size="11" font-weight="600" fill="currentColor">Output: 0x78563412</text><rect x="10" y="100" width="80" height="30" fill="#16a34a" fill-opacity=".14" stroke="#16a34a"/><text x="50" y="119" text-anchor="middle" font-size="12" fill="currentColor">78</text><text x="50" y="144" text-anchor="middle" font-size="10" fill="currentColor">bits 31–24</text><rect x="90" y="100" width="80" height="30" fill="#16a34a" fill-opacity=".14" stroke="#16a34a"/><text x="130" y="119" text-anchor="middle" font-size="12" fill="currentColor">56</text><text x="130" y="144" text-anchor="middle" font-size="10" fill="currentColor">bits 23–16</text><rect x="170" y="100" width="80" height="30" fill="#16a34a" fill-opacity=".14" stroke="#16a34a"/><text x="210" y="119" text-anchor="middle" font-size="12" fill="currentColor">34</text><text x="210" y="144" text-anchor="middle" font-size="10" fill="currentColor">bits 15–8</text><rect x="250" y="100" width="80" height="30" fill="#16a34a" fill-opacity=".14" stroke="#16a34a"/><text x="290" y="119" text-anchor="middle" font-size="12" fill="currentColor">12</text><text x="290" y="144" text-anchor="middle" font-size="10" fill="currentColor">bits 7–0</text></svg></div>
+
+#### 2. C implementation
 
 ```c
 #include <stdint.h>
 
-static inline uint32_t bswap32(uint32_t x)
+uint32_t swap32(uint32_t x)
 {
-    return  (x >> 24)               |
-           ((x >>  8) & 0x0000FF00u) |
-           ((x <<  8) & 0x00FF0000u) |
-            (x << 24);
+    return ((x & 0x000000FFu) << 24) |
+           ((x & 0x0000FF00u) <<  8) |
+           ((x & 0x00FF0000u) >>  8) |
+           ((x & 0xFF000000u) >> 24);
 }
-
-static inline uint16_t bswap16(uint16_t x)
-{
-    return (uint16_t)((x >> 8) | (x << 8));
-}
-/* bswap32(0x12345678) == 0x78563412 */
 ```
 
-**Use unsigned types.** A version written with `int`:
+Each mask isolates one byte. Shifts move it to the opposite position, and OR combines the four results.
 
 ```c
-int a = 0x12345678, out = 0;
-out |= (a & 0x000000ff) << 24;   /* 0x78 << 24 sets the sign bit of int: overflow, UB */
-out |= (a & 0xff000000) >> 24;   /* for a negative a, >> is implementation-defined */
+uint32_t x = swap32(0x12345678u);
+// x = 0x78563412
 ```
 
-works on most compilers for this particular value, but it relies on undefined and implementation-defined behaviour. With `uint32_t` every shift is well-defined.
+#### 3. Compiler and ARM alternatives
 
-**Other ways**
+GCC and Clang provide:
 
-| Method | Notes |
-|---|---|
-| `__builtin_bswap16/32/64` | GCC/Clang; one instruction on Arm (`REV`, `REV16`), x86 (`BSWAP`) |
-| `__REV()`, `__REV16()`, `__REVSH()` | CMSIS intrinsics for Cortex-M |
-| `htonl`, `htons`, `ntohl`, `ntohs` | POSIX/socket APIs: host ↔ network (big-endian) |
-| `htobe32`, `le32toh` (`<endian.h>`) | Linux/BSD: explicit target byte order |
-| `cpu_to_be32`, `le32_to_cpu` | Linux kernel; also annotate types (`__be32`) so `sparse` can check |
-| Shifts from a byte array | best for parsing buffers (also avoids alignment problems) |
+```c
+uint32_t x = __builtin_bswap32(value);
+```
 
-**The pattern most firmware should use:** do not swap integers in place. Convert at the boundary: parse incoming bytes with `get_be32(buf)` and serialise outgoing data with `put_be32(buf, v)`. That handles byte order and alignment in one step and works unchanged on any CPU.
+On supporting ARM targets the compiler can generate a REV instruction to reverse the byte order of a 32-bit register.
+
+```asm
+// AArch64
+REV W0, W0
+```
+
+#### 4. When to swap
+
+An unconditional byte swap always reverses the bytes. A host-to-network conversion swaps only when required by the host byte order. They are not interchangeable on every system.
+
+**Interview takeaway:** Use unsigned fixed-width types for bit manipulation. Prefer platform conversion APIs for protocol fields and a byte-swap builtin when unconditional reversal is required.
 
 ### What is strict aliasing? {H}
 **Short answer:** The strict aliasing rule says that an object may only be accessed through an expression of its own type (or a compatible type, its signed/unsigned variant, a qualified version, an aggregate or union containing it), or through a character type (`char`, `unsigned char`). The compiler uses this rule to assume that pointers to different types do not point to the same memory, so it can keep values in registers and reorder loads and stores. Breaking the rule is undefined behaviour.
