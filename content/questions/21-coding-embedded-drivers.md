@@ -529,6 +529,12 @@ uint8_t bq_get(bqueue_t *q)
 
 **RTOS equivalent:** a FreeRTOS queue (`xQueueSend`/`xQueueReceive` with a block time) implements exactly this, including the waiting lists, and adds `FromISR` variants so interrupts can produce without blocking.
 
+#### Shutdown and wakeup behavior
+
+When a full queue receives one pop, count decreases and not_full is signaled; a waiting producer must reacquire the mutex and recheck count before writing. Use while rather than if because wakeups can be spurious or another producer may win the mutex.
+
+A production queue should include a closed flag under the same mutex, broadcast both condition variables on shutdown, and allow waiters to return an explicit closed status. Destroy the synchronization objects only after all waiters and producers have exited. The example assumes successful pthread calls and no cancellation; a cancellation-safe design needs cleanup handlers or an explicit cancellation policy.
+
 ### Implement an ISR-safe queue (interrupt producer, task consumer) using a critical section. {M}
 **Short answer:** Let the ISR enqueue and the task dequeue, and protect any state that both sides modify. If the design keeps a shared `count`, the task must disable the relevant interrupt (a short critical section) while it updates the queue, because the ISR could fire in the middle of its read-modify-write. The ISR itself needs no lock on a single core, since the task cannot run while the ISR runs (unless a higher-priority ISR also uses the queue).
 
