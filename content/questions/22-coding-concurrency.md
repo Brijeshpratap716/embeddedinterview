@@ -483,6 +483,12 @@ Two problems: double initialisation, and a thread seeing the flag set before the
 - Linux kernel: `DO_ONCE()`, `static_key`-based helpers.
 - Bare-metal single-core firmware: simply initialise everything in `main()` before enabling interrupts and starting the scheduler — no once-logic needed.
 
+#### Publication of the initialized object
+
+State transitions are 0 (not started) → 1 (one winner initializing) → 2 (complete). The winner uses CAS to claim initialization, writes the tables, then release-stores 2. Every caller that acquire-loads 2 may safely read the initialized tables. A caller observing 1 must not consume partially initialized data.
+
+The manual example assumes the initializer returns normally, cannot recursively invoke the same once object, and that one function is permanently associated with that state. Failure, cancellation and owner termination need an explicit recovery protocol; otherwise waiters can spin forever. Prefer pthread_once for POSIX programs or the corresponding platform once API. In a real-time context, consider priority inversion and perform expensive initialization at startup.
+
 ### Implement a wait with a timeout (condition variable). {M}
 **Short answer:** Compute an absolute deadline once (current time on `CLOCK_MONOTONIC` plus the timeout), then lock the mutex and call `pthread_cond_timedwait` in a loop while the condition is false. If it returns `ETIMEDOUT`, check the condition one last time and return a timeout error if it is still false. Because the deadline is absolute, spurious wake-ups do not extend the total waiting time.
 
