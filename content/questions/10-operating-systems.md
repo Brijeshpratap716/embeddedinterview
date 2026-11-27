@@ -327,22 +327,31 @@ Linux reclaim is more complex than a textbook FIFO or LRU: it considers page act
 **Interview takeaway:** Replacement is an approximation of future reuse. More RAM does not make every possible replacement algorithm monotonic, and real OS reclaim involves more than selecting a victim page.
 
 ### What is an inverted page table? {H}
-**Short answer:** A normal page table has one entry per **virtual page** of each process. An inverted page table has one entry per **physical frame**, recording which process (address-space ID) and which virtual page currently occupy it. Its size depends only on physical memory, not on the number of processes or the size of their address spaces. The drawback is lookup: you have to search for the entry that matches (ASID, virtual page), so a hash table is used to make it fast.
+An inverted page table organizes entries primarily by physical page frame rather than maintaining one flat entry for every virtual page of every process.
 
-**Comparison**
+#### 1. Concept
 
-| | Per-process page tables | Inverted page table |
-|---|---|---|
-| Entries | one per virtual page (per process) | one per physical frame (system-wide) |
-| Size | grows with address space × processes | fixed: frames × entry size |
-| Lookup | direct indexing (fast) | search by (ASID, VPN): needs hashing |
-| Sharing pages between processes | easy (two entries point to the same frame) | hard (one frame has one owner entry) |
+A physical-frame entry records which virtual page/address-space identity maps to that frame, together with required attributes or associated metadata.
 
-**Example:** 4 GB of RAM with 4 KB frames has 1,048,576 frames. With 16-byte entries the inverted table is 16 MB **in total**, regardless of whether there are 10 or 10,000 processes.
+```text
+(ASID / process identity, virtual page)
+             |
+       hash / lookup
+             |
+       physical frame entry
+```
 
-**Why software-only inverted tables are slow:** a TLB is content-addressable hardware that compares all entries at once. In software, searching every entry on each TLB miss would be O(number of frames). The fix is a **hashed** inverted page table: hash (ASID, VPN) to a bucket and follow a short chain. This was used by IBM POWER and PowerPC (hashed page table) and Intel Itanium.
+#### 2. Advantage and cost
 
-**Where it is used today:** mostly historical in general-purpose CPUs; ARM and x86 use multi-level per-process tables, which work well with sparse 64-bit address spaces and make sharing easy. The idea remains in TLBs, in some hypervisor and accelerator designs, and in exam questions.
+For a system with 1 GiB physical RAM and 4 KiB frames, there are 262,144 frames. A hypothetical 16-byte entry per frame uses 4 MiB for the main array. Additional hash, alias and metadata structures can increase the cost.
+
+A reverse organization can reduce storage for very large sparse virtual address spaces, but translation lookup, shared pages and aliases complicate implementation.
+
+#### 3. Modern Arm
+
+Ordinary AArch64 hardware translation uses architecture-defined hierarchical translation tables, not a generic inverted table. OS reverse-mapping structures serve related but distinct purposes.
+
+**Interview takeaway:** Inverted tables scale primarily with physical frames, while ordinary per-address-space tables organize mappings by virtual address.
 
 ### What is the difference between an MMU and an MPU? {E}
 **Short answer:** An **MMU** translates virtual addresses to physical addresses using page tables and enforces permissions per page, which gives each process its own address space (Cortex-A, x86, RISC-V with Sv39/Sv48). An **MPU** does no translation: it only checks permissions and memory attributes for a small number of physical address regions (typically 8 or 16), giving basic protection with predictable timing (Cortex-M, Cortex-R).
