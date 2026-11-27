@@ -414,6 +414,12 @@ bool ring_pop(ring_t *r, uint8_t *v)                  /* consumer: task, or thre
 
 **Limits:** exactly one producer and one consumer. With several producers, use a lock, a CAS-based multi-producer queue, or one SPSC queue per producer.
 
+#### Why two release/acquire pairs are required
+
+Producer writes payload, then release-stores head. Consumer acquire-loads head before reading payload. Consumer release-stores tail only after reading; producer acquire-loads tail before reusing that slot. This protects both initial publication and subsequent slot reuse. With unsigned monotonic indices, occupancy is head−tail modulo 2^32 and the valid range is zero through capacity. Masking applies only to physical indexing, so every slot is usable.
+
+Initialize both atomic indices before starting either context. Confirm the atomic operations are lock-free on the target before ISR use, and never reset the indices concurrently. This is not an MPMC queue or a DMA cache-management scheme.
+
 ### Implement a ring buffer that overwrites the oldest data when full. {M}
 **Short answer:** When the buffer is full, a new item is still written at the head position and the oldest item is discarded by advancing the tail (or by keeping only a head index and a count). The buffer therefore always holds the most recent N items, which is exactly what logging and 'last N samples' buffers need.
 
