@@ -1001,45 +1001,69 @@ Include guards do not prevent duplicate external object definitions across diffe
 **Interview takeaway:** Both prevent repeated header processing; include guards are the portable choice.
 
 ### What is the difference between typedef and #define for creating type names? {E}
-**Short answer:** `typedef` creates a real alias for a type that the compiler understands, with normal scope rules. `#define` only replaces text, which breaks with pointer types and can surprise you in declarations. Use `typedef` for types.
+The `typedef` keyword creates a **type alias** understood by the C compiler. A `#define` macro merely replaces preprocessing tokens.
+
+#### 1. Using typedef
 
 ```c
-typedef char *str_t;
-#define STR_T char *
+typedef unsigned int uint;
 
-str_t a, b;     /* a and b are both char *            */
-STR_T c, d;     /* becomes "char * c, d;": c is char *, d is just char! */
+uint count = 10;
 ```
 
-**Other differences**
+The compiler treats `uint` as an alias for `unsigned int`. It follows C type and scope rules.
 
-| | `typedef` | `#define` |
+#### 2. Using #define
+
+```c
+#define UINT unsigned int
+
+UINT count = 10;
+```
+
+The preprocessor substitutes `unsigned int` for `UINT` before the compiler analyzes the declaration.
+
+#### 3. Important pointer example
+
+```c
+typedef int *IntPtr;
+
+IntPtr a, b;  // Both are int pointers
+
+#define PTR int *
+
+PTR x, y;     // x is int pointer, y is int
+```
+
+The last declaration expands to:
+
+```c
+int *x, y;
+```
+
+The asterisk belongs to the declarator for `x`, not the common base type.
+
+#### 4. Embedded use
+
+```c
+typedef struct {
+    unsigned int baud;
+    unsigned int port;
+} uart_config_t;
+
+uart_config_t cfg = {115200, 1};
+```
+
+Aliases are useful for structures, callback types and complex declarations.
+
+| Feature | typedef | #define |
 |---|---|---|
-| Processed by | compiler | preprocessor |
-| Scope | block/file scope like any declaration | until `#undef` or end of file |
-| Works with complex types (function pointers, arrays) | yes | fragile |
-| Can be combined with `unsigned`, etc. | no (`unsigned my_int` is an error) | yes (text) |
-| Debugger shows the name | usually | no |
+| Handled by | Compiler | Preprocessor |
+| Meaning | Type alias | Token substitution |
+| Scope | C scope | Macro visibility |
+| Pointer declarations | Preserves aliased pointer type | Depends on expanded syntax |
 
-**Readable function-pointer types (a very common use):**
-
-```c
-typedef void (*isr_t)(void);
-isr_t vector_table[64];            /* array of 64 function pointers */
-
-typedef int (*cmd_handler_t)(int argc, char **argv);
-```
-
-**Struct typedefs:**
-
-```c
-typedef struct uart uart_t;        /* opaque type: users cannot see inside */
-uart_t *uart_open(int port);
-```
-
-Opaque types like this are good encapsulation in C: the struct is only defined in `uart.c`.
-
-**Style notes:** names ending in `_t` are reserved by POSIX for its own types, so some projects avoid that suffix; and hiding a pointer inside a typedef (`typedef struct x *xptr;`) is discouraged by many style guides (including Linux), because it hides that the value is a pointer.
+**Interview takeaway:** Prefer `typedef` for type names. It creates an alias, not a distinct new type in C. Use `#define` for preprocessing and configuration.
 
 ### What is undefined behaviour? Give examples. {M}
 **Short answer:** Undefined behaviour (UB) means the C standard places **no requirements** on what happens. The program may crash, give a wrong result, or appear to work. Worse, the optimiser assumes UB never happens and transforms code on that basis, so a bug can be invisible at `-O0` and appear at `-O2`, or remove a safety check entirely.
