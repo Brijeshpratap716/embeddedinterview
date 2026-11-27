@@ -151,40 +151,49 @@ The address cannot be reassigned, writes through status are forbidden, and reads
 **Interview takeaway:** Qualifiers before the asterisk apply to the pointed-to type; qualifiers after it apply to that pointer. Neither form provides automatic thread safety.
 
 ### What is an ISR and what are the rules for writing one? {E}
-**Short answer:** An Interrupt Service Routine (ISR, interrupt handler) is the function the CPU runs when a hardware interrupt or exception occurs. The rules: keep it short and fast, never block, clear the interrupt source, share data safely with the rest of the program, and do heavy processing elsewhere (main loop, RTOS task, bottom half).
+An ISR (Interrupt Service Routine) is a handler invoked when the processor accepts an interrupt. It services the hardware event and returns control to the interrupted context or scheduler.
 
-**The rules and the reasons**
+#### 1. Interrupt flow
 
-1. **Keep it short.** While it runs, lower- or equal-priority interrupts wait, which adds latency to them. Read the data, clear the flag, put the data in a buffer, signal a task, return.
-2. **Never block or wait.** No `delay()`, no busy-waiting for a peripheral that takes milliseconds, no waiting for a mutex (an ISR cannot sleep; in an RTOS it would deadlock or crash).
-3. **No `printf`, `malloc` or other non-reentrant library calls.** They may hold internal locks or static buffers that the interrupted code was using.
-4. **Clear the interrupt flag** (in the peripheral and, where needed, in the interrupt controller). Otherwise the interrupt fires again immediately when the ISR returns. On Cortex-M with write buffers, make sure the clearing write has completed before returning (`__DSB()` or a read-back), or the ISR can re-enter spuriously.
-5. **Share data safely:** `volatile` for flags and indexes, lock-free single-producer/single-consumer ring buffers, or the RTOS's ISR-safe APIs (`xQueueSendFromISR`, `xTaskNotifyFromISR`).
-6. **Be careful with floating point:** on Cortex-M4F/M7, FPU use in an ISR increases stacking (lazy stacking reduces the cost); some projects forbid FP in ISRs.
-7. **No arguments and no return value** (see the next question).
+```text
+Peripheral asserts IRQ
+        |
+Interrupt controller selects priority
+        |
+CPU saves exception state
+        |
+ISR acknowledges source / captures data
+        |
+Deferred task processes data
+```
 
-**A typical UART receive ISR**
+The exact saved registers and acknowledgement protocol depend on the architecture and peripheral.
+
+#### 2. Example: UART receive interrupt
 
 ```c
-#define RX_SIZE 128u                       /* power of two */
-static volatile uint8_t  rx_buf[RX_SIZE];
-static volatile uint16_t rx_head;          /* written only by the ISR  */
-static volatile uint16_t rx_tail;          /* written only by the main loop */
-
-void USART2_IRQHandler(void)
+void USART_IRQHandler(void)
 {
-    if (USART2->SR & USART_SR_RXNE) {
-        uint8_t b = (uint8_t)USART2->DR;   /* reading DR clears RXNE */
-        uint16_t next = (rx_head + 1u) & (RX_SIZE - 1u);
-        if (next != rx_tail) {             /* drop the byte if the buffer is full */
-            rx_buf[rx_head] = b;
-            rx_head = next;
-        }
+    if (uart_rx_ready()) {
+        unsigned char byte = uart_read_byte();
+        rx_queue_put_from_isr(byte);
     }
 }
 ```
 
-**Interview extras:** mention priorities (urgent ISRs get higher priority), checking `SR` for error flags (overrun, framing), and the RTOS rule that ISRs above `configMAX_SYSCALL_INTERRUPT_PRIORITY` must not call any RTOS API.
+These are illustrative platform-specific helpers. Reading data or explicitly clearing status must follow the UART manual. Handle queue-full conditions and acknowledge all relevant sources.
+
+#### 3. Rules for ISR design
+
+- Keep execution bounded; move expensive parsing to a task.
+- Never wait for a mutex, sleep, or use a blocking API.
+- Use ISR-safe notification/queue functions.
+- Synchronize shared state and preserve required interrupt state.
+- Clear or acknowledge the interrupt correctly to avoid repeated entry.
+
+For FreeRTOS, a higher-priority task woken by an ISR may require the port-specific yield-from-ISR mechanism.
+
+**Interview takeaway:** An ISR should capture the event and defer substantial work. Its latency and execution time both affect real-time deadlines.
 
 ### Can you pass parameters to or return a value from an ISR? {E}
 **Short answer:** No. The hardware calls the ISR asynchronously, at an arbitrary point in the program, so there is no caller to supply arguments or to receive a return value. ISRs are declared `void handler(void)`. Data goes in and out through shared variables, buffers, queues or RTOS objects.
