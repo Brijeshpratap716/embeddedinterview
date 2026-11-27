@@ -245,28 +245,18 @@ Use a suitable scope probe with short ground connection. Compare source and rece
 **Interview takeaway:** Edge rate and electrical length matter more than clock frequency alone.
 
 ### How do you design firmware and hardware for low power? {M}
-**Short answer:** Average current is what drains the battery, so minimise the time spent awake and the current in each state: run fast and sleep (race to idle), use the deepest sleep mode that still meets wake-up latency and retention needs, switch off unused peripherals, clocks and external components, avoid polling, wake on interrupts or low-power timers, configure every GPIO (no floating inputs, no pull-ups fighting outputs), and measure the real current profile with a power analyser.
+Low-power design minimizes energy over the complete duty cycle.
 
-**MCU power modes (typical Cortex-M)**
+#### Firmware
+Use interrupts and DMA instead of busy polling, clock-gate unused peripherals, batch work, configure wake sources and restore peripheral state correctly after sleep.
 
-| Mode | CPU | Clocks | RAM | Typical current | Wake-up |
-|---|---|---|---|---|---|
-| Run | on | all | yes | 50–200 µA/MHz | – |
-| Sleep (WFI) | stopped | peripherals on | yes | ~30–50% of run | any interrupt, µs |
-| Stop / deep sleep | stopped | high-speed clocks off, LSE/RTC on | yes | 1–10 µA | RTC, EXTI, LP UART, ~5–50 µs |
-| Standby / shutdown | off | RTC only | lost (except backup) | 0.03–1 µA | reset-like boot, ms |
+#### Hardware
+Choose low-quiescent-current regulators, avoid leakage through unpowered peripherals, switch sensors off when possible and minimize unnecessary pull-resistor current.
 
-**Checklist**
+#### Example
+10 mA for 10 ms per second plus 10 µA for 990 ms gives an average of about 110 µA, ignoring transition overhead.
 
-1. Power budget: list every state, its current and time; compute the average and battery life.
-2. Clock tree: lower frequencies or voltage scaling for steady work; gate clocks of unused peripherals.
-3. Peripherals with DMA and low-power features (LPUART wake on character, ADC triggered by a low-power timer, comparator wake-up).
-4. RTOS tickless idle to avoid periodic wake-ups.
-5. External components: power-gate sensors with a load switch; check regulator quiescent current, pull-up currents, LED indicators, voltage dividers (switch them off between measurements).
-6. Radio: batch transmissions, use long connection intervals (BLE), sleep the radio.
-7. Debug: the debugger keeps clocks running in sleep modes (disable DBGMCU low-power debug bits in production), and leaky GPIOs often account for the "missing" microamps.
-
-**Measuring:** Nordic PPK2, Joulescope, Otii, or a shunt resistor with an oscilloscope; look at both the average and the peaks (battery internal resistance limits peak current, especially for coin cells).
+**Interview takeaway:** Measure the current waveform across active, sleep and wake states; account for transition energy and worst-case conditions.
 
 ### How do you read a datasheet efficiently? {E}
 **Short answer:** Start with the **front page** (key features, operating range) and the **block diagram**, then the **pin description** and **absolute maximum ratings** (never exceed) vs **recommended operating conditions** (where specifications apply). Read the **electrical characteristics** for the parameters you depend on (min/max, not typical), the **timing diagrams** for the interface you use, the **register map** and the **application circuit/layout guidelines**. Finally, always check the **errata** document for silicon bugs.
