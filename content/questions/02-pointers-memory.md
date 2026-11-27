@@ -1158,27 +1158,43 @@ This direction logic assumes a conventional flat-address implementation.
 **Interview takeaway:** Choose memmove when buffers might overlap and memcpy when non-overlap is guaranteed. Neither function automatically checks bounds or adds a string terminator.
 
 ### What is a NULL pointer dereference on a Cortex-M and why might it not crash? {H}
-**Short answer:** On most Cortex-M microcontrollers, address `0x00000000` is valid memory: flash (or an alias of it) containing the vector table. Reading through a NULL pointer therefore returns real data (the initial stack pointer value and the reset vector) instead of faulting, so the bug goes unnoticed. Writes to that area are usually ignored or cause a bus fault, depending on the part.
+Dereferencing a null pointer is **undefined behaviour in C**. However, whether the hardware raises a fault depends on the processor, memory mapping, access type and protection configuration.
 
-**Example**
+#### 1. Why Cortex-M may not fault
 
 ```c
-struct sensor *s = NULL;        /* forgot to initialise */
-uint32_t v = s->value;          /* reads address 0x00000000 + offset: valid flash, no fault */
-s->value = 5;                   /* write to flash: ignored, or a BusFault (imprecise on some cores) */
+int *p = NULL;
+// int value = *p;  // Invalid C
 ```
 
-On Linux, the first page (and more) of every process is unmapped, so the same bug gives an immediate `SIGSEGV`.
+On many Cortex-M systems, the numerical address 0x00000000 is mapped or aliased to boot memory. The vector table may be located there after reset.
 
-**How to catch NULL dereferences on an MCU**
+If an actual load from address zero is emitted and the region permits that access, the hardware can return data instead of raising an exception.
 
-1. **MPU:** configure a region at address 0 (e.g. 256 bytes to a few KB) as no-access. If the vector table has been relocated to RAM or another flash address with `SCB->VTOR`, nothing legitimate reads address 0 any more, and the MPU turns a NULL access into a MemManage fault with the faulting address in `MMFAR`.
-2. **Some MCUs** let you remap address 0 to non-existent memory, or have the flash at another base address with nothing at 0 (then a NULL access is a precise BusFault).
-3. **Static analysis** and compiler warnings (`-Wnull-dereference`, clang analyzer, cppcheck).
-4. **Unit-test the code on the host** with sanitizers, where NULL dereferences crash reliably.
-5. **Defensive coding:** check pointers returned by allocation and lookup functions; initialise every pointer.
+<div style="max-width:620px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 155" width="100%" role="img" aria-label="Example Cortex-M reset vector table when mapped at address zero">
+<text x="10" y="15" font-size="12" font-weight="600" fill="currentColor">Example reset vector table</text>
+<rect x="10" y="25" width="105" height="27" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="62" y="42" text-anchor="middle" font-size="11" fill="currentColor">0x00000000</text><rect x="115" y="25" width="215" height="27" fill="#16a34a" fill-opacity=".10" stroke="#16a34a"/><text x="222" y="42" text-anchor="middle" font-size="11" fill="currentColor">Initial MSP value</text><rect x="10" y="52" width="105" height="27" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="62" y="69" text-anchor="middle" font-size="11" fill="currentColor">0x00000004</text><rect x="115" y="52" width="215" height="27" fill="#16a34a" fill-opacity=".10" stroke="#16a34a"/><text x="222" y="69" text-anchor="middle" font-size="11" fill="currentColor">Reset handler address</text><rect x="10" y="79" width="105" height="27" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="62" y="96" text-anchor="middle" font-size="11" fill="currentColor">0x00000008</text><rect x="115" y="79" width="215" height="27" fill="#16a34a" fill-opacity=".10" stroke="#16a34a"/><text x="222" y="96" text-anchor="middle" font-size="11" fill="currentColor">NMI handler address</text><rect x="10" y="106" width="105" height="27" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="62" y="123" text-anchor="middle" font-size="11" fill="currentColor">0x0000000C</text><rect x="115" y="106" width="215" height="27" fill="#16a34a" fill-opacity=".10" stroke="#16a34a"/><text x="222" y="123" text-anchor="middle" font-size="11" fill="currentColor">HardFault handler address</text><text x="170" y="146" font-size="10" text-anchor="middle" fill="currentColor">Memory mapping is specific to the SoC and boot configuration.</text></svg></div>
 
-**Why it matters:** a NULL function pointer call (`cb()` where `cb == NULL`) loads the PC from address 0 — the initial stack pointer value — and the core tries to execute at an address in RAM, usually ending in a HardFault far from the cause. Knowing this pattern helps you recognise it in a fault dump: a PC equal to the initial MSP value is a strong hint.
+The initial MSP word is not a valid value to obtain by dereferencing NULL in a C program.
+
+#### 2. When can a fault occur?
+
+- The address is unmapped or the bus rejects the access.
+- An MPU region prohibits the access.
+- The instruction violates access or alignment requirements.
+- A configurable fault may escalate to HardFault.
+
+Reads and writes can behave differently. A flash alias may allow reads but reject ordinary writes.
+
+#### 3. Why Linux usually behaves differently
+
+Linux normally leaves the null virtual-address page inaccessible to userspace. An invalid user access generally triggers a processor exception and may result in SIGSEGV.
+
+#### 4. Debugging and prevention
+
+Check pointers before use, respect object lifetimes and use MPU protection where available. On supporting Cortex-M cores, inspect CFSR, HFSR, applicable fault address registers and the saved exception PC.
+
+**Interview takeaway:** A hardware access succeeding does not make null dereferencing valid C. The compiler can optimize on the assumption that undefined behaviour never occurs, so the emitted instruction itself is not guaranteed.
 
 ### How do you write a function that returns multiple values? {E}
 **Short answer:** C functions return only one value, so either return a **struct** containing all the results, or return a **status code** and write the results through **pointer parameters** (output parameters). Embedded APIs usually use the second form so errors are explicit.
