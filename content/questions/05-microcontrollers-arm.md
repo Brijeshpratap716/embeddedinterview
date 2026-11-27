@@ -1029,3 +1029,52 @@ The unlock is a store-release; clearing the exclusive monitor of a waiting core 
 **Probes and tools:** ST-LINK, SEGGER J-Link, CMSIS-DAP (DAPLink, Raspberry Pi Debug Probe), Lauterbach TRACE32; software such as OpenOCD, pyOCD, GDB, and IDEs (STM32CubeIDE, Keil, IAR, VS Code + Cortex-Debug).
 
 **Security:** production devices should disable or lock the debug port (read-out protection levels, debug authentication, TrustZone debug restrictions), otherwise anyone with a probe can read the firmware and secrets. Locking is usually irreversible or erases the chip.
+
+### Do ARM64 registers X0, X1 and X2 contain data or memory addresses? {E}
+**Short answer:** Both. AArch64 has 31 general-purpose registers (X0–X30), each 64 bits wide. Their W-register aliases access the lower 32 bits. A register holds bits; the instruction determines whether they represent an integer, an address, or something else.
+
+```asm
+MOV X1, #10
+MOV X2, #20
+ADD X3, X1, X2       // X3 = 30; no data-memory access
+```
+
+Now assume virtual address 0x1000 is valid, readable and contains the 64-bit value 50:
+
+```asm
+MOV X1, #0x1000
+LDR X2, [X1]         // X2 = 50
+STR X2, [X1]         // write 50 back to that address
+```
+
+```text
+X1 = 0x1000 ----> Memory[0x1000] = 50
+X2 = 50     <---- LDR reads the value
+```
+
+With the MMU enabled, the load/store address is translated and checked; data may come from cache rather than DRAM. MOV copies a value, LDR loads from memory, and STR stores to memory. In C, a pointer holds an address while dereferencing it accesses the object at that address.
+
+### What is cache coherency in a multicore ARM system? {M}
+**Short answer:** Cache coherency ensures that cores accessing the same coherent memory location do not continue using stale cached copies after a write becomes visible.
+
+Suppose Core 0 and Core 1 both cache a shared variable a = 10. Core 0 writes a = 20. Without coherency, Core 1 might still read 10.
+
+In a typical write-invalidate protocol:
+
+1. Core 0 requests exclusive ownership of the cache line.
+2. The coherent interconnect invalidates other cached copies.
+3. Core 0 modifies the line.
+4. A subsequent coherent read by Core 1 obtains the latest value, potentially from another cache rather than DRAM.
+
+| MESI state | Meaning |
+|---|---|
+| Modified | Dirty line held exclusively; backing memory may be stale. |
+| Exclusive | Clean line held exclusively. |
+| Shared | Clean line may be held in multiple caches. |
+| Invalid | Line cannot be used. |
+
+MESI is an illustrative protocol; implementations may use other state machines. Arm coherent systems may use CCI or CMN interconnects and ACE or CHI protocols.
+
+**CPU and DMA:** On a non-coherent DMA system, CPU-written dirty data may need cleaning before the device reads it, and stale CPU cache lines may need invalidating before the CPU reads device-written data. Linux drivers should use the DMA API (dma_map_single, dma_sync_single_for_cpu, dma_sync_single_for_device, dma_unmap_single, or dma_alloc_coherent as appropriate) rather than assuming direct physical addresses or manually managing caches.
+
+**Interview trap:** Coherency operates on cache lines and does not guarantee ordering between different locations or make a++ atomic. Use proper synchronization and memory barriers.
