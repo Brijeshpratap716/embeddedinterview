@@ -55,32 +55,56 @@ Pointers allow hardware register access, passing buffers without copying them, l
 **Interview takeaway:** A pointer and its target are distinct objects. Never dereference a null, uninitialized, dangling or out-of-bounds pointer.
 
 ### How does pointer arithmetic work? {E}
-**Short answer:** Adding an integer `n` to a pointer moves it by `n * sizeof(*p)` bytes, so `p + 1` points to the **next element**, not the next byte. Subtracting two pointers into the same array gives the number of elements between them (type `ptrdiff_t`). Arithmetic is only defined within one array object (and one past its end).
+Pointer arithmetic works in **units of the pointed-to type**, not simply bytes. Adding one to an int pointer moves to the next int element.
+
+#### 1. Example
 
 ```c
-uint32_t buf[4] = {10, 20, 30, 40};
-uint32_t *p = buf;          /* &buf[0], say address 0x20000000 */
+uint32_t a[] = {10, 20, 30, 40};
+uint32_t *p = a;
 
-p + 1;                      /* 0x20000004 -> buf[1] */
-*(p + 2);                   /* 30, same as p[2] */
-(uint8_t *)p + 1;           /* 0x20000001: one byte further */
-
-uint32_t *end = buf + 4;    /* one past the end: valid to compute and compare, not to dereference */
-ptrdiff_t n = end - p;      /* 4 elements, not 16 bytes */
+printf("%u", (unsigned)p[2]); // 30
+p++;
+// p now points to a[1]
 ```
 
-**Equivalences:** `p[i]` is defined as `*(p + i)`, so `buf[2]`, `*(buf + 2)`, `p[2]` and even `2[buf]` are the same element.
+Assuming four-byte uint32_t objects and an initial address of 0x2000:
 
-**Rules**
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 110" width="100%" role="img" aria-label="Array addresses advance four bytes per uint32_t element">
+<rect x="10" y="34" width="80" height="34" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="50" y="55" font-size="13" text-anchor="middle" fill="currentColor">10</text><text x="50" y="82" font-size="10" text-anchor="middle" fill="currentColor">0x2000</text><text x="50" y="98" font-size="10" text-anchor="middle" fill="currentColor">a[0]</text><rect x="90" y="34" width="80" height="34" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="130" y="55" font-size="13" text-anchor="middle" fill="currentColor">20</text><text x="130" y="82" font-size="10" text-anchor="middle" fill="currentColor">0x2004</text><text x="130" y="98" font-size="10" text-anchor="middle" fill="currentColor">a[1]</text><rect x="170" y="34" width="80" height="34" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="210" y="55" font-size="13" text-anchor="middle" fill="currentColor">30</text><text x="210" y="82" font-size="10" text-anchor="middle" fill="currentColor">0x2008</text><text x="210" y="98" font-size="10" text-anchor="middle" fill="currentColor">a[2]</text><rect x="250" y="34" width="80" height="34" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="290" y="55" font-size="13" text-anchor="middle" fill="currentColor">40</text><text x="290" y="82" font-size="10" text-anchor="middle" fill="currentColor">0x200c</text><text x="290" y="98" font-size="10" text-anchor="middle" fill="currentColor">a[3]</text><text x="50" y="12" font-size="11" text-anchor="middle" fill="currentColor">Original p</text><path d="M50 16 V34 m-4-5 4 5 4-5" stroke="#16a34a" fill="none"/><text x="130" y="12" font-size="11" text-anchor="middle" fill="currentColor">p + 1</text><path d="M130 16 V34 m-4-5 4 5 4-5" stroke="#16a34a" fill="none"/></svg></div>
 
-- Only add/subtract integers to pointers, and subtract pointers that point into the same array. Adding two pointers is meaningless (and not allowed).
-- Going beyond one-past-the-end, or before the start, is undefined behaviour even if you never dereference it.
-- `void *` arithmetic is not allowed in standard C (GCC treats it like `char *` as an extension).
-- Comparing pointers with `<`/`>` is only defined within one array; comparing for equality is always fine.
+#### 2. Common operations
 
-**Precedence with increment:** `*p++` reads `*p` then advances `p`; `(*p)++` increments the value; `*++p` advances first then reads.
+| Expression (p initially points to a[0]) | Result |
+|---|---|
+| `p + 2` | Address of a[2] |
+| `*(p + 2)` | 30 |
+| `a + 4 - p` | 4 elements |
+| `a + 4` | One-past-end pointer; cannot dereference |
 
-**Embedded use:** walking a received byte buffer, and computing register addresses: `(volatile uint32_t *)(base + 0x14)` where `base` is a `uintptr_t`, or `&periph->CR` with a struct overlay. Be careful: if `base` is a `uint32_t *`, then `base + 0x14` moves by `0x14 * 4 = 0x50` bytes.
+Pointer subtraction returns ptrdiff_t. Addition and subtraction must remain within the same array or one past its end.
+
+#### 3. Pointer increment and dereference
+
+```c
+*p++;     // *(p++): accesses old target, advances p
+(*p)++;   // Increments pointed-to value
+*++p;     // Advances p, then accesses new target
+```
+
+These are separate examples; ensure the resulting pointer and accessed element remain valid.
+
+#### 4. Register offset example
+
+```c
+uintptr_t base = 0x40000000U;
+volatile uint32_t *reg =
+    (volatile uint32_t *)(base + 0x14U);
+```
+
+Integer address arithmetic adds the byte offset on the assumed platform. If base were a uint32_t pointer, adding 0x14 would instead advance 20 elements (80 bytes). Use the SoC's documented addresses and MMIO APIs.
+
+**Interview takeaway:** Pointer arithmetic scales by element size. One-past-end is useful for iteration but cannot be dereferenced. Standard C does not support arithmetic on void pointers.
 
 ### What is a void pointer? {E}
 **Short answer:** `void *` is a generic pointer that can hold the address of any object type. You cannot dereference it or do arithmetic on it directly in standard C; you first convert it to a pointer of the real type. In C it converts implicitly to and from any object pointer type, which is why `malloc` returns `void *` and needs no cast.
