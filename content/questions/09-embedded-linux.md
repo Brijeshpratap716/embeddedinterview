@@ -695,3 +695,80 @@ Change one variable at a time and record evidence. Preserve recovery access and 
 
 **Interview takeaway:** Boot debugging is stage isolation. Confirm hardware, firmware handoff, kernel initialization and rootfs/userspace independently.
 
+### Explain full boot flow of i.MX8 in very brief. {M}
+The **NXP i.MX8QM/QXP boot flow** involves Boot ROM, System Controller Firmware (SCFW), ARM Trusted Firmware, U-Boot and the Linux kernel.
+
+#### 1. Complete boot sequence
+
+<figure style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 576" width="100%" role="img" aria-label="i.MX8QM/QXP boot flow" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="80" y="3" width="520" height="52" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="24" fill="#0c4a6e" font-size="16" font-weight="600">Power ON / Reset</text><text x="340" y="43" fill="#0c4a6e" font-size="13">SoC reset</text><path d="M340 55 v17 m-5 -5 l5 5 l5 -5" fill="none" stroke="#0369a1" stroke-width="2"/><rect x="80" y="75" width="520" height="52" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="96" fill="#0c4a6e" font-size="16" font-weight="600">Boot ROM</text><text x="340" y="115" fill="#0c4a6e" font-size="13">Boot device selection and image loading</text><path d="M340 127 v17 m-5 -5 l5 5 l5 -5" fill="none" stroke="#0369a1" stroke-width="2"/><rect x="80" y="147" width="520" height="52" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="168" fill="#0c4a6e" font-size="16" font-weight="600">SCFW / SECO Firmware</text><text x="340" y="187" fill="#0c4a6e" font-size="13">Power, clocks, DDR and security initialization</text><path d="M340 199 v17 m-5 -5 l5 5 l5 -5" fill="none" stroke="#0369a1" stroke-width="2"/><rect x="80" y="219" width="520" height="52" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="240" fill="#0c4a6e" font-size="16" font-weight="600">ARM Trusted Firmware (BL31)</text><text x="340" y="259" fill="#0c4a6e" font-size="13">EL3 initialization and secure monitor</text><path d="M340 271 v17 m-5 -5 l5 5 l5 -5" fill="none" stroke="#0369a1" stroke-width="2"/><rect x="80" y="291" width="520" height="52" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="312" fill="#0c4a6e" font-size="16" font-weight="600">U-Boot (BL33)</text><text x="340" y="331" fill="#0c4a6e" font-size="13">Bootloader and peripheral initialization</text><path d="M340 343 v17 m-5 -5 l5 5 l5 -5" fill="none" stroke="#0369a1" stroke-width="2"/><rect x="80" y="363" width="520" height="52" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="384" fill="#0c4a6e" font-size="16" font-weight="600">Linux Kernel + DTB</text><text x="340" y="403" fill="#0c4a6e" font-size="13">Kernel initialization and driver probing</text><path d="M340 415 v17 m-5 -5 l5 5 l5 -5" fill="none" stroke="#0369a1" stroke-width="2"/><rect x="80" y="435" width="520" height="52" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="456" fill="#0c4a6e" font-size="16" font-weight="600">Root Filesystem</text><text x="340" y="475" fill="#0c4a6e" font-size="13">Mount root filesystem</text><path d="M340 487 v17 m-5 -5 l5 5 l5 -5" fill="none" stroke="#0369a1" stroke-width="2"/><rect x="80" y="507" width="520" height="52" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="528" fill="#0c4a6e" font-size="16" font-weight="600">Init / systemd</text><text x="340" y="547" fill="#0c4a6e" font-size="13">Userspace services and applications</text></svg></figure>
+
+#### 2. Responsibility of each stage
+
+| Stage | Responsibility |
+|---|---|
+| **Boot ROM** | Executes on SCU Cortex-M4, reads boot pins/eFuses, selects SD/eMMC and loads boot images. |
+| **SECO** | Security Controller firmware handles image authentication and secure boot using AHAB. |
+| **SCFW** | Initializes DDR through its DDR initialization routine, manages clocks, power domains, resource partitioning and releases Cortex-A cores from reset. |
+| **SPL (optional)** | Loads subsequent boot images into DDR, depending on the boot configuration. |
+| **ATF (BL31)** | Runs at EL3, initializes the secure monitor and provides PSCI services. |
+| **U-Boot (BL33)** | Initializes peripherals, loads Linux Image and DTB into DDR, passes boot arguments and starts Linux. |
+| **Linux Kernel** | Initializes MMU, scheduler, interrupts, memory management and device drivers. |
+| **RootFS** | Mounts the root filesystem and starts PID 1 (`systemd` or `init`). |
+
+#### 3. Boot image creation
+
+NXP provides the `imx-mkimage` tool to combine the firmware binaries into a bootable image.
+
+```text
+scfw_tcm.bin
+SECO firmware
+bl31.bin
+u-boot.bin
+      |
+  imx-mkimage
+      |
+   flash.bin
+      |
+   SD / eMMC
+```
+
+#### 4. How Linux communicates with SCFW
+
+Unlike many other SoCs, i.MX8QM/QXP delegates several hardware management operations to SCFW.
+
+```text
+Linux Kernel Driver
+        |
+    SCU RPC API
+        |
+  Messaging Unit (MU)
+        |
+       SCFW
+        |
+  Hardware Resources
+```
+
+SCFW remains running even after Linux boots and handles clock, power and resource management requests.
+
+#### 5. ARM exception levels
+
+| Software | Exception level |
+|---|---|
+| ARM Trusted Firmware | EL3 |
+| OP-TEE (optional) | Secure EL1 |
+| Hypervisor (if present) | EL2 |
+| U-Boot | Typically EL2 |
+| Linux kernel | EL1, normally |
+| Userspace applications | EL0 |
+
+#### 6. i.MX8QM/QXP vs i.MX8M
+
+| Feature | i.MX8QM/QXP | i.MX8M |
+|---|---|---|
+| SCFW | Yes | No |
+| SECO | Yes | No |
+| DDR initialization | SCFW DDR routine | SPL |
+| Secure boot | AHAB | HAB |
+| SPL | Configuration dependent | Typically required |
+
+**Key interview point:** In i.MX8QM/QXP, the SCU Cortex-M4 boots before the Cortex-A application processor. It manages system resources and remains active throughout the system's operation.
