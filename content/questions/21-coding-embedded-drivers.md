@@ -668,6 +668,12 @@ void timer_poll(void)                                 /* call from the main loop
 
 **Pitfalls:** running callbacks inside the tick ISR (they then delay all other interrupts), modifying the timer table from an ISR without protection, and starting/stopping a timer from inside its own callback (design the loop to handle it).
 
+#### Wrap-safe deadlines and missed periods
+
+With expiry=0xFFFFFFF0 and now=0x00000010, unsigned now−expiry equals 32, so the deadline has passed. A half-range test (difference < 0x80000000U) avoids relying on an out-of-range conversion to signed int32_t. Restrict delays/periods to less than half the counter range and poll often enough to avoid ambiguity.
+
+If a periodic timer expires several times while polling is delayed, define whether to execute all missed callbacks, coalesce them, or skip to the next future expiry. Mark/update timer state before invoking the callback so it can safely stop or restart itself under the documented single-context model. Reject null callbacks and consider generation-tagged handles to distinguish a reused timer slot.
+
 ### Implement a simple cooperative task scheduler. {M}
 **Short answer:** Store tasks in a table with a function pointer, a period and the next run time. The main loop repeatedly checks each task: if its time has come, it calls the function and adds the period to its next run time. Each task must do a little work and return quickly (no blocking), so the scheduler needs no stacks, no context switching and no locks between tasks.
 
