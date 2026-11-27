@@ -621,6 +621,31 @@ if (smp_load_acquire(&flag))
 
 **Interview takeaway:** Acquire/release is a common efficient building block for locks, queues and producer-consumer synchronization.
 
+#### C11 example and ARM64 lowering
+
+```c
+#include <stdatomic.h>
+static int payload;
+static atomic_int published;
+
+void send_once(void)
+{
+    payload = 42;
+    atomic_store_explicit(&published, 1, memory_order_release);
+}
+
+int receive(void)
+{
+    if (atomic_load_explicit(&published, memory_order_acquire))
+        return payload;
+    return -1;
+}
+```
+
+When the acquire load reads the release publication, the payload write happens-before the consumer's payload read. On AArch64, a suitable compiler may implement the release store with STLR and the acquire load with LDAR or an equivalent instruction sequence.
+
+For a standalone statistics counter, relaxed atomics can be sufficient because no other data is published. For a lock, acquisition uses acquire semantics and unlock uses release so protected writes become visible to the next owner. Sequentially consistent atomics impose additional ordering requirements. Acquire/release is directional rather than a full fence in both directions. The example is one-time publication: reuse of payload requires acknowledgment or another ownership protocol.
+
 ### How do LDAXR and STLXR implement atomic operations? {H}
 **Short answer:** An exclusive load establishes a reservation. An exclusive store succeeds only if the reservation remains valid; otherwise retry. Acquire/release forms provide ordering.
 
