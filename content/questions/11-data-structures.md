@@ -72,49 +72,44 @@ Time O(n), auxiliary space O(1). A recursive approach may use O(n) call-stack sp
 **Interview takeaway:** Save the next link before overwriting it. Return the new head; the old head becomes the tail.
 
 ### How do you detect a loop in a linked list? {M}
-**Short answer:** Use Floyd's tortoise-and-hare algorithm: move one pointer by one node and another by two. If there is a cycle, the fast pointer eventually laps the slow one and they meet; if the fast pointer reaches `NULL`, there is no cycle. To find where the loop starts, move one pointer back to the head after they meet and advance both one step at a time; they meet at the loop's first node. O(n) time, O(1) memory.
+Floyd's cycle detection algorithm uses a slow pointer moving one node at a time and a fast pointer moving two nodes at a time. If a cycle exists, they eventually meet.
+
+#### 1. Detect the loop
 
 ```c
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdio.h>
-
-struct node { int val; struct node *next; };
-
-struct node *loop_start(struct node *h)
+bool has_loop(struct node *head)
 {
-    struct node *slow = h, *fast = h;
+    struct node *slow = head, *fast = head;
+
     while (fast && fast->next) {
         slow = slow->next;
         fast = fast->next->next;
-        if (slow == fast) {                  /* inside the loop */
-            slow = h;
-            while (slow != fast) { slow = slow->next; fast = fast->next; }
-            return slow;                     /* first node of the loop */
-        }
-    }
-    return NULL;                             /* no loop */
-}
 
-int main(void)
-{
-    struct node n[5];
-    for (int i = 0; i < 5; i++) { n[i].val = i; n[i].next = (i < 4) ? &n[i + 1] : &n[2]; }
-    struct node *s = loop_start(&n[0]);
-    printf("loop starts at %d\n", s ? s->val : -1);   /* 2 */
-    n[4].next = NULL;
-    printf("loop: %s\n", loop_start(&n[0]) ? "yes" : "no");   /* no */
-    return 0;
+        if (slow == fast)
+            return true;
+    }
+    return false;
 }
 ```
 
-**Why the restart works:** if the distance from the head to the loop start is `a`, and they meet `b` nodes into a loop of length `L`, the fast pointer travelled twice as far, so `a + b` is a multiple of `L`; therefore walking `a` more steps from the meeting point lands on the loop start, exactly when the other pointer arrives from the head.
+#### 2. Find the cycle entry
 
-**Loop length:** after they meet, keep one pointer fixed and count steps until the other returns.
+After the two pointers meet, move one pointer back to head and advance both one step at a time. Their next meeting is the cycle entry.
 
-**Alternatives:** a visited set (hash table, O(n) memory), or marking nodes (modifies data). Brent's algorithm is a faster variant.
+```text
+A -> B -> C -> D -> E
+          ^         |
+          +---------+
+Cycle entry = C
+```
 
-**Embedded relevance:** corrupted linked lists (e.g. a free list or a timer list after a memory overwrite) can form cycles that hang the system; a debug check with Floyd's algorithm finds them.
+This works because the fast pointer travels twice the slow pointer's distance; the resulting distance relation is a multiple of the cycle length.
+
+#### 3. Complexity
+
+O(n) time and O(1) extra memory, with n counting distinct reachable nodes. A list without a cycle terminates at NULL.
+
+**Interview takeaway:** Always check fast and fast->next before taking two steps. The algorithm assumes valid links and a list that is not concurrently modified.
 
 ### How do you find the middle of a linked list in one pass? {E}
 **Short answer:** Use slow and fast pointers: advance slow by one and fast by two; when fast reaches the end, slow is at the middle. For an even number of nodes this returns the second of the two middle nodes; to get the first one, loop while `fast->next && fast->next->next`.
