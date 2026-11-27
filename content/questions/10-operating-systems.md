@@ -601,32 +601,30 @@ SJF requires knowledge or estimation of burst lengths. SRTF can starve long jobs
 **Interview takeaway:** State arrival times, tie-breaking and quantum before computing scheduling metrics. SJF and SRTF differ when new jobs arrive during execution.
 
 ### How does the Linux scheduler work (CFS and EEVDF)? {H}
-**Short answer:** For normal tasks, Linux tries to give each runnable task a fair share of CPU time weighted by its nice value. **CFS** (Completely Fair Scheduler, 2.6.23 to 6.5) tracked each task's **virtual runtime** (actual runtime scaled by its weight), kept runnable tasks in a **red-black tree** sorted by vruntime, and always ran the task with the smallest vruntime (the leftmost node). Since Linux 6.6, **EEVDF** (Earliest Eligible Virtual Deadline First) replaced CFS's picking rule: it still uses weighted virtual time, but among tasks that are "eligible" (not ahead of their fair share) it picks the one with the earliest **virtual deadline**, which gives better latency control.
+Linux has multiple scheduler classes for deadline, real-time, normal fair and other policies. The normal fair scheduler has evolved from the classic CFS selection model toward EEVDF (Earliest Eligible Virtual Deadline First) in modern kernels.
 
-**Weights and nice values**
+#### 1. Classic CFS idea
 
-- Nice ranges from −20 (highest priority) to +19 (lowest). Nice 0 has weight **1024**; each nice step changes the weight by about **1.25×**, so a task one nice level higher gets about 10% more CPU than its neighbour.
-- `vruntime += actual_runtime × 1024 / weight`. A high-weight task's vruntime grows slowly, so it gets picked more often.
+CFS tracks weighted virtual runtime. Tasks with less accumulated virtual runtime are favored so that CPU service approaches their weighted share. Nice values influence weights rather than acting like strict real-time priorities.
 
-**Example:** two CPU-bound tasks, one at nice 0 (weight 1024) and one at nice 5 (weight 335). CPU shares are 1024 / (1024 + 335) ≈ **75%** and ≈ **25%**.
+#### 2. EEVDF idea
 
-**Why a red-black tree:** insert and delete are O(log n), and the leftmost node (smallest vruntime) is cached, so picking the next task is O(1). A task that blocked for a long time is placed relative to the current minimum vruntime when it wakes, so it gets a quick turn without being able to monopolise the CPU.
+EEVDF uses virtual service accounting and eligibility based on lag relative to a task's ideal share. Among eligible tasks, it selects according to virtual deadlines. This helps balance fairness and latency for tasks with different service requests.
 
-**EEVDF in one paragraph:** each task has a **lag** (how much service it is owed). A task is *eligible* if its lag is ≥ 0. Its virtual deadline is roughly its eligible time plus `slice / weight`. The scheduler picks the eligible task with the earliest virtual deadline. Tasks can request shorter slices (latency-sensitive work) without getting more total CPU.
+```text
+Runnable fair tasks
+    -> virtual service / lag accounting
+    -> determine eligible tasks
+    -> choose earliest eligible virtual deadline
+```
 
-**Scheduling classes (checked in priority order)**
+The implementation has evolved since EEVDF entered the fair scheduler in Linux 6.6; exact data structures and heuristics depend on the kernel version.
 
-| Class | Policies | Use |
-|---|---|---|
-| stop | – | internal (CPU hotplug, migration) |
-| deadline | `SCHED_DEADLINE` | runtime/period/deadline reservations (EDF + CBS) |
-| real-time | `SCHED_FIFO`, `SCHED_RR` (priority 1–99) | soft real-time, control loops |
-| fair | `SCHED_NORMAL` (`SCHED_OTHER`), `SCHED_BATCH` | everything else |
-| idle | `SCHED_IDLE` | lowest-priority background work |
+#### 3. SMP
 
-**Multi-core:** each CPU has its own runqueue; the load balancer migrates tasks between CPUs considering cache topology and, on big.LITTLE/DynamIQ systems, **energy-aware scheduling** (place small tasks on efficient cores).
+Each CPU has scheduling state, with load balancing, affinity and wakeup placement influencing where tasks run. Higher scheduling classes can take precedence over fair tasks.
 
-**Tools:** `nice`, `renice`, `chrt` (real-time policy), `taskset` (affinity), `/proc/<pid>/sched`, `perf sched`, and `sched_ext` (6.12+) for BPF-based custom schedulers.
+**Interview takeaway:** CFS and EEVDF are fair-scheduling concepts, not strict deadline guarantees. Distinguish virtual deadlines in the fair scheduler from SCHED_DEADLINE's real-time scheduling interface.
 
 ### What is the difference between SCHED_FIFO, SCHED_RR and SCHED_DEADLINE in Linux? {M}
 **Short answer:** All three are real-time policies that always pre-empt normal tasks. **SCHED_FIFO** runs the highest-priority task until it blocks, yields or is pre-empted by a higher priority; tasks of equal priority wait their turn. **SCHED_RR** is the same but adds a time slice so equal-priority tasks rotate. **SCHED_DEADLINE** schedules by deadlines (EDF) using a declared runtime, deadline and period, and the kernel admits a task only if the total load is feasible.
