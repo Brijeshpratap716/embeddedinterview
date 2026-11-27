@@ -1477,39 +1477,67 @@ The tag identifies which union member contains the meaningful value. This is use
 **Interview takeaway:** Use structures for related fields and unions when alternative representations share storage. Union type-punning has representation-dependent results; use explicit conversions for portable protocol handling.
 
 ### What is structure padding and how do you avoid it? {M}
-**Short answer:** The compiler inserts unused **padding bytes** between members (and at the end) so that each member starts at an address that is a multiple of its alignment, and so that arrays of the struct keep every element aligned. To reduce padding, order members from largest alignment to smallest. To remove it entirely, use `__attribute__((packed))` or `#pragma pack(1)`, but packed members may be accessed unaligned, which is slower and can fault on some cores.
+Structure padding is unused storage inserted by the compiler to satisfy **member alignment and overall structure alignment**.
+
+#### 1. Example
 
 ```c
-struct a { char c; int i; char d; };   /* 12 bytes on 32-bit Arm */
-/* offset: c 0, padding 1-3, i 4-7, d 8, padding 9-11 */
-
-struct b { int i; char c; char d; };   /* 8 bytes */
-/* offset: i 0-3, c 4, d 5, padding 6-7 */
+struct A {
+    char a;
+    int b;
+    char c;
+};
 ```
 
-**Why the trailing padding in `struct b`?** The struct's alignment is 4 (its largest member). In an array `struct b arr[2]`, `arr[1].i` must be 4-byte aligned, so the size is rounded up to a multiple of 4.
+Assuming four-byte int size and alignment:
 
-**Checking layout**
+| Member | Offset |
+|---|---:|
+| a | 0 |
+| b | 4 |
+| c | 8 |
+
+The structure typically occupies 12 bytes, not 6.
+
+#### 2. Reduce padding by rearranging members
+
+```c
+struct B {
+    int b;
+    char a;
+    char c;
+};
+```
+
+Now the int starts at offset zero, the chars occupy offsets four and five, and two tail padding bytes remain.
+
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 340 126" role="img" aria-label="Reordering structure members reduces padding from six bytes to two bytes on the assumed ABI" font-family="system-ui,sans-serif"><text x="8" y="18" font-size="11" fill="currentColor">Before: 12 bytes</text><rect x="8" y="24" width="27" height="25" fill="#16a34a" fill-opacity=".6" stroke="currentColor" stroke-width=".5"/><text x="21.5" y="41" font-size="12" text-anchor="middle" fill="currentColor">a</text><rect x="35" y="24" width="27" height="25" fill="#94a3b8" fill-opacity=".2" stroke="currentColor" stroke-width=".5"/><text x="48.5" y="41" font-size="12" text-anchor="middle" fill="currentColor">P</text><rect x="62" y="24" width="27" height="25" fill="#94a3b8" fill-opacity=".2" stroke="currentColor" stroke-width=".5"/><text x="75.5" y="41" font-size="12" text-anchor="middle" fill="currentColor">P</text><rect x="89" y="24" width="27" height="25" fill="#94a3b8" fill-opacity=".2" stroke="currentColor" stroke-width=".5"/><text x="102.5" y="41" font-size="12" text-anchor="middle" fill="currentColor">P</text><rect x="116" y="24" width="27" height="25" fill="#3b82f6" fill-opacity=".6" stroke="currentColor" stroke-width=".5"/><text x="129.5" y="41" font-size="12" text-anchor="middle" fill="currentColor">b</text><rect x="143" y="24" width="27" height="25" fill="#3b82f6" fill-opacity=".6" stroke="currentColor" stroke-width=".5"/><text x="156.5" y="41" font-size="12" text-anchor="middle" fill="currentColor">b</text><rect x="170" y="24" width="27" height="25" fill="#3b82f6" fill-opacity=".6" stroke="currentColor" stroke-width=".5"/><text x="183.5" y="41" font-size="12" text-anchor="middle" fill="currentColor">b</text><rect x="197" y="24" width="27" height="25" fill="#3b82f6" fill-opacity=".6" stroke="currentColor" stroke-width=".5"/><text x="210.5" y="41" font-size="12" text-anchor="middle" fill="currentColor">b</text><rect x="224" y="24" width="27" height="25" fill="#a855f7" fill-opacity=".6" stroke="currentColor" stroke-width=".5"/><text x="237.5" y="41" font-size="12" text-anchor="middle" fill="currentColor">c</text><rect x="251" y="24" width="27" height="25" fill="#94a3b8" fill-opacity=".2" stroke="currentColor" stroke-width=".5"/><text x="264.5" y="41" font-size="12" text-anchor="middle" fill="currentColor">P</text><rect x="278" y="24" width="27" height="25" fill="#94a3b8" fill-opacity=".2" stroke="currentColor" stroke-width=".5"/><text x="291.5" y="41" font-size="12" text-anchor="middle" fill="currentColor">P</text><rect x="305" y="24" width="27" height="25" fill="#94a3b8" fill-opacity=".2" stroke="currentColor" stroke-width=".5"/><text x="318.5" y="41" font-size="12" text-anchor="middle" fill="currentColor">P</text><text x="8" y="75" font-size="11" fill="currentColor">After: 8 bytes</text><rect x="8" y="81" width="27" height="25" fill="#3b82f6" fill-opacity=".6" stroke="currentColor" stroke-width=".5"/><text x="21.5" y="98" font-size="12" text-anchor="middle" fill="currentColor">b</text><rect x="35" y="81" width="27" height="25" fill="#3b82f6" fill-opacity=".6" stroke="currentColor" stroke-width=".5"/><text x="48.5" y="98" font-size="12" text-anchor="middle" fill="currentColor">b</text><rect x="62" y="81" width="27" height="25" fill="#3b82f6" fill-opacity=".6" stroke="currentColor" stroke-width=".5"/><text x="75.5" y="98" font-size="12" text-anchor="middle" fill="currentColor">b</text><rect x="89" y="81" width="27" height="25" fill="#3b82f6" fill-opacity=".6" stroke="currentColor" stroke-width=".5"/><text x="102.5" y="98" font-size="12" text-anchor="middle" fill="currentColor">b</text><rect x="116" y="81" width="27" height="25" fill="#16a34a" fill-opacity=".6" stroke="currentColor" stroke-width=".5"/><text x="129.5" y="98" font-size="12" text-anchor="middle" fill="currentColor">a</text><rect x="143" y="81" width="27" height="25" fill="#a855f7" fill-opacity=".6" stroke="currentColor" stroke-width=".5"/><text x="156.5" y="98" font-size="12" text-anchor="middle" fill="currentColor">c</text><rect x="170" y="81" width="27" height="25" fill="#94a3b8" fill-opacity=".2" stroke="currentColor" stroke-width=".5"/><text x="183.5" y="98" font-size="12" text-anchor="middle" fill="currentColor">P</text><rect x="197" y="81" width="27" height="25" fill="#94a3b8" fill-opacity=".2" stroke="currentColor" stroke-width=".5"/><text x="210.5" y="98" font-size="12" text-anchor="middle" fill="currentColor">P</text></svg></div>
+
+#### 3. Packed structures
+
+GCC and Clang support a packing attribute:
+
+```c
+struct __attribute__((packed)) Packet {
+    uint8_t type;
+    uint32_t length;
+};
+```
+
+On an eight-bit-byte target this commonly occupies five bytes. However, the 32-bit member may be unaligned, causing slower accesses or hardware faults depending on the platform and access instruction.
+
+#### 4. Verify layout
 
 ```c
 #include <stddef.h>
-_Static_assert(offsetof(struct b, c) == 4, "layout changed");
-_Static_assert(sizeof(struct b) == 8, "size changed");
+
+printf("%zu", sizeof(struct A));
+printf("%zu", offsetof(struct A, b));
 ```
 
-`pahole` (from dwarves) prints the layout and holes of every struct in an ELF file with debug info.
+`offsetof()` returns the byte offset of a non-bit-field member. Use `_Static_assert` for required ABI layouts.
 
-**Packed structs and their costs**
-
-```c
-struct __attribute__((packed)) hdr { uint8_t type; uint32_t len; };   /* 5 bytes */
-```
-
-- Accessing `len` needs an unaligned access. Cortex-M3/M4/M7 handle unaligned 32-bit loads in hardware (slower); **Cortex-M0/M0+** and older Arm cores fault, so the compiler must generate byte-by-byte accesses (correct but slower and larger).
-- Taking the address of a packed member (`uint32_t *p = &h.len;`) and using it as a normal pointer can produce unaligned accesses the compiler does not know about (GCC warns with `-Waddress-of-packed-member`).
-- Packed structs are fine for matching a wire format when you also handle endianness; many projects still prefer explicit serialisation with shifts and `memcpy`.
-
-**Memory saving on MCUs:** reordering members in large arrays of structs can save a significant amount of RAM with no runtime cost.
+**Interview takeaway:** Rearrange members to reduce padding where ABI compatibility permits. Avoid packing by default; use explicit serialization for protocols and never assume that the C structure layout matches a hardware or wire format.
 
 ### What are bit-fields and what are their drawbacks? {M}
 **Short answer:** Bit-fields let you declare struct members that are a given number of bits wide, so several flags or small values share one word and can be accessed by name. Their drawbacks are that bit order, padding, whether a field can cross a storage unit, and the signedness of plain `int` fields are all implementation-defined, and writing one field is a non-atomic read-modify-write of the whole storage unit.
