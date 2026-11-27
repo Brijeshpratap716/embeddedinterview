@@ -66,30 +66,24 @@ Check target-supported speeds, electrical timing, bus loading, error handling, c
 **Interview takeaway:** Select the interface for the actual payload and hardware constraints, not solely the maximum advertised bit rate.
 
 ### What does a UART frame look like? {E}
-**Short answer:** The line idles high. Each character starts with a **start bit** (low), followed by **5–9 data bits sent LSB first**, an optional **parity bit**, and **1, 1.5 or 2 stop bits** (high). "115200 8N1" means 115200 bits per second, 8 data bits, no parity, 1 stop bit, so each byte takes 10 bit times and the payload rate is 11,520 bytes per second.
+A UART frame sends one character asynchronously using a start bit, data bits, optional parity and one or more stop bits.
 
-```
-idle ───┐ ┌──┬──┬──┬──┬──┬──┬──┬──┐ ┌─── idle
-        │S│D0│D1│D2│D3│D4│D5│D6│D7│P│Stop
-        └─┘                         
-  (start bit = 0, data LSB first, optional parity, stop bit = 1)
-```
+#### 1. Example: 8N1
 
-**Numbers to know**
+8 data bits, no parity, 1 stop bit. Standard UART idles high and starts a frame with a low bit. Data is commonly sent least significant bit first.
 
-| Baud | Bit time | Bytes/s (8N1) |
-|---|---|---|
-| 9600 | 104.2 µs | 960 |
-| 115200 | 8.68 µs | 11,520 |
-| 1,000,000 | 1 µs | 100,000 |
+<div style="max-width:700px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 109" width="100%" role="img" aria-label="8N1 UART frame for 0xA5, start low, data LSB first, stop high">
+<path d="M8 26 h27 V61" stroke="#3b82f6" stroke-width="2" fill="none"/><path d="M8 20 V69" stroke="currentColor" stroke-opacity=".15"/><text x="21.5" y="84" font-size="9" text-anchor="middle" fill="currentColor">Idle</text><path d="M35 61 h27 V26" stroke="#3b82f6" stroke-width="2" fill="none"/><path d="M35 20 V69" stroke="currentColor" stroke-opacity=".15"/><text x="48.5" y="84" font-size="9" text-anchor="middle" fill="currentColor">Start</text><path d="M62 26 h27 V61" stroke="#3b82f6" stroke-width="2" fill="none"/><path d="M62 20 V69" stroke="currentColor" stroke-opacity=".15"/><text x="75.5" y="84" font-size="9" text-anchor="middle" fill="currentColor">D0</text><path d="M89 61 h27 V26" stroke="#3b82f6" stroke-width="2" fill="none"/><path d="M89 20 V69" stroke="currentColor" stroke-opacity=".15"/><text x="102.5" y="84" font-size="9" text-anchor="middle" fill="currentColor">D1</text><path d="M116 26 h27 V61" stroke="#3b82f6" stroke-width="2" fill="none"/><path d="M116 20 V69" stroke="currentColor" stroke-opacity=".15"/><text x="129.5" y="84" font-size="9" text-anchor="middle" fill="currentColor">D2</text><path d="M143 61 h27 V61" stroke="#3b82f6" stroke-width="2" fill="none"/><path d="M143 20 V69" stroke="currentColor" stroke-opacity=".15"/><text x="156.5" y="84" font-size="9" text-anchor="middle" fill="currentColor">D3</text><path d="M170 61 h27 V26" stroke="#3b82f6" stroke-width="2" fill="none"/><path d="M170 20 V69" stroke="currentColor" stroke-opacity=".15"/><text x="183.5" y="84" font-size="9" text-anchor="middle" fill="currentColor">D4</text><path d="M197 26 h27 V61" stroke="#3b82f6" stroke-width="2" fill="none"/><path d="M197 20 V69" stroke="currentColor" stroke-opacity=".15"/><text x="210.5" y="84" font-size="9" text-anchor="middle" fill="currentColor">D5</text><path d="M224 61 h27 V26" stroke="#3b82f6" stroke-width="2" fill="none"/><path d="M224 20 V69" stroke="currentColor" stroke-opacity=".15"/><text x="237.5" y="84" font-size="9" text-anchor="middle" fill="currentColor">D6</text><path d="M251 26 h27 V26" stroke="#3b82f6" stroke-width="2" fill="none"/><path d="M251 20 V69" stroke="currentColor" stroke-opacity=".15"/><text x="264.5" y="84" font-size="9" text-anchor="middle" fill="currentColor">D7</text><path d="M278 26 h27 V26" stroke="#3b82f6" stroke-width="2" fill="none"/><path d="M278 20 V69" stroke="currentColor" stroke-opacity=".15"/><text x="291.5" y="84" font-size="9" text-anchor="middle" fill="currentColor">Stop</text><path d="M305 26 h27" stroke="#3b82f6" stroke-width="2" fill="none"/><path d="M305 20 V69" stroke="currentColor" stroke-opacity=".15"/><text x="318.5" y="84" font-size="9" text-anchor="middle" fill="currentColor">Idle</text><text x="170" y="103" font-size="10" text-anchor="middle" fill="currentColor">One bit period per interval; example 0xA5.</text></svg></div>
 
-**Details**
+#### 2. Bit duration
 
-- **Baud vs bit rate:** for UART they are the same (one bit per symbol).
-- **Parity:** even/odd/mark/space; detects single-bit errors only.
-- **Break condition:** the line held low for longer than a whole frame; used as a "reset/attention" signal (LIN, some bootloaders) and appears as a framing error with data 0.
-- **Idle line:** the line stays high for at least one frame time; many MCUs raise an **IDLE interrupt**, which is very useful with DMA to detect the end of a variable-length message.
-- **Inverted UART** (e.g. SBUS in RC receivers) uses the opposite polarity; some MCUs can invert in hardware.
+At 9600 baud, one bit lasts approximately 104.17 microseconds. A ten-bit 8N1 frame lasts about 1.04 ms.
+
+#### 3. Configuration
+
+Both endpoints must agree on baud rate, data length, parity and stop configuration. A UART frame does not provide packet boundaries, addresses or strong error detection; higher-level protocols add these features.
+
+**Interview takeaway:** The start edge synchronizes the receiver for each frame. Baud rate counts transmitted symbols, including framing overhead.
 
 ### How does a UART receiver sample bits, and how much baud-rate error is tolerated? {M}
 **Short answer:** The receiver detects the falling edge of the start bit, waits half a bit time to reach its middle (confirming it is still low), then samples each following bit near its centre, typically using 16× (or 8×) oversampling and a majority vote of three samples. Because it resynchronises on every start bit, clock error only accumulates over one frame; for 8N1, the total mismatch between transmitter and receiver must stay below roughly ±4–5%, so each side should be within about ±2%.
