@@ -1107,26 +1107,31 @@ Crystal tolerance, temperature, aging and calibration affect RTC accuracy. An RT
 **Interview takeaway:** RTC keeps time across selected low-power or power-off conditions only when its backup supply, oscillator and domain configuration support retention.
 
 ### What is JTAG and SWD? {E}
-**Short answer:** Both are hardware debug interfaces that let a debug probe halt the CPU, set breakpoints, read and write memory and registers, and program flash. **JTAG** (IEEE 1149.1) uses 4 or 5 pins (TCK, TMS, TDI, TDO, optional nTRST), supports chaining several chips on one interface, and also provides **boundary scan** for testing board connections. **SWD** (Serial Wire Debug) is Arm's 2-pin alternative (SWDIO, SWCLK) with the same debug access to Cortex cores, which is why it is standard on Cortex-M boards.
+JTAG and SWD are hardware debug access interfaces used for programming, inspecting and controlling embedded processors.
 
-| | JTAG | SWD |
+#### 1. JTAG
+
+A conventional JTAG interface uses TCK, TMS, TDI and TDO, with optional reset signals. It supports scan chains and boundary scan as well as debug access through appropriate target logic.
+
+#### 2. SWD
+
+Serial Wire Debug is Arm's two-signal debug transport using SWCLK and bidirectional SWDIO. Optional SWO can provide trace output on supported targets.
+
+| Feature | JTAG | SWD |
 |---|---|---|
-| Pins | TCK, TMS, TDI, TDO (+ nTRST) | SWDIO, SWCLK (+ optional SWO) |
-| Multiple devices | daisy chain | one target per interface (multi-drop SWD exists in SWD v2) |
-| Boundary scan | yes | no |
-| Arm Cortex debug access | yes | yes (same CoreSight debug port) |
-| Typical use | FPGAs, CPLDs, Cortex-A SoCs, board test | Cortex-M microcontrollers |
+| Main signal count | Four | Two |
+| Boundary scan | Common JTAG capability | Not its primary purpose |
+| MCU debug | Supported by many targets | Common on Arm MCUs |
 
-**Related signals and features**
+Both also require appropriate ground, voltage reference and sometimes reset connections.
 
-- **SWO** (Serial Wire Output): a one-pin trace output for **ITM** (`printf`-style logging via `ITM_SendChar`, very fast and non-intrusive), data watchpoint trace and PC sampling for profiling.
-- **ETM/ETB/ETR** (Embedded Trace Macrocell): full instruction trace, captured by expensive probes or on-chip buffers.
-- **RTT** (SEGGER Real-Time Transfer): uses the debug port to read a ring buffer in RAM, giving fast logging without extra pins.
-- **nRESET** is usually wired to the debug connector so the probe can reset the target ("connect under reset" to recover a chip whose firmware disables SWD pins or goes into deep sleep immediately).
+#### 3. Practical debugging
 
-**Probes and tools:** ST-LINK, SEGGER J-Link, CMSIS-DAP (DAPLink, Raspberry Pi Debug Probe), Lauterbach TRACE32; software such as OpenOCD, pyOCD, GDB, and IDEs (STM32CubeIDE, Keil, IAR, VS Code + Cortex-Debug).
+A supported probe and debugger can halt the CPU, inspect registers and memory, set breakpoints, single-step and program flash using device-specific algorithms. Hardware watchpoints can identify an unexpected memory write.
 
-**Security:** production devices should disable or lock the debug port (read-out protection levels, debug authentication, TrustZone debug restrictions), otherwise anyone with a probe can read the firmware and secrets. Locking is usually irreversible or erases the chip.
+Debug access can be restricted by production security configuration. Debugger reads of MMIO registers may have side effects, and halting a CPU does not necessarily halt timers or DMA.
+
+**Interview takeaway:** SWD saves pins; JTAG supports broader scan-chain functions. Debug capability depends on the target's debug architecture and access permissions.
 
 ### Do ARM64 registers X0, X1 and X2 contain data or memory addresses? {E}
 **Short answer:** Both. AArch64 has 31 general-purpose registers (X0–X30), each 64 bits wide. Their W-register aliases access the lower 32 bits. A register holds bits; the instruction determines whether they represent an integer, an address, or something else.
