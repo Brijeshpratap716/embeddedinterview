@@ -66,58 +66,20 @@ For example, a dedicated test service can have TasksMax=64 so a defective worker
 **Interview takeaway:** Limit tasks at workload boundaries; user-level limits alone may be insufficient. Never test uncontrolled process creation on a shared or production system.
 
 ### How do you limit the CPU and memory used by processes on Linux? {M}
-**Short answer:** Use **nice/renice** and scheduling policies to change CPU priority, **`ulimit`/`setrlimit()`** for per-process limits (address space, open files, core size, CPU seconds), and **cgroups v2** for real resource control of groups of processes: `cpu.max` (hard CPU quota), `cpu.weight` (relative share), `cpuset.cpus` (which cores), `memory.max`/`memory.high` (memory limits), `pids.max`, and `io.max`. systemd exposes all of these as unit settings.
+Linux uses resource limits and cgroups to restrict process or workload resource consumption.
 
-**Priority**
+| Mechanism | Example |
+|---|---|
+| RLIMIT_AS | Limit virtual address space per process |
+| RLIMIT_CPU | Limit accumulated CPU time |
+| cgroup v2 cpu.max | CPU bandwidth quota and period |
+| cgroup v2 memory.max | Hard memory limit for a workload |
+| cgroup v2 pids.max | Maximum task count |
 
-```bash
-nice -n 10 ./batch_job       # lower priority (nice +10)
-renice -n -5 -p 1234         # raise priority (needs root/CAP_SYS_NICE)
-chrt -f 50 ./rt_task         # real-time FIFO priority 50
-taskset -c 3 ./task          # restrict to CPU 3
-```
+#### Example
+A service can use CPUQuota=50% and MemoryMax=256M with systemd resource controls. CPU quotas throttle usage over periods, rather than setting the CPU clock speed. A memory cgroup may reclaim memory and invoke its OOM policy if it cannot satisfy allocations.
 
-**Per-process resource limits (`setrlimit`)**
-
-| Limit | `ulimit` | Effect |
-|---|---|---|
-| `RLIMIT_AS` | `-v` | maximum virtual address space; `malloc`/`mmap` fail beyond it |
-| `RLIMIT_DATA` | `-d` | heap and data size |
-| `RLIMIT_STACK` | `-s` | main thread stack size |
-| `RLIMIT_NOFILE` | `-n` | open file descriptors |
-| `RLIMIT_CPU` | `-t` | CPU seconds, then `SIGXCPU`/`SIGKILL` |
-| `RLIMIT_CORE` | `-c` | core dump size |
-| `RLIMIT_NPROC` | `-u` | processes per user |
-| `RLIMIT_MEMLOCK` | `-l` | memory that may be locked with `mlock` |
-
-Each has a soft limit (what is enforced) and a hard limit (the ceiling an unprivileged process can raise its soft limit to).
-
-**cgroups v2 (what systemd uses)**
-
-```bash
-mkdir /sys/fs/cgroup/camera
-echo "50000 100000" > /sys/fs/cgroup/camera/cpu.max     # 50 ms CPU per 100 ms = half a core
-echo 200M > /sys/fs/cgroup/camera/memory.max            # hard limit; OOM-kill inside the group
-echo 150M > /sys/fs/cgroup/camera/memory.high           # throttle/reclaim above this
-echo 2-3  > /sys/fs/cgroup/camera/cpuset.cpus
-echo $PID > /sys/fs/cgroup/camera/cgroup.procs
-```
-
-```ini
-# systemd unit
-[Service]
-CPUQuota=50%
-MemoryMax=200M
-MemoryHigh=150M
-AllowedCPUs=2-3
-TasksMax=64
-```
-
-**Why cgroups instead of rlimits:** rlimits apply per process (children get their own copy), so a service that forks many workers can still use unlimited total memory. A cgroup limits the sum for all processes in the group, and its accounting includes page cache and kernel memory.
-
-**Monitoring:** `systemd-cgtop`, `memory.current`, `memory.events` (counts of OOM kills and throttling), `cpu.stat` (`nr_throttled`), and PSI files (`cpu.pressure`, `memory.pressure`).
-
-**Embedded use:** keep the critical application responsive by limiting best-effort services (logging, updates, analytics) with cgroups, and give the main application a reserved core with `cpuset`.
+**Interview takeaway:** RLIMIT_AS is not the same as resident memory; nice affects relative scheduling weight rather than imposing a hard CPU cap. Prefer cgroups for a complete process tree.
 
 ### When should you call pthread_exit() instead of exit()? {M}
 **Short answer:** `exit()` ends the **whole process**: all threads stop, `atexit()` handlers run, stdio buffers are flushed. `pthread_exit()` ends only the **calling thread**, letting the other threads keep running. Call `pthread_exit()` when a thread is done but the process should continue, and in particular in `main()` if you want the worker threads to finish their work instead of being killed when `main` returns.
