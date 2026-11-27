@@ -9,22 +9,36 @@ desc: Kernel modules, char drivers with ioctl, the driver model, device tree, I2
 For Linux BSP and driver roles, expect questions on kernel internals, how drivers bind to hardware, and concurrency in the kernel. Answers refer to recent mainline kernels (6.x). Each answer gives a short version first, then details, code and the follow-ups interviewers ask.
 
 ### What is the difference between kernel space and user space? {E}
-**Short answer:** Kernel space runs in the CPU's privileged mode (EL1 on ARM64, ring 0 on x86) with full access to hardware and all memory. User space runs unprivileged (EL0, ring 3) in isolated virtual address spaces, one per process. User programs enter the kernel only through **system calls**, exceptions (page faults) and interrupts. A bug in a user process kills that process; a bug in kernel code can crash or corrupt the whole system.
+Linux separates application execution from privileged kernel execution to protect system resources and isolate processes.
 
-| | User space | Kernel space |
-|---|---|---|
-| CPU mode | EL0 / ring 3 | EL1 / ring 0 |
-| Memory | own virtual address space, protected | all memory, shared by all kernel code |
-| Hardware access | only via the kernel (or mapped regions like UIO/VFIO) | direct |
-| Failure impact | process crashes (SIGSEGV) | oops/panic, whole system |
-| Libraries | libc and anything | no libc; kernel APIs only, no floating point by default |
-| Stack | large, grows | small, fixed (16 KB on ARM64/x86-64) |
+| User space | Kernel space |
+|---|---|
+| Restricted CPU privilege | Privileged kernel execution |
+| Process-specific virtual memory mappings | Kernel mappings and hardware access |
+| Applications and libraries | Scheduler, memory manager, filesystems, drivers |
+| Fault often terminates a process | Fault may compromise the entire system |
 
-**How a system call works (ARM64):** user code puts the syscall number in `x8` and arguments in `x0`–`x5`, executes `svc #0`, the CPU switches to EL1 and jumps to the exception vector, the kernel saves registers, looks up `sys_call_table[x8]`, runs the handler, puts the return value in `x0` and returns with `eret`. On x86-64 it is the `syscall` instruction with the number in `rax`.
+#### 1. System-call flow
 
-**Address-space layout:** on ARM64 the kernel uses the upper half (TTBR1) and user space the lower half (TTBR0), so system calls do not need to switch page tables; KPTI (Meltdown mitigation) changes this on affected CPUs.
+```text
+Application: read(fd, buf, n)
+       |
+libc / architecture syscall ABI
+       |
+CPU exception into kernel
+       |
+VFS / driver callback
+       |
+Copy result to user buffer and return
+```
 
-**Follow-ups:** why the kernel cannot use floating point freely (FP state is not saved on kernel entry; use `kernel_neon_begin/end`), and why the kernel stack is small (one per thread; deep recursion and large locals are bugs).
+On ARM64 Linux, an ordinary system call uses SVC from EL0 and normally enters EL1 kernel code. Hypervisor configurations can affect the host kernel's exception level.
+
+#### 2. Memory access
+
+A user pointer refers to an address in a process's virtual address space. Kernel code must use the appropriate uaccess helpers and validate lengths, not assume that a user-provided address is an ordinary kernel pointer.
+
+**Interview takeaway:** User/kernel separation is enforced by processor privilege and memory protection. System calls provide controlled entry; applications cannot directly invoke arbitrary privileged kernel functions.
 
 ### What is a loadable kernel module? {E}
 **Short answer:** A loadable kernel module (`.ko` file) is kernel code that can be inserted into and removed from a running kernel without rebooting. It has an init function (run on load) and an exit function (run on unload), and it can use only symbols the kernel exports (`EXPORT_SYMBOL`, `EXPORT_SYMBOL_GPL`). Most drivers are built as modules so the kernel image stays small and hardware support loads on demand.
