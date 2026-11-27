@@ -805,37 +805,66 @@ Power-of-two ring buffer sizes allow unsigned indices to wrap with a mask instea
 **Interview takeaway:** Use shifts and masks for unsigned powers of two. Do not blindly substitute them for signed division and modulo.
 
 ### How do you find the single number that appears once when all others appear twice? {E}
-**Short answer:** XOR all the elements together. Every number that appears twice cancels itself (`a ^ a = 0`), and `0 ^ x = x`, so only the unique value remains. O(n) time, O(1) memory.
+If exactly one number appears once and every other number appears twice, XOR all elements to find the unique value.
 
-```c
-#include <stddef.h>
+#### 1. XOR properties
 
-int find_unique(const int *arr, size_t n)
-{
-    int result = 0;
-    for (size_t i = 0; i < n; i++)
-        result ^= arr[i];
-    return result;
-}
-/* {4, 1, 2, 1, 2} -> 4 */
+```text
+a XOR a = 0
+a XOR 0 = a
+XOR is associative and commutative
 ```
 
-**Why order does not matter:** XOR is commutative and associative, so `4 ^ 1 ^ 2 ^ 1 ^ 2` can be regrouped as `4 ^ (1 ^ 1) ^ (2 ^ 2) = 4 ^ 0 ^ 0 = 4`.
+Every duplicate pair cancels regardless of its position.
 
-**Comparison with other approaches**
+#### 2. C implementation
 
-| Approach | Time | Extra memory |
-|---|---|---|
-| Two nested loops | O(n²) | O(1) |
-| Sort, then scan pairs | O(n log n) | O(1) or O(n) |
-| Hash/count table | O(n) | O(n) |
-| **XOR** | **O(n)** | **O(1)** |
+```c
+uint32_t single_number(const uint32_t *a, size_t n)
+{
+    uint32_t result = 0;
 
-**Follow-ups interviewers ask**
+    for (size_t i = 0; i < n; i++)
+        result ^= a[i];
 
-1. **Two unique numbers, all others twice:** XOR everything to get `x = a ^ b`. Pick any set bit of `x` (`x & -x`); `a` and `b` differ there. Split the array into two groups by that bit and XOR each group separately.
-2. **One number once, all others three times:** count each bit position modulo 3, or use the `ones`/`twos` bitmask method.
-3. **Find the missing number 1..n:** XOR all indices 1..n with all elements; the missing one remains. This avoids the overflow risk of the sum formula `n(n+1)/2`.
+    return result;
+}
+```
+
+Example: {4, 1, 2, 1, 2}
+
+```text
+4 XOR (1 XOR 1) XOR (2 XOR 2)
+= 4 XOR 0 XOR 0
+= 4
+```
+
+Time complexity is O(n), auxiliary space O(1). The input must satisfy the stated occurrence constraint.
+
+#### 3. What if all other numbers appear three times?
+
+Count each bit across all numbers and keep its count modulo three:
+
+```c
+uint32_t single_among_triples(const uint32_t *a, size_t n)
+{
+    uint32_t result = 0;
+
+    for (unsigned b = 0; b < 32; b++) {
+        unsigned count = 0;
+        for (size_t i = 0; i < n; i++)
+            count = (count + ((a[i] >> b) & 1U)) % 3U;
+
+        if (count)
+            result |= UINT32_C(1) << b;
+    }
+    return result;
+}
+```
+
+This uses O(32n) time, which is O(n) for fixed-width integers, and O(1) extra storage.
+
+**Interview takeaway:** XOR cancels pairs, not triples. Use bit counts modulo the repetition count when the occurrence pattern changes.
 
 ### How do you check whether bit n is the same in two registers? {E}
 **Short answer:** XOR the two values; a 1 marks every bit that differs. Bit `n` is the same in both when `((a ^ b) >> n) & 1u` is 0.
