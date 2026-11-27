@@ -355,37 +355,21 @@ bool palindrome(const char *s)
 **Complexity:** O(n) time, O(1) space.
 
 ### How do you check whether one string is a subsequence of another? {E}
-**Short answer:** Walk through the long string with one index and the short string with another. Each time the characters match, advance the short-string index. If you reach the end of the short string, it is a subsequence. O(n) time, O(1) space.
+A subsequence preserves order but need not be contiguous. Advance a pointer through the candidate only when a matching character is found in the source.
 
 ```c
-#include <stdbool.h>
-
-/* is 'sub' a subsequence of 's'? */
-bool is_subsequence(const char *s, const char *sub)
+bool subsequence(const char *small, const char *large)
 {
-    while (*s && *sub) {
-        if (*s == *sub)
-            sub++;                 /* matched one character of sub */
-        s++;
+    while (*small && *large) {
+        if (*small == *large) ++small;
+        ++large;
     }
-    return *sub == '\0';           /* consumed all of sub */
+    return *small == '\0';
 }
-/* is_subsequence("ABCD", "AC") -> true
-   is_subsequence("ABCD", "CA") -> false (order matters) */
 ```
+"ace" is a subsequence of "abcde"; "aec" is not. An empty string is a subsequence of every string.
 
-**Subsequence vs substring:** a subsequence keeps the order but may skip characters ("AC" in "ABCD"); a substring must be contiguous ("BC" in "ABCD").
-
-**Problems with a hard-coded version.** Code that uses `size1 = 4, size2 = 2` and tests `j == 2` only works for those two strings. It also keeps comparing after all of `sub` has matched: then `str2[j]` is `'\0'`, which never equals a character, so it happens to be harmless here, but if the index goes past the terminator it reads out of bounds. Use the string terminators (or lengths passed in) and stop when `sub` is finished.
-
-**Dry run "ABCD" / "AC":** A=A (sub→C), B≠C, C=C (sub→end). Return true.
-
-**Greedy is optimal:** matching each character of `sub` as early as possible never hurts, because it leaves the most of `s` for the remaining characters.
-
-**Follow-ups**
-
-- *Many queries against the same long string:* precompute, for each character, the sorted list of its positions, then binary search the next position after the current one: O(m log n) per query.
-- *Longest common subsequence:* dynamic programming, O(n·m).
+**Complexity:** O(n) time for source length n, O(1) space.
 
 ### How do you check if two strings are anagrams? {E}
 **Short answer:** Two strings are anagrams if they contain the same characters with the same counts. Count each character of the first string up and each character of the second down in a 256-entry table; they are anagrams if every count ends at zero. O(n) time, O(1) space (fixed table).
