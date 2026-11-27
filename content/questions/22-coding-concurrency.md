@@ -34,7 +34,7 @@ uint32_t atomic_inc_cas(_Atomic uint32_t *p)
 }
 ```
 
-**Points:** `count++` on a plain or `volatile` variable is load–add–store and loses updates under concurrency. Atomic RMW operations compile to `LDREX`/`STREX` retry loops on Cortex-M3+ and Armv8.0-A, or to a single `LDADD` with Armv8.1 LSE atomics. Relaxed ordering is enough for a pure statistics counter; use acquire/release when the counter also signals that other data is ready. On Cortex-M0 (no exclusives) atomics are implemented by briefly disabling interrupts.
+**Points:** `count++` on a plain or `volatile` variable is load–add–store and loses updates under concurrency. Atomic RMW operations may compile to `LDREX`/`STREX` retry loops on supporting Cortex-M/AArch32 targets, or `LDXR`/`STXR` loops in AArch64, or to a single `LDADD` with Armv8.1 LSE atomics. Relaxed ordering is enough for a pure statistics counter; use acquire/release when the counter also signals that other data is ready. On Cortex-M0 (no exclusives), a toolchain may use library routines or platform-specific interrupt masking; verify its implementation.
 
 **Why `count++` is not atomic (even with `volatile`)**
 
@@ -71,6 +71,12 @@ int atomic_inc_cas(atomic_int *p)
 | Reference counting | relaxed increment, release decrement + acquire fence before free |
 
 **Platform notes:** x86 uses `lock xadd`; Armv8.1-A has a single `LDADD` instruction (LSE atomics); in the Linux kernel use `atomic_inc()` / `atomic_inc_return()`; in FreeRTOS on a single core, `taskENTER_CRITICAL()` around `count++` is the portable choice.
+
+#### What the compare-and-swap loop actually does
+
+Assume count=10. Thread A and B both load 10. A successfully changes 10 to 11. B's compare-and-swap fails and replaces expected with 11; B retries and stores 12. Neither update is lost. A weak compare-and-swap may also fail spuriously, so it belongs inside a retry loop. The unsigned counter wraps modulo its width; if wrap is unacceptable, implement a checked or saturating increment.
+
+On Arm, the compiler may use an exclusive load/store loop or an LSE instruction, depending on the target and toolchain. AArch64 uses LDXR/STXR or their ordering variants, not the AArch32 LDREX/STREX mnemonics. C11 does not guarantee that every atomic type is lock-free; confirm target support before ISR use. Interrupt masking is only a single-core fallback.
 
 ### Implement a spinlock. {M}
 **Short answer:** A spinlock is a single atomic flag: `lock` repeatedly tries to change it from 0 to 1 with an atomic exchange or compare-and-swap (with **acquire** ordering) and spins until it succeeds; `unlock` stores 0 with **release** ordering. It never sleeps, so it is only suitable for very short critical sections, typically between CPU cores or in interrupt context where sleeping is impossible.
