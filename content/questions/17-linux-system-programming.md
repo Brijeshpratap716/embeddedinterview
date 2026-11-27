@@ -33,38 +33,25 @@ Use sigaction rather than relying on historical signal() semantics. Standard sig
 **Interview takeaway:** A handler is not a normal thread. Call only async-signal-safe functions there; use a flag, self-pipe or signalfd-based design to defer work.
 
 ### What happens when a program executes an illegal instruction or accesses invalid memory? {M}
-**Short answer:** The CPU raises a synchronous exception into the kernel (an undefined-instruction exception, or a data/instruction abort for a bad memory access). The kernel decides whether the fault can be fixed (for example, a page fault on a valid but not-yet-mapped page). If not, it sends the faulting thread a signal: **`SIGILL`** for an illegal instruction, **`SIGSEGV`** for an invalid address or permission violation, **`SIGBUS`** for some alignment or hardware errors, **`SIGFPE`** for arithmetic errors. The default action terminates the process and may write a core dump.
+Invalid instructions and invalid memory accesses typically cause synchronous CPU exceptions. The kernel examines the cause and either resolves it or delivers a signal.
 
-**Example (ARM, from user space)**
-
-```c
-int main(void)
-{
-    __asm__ volatile(".word 0xe7f000f0");   /* permanently undefined encoding (UDF) in A32 */
-    return 0;
-}
-/* Shell prints: Illegal instruction (core dumped) */
+```text
+User instruction -> CPU exception -> kernel handler
+   | valid demand-page / COW fault -> repair mapping -> retry
+   + invalid access -> SIGSEGV or SIGBUS
+   + illegal instruction -> SIGILL
 ```
 
-On AArch64, `.inst 0x00000000` (a `UDF #0`) has the same effect.
+For example, writing to an unmapped address may produce SIGSEGV with si_code indicating an unmapped address or protection violation. Some bus/alignment or file-backed mapping failures produce SIGBUS. An unsupported instruction may result in SIGILL.
 
-**Path through the kernel on ARM64**
+#### Debug
+```bash
+gdb ./app core
+# bt; info registers; x/i $pc
+```
+Core-dump generation depends on limits and system policy.
 
-1. The CPU takes a synchronous exception to EL1. `ESR_EL1` says why: exception class "unknown/undefined instruction", "data abort from a lower EL" (with the fault type), etc.
-2. The vector code saves the user registers and calls the handler (`do_el0_undef`, `do_mem_abort`).
-3. For memory aborts, the page fault handler checks the VMA list: if the address is valid, it maps the page and the instruction is retried transparently. Otherwise...
-4. ...the kernel calls `force_sig_fault(SIGSEGV, SEGV_MAPERR or SEGV_ACCERR, addr)`.
-5. On return to user mode the signal is delivered: the default action kills the process, and the kernel log may show `unhandled level 3 translation fault` with the PC and address.
-
-**Kernel vs user faults:** if the same thing happens in **kernel** mode (outside a `copy_from_user` fixup), the result is an **oops**, and possibly a panic. That is why kernel bugs are so much more serious.
-
-**Debugging the user-space case**
-
-- Enable core dumps (`ulimit -c unlimited`, check `/proc/sys/kernel/core_pattern`), then `gdb ./prog core` and `bt`.
-- `si_addr` in the `siginfo_t` gives the faulting address; `si_code` tells `SEGV_MAPERR` (no mapping) from `SEGV_ACCERR` (permission).
-- AddressSanitizer (`-fsanitize=address`) catches many memory errors before they become segfaults.
-
-**Why `SIGILL` happens in practice:** code compiled for a newer CPU (e.g. ARMv8.2 atomics or SVE) running on an older core, a corrupted function pointer jumping into data, or a mismatched hard-float/soft-float build.
+**Interview takeaway:** A page fault is not always a programming error; demand paging is normal. Do not attempt to blindly resume a faulting instruction from a signal handler.
 
 ### What is a fork bomb, and how do ulimit and cgroups protect against it? {M}
 **Short answer:** A fork bomb is a program that creates processes as fast as it can, each of which creates more (`:(){ :|:& };:` in bash). The process table, PIDs, memory and CPU are exhausted within seconds, so even administrators cannot start a shell to stop it. It is a denial-of-service attack on the OS. Limits on the number of processes per user (`ulimit -u` / `RLIMIT_NPROC`) or per group of processes (the cgroup `pids.max` controller) stop it, because further `fork()` calls fail with `EAGAIN`.
