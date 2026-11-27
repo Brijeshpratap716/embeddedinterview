@@ -355,23 +355,37 @@ Modern systems commonly create nodes automatically through devtmpfs/udev or anot
 **Interview takeaway:** Major/minor numbers identify a device-number registration, not a physical MMIO address. Do not hardcode a major number when dynamic allocation is appropriate.
 
 ### Why use copy_to_user and copy_from_user instead of memcpy? {M}
-**Short answer:** A pointer from user space is untrusted: it may be invalid, point into kernel memory, or refer to a page that is not resident yet. `copy_from_user`/`copy_to_user` check that the range is in user space (`access_ok`), handle page faults safely (returning the number of bytes **not** copied instead of crashing), and temporarily lift hardware protections such as ARM PAN and x86 SMAP that block the kernel from touching user memory by accident. A plain `memcpy` could crash the kernel or be used to read or overwrite kernel memory.
+`copy_to_user()` and `copy_from_user()` are Linux uaccess helpers for transferring bytes between kernel memory and user virtual addresses. Ordinary memcpy does not provide the required user-access handling.
+
+#### 1. Driver example
 
 ```c
-if (copy_from_user(&cfg, ubuf, sizeof cfg))
-    return -EFAULT;                 /* non-zero return = some bytes failed */
+static long set_value(unsigned long arg)
+{
+    u32 value;
+    if (copy_from_user(&value,
+                       (void __user *)arg,
+                       sizeof value))
+        return -EFAULT;
 
-if (put_user(value, (u32 __user *)arg))   /* single values: get_user / put_user */
-    return -EFAULT;
+    if (value > 100)
+        return -EINVAL;
+
+    return apply_value(value);
+}
 ```
 
-**Details**
+The copy functions return the number of bytes not copied, not a negative errno. Zero indicates complete success.
 
-- These functions may **sleep** (page faults can require reading from disk), so they cannot be called in atomic context or with a spinlock held. Copy into a kernel buffer first, then take the spinlock.
-- The `__user` annotation marks user pointers; `sparse` (`make C=1`) warns when they are dereferenced directly.
-- For strings use `strncpy_from_user`, or `memdup_user` / `memdup_user_nul` to allocate and copy in one step.
-- **Double-fetch bugs:** reading the same user memory twice (e.g. once to read a length, again to copy) lets another thread change it in between; copy once into kernel memory and validate the copy.
-- Hardening (`CONFIG_HARDENED_USERCOPY`) checks that kernel objects copied out are within their slab bounds.
+#### 2. Why special helpers are required
+
+User addresses may be invalid, unmapped or faulting. Architecture mechanisms can restrict privileged access to user pages. Uaccess helpers provide the appropriate access checks, fault-handling and architecture-specific operations.
+
+#### 3. Context restriction
+
+Ordinary user copies may fault and sleep. Do not perform them under a raw spinlock or in hard IRQ/other atomic context. Copy data into a kernel buffer, validate it, then take the required lock for the actual update.
+
+**Interview takeaway:** A user pointer is untrusted and potentially faulting. Use the correct uaccess API, validate copied data and interpret the residual-byte return correctly.
 
 ### What is the Linux device model (bus, device, driver)? {M}
 **Short answer:** The kernel represents hardware as **devices** that sit on **buses** (platform, I2C, SPI, PCI, USB, virtio). **Drivers** register with a bus and declare which devices they support (ID tables, OF/ACPI match tables). When the bus core finds a device and a driver that match, it calls the driver's `probe()`; on removal or unbinding it calls `remove()`. Everything is exposed in sysfs (`/sys/bus`, `/sys/devices`, `/sys/class`), and board-specific details come from the device tree or ACPI rather than driver code.
