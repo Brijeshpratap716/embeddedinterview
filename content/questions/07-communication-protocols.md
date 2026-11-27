@@ -578,25 +578,31 @@ A controller can send a sensor reading using an agreed identifier and payload en
 **Interview takeaway:** CAN is message-oriented, not a direct node-addressing protocol. The identifier participates in arbitration and describes the message according to the network design.
 
 ### How does CAN arbitration work? {M}
-**Short answer:** CAN is a multi-controller bus with **non-destructive bitwise arbitration**. All nodes that want to send start at the same time and transmit their identifier bit by bit while reading the bus. A dominant bit (0) overwrites a recessive bit (1). A node that sends recessive but reads dominant knows a higher-priority frame is on the bus, stops transmitting immediately and becomes a receiver. The frame with the **lowest identifier wins** and continues without delay or corruption; losers retry automatically when the bus is free.
+CAN uses nondestructive bitwise arbitration to allow multiple nodes to start transmission while preserving the highest-priority valid frame. A dominant bit (typically logical 0) overrides a recessive bit (logical 1).
 
-**Example**
+#### 1. Example: standard data frames
 
+Consider two nodes transmitting different 11-bit identifiers at the same time.
+
+```text
+Node A: ID 0x100 = 00100000000
+Node B: ID 0x180 = 00110000000
+Bus:              0010...
+                       ^
+               Node B sends recessive, sees dominant
 ```
-Node A ID 0x123 = 001 0010 0011
-Node B ID 0x0F5 = 000 1111 0101
-Bit 2 (from MSB): A sends 1 (recessive), B sends 0 (dominant) → bus = 0
-A reads 0 ≠ 1 → A loses; B's frame continues uninterrupted
-```
 
-**Consequences for system design**
+Node B stops transmitting and becomes a receiver. Node A continues without losing its message. For comparable standard-format data frames, the smaller numerical identifier has higher arbitration priority.
 
-- **IDs are priorities:** assign low IDs to urgent messages (brake, airbag, engine torque).
-- The highest-priority message has bounded latency (one frame time for the frame in progress plus its own), which allows **schedulability analysis** of CAN networks (like RTA for tasks).
-- Two nodes must never send data frames with the same ID at the same time (arbitration would not resolve it and errors follow), so each ID has one owner.
-- Standard frames win over extended frames with the same 11-bit base ID (the IDE bit is dominant for standard frames).
+#### 2. Why no collision retransmission?
 
-**Physical requirement:** arbitration needs every node to see every bit within the bit time, which limits bus length vs bit rate (about 40 m at 1 Mbps, 500 m at 125 kbps).
+Nodes monitor the bus while transmitting arbitration bits. A losing node withdraws rather than corrupting the winner's frame. The complete arbitration field, including frame-format and RTR-related bits, determines priority when identifiers overlap.
+
+#### 3. Design concern
+
+Assign identifiers based on network timing requirements. High-priority traffic can delay lower-priority messages; analyze worst-case bus load, frame lengths and response time.
+
+**Interview takeaway:** CAN arbitration is based on dominant/recessive signaling, not a central scheduler. Losing arbitration is normal, not a transmission error.
 
 ### How does CAN handle errors? {H}
 **Short answer:** CAN has five error-detection mechanisms: **bit monitoring** (a transmitter checks that the bus level equals what it sent, outside arbitration and the ACK slot), **bit stuffing check**, **form check** (fixed-format fields such as delimiters and EOF), **CRC check**, and **ACK check**. A node that detects an error transmits an **error frame**, which makes all nodes discard the frame, and the sender retransmits automatically. Error counters confine faulty nodes so one bad node cannot block the bus forever.
