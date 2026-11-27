@@ -9,25 +9,19 @@ desc: Emulation vs virtualization, ARM exception levels and EL2, QEMU code flow,
 Virtualization questions come up for automotive (hypervisor-based cockpit systems), avionics, server and cloud roles, and any team that uses QEMU for pre-silicon development or CI. Interviewers usually start with "what is the difference between QEMU and KVM", then go down into the code flow. Source file and function names below are from recent QEMU and Linux versions; older QEMU used `softmmu/` where it now uses `system/`, and some function names have changed, so say "roughly" when you quote them.
 
 ### What is the difference between emulation and virtualization (QEMU TCG vs KVM)? {E}
-**Short answer:** **Emulation** runs guest instructions by translating them in software, so the guest CPU can be a different architecture from the host (ARM guest on an x86 PC). QEMU does this with **TCG**. **Hardware-assisted virtualization** runs guest instructions directly on the real CPU, with hardware support to trap the few operations the hypervisor must control; guest and host must be the same architecture. **KVM** is the Linux kernel part that provides this, and QEMU uses it as an accelerator.
+Emulation reproduces the behavior of a guest machine in software. Hardware-assisted virtualization executes compatible guest instructions directly on the host CPU while isolating the guest and intercepting selected operations.
 
-| | QEMU with TCG (emulation) | QEMU + KVM (virtualization) |
-|---|---|---|
-| Guest instructions | translated to host code by software | run natively on the CPU |
-| Guest arch | any QEMU supports (ARM on x86, RISC-V on ARM) | same as host (ARM64 on ARM64, x86 on x86) |
-| Speed | roughly 5–20× slower than native, depends heavily on workload | close to native for CPU work |
-| Needs | nothing special | CPU virtualization extensions (ARM EL2, Intel VT-x, AMD-V) and `/dev/kvm` |
-| Device models | QEMU (user space) | still mostly QEMU, plus in-kernel GIC/timer and vhost |
-| Typical use | pre-silicon bring-up, cross-arch development, CI, debugging | servers, cloud, automotive/industrial consolidation |
+| QEMU TCG | QEMU + KVM |
+|---|---|
+| Translates guest instructions into host instructions | Guest code normally executes natively |
+| Supports cross-ISA execution | Requires compatible host and guest ISA |
+| Can model CPUs, memory and peripherals | Uses kernel virtualization and QEMU device models |
+| Higher CPU execution overhead | Usually much lower CPU execution overhead |
 
-**Who does what with KVM**
+#### Example
+An ARM64 i.MX8 guest on an x86-64 laptop needs TCG for CPU execution. An ARM64 guest on an ARM64 Linux host with virtualization support can use KVM, provided the machine and guest configuration are compatible.
 
-- **KVM (kernel module / built-in):** creates VMs and vCPUs, sets up stage-2 page tables, switches the CPU between host and guest, handles most traps itself (system registers, timers, interrupt controller).
-- **QEMU (user space):** parses the command line, builds the machine (memory map, device tree, devices), loads the kernel, runs one thread per vCPU calling `ioctl(KVM_RUN)`, and emulates devices when the guest touches their MMIO space.
-
-**Other user-space VMMs using KVM:** Firecracker, Cloud Hypervisor, crosvm, kvmtool (`lkvm`). They are smaller than QEMU and support fewer devices.
-
-**One-line summary for interviews:** "QEMU is the machine emulator and VMM; TCG is how it runs foreign code; KVM is how it runs native code at near-native speed using the CPU's virtualization extensions."
+**Interview takeaway:** QEMU is a machine emulator and VMM. TCG and KVM are alternative CPU execution accelerators; both may use software device models.
 
 ### What is a hypervisor, and what is the difference between type 1 and type 2? {E}
 **Short answer:** A hypervisor (virtual machine monitor) creates and runs virtual machines, sharing the physical CPU, memory and devices between them while keeping them isolated. A **type 1** (bare-metal) hypervisor runs directly on the hardware (Xen, VMware ESXi, QNX Hypervisor, many automotive hypervisors). A **type 2** (hosted) hypervisor runs as a program on a normal OS (VirtualBox, QEMU with TCG). **KVM** turns Linux itself into a hypervisor, so it is usually described as type 1, with QEMU as its user-space helper.
