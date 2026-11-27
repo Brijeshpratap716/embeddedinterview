@@ -418,57 +418,47 @@ Time O(log n), extra space O(1). For duplicates this returns any matching index;
 **Interview takeaway:** Use overflow-safe midpoint calculation and maintain a clear interval invariant.
 
 ### What is a hash table and how do you handle collisions? {M}
-**Short answer:** A hash table maps keys to array buckets with a hash function, giving O(1) average lookup, insertion and deletion. When two keys map to the same bucket (a collision), it is handled by **chaining** (each bucket holds a linked list of entries) or **open addressing** (probe for another slot: linear, quadratic or double hashing). For embedded use, a fixed-size open-addressing table with linear probing is common: no allocation, cache friendly, and predictable memory; keep the load factor below about 70% so probe sequences stay short.
+A hash table maps keys to array positions using a hash function. It provides fast average lookup and insertion when keys are distributed well and the load factor is controlled.
+
+#### 1. Collision handling
+
+```text
+hash(key) % capacity -> bucket
+Different keys may select the same bucket.
+```
+
+Separate chaining stores colliding entries in a list or another bucket structure. Open addressing probes other slots, for example using linear probing.
+
+#### 2. Fixed-table lookup example
 
 ```c
-#include <stdbool.h>
-#include <stdint.h>
-#include <stdio.h>
+#define N 16
+struct entry { bool used; unsigned key; int value; };
+static struct entry table[N];
 
-#define TBL 16u                          /* power of two */
-typedef struct { uint32_t key; int val; bool used; } slot_t;
-static slot_t tbl[TBL];
-
-static uint32_t hash32(uint32_t x)       /* integer mixing hash */
+bool lookup(unsigned key, int *value)
 {
-    x ^= x >> 16; x *= 0x7feb352dU; x ^= x >> 15; x *= 0x846ca68bU; x ^= x >> 16;
-    return x;
-}
-
-bool ht_put(uint32_t key, int val)
-{
-    for (uint32_t i = 0, h = hash32(key); i < TBL; i++) {
-        slot_t *s = &tbl[(h + i) & (TBL - 1)];
-        if (!s->used || s->key == key) { s->key = key; s->val = val; s->used = true; return true; }
-    }
-    return false;                                         /* full */
-}
-
-bool ht_get(uint32_t key, int *val)
-{
-    for (uint32_t i = 0, h = hash32(key); i < TBL; i++) {
-        slot_t *s = &tbl[(h + i) & (TBL - 1)];
-        if (!s->used) return false;                       /* empty slot ends the probe */
-        if (s->key == key) { *val = s->val; return true; }
+    unsigned start = key % N;
+    for (unsigned i = 0; i < N; i++) {
+        struct entry *e = &table[(start + i) % N];
+        if (!e->used)
+            return false;
+        if (e->key == key) {
+            *value = e->value;
+            return true;
+        }
     }
     return false;
 }
-
-int main(void)
-{
-    ht_put(0x100, 1); ht_put(0x7E3, 2); ht_put(0xCAFE, 3);
-    int v;
-    printf("%d ", ht_get(0x7E3, &v) ? v : -1);
-    printf("%d\n", ht_get(0x123, &v) ? v : -1);           /* 2 -1 */
-    return 0;
-}
 ```
 
-**Deletion with open addressing:** you cannot simply mark a slot empty, because that would break the probe chain for keys inserted after it; use a **tombstone** marker or re-insert the following cluster (backward-shift deletion).
+This assumes entries are inserted by the same probe sequence and never deleted without preserving probe chains. Deletion needs tombstones or a correct reorganization algorithm.
 
-**Choosing a hash function:** fast and well-mixing (FNV-1a for strings, multiply-shift or murmur finalisers for integers). Hash tables used with untrusted input (network keys) need a seeded hash (SipHash) to avoid attackers forcing collisions.
+#### 3. Complexity
 
-**Worst case:** O(n) if many keys collide, so hard real-time code sometimes prefers a sorted array with binary search (O(log n) guaranteed) or a perfect hash generated offline for a fixed key set (e.g. command names).
+Average lookup can be O(1), but worst case O(n). Fixed capacity avoids resizing in embedded code; full-table handling is mandatory.
+
+**Interview takeaway:** A hash function does not eliminate collisions. Bound probes and capacity when timing predictability matters.
 
 ### What are binary search trees, and why use a balanced tree? {M}
 **Short answer:** In a binary search tree (BST), every node's left subtree has smaller keys and its right subtree larger keys, so search, insert and delete follow one path from the root: O(height). If keys arrive in sorted order, a plain BST degenerates into a linked list (height n, O(n) operations). **Self-balancing trees** (red-black, AVL) restructure with rotations to keep the height O(log n) in the worst case, and they keep keys in order (unlike hash tables), supporting in-order traversal and range queries.
