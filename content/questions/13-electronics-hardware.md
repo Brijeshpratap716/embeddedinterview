@@ -115,37 +115,21 @@ Converting 5 V to 3.3 V at 200 mA with an idealized LDO dissipates (5 − 3.3) �
 **Interview takeaway:** Select using input range, load, noise, thermal budget, quiescent current and transient response—not efficiency alone.
 
 ### How does an ADC work, and what are resolution, reference and sampling time? {M}
-**Short answer:** An ADC converts an analog voltage into a number: `code = V_in / V_ref × (2^N − 1)` for an N-bit converter (often written × 2^N). **Resolution** is the number of bits (a 12-bit ADC with a 3.3 V reference has an LSB of 3.3 / 4096 ≈ 0.8 mV). The **reference voltage** sets full scale, so its accuracy and noise directly limit the measurement. MCU ADCs are mostly **SAR** (successive approximation) converters that first charge an internal **sampling capacitor** during the sampling time; if the source impedance is high, the capacitor does not charge fully and the reading is wrong.
+An ADC converts an analog input into a numerical code. A SAR ADC, common in MCUs, samples the voltage and performs successive comparisons against an internal DAC.
 
-**Converting a reading**
+#### 1. Resolution
+A 12-bit ADC provides 4096 codes. With a 3.3 V reference, one ideal LSB is approximately 0.806 mV. A 1.65 V input maps near code 2048.
 
+#### 2. Sampling
+The sampling capacitor must settle through the source impedance before conversion. Excessively short acquisition time produces errors, especially with high-impedance sensors.
+
+#### 3. Firmware example
 ```c
-#include <stdint.h>
-#include <stdio.h>
-
-int main(void)
-{
-    const float vref = 3.3f;
-    uint16_t raw = 2482;                                 /* 12-bit reading */
-    float v = raw * vref / 4095.0f;                      /* ≈ 2.000 V */
-    uint32_t mv = (uint32_t)raw * 3300u / 4095u;         /* integer version: 2000 mV */
-    printf("%.3f V, %lu mV\n", v, (unsigned long)mv);
-    return 0;
-}
+float voltage = raw * (3.3f / 4096.0f);
 ```
+This estimates voltage using ideal code bins; use the datasheet transfer function and calibration for accuracy.
 
-**Accuracy vs resolution:** a 12-bit ADC rarely gives 12 accurate bits: offset, gain error, integral/differential non-linearity (INL/DNL) and noise reduce the **effective number of bits (ENOB)** to maybe 10–11. Calibrate (many MCUs have a self-calibration routine and factory calibration values, e.g. for the internal reference VREFINT and temperature sensor).
-
-**Sampling time and source impedance:** the SAR ADC's sample-and-hold capacitor (a few pF) must charge to within ½ LSB during the sampling time. A high source impedance (e.g. a 100 kΩ divider) needs a longer sampling time, a capacitor at the ADC pin (e.g. 10–100 nF acting as a charge reservoir), or an op-amp buffer.
-
-**Improving measurements**
-
-- Oversample and average (each 4× oversampling adds about 1 bit of resolution if noise is present).
-- Measure VREFINT to compensate for a varying VDD reference.
-- Separate analog supply (VDDA) and reference with filtering; keep analog traces away from switching signals.
-- Trigger conversions from a timer (exact sample rate) and transfer with DMA.
-
-**Other ADC types:** sigma-delta (high resolution, slow: precision sensors, audio), pipelined and flash (very fast: video, oscilloscopes).
+**Interview takeaway:** Resolution is not accuracy. Reference tolerance, noise, offset, gain error and effective number of bits matter. Timer-triggered ADC with DMA is useful for periodic acquisition.
 
 ### What is the Nyquist theorem and what is aliasing? {E}
 **Short answer:** The Nyquist–Shannon sampling theorem says a signal must be sampled at **more than twice its highest frequency component** to be reconstructed without loss. If frequencies above half the sample rate (the **Nyquist frequency**, f_s/2) are present, they fold back and appear as false lower frequencies — **aliasing** — which cannot be removed after sampling. That is why an **anti-aliasing low-pass filter** is placed before the ADC.
