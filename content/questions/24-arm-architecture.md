@@ -1265,3 +1265,19 @@ dma_unmap_single(dev, addr, len, DMA_TO_DEVICE);
 **3. Important:** An SMMU does not automatically make a non-coherent device coherent. DMA addresses are not CPU pointers; a system may also use direct mapping or bounce buffers.
 
 **Interview takeaway:** The SMMU is for device address translation and isolation; use Linux DMA APIs rather than assuming a physical address equals a DMA address.
+
+#### Device DMA example with noncontiguous physical pages
+
+A display framebuffer may occupy two physical pages at 0x90000000 and 0xA0000000. With a suitable SMMU mapping, the device can receive a contiguous IOVA range such as 0x40000000–0x40001FFF even though physical pages are noncontiguous. The CPU accesses the framebuffer through its own virtual mappings, while device transactions use the IOVA.
+
+```text
+CPU virtual address -> CPU MMU -> physical RAM
+Display DMA IOVA    -> SMMU    -> same physical RAM
+```
+
+The SMMU selects translation context using device stream information and platform configuration. For an SMMUv3 implementation, stream-table entries identify relevant translation settings; context descriptors can supply stage-1 settings, and stage-2 translation can also be supported. Its translation caches require suitable invalidation when mappings change.
+
+In Linux, dma_map_sg may map a scatter-gather list and return the number of DMA segments the device should use; that number can differ from the input entry count. Use each mapped segment's DMA address/length and unmap with the original entry count according to the API. Handle mapping errors, address-width constraints and device ownership.
+
+An SMMU fault can indicate an unmapped IOVA, incorrect stream configuration, insufficient access permission or a DMA access after unmapping. Check the driver's mapping lifetime, device descriptors, DMA mask, IOMMU configuration and fault logs. Translation and isolation do not guarantee cache coherency; those are separate properties of the device's hardware path and software protocol.
+
