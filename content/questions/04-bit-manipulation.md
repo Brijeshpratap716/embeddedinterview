@@ -1004,39 +1004,53 @@ A full-width mask from bit 31 to bit 0 is UINT32_MAX. Avoid expressions such as 
 **Interview takeaway:** GENMASK builds a contiguous inclusive range; BIT(n) selects one position. Validate widths and use the operating system's native helpers when available.
 
 ### How do you rotate bits left and right? {M}
-**Short answer:** Combine two shifts with OR: rotate left is `(x << n) | (x >> (32 - n))`. Mask the shift amounts with `& 31` so that `n = 0` does not produce a shift by 32, which is undefined.
+Bit rotation moves bits around a fixed-width word without discarding the bits that leave one end. Rotation differs from ordinary shifting, which drops shifted-out bits.
+
+#### 1. Rotate left and right
 
 ```c
-#include <stdint.h>
-
-static inline uint32_t rotl32(uint32_t x, unsigned n)
+uint32_t rotl32(uint32_t x, unsigned n)
 {
-    n &= 31;
-    return (x << n) | (x >> ((32 - n) & 31));
+    n &= 31U;
+    if (n == 0)
+        return x;
+
+    return (x << n) | (x >> (32U - n));
 }
 
-static inline uint32_t rotr32(uint32_t x, unsigned n)
+uint32_t rotr32(uint32_t x, unsigned n)
 {
-    n &= 31;
-    return (x >> n) | (x << ((32 - n) & 31));
+    n &= 31U;
+    if (n == 0)
+        return x;
+
+    return (x >> n) | (x << (32U - n));
 }
 ```
 
-**Rotate vs shift:** a shift throws away the bits that fall off one end and fills with zeros. A rotate puts the bits that fall off one end back in at the other end, so no information is lost.
+Reducing n modulo 32 handles counts larger than the word width. Checking zero avoids evaluating a shift by 32.
 
+#### 2. Eight-bit illustration
+
+```text
+Input       10010011 (0x93)
+Rotate left 00100111 (0x27)
+Rotate right11001001 (0xC9)
 ```
-x          = 0x80000001
-x << 1     = 0x00000002   (top bit lost)
-rotl(x, 1) = 0x00000003   (top bit wrapped to bit 0)
+
+Each example rotates the original input by one position. Bits leaving one side reappear at the opposite side.
+
+#### 3. ARM instruction
+
+On AArch64, the compiler can use ROR for a rotate-right operation:
+
+```asm
+ROR W0, W0, #8
 ```
 
-**Why the `& 31`:** for `n = 0`, the naive `x >> (32 - 0)` is a shift by 32, which is undefined in C. On Arm the `LSR` by 32 gives 0, but on x86 the shift count is masked to 5 bits and gives `x`. Undefined behaviour means the optimiser may assume it never happens.
+A rotate-left operation can be expressed using an equivalent rotate-right count.
 
-**The compiler recognises this pattern** and emits one instruction: `ROR` on Arm (there is no rotate-left; it uses `ROR` by `32 - n`), `ROL`/`ROR` on x86. C23 adds `stdc_rotate_left`/`stdc_rotate_right` to `<stdbit.h>`.
-
-**Uses:** hash functions and CRC/crypto (SHA-256, ChaCha20 are built from rotates), circular LED patterns, and rotating a bitmap of round-robin slots.
-
-**Rotate other widths:** for a `uint8_t`, use 7 and 8 instead of 31 and 32, and cast the result back to `uint8_t`, because the operands are promoted to `int` before shifting.
+**Interview takeaway:** Rotation preserves every bit in the word. Use unsigned types and ensure neither component shift equals or exceeds the word width.
 
 ### How do you find the parity of a number? {M}
 **Short answer:** Parity is whether the number of set bits is odd or even. Fold the word onto itself with XOR (`x ^= x >> 16; x ^= x >> 8; ...`) until one bit is left; that bit is 1 for odd parity. Or use `__builtin_parity(x)`.
