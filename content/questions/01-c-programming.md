@@ -9,26 +9,52 @@ desc: Keywords, storage classes, scope, the preprocessor, integer rules, undefin
 Almost every embedded interview opens with C. These questions cover the language itself: types, storage classes, the preprocessor, integer conversion rules, and the corners where C stops protecting you. Each answer gives the one-line answer first, then the explanation, an example, and the traps interviewers look for.
 
 ### What are the storage classes in C? {E}
-**Short answer:** Storage-class specifiers affect storage duration and/or linkage. Scope is determined primarily by where the declaration appears. C has `auto`, `register`, `static` and `extern`, plus `_Thread_local` since C11 (and `typedef`, which is grammatically a storage class but only creates a type alias).
+**Short answer:** Storage classes in C determine the **storage duration and linkage** of variables. Scope depends on where a declaration appears.
 
-| Specifier | Lifetime | Default initial value | Typical location | Linkage |
-|---|---|---|---|---|
-| `auto` (default for locals) | the enclosing block | indeterminate (garbage) | stack or register | none |
-| `register` | the enclosing block | indeterminate | a register if the compiler wants | none; you cannot take its address |
-| `static` (local) | whole program | zero | `.data` / `.bss` | none |
-| `static` (file scope) | whole program | zero | `.data` / `.bss` | internal (this file only) |
-| `extern` | whole program | zero (at the definition) | defined in another file | external |
-| `_Thread_local` | the thread | zero | per-thread storage | internal or external |
+**1. Types of storage classes**
 
-**Key points**
+| Storage class | Scope | Lifetime | Default value |
+|---|---|---|---|
+| `auto` | Local | Until block exits | Indeterminate |
+| `register` | Local | Until block exits | Indeterminate |
+| `static` | Local or file | Entire program | Zero |
+| `extern` | Depends on declaration | Entire program for ordinary objects | Zero at definition, if not explicitly initialized |
+| `_Thread_local` | Depends on declaration | Thread lifetime | Zero |
 
-- You almost never write `auto` in C (in C23 it gained a new meaning: type inference, like C++).
-- `register` is only a hint; modern compilers ignore it for allocation, but it still forbids `&var`.
-- Static and global variables are zero-initialised by the start-up code (`.bss`) or copied from flash (`.data`). Locals are not initialised: reading one before assignment is undefined behaviour.
+**2. Example**
 
-**Embedded relevance:** the difference matters for RAM budgeting. A large local array lives on the stack (risk of stack overflow on a 1 KB task stack), while a `static` array is placed in `.bss` and shows up in the map file at link time, so you know about it before the device crashes.
+```c
+#include <stdio.h>
 
-**Follow-up:** "Where do `static` local variables live?" In `.data` or `.bss`, not on the stack, even though their name is only visible inside the function.
+int global = 100;
+
+void fun(void)
+{
+    auto int a = 10;
+    register int b = 20;
+    static int c = 0;
+    extern int global;
+
+    printf("%d ", ++c);
+}
+```
+
+Calling `fun()` three times prints `1 2 3`, because `static` retains its value between function calls.
+
+**3. Typical memory location**
+
+| Variable | Memory location |
+|---|---|
+| `auto` | Stack |
+| `register` | CPU register or stack |
+| Non-zero initialized static/global | `.data` |
+| Zero-initialized static/global | `.bss` |
+
+Actual placement depends on the compiler and linker.
+
+**Interview takeaway:** `auto` is used for ordinary local variables, `register` suggests fast access, `static` preserves lifetime or restricts linkage, and `extern` typically provides access to variables defined elsewhere.
+
+C11 introduced `_Thread_local`. The `typedef` keyword is also grammatically a storage-class specifier, but it creates a type alias rather than allocating storage.
 
 ### What does the static keyword do in different contexts? {E}
 **Short answer:** `static` has two different meanings. **Inside a function**, it makes a local variable keep its value between calls (static storage duration, initialised once). **At file scope**, on a global variable or a function, it gives **internal linkage**: the name is visible only inside that `.c` file, which is how C makes things "private".
