@@ -275,19 +275,17 @@ Automate repeatable tests using git bisect run. The script should return 0 for g
 **Interview takeaway:** Bisect works best with a reliable test and reproducible environment. The identified commit is a starting point for root-cause analysis, not necessarily the entire cause.
 
 ### What is a logic analyser and when do you use it instead of an oscilloscope? {E}
-**Short answer:** A **logic analyser** captures many digital signals (8–32+ channels) as 1s and 0s over long periods and **decodes protocols** (SPI, I2C, UART, CAN, 1-Wire, I2S, SWD), so it answers "what data was sent, in what order and with what timing between events". An **oscilloscope** shows the **analog** waveform of a few channels — voltage levels, rise times, ringing, noise, power-supply ripple — so it answers "is this signal electrically correct". Use the logic analyser for protocol and timing logic; use the oscilloscope when you suspect signal integrity, power or analog problems.
+A logic analyzer records digital states over time and can decode bus protocols. An oscilloscope displays analog voltage waveforms.
 
-| | Logic analyser | Oscilloscope |
-|---|---|---|
-| Channels | 8–34+ | 2–8 |
-| Shows | logic levels vs time, decoded protocols | real voltage waveform |
-| Capture length | long (seconds to minutes, streaming) | short at high sample rates (deep memory helps) |
-| Finds | wrong commands, missing ACKs, CS timing, ISR timing (with GPIO markers), sequence errors | ringing, slow edges, glitches, wrong levels, noise, supply dips, crosstalk |
-| Typical tools | Saleae Logic, DSLogic, sigrok/PulseView with cheap analysers | Rigol, Siglent, Keysight, Tektronix; mixed-signal scopes (MSO) combine both |
+| Logic analyzer | Oscilloscope |
+|---|---|
+| Many digital channels | Analog voltage and timing |
+| Long protocol captures | Rise/fall time, noise, overshoot |
+| I²C/SPI/UART decoding | Power integrity and signal quality |
 
-**Typical workflow:** the logic analyser shows that an I2C sensor sometimes NACKs; the oscilloscope then shows that SDA's rising edge is too slow because the pull-up is too weak — two tools, one bug.
+For I²C communication failure, first check START, address and ACK with a logic analyzer. If the decode is inconsistent, inspect SCL/SDA voltage levels and rise times with a scope.
 
-**Timing measurements:** toggle GPIOs at points in firmware (ISR entry/exit, task start, DMA complete) and capture them with the logic analyser alongside the bus signals to measure latency, execution time and jitter precisely without debugger interference.
+**Interview takeaway:** A clean digital decode does not establish electrical margin. Select sample rate, thresholds, bandwidth and probes for the signal.
 
 ### How do you design logging and diagnostics for devices in the field? {M}
 **Short answer:** Make failures reportable after the fact: store a persistent **crash record** (fault registers, PC/LR, stack snippet, task name, firmware version and reset reason) in no-init RAM or flash, keep a compact **ring-buffer event log** with timestamps and severity levels, maintain **counters and health metrics** (resets by cause, communication errors, watchdog events, minimum free stack/heap, battery), and upload them when connectivity is available or expose them over a service interface. Keep logging cheap (binary records or log IDs instead of formatted strings), rate-limited and safe to call from any context.
