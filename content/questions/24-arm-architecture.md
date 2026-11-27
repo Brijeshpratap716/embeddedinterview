@@ -1165,7 +1165,27 @@ CMP is an alias of a flag-setting subtraction whose result is discarded. Ordinar
 
 **Interview takeaway:** Boot flow progresses from platform firmware to kernel initialization to PID 1. Exact stages, exception levels and DDR initialization vary by SoC.
 
+#### Detailed boot flow with typical firmware stages
 
+```text
+Reset -> Boot ROM
+      -> early platform firmware / SPL
+      -> DRAM and security initialization
+      -> trusted firmware / bootloader, as configured
+      -> Linux Image + DTB + optional initramfs
+      -> early ARM64 kernel entry
+      -> start_kernel()
+      -> rest_init() / kernel_init()
+      -> execute PID 1 userspace program
+```
+
+Boot ROM locates and verifies the next image according to platform policy, often using on-chip RAM before external DDR is available. Early firmware prepares clocks, power and DRAM. A platform may use TF-A BL31 at EL3 and a non-secure bootloader at a supported exception level. The exact chain differs by SoC; for example, i.MX8QM/QXP configurations may use system-controller firmware and platform-specific boot containers rather than the same SPL sequence as an i.MX8M board.
+
+For direct ARM64 Linux DT boot, load the kernel image and DTB in suitable memory, supply the DTB physical address in X0, set X1–X3 to zero, establish required exception-level/interrupt/cache state, and enter with the MMU off as specified by the arm64 boot protocol. Linux then establishes its early mappings and initializes its own MMU configuration.
+
+Early kernel assembly and architecture setup lead into start_kernel, which initializes core subsystems; initcalls initialize built-in drivers and related services. The kernel's init path prepares the root filesystem and executes an initial userspace init program. Function names and ordering details vary by kernel release.
+
+For debugging, isolate the last successful stage using serial logs, bootloader image/address checks, earlycon, device-tree validation, initcall diagnostics and root-filesystem checks.
 
 ### What are TTBR0_EL1, TTBR1_EL1, TCR_EL1 and MAIR_EL1? {H}
 **Short answer:** These registers configure stage-1 address translation for EL1 and EL0. TTBRs select translation-table roots, TCR controls translation parameters, and MAIR describes memory attribute encodings.
