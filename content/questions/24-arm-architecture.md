@@ -908,6 +908,25 @@ add_two:
 
 **Interview takeaway:** The ABI lets independently compiled functions agree on arguments, results and register preservation.
 
+#### Caller-saved and callee-saved example
+
+```asm
+// long wrapper(long x) { return helper(x) + 1; }
+wrapper:
+    STP X29, X30, [SP, #-16]!
+    MOV X29, SP
+    BL helper
+    ADD X0, X0, #1
+    LDP X29, X30, [SP], #16
+    RET
+```
+
+BL overwrites X30, so this non-leaf function preserves its original return address. Ordinary integer arguments and temporary values in caller-saved registers may be overwritten by helper. If wrapper needs a value after the call, it must save it or use a callee-saved register while preserving that register's incoming value.
+
+AAPCS64 also defines X8 for certain indirect result locations, X16/X17 as intra-procedure-call temporaries, and X18 as platform-specific. X29 is a callee-saved register conventionally used as frame pointer. Floating-point and SIMD arguments/results typically use V0–V7, and parts of V8–V15 have preservation requirements. Aggregates and variadic functions have additional rules.
+
+Do not confuse the C function-call ABI with the Linux syscall ABI, which uses X8 for the syscall number and X0–X5 for its arguments.
+
 ### What is a stack frame in ARM64? {M}
 **Short answer:** A function may save its frame pointer X29 and link register X30 on the stack. Leaf functions may not require a frame.
 
