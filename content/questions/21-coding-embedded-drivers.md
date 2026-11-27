@@ -1128,6 +1128,18 @@ void rx_poll(void (*deliver)(const uint8_t *frame, size_t len))
 
 **Why rings:** no allocation in the data path, the hardware can work ahead on several frames without CPU involvement, and flow control is natural (no free descriptor = back-pressure). The same design is used by virtio virtqueues, NVMe submission/completion queues and USB controllers.
 
+#### Descriptor ownership and cache synchronization
+
+```text
+CPU initializes buffer address and capacity
+  -> order descriptor writes -> publish OWN=DMA -> notify device
+DMA writes received packet and status -> releases ownership
+  -> CPU observes completion -> synchronize -> consume packet
+CPU returns buffer -> order writes -> publish OWN=DMA again
+```
+
+This is a conceptual descriptor format, not a vendor-specific Ethernet register layout. On Linux, allocate coherent descriptors and use DMA mapping for payloads, with appropriate dma_rmb/dma_wmb ordering around ownership. On non-coherent MCUs, follow cache-line clean/invalidate and memory-barrier requirements; avoid sharing a line between independently owned descriptors. Convert pointers to validated device-visible addresses using the platform mapping, not by blindly truncating uintptr_t to 32 bits. Validate received length, error flags and frame boundaries; the callback must not retain a pointer after returning the buffer to DMA unless a replacement buffer is installed.
+
 ### Implement a packet queue for a network driver (TX path). {M}
 **Short answer:** Keep a fixed pool of packet buffers and a FIFO of packets waiting for transmission. `net_send()` (called by the protocol stack) copies or attaches the packet to a free buffer, appends it to the queue and, if the hardware is idle, starts the first transmission. The TX-complete interrupt frees the finished buffer and starts the next queued packet, so the link stays busy. When the pool or queue is full, `net_send()` returns an error so the stack slows down.
 
