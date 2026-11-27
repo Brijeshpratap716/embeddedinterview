@@ -367,58 +367,44 @@ Use std::atomic, mutexes or platform primitives for concurrent shared memory. Co
 **Interview takeaway:** Volatile preserves required accesses; it is not a memory fence or lock. Follow the target MMIO semantics and language version.
 
 ### How do you model a hardware register in type-safe C++? {H}
-**Short answer:** Wrap register addresses and fields in types so misuse becomes a compile error: put the address and access type (read-only, write-only, read-write) in a template, model fields with compile-time offset and width, and use `enum class` for field values. Everything resolves to the same single load or store as hand-written C (`*(volatile uint32_t*)addr`), but writing to a read-only register or putting a value in the wrong field no longer compiles.
+A type-safe C++ register abstraction can encode register address, width and permitted operations in types, reducing accidental misuse while retaining direct MMIO access.
+
+#### 1. Example
 
 ```cpp
 #include <cstdint>
-#include <cstdio>
 
-enum class Access { RO, WO, RW };
-
-template <uintptr_t Addr, Access A = Access::RW>
-struct Reg {
-    static volatile uint32_t &ref() { return *reinterpret_cast<volatile uint32_t *>(Addr); }
-    static uint32_t read() { static_assert(A != Access::WO, "write-only register"); return ref(); }
-    static void write(uint32_t v) { static_assert(A != Access::RO, "read-only register"); ref() = v; }
-};
-
-template <typename R, unsigned Offset, unsigned Width>
-struct Field {
-    static constexpr uint32_t mask = ((1u << Width) - 1u) << Offset;
-    static void set(uint32_t v) {
-        uint32_t r = R::read();
-        R::write((r & ~mask) | ((v << Offset) & mask));
+template<std::uintptr_t Address>
+struct ReadOnlyReg32 {
+    static std::uint32_t read() {
+        return *reinterpret_cast<volatile const std::uint32_t*>(
+            Address);
     }
-    static uint32_t get() { return (R::read() & mask) >> Offset; }
 };
 
-enum class Mode : uint32_t { Input = 0, Output = 1, Alt = 2, Analog = 3 };
-
-// demo: point the "register" at RAM so this runs on a PC
-static uint32_t fake_moder;
-using GPIOA_MODER = Reg<0>;                       // placeholder; real code uses 0x4002'0000
-struct Moder {                                    // adapter so the demo can use fake memory
-    static uint32_t read() { return fake_moder; }
-    static void write(uint32_t v) { fake_moder = v; }
+template<std::uintptr_t Address>
+struct WriteOnlyReg32 {
+    static void write(std::uint32_t value) {
+        *reinterpret_cast<volatile std::uint32_t*>(Address) = value;
+    }
 };
-template <unsigned Pin> using PinMode = Field<Moder, Pin * 2, 2>;
-
-int main()
-{
-    PinMode<5>::set(static_cast<uint32_t>(Mode::Output));
-    PinMode<6>::set(static_cast<uint32_t>(Mode::Alt));
-    std::printf("MODER=0x%08X pin5=%u\n", (unsigned)fake_moder, (unsigned)PinMode<5>::get());   // 0x00002400 1
-    (void)sizeof(GPIOA_MODER);
-}
 ```
 
-**Real-world options**
+A read-only type has no write method; a write-only type has no read method. Addresses must be valid, mapped and aligned for the device.
 
-- Vendor CMSIS headers (C structs with `volatile` members) are the baseline; C++ wrappers sit on top.
-- Libraries: **Kvasir**, **modm** (generated from vendor data), **cpp-register** styles, Rust's svd2rust as the inspiration; **SVD files** describe registers and fields so code can be generated.
-- `reinterpret_cast` makes these functions non-`constexpr`; keep addresses as `uintptr_t` template parameters and cast only inside the access function.
+#### 2. Usage
 
-**Benefits to mention:** read-only/write-only enforcement, field width checks, impossible to mix up registers of different peripherals, self-documenting code, and zero overhead (check the disassembly).
+```cpp
+using Status = ReadOnlyReg32<0x40000010u>;
+using Clear = WriteOnlyReg32<0x40000014u>;
+
+auto status = Status::read();
+Clear::write(1u << 3);
+```
+
+The clear register is assumed to accept a direct mask write. Build separate abstractions for W1C and ordinary read/write registers rather than exposing unsafe universal bit setters.
+
+**Interview takeaway:** Types can prevent invalid register operations at compile time. They cannot replace the hardware manual, barriers, endian handling or concurrency design.
 
 ### What is the static initialisation order fiasco? {M}
 **Short answer:** Global and static objects with dynamic initialisation (constructors that run before `main`) in **different translation units** are initialised in an unspecified order. If one global's constructor uses another global defined in a different `.cpp` file, it may run before that object is constructed and use garbage. On embedded systems, there is a second problem: global constructors run from start-up code, possibly before clocks, memory (external SDRAM) or peripherals are initialised.
