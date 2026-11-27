@@ -259,24 +259,20 @@ arm-none-eabi-size firmware.elf
 **Interview takeaway:** Debug information in the ELF is not usually part of the flashed image. Code-size optimization can change timing, so validate deadlines and correctness.
 
 ### What is git bisect and how does it help? {E}
-**Short answer:** `git bisect` performs a binary search through the commit history to find the commit that introduced a bug. You mark a known-good and a known-bad commit; git checks out the commit halfway between; you test it and mark it good or bad; git repeats until it identifies the first bad commit. 1,000 commits take only about 10 steps. With a test script that returns 0 (good) or non-zero (bad), `git bisect run` automates the whole search, even including flashing and testing on hardware.
+Git bisect identifies a regression-introducing commit by binary search between known good and bad versions.
 
-```sh
+```bash
 git bisect start
-git bisect bad                 # current HEAD has the bug
-git bisect good v2.3.0         # this release was fine
-# build, flash, test... then:
-git bisect good                # or: git bisect bad, or: git bisect skip (doesn't build)
-# ...repeat until git prints "<sha> is the first bad commit"
-git bisect reset               # return to where you started
-
-# automated, e.g. with a HIL test script
-git bisect run ./ci/flash_and_test.sh
+git bisect bad
+git bisect good <known-good-sha>
+# Build and test each selected commit
+git bisect good   # or git bisect bad
+git bisect reset
 ```
 
-**Tips:** small, focused commits make the result meaningful; every commit should build (otherwise use `git bisect skip`); for intermittent bugs, make the test repeat enough times to be confident a "good" verdict is really good; and bisecting configuration or dependency changes (toolchain, SDK versions) is also possible by bisecting the commits that changed them.
+Automate repeatable tests using git bisect run. The script should return 0 for good, 1–127 (except 125) for bad, and 125 for an untestable commit.
 
-**Related git tools:** `git log -S "symbol"` (find commits that added or removed text), `git blame` (who changed a line and why), `git log -p --follow file`.
+**Interview takeaway:** Bisect works best with a reliable test and reproducible environment. The identified commit is a starting point for root-cause analysis, not necessarily the entire cause.
 
 ### What is a logic analyser and when do you use it instead of an oscilloscope? {E}
 **Short answer:** A **logic analyser** captures many digital signals (8–32+ channels) as 1s and 0s over long periods and **decodes protocols** (SPI, I2C, UART, CAN, 1-Wire, I2S, SWD), so it answers "what data was sent, in what order and with what timing between events". An **oscilloscope** shows the **analog** waveform of a few channels — voltage levels, rise times, ringing, noise, power-supply ripple — so it answers "is this signal electrically correct". Use the logic analyser for protocol and timing logic; use the oscilloscope when you suspect signal integrity, power or analog problems.
