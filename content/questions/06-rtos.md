@@ -827,24 +827,32 @@ FreeRTOS supplies several heap implementations with different allocation, freein
 **Interview takeaway:** Static allocation is often preferred for fixed real-time resources. It does not guarantee stack sizing or eliminate every runtime failure, but makes memory availability easier to analyze.
 
 ### How does an RTOS work on a multi-core (SMP) processor? {H}
-**Short answer:** In **SMP** (symmetric multiprocessing) mode, one RTOS kernel schedules tasks across several cores sharing memory: on each core it runs the highest-priority ready task that is allowed to run there. This adds new concerns: kernel data structures need spinlocks instead of only disabling interrupts, tasks of different priorities can run **at the same time**, core affinity can pin tasks to cores, and caches and memory ordering must be handled. In **AMP** (asymmetric) mode, each core runs its own independent OS or bare-metal code and they communicate through shared memory and inter-core interrupts.
+An SMP (Symmetric Multiprocessing) RTOS schedules work on multiple processors that share memory. More than one task may execute simultaneously.
 
-**SMP (FreeRTOS SMP since v11, Zephyr SMP, ThreadX SMP)**
+#### 1. Architecture
 
-- **Locks:** a task-level critical section on one core does not stop the other core, so the kernel uses spinlocks (with interrupt masking) for its data.
-- **Priority assumptions break:** in single-core code, "a high-priority task never runs at the same time as a low-priority task" was often relied on to avoid locks. On SMP both can run in parallel, so shared data needs real protection.
-- **Affinity:** `vTaskCoreAffinitySet()` (FreeRTOS) or `k_thread_cpu_mask_*` (Zephyr) restricts tasks to cores, e.g. dedicate one core to a time-critical control loop.
-- **Inter-processor interrupts:** used to ask another core to reschedule.
-- **Caches:** cores need coherent caches (or uncached shared memory) and atomics with proper barriers.
+```text
+Core 0: task A          Core 1: task B
+       |                       |
+       +-- shared kernel / ready queues --+
+                   shared RAM
+```
 
-**AMP (common on heterogeneous SoCs)**
+The scheduler selects tasks according to priority, affinity and the port's policy. Interprocessor notifications can request rescheduling on another core.
 
-- e.g. Cortex-M7 + Cortex-M4 in STM32H7 dual-core, Cortex-A + Cortex-M in i.MX 8M / STM32MP1, or two Cortex-R cores in lock-step pairs.
-- Each core runs its own RTOS (or Linux on one, RTOS on the other).
-- Communication via **OpenAMP/RPMsg** (shared-memory ring buffers + mailbox interrupts), hardware semaphores (HSEM) for shared peripherals.
-- Simpler isolation and certification, but load cannot be balanced automatically.
+#### 2. Synchronization changes
 
-**Lock-step** (Cortex-R5/R52 in safety MCUs) is different again: two cores execute the same code in parallel and hardware compares results to detect faults; it is one logical CPU for software.
+Disabling interrupts on core 0 does not prevent core 1 from accessing the same object. SMP kernels use suitable locks, atomic operations and memory-ordering primitives to protect kernel and application state.
+
+#### 3. Example
+
+Two worker tasks can concurrently increment an atomic counter. If they instead update an ordinary shared counter without synchronization, a lost update or a C data race can occur.
+
+#### 4. Performance concerns
+
+Lock contention, cache false sharing, affinity restrictions and cross-core communication may limit scalability. Assign affinity only when latency, peripheral ownership or cache locality requires it, and test under concurrent load.
+
+**Interview takeaway:** SMP adds true simultaneous execution. A single-core critical-section design must be revisited; local interrupt masking alone is not multicore synchronization.
 
 ### What are common RTOS design mistakes? {M}
 **Short answer:** The usual mistakes are: too many tasks; busy-waiting instead of blocking; blocking or slow calls in ISRs; wrong interrupt priorities relative to the kernel's syscall priority; holding mutexes during slow I/O or taking them in inconsistent orders; sharing globals without protection; undersized stacks; ignoring API return values and timeouts; and creating/deleting tasks and objects at run time.
