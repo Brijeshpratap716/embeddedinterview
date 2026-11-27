@@ -941,57 +941,37 @@ Readers must tolerate retries. Plain sequence counters alone do not protect poin
 **Interview takeaway:** Choose by access pattern and lifetime needs. Atomics are not multi-object locks; RCU protects publication/lifetime, and seqlocks provide retryable snapshots.
 
 ### What are wait queues and completions? {M}
-**Short answer:** A **wait queue** lets a task sleep until a condition becomes true: the sleeper calls `wait_event_interruptible(wq, condition)`, and the code that changes the condition (often an interrupt handler) calls `wake_up_interruptible(&wq)`; the condition is re-checked after every wake-up, so spurious wake-ups are harmless. A **completion** is a simpler wrapper for the common case "wait until this one thing has finished" (`wait_for_completion_timeout()` and `complete()`), e.g. waiting for a DMA transfer or a firmware response.
+Wait queues let a kernel task sleep until a condition changes. Completions represent an event indicating that an operation has finished.
 
-**Blocking read using a wait queue**
+#### 1. Wait queue example
 
 ```c
-static ssize_t mydev_read(struct file *f, char __user *ubuf, size_t n, loff_t *pos)
-{
-    struct mydev *d = f->private_data;
-    u32 val;
-
-    if (f->f_flags & O_NONBLOCK) {
-        if (!READ_ONCE(d->data_ready)) return -EAGAIN;
-    } else if (wait_event_interruptible(d->wq, READ_ONCE(d->data_ready))) {
-        return -ERESTARTSYS;                        /* interrupted by a signal */
-    }
-
-    spin_lock_irq(&d->lock);
-    val = d->sample;
-    d->data_ready = false;
-    spin_unlock_irq(&d->lock);
-
-    if (n < sizeof(val)) return -EINVAL;
-    return copy_to_user(ubuf, &val, sizeof(val)) ? -EFAULT : sizeof(val);
-}
-
-/* in the IRQ handler */
-spin_lock(&d->lock);
-d->sample = readl(d->base + DATA);
-d->data_ready = true;
-spin_unlock(&d->lock);
-wake_up_interruptible(&d->wq);
+ret = wait_event_interruptible(d->waitq,
+                               READ_ONCE(d->ready));
+if (ret)
+    return ret;
 ```
 
-**Completion for a DMA transfer**
+A producer updates the condition using appropriate synchronization, then calls wake_up_interruptible. A waiter rechecks the predicate; a wakeup alone does not guarantee the desired condition remains true.
+
+#### 2. Completion example
 
 ```c
-reinit_completion(&d->dma_done);
-start_dma(d);
-if (!wait_for_completion_timeout(&d->dma_done, msecs_to_jiffies(100))) {
-    dmaengine_terminate_sync(d->chan);
+reinit_completion(&d->done);
+start_transfer(d);
+if (!wait_for_completion_timeout(&d->done,
+                                  msecs_to_jiffies(100)))
     return -ETIMEDOUT;
-}
-/* DMA callback: complete(&d->dma_done); */
 ```
 
-**Points**
+An interrupt or worker calls complete(&d->done) when the operation finishes. Initialize the completion before use; reinitialize only when no conflicting waiters or completions remain. On timeout, stop or synchronize the hardware so a late completion cannot corrupt the next operation.
 
-- Always use a timeout for hardware events, and handle signals (`-ERESTARTSYS`).
-- `wait_event_killable` only lets fatal signals interrupt the wait.
-- Never wait in atomic context.
-- Wait queues also back `poll()` (next question).
+| Wait queue | Completion |
+|---|---|
+| Wait on a predicate | Wait for completion signal |
+| Suitable for buffer readiness | Suitable for operation completion |
+
+**Interview takeaway:** Wait queues depend on a properly synchronized condition. Completions simplify one-operation signaling, but timeout and lifetime races still require handling.
 
 ### How does user space wait for events from a driver (poll/select)? {M}
 **Short answer:** Implement `.poll` in `file_operations`. It calls `poll_wait()` to add the caller to the driver's wait queue (this does **not** sleep) and returns a mask of the events that are ready **now** (`EPOLLIN | EPOLLRDNORM` for readable, `EPOLLOUT | EPOLLWRNORM` for writable, `EPOLLERR`/`EPOLLHUP`). When data arrives, the driver calls `wake_up_interruptible(&wq)`, which makes `poll`, `select` and `epoll` callers re-check.
