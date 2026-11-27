@@ -69,25 +69,17 @@ The resistor dissipates about I²R = 6.3 mW. Confirm the LED's forward voltage r
 **Interview takeaway:** Always account for GPIO current limits and worst-case forward voltage; the LED does not regulate its own current.
 
 ### How do you interface a 3.3 V MCU with a 5 V device? {M}
-**Short answer:** Check both directions against the datasheets. **3.3 V → 5 V**: the 5 V device may accept 3.3 V as a valid high (many TTL-compatible inputs need only V_IH ≈ 2.0 V); if it needs 0.7 × VDD = 3.5 V (CMOS), use a level shifter or an open-drain output with a pull-up to 5 V (only if the MCU pin is 5 V tolerant). **5 V → 3.3 V**: never connect directly unless the MCU pin is specified as 5 V tolerant; otherwise use a resistor divider, a series resistor (limiting current into the protection diode, not a robust design), or a buffer powered at 3.3 V with 5 V-tolerant inputs.
+A voltage-domain mismatch must be resolved using the receiver's absolute maximum ratings and logic thresholds.
 
-**Options**
+#### 1. Common cases
+- 5 V push-pull output into a 3.3 V input: use a suitable translator, or a resistor divider for a slow unidirectional signal if its impedance and timing are acceptable.
+- 3.3 V output into 5 V input: direct connection is acceptable only if the receiver's VIH specification is satisfied.
+- Open-drain I²C: use a bidirectional open-drain level translator with appropriate pull-ups on each side.
 
-| Method | Direction | Speed | Notes |
-|---|---|---|---|
-| Direct connection | 3.3 → 5 V | fast | only if 5 V device's V_IH ≤ ~2.4 V (TTL-level inputs, 74HCT) |
-| Resistor divider (e.g. 1.8 kΩ / 3.3 kΩ) | 5 → 3.3 V | moderate (RC with input capacitance) | simple, one direction |
-| 5 V-tolerant MCU pin | 5 → 3.3 V | fast | check "FT" pins and that they are not in analog mode |
-| Unidirectional buffer (74LVC1T45, 74AHCT125) | either | fast | proper solution for SPI, UART, clock lines |
-| MOSFET bidirectional shifter (BSS138 + pull-ups) | both | slow–moderate (≤ ~400 kHz–1 MHz) | standard for I2C |
-| Auto-direction translators (TXB/TXS0108) | both | varies | TXS for open-drain, TXB for push-pull; can misbehave with strong pull-ups/loads |
+#### 2. Example
+A 10 kΩ upper resistor and 20 kΩ lower resistor divide 5 V to about 3.33 V, assuming negligible load. This is not a universal solution for high-speed or bidirectional signals.
 
-**Things to check**
-
-- **Power sequencing/back-powering:** if the 5 V device is powered while the 3.3 V MCU is off, current can flow through input protection diodes and partially power the MCU, causing latch-up or strange behaviour. Use translators with power-off protection (I_off).
-- **Thresholds:** V_OH of the driver must exceed V_IH of the receiver with margin, and V_OL must be below V_IL.
-- **Speed:** dividers and MOSFET shifters slow edges; fast SPI needs a proper buffer.
-- **Analog signals:** use a divider sized for the ADC input impedance, possibly with an op-amp buffer.
+**Interview takeaway:** Check tolerance when either device is unpowered, power sequencing, propagation delay and contention. Do not rely on protection diodes to absorb continuous overvoltage.
 
 ### What is a decoupling capacitor and where should it be placed? {E}
 **Short answer:** A decoupling (bypass) capacitor is placed between a chip's supply pin and ground, **as close to the pin as possible**, to supply the short bursts of current the chip draws when its transistors switch. Without it, those current spikes flowing through the inductance of the power traces cause the supply voltage at the pin to dip and ring, leading to resets, data errors and noise. The usual practice is 100 nF ceramic per supply pin, plus 1–10 µF bulk capacitance per chip or power domain.
