@@ -261,27 +261,19 @@ Guests can use virtual counter/timer facilities. CNTVOFF_EL2 can offset the phys
 **Interview takeaway:** Interrupt injection changes the guest's virtual interrupt state; it is not necessarily a physical IRQ delivery. vGIC implementation details depend on GIC version and accelerator.
 
 ### What is virtio, and why is it faster than emulating a real device? {M}
-**Short answer:** Virtio is a standard for **paravirtual** devices: instead of emulating a real network card or disk controller register by register, the guest uses a simple driver that puts requests into shared-memory ring buffers (**virtqueues**) and notifies the host once per batch. This avoids most VM exits. Common devices are virtio-net, virtio-blk, virtio-scsi, virtio-gpu, virtio-console, virtio-rng and virtio-vsock.
+Virtio is a standardized paravirtualized device interface. Instead of reproducing every register of a physical device, the guest and backend exchange descriptors through shared virtqueues.
 
-**How a virtqueue works**
+```text
+Guest driver -> descriptor/available queue -> backend
+Guest driver <- used/completion queue       <- backend
+              notification / interrupt
+```
 
-- A **descriptor table** of buffers (guest physical address, length, flags), an **available ring** where the guest posts descriptor indexes, and a **used ring** where the device returns completed ones (the "split" layout; virtio 1.1 adds a "packed" layout).
-- The guest adds buffers, then **kicks** the device with one MMIO/PCI write (one exit, or none if the device is polling).
-- The device processes many buffers, writes them to the used ring and raises **one interrupt**.
-- Both sides can suppress notifications while busy, so under load there are very few exits per packet.
+With a split virtqueue, the driver supplies buffers through descriptor and available rings; the device posts completion through the used ring. Packed virtqueues use a different layout. Feature negotiation selects supported behavior.
 
-**Why emulated hardware is slow:** a real NIC driver performs many register reads and writes per packet; each is an MMIO exit costing microseconds. Virtio was designed for virtualization, so it needs very few.
+Virtio can reduce costly traps, register emulation and copies through batching and optimized backends such as vhost.
 
-**Making it faster still**
-
-- **ioeventfd:** the guest's kick write is turned into an eventfd signal inside KVM, without returning to QEMU's vCPU thread.
-- **irqfd:** the device raises the guest interrupt by writing an eventfd that KVM injects directly.
-- **vhost:** the data path runs in a host kernel thread (`vhost-net`) or another process (**vhost-user**, e.g. with DPDK), so packets do not go through QEMU at all.
-- **vDPA:** real hardware that speaks the virtio ring format, so the guest's virtio driver drives hardware directly.
-
-**Transports:** virtio-pci on PC-like machines and the ARM `virt` PCIe bus, **virtio-mmio** on simple embedded boards (described in the device tree), and virtio-ccw on s390.
-
-**Embedded and automotive:** virtio is the basis of the VirtIO-based sharing of GPUs, audio, cameras and sensors between VMs in automotive hypervisors, standardised so the same guest drivers work on different hypervisors.
+**Interview takeaway:** Virtio improves efficiency through a virtualization-aware interface, but does not guarantee zero-copy or zero exits. Correct memory barriers, buffer ownership and DMA mapping remain necessary.
 
 ### How does hardware virtualization on x86 compare with ARM? {H}
 **Short answer:** Both run the guest kernel natively and trap sensitive operations, but they are structured differently. x86 (Intel VT-x, AMD-V) adds a separate "root" mode with a hardware-managed control structure (VMCS/VMCB) and special `VMLAUNCH`/`VMRESUME`/`VMEXIT` transitions that save and load most state automatically. ARM adds a privilege level (EL2) with its own registers; the hypervisor saves and restores guest state itself, which is more work per switch but gives finer control and is simpler hardware.
