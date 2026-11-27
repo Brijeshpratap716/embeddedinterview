@@ -291,29 +291,19 @@ A guest OS can run its own kernel privilege level without gaining host control. 
 **Interview takeaway:** The concepts map across architectures, not the register names or exception model. KVM provides a common VM API with architecture-specific initialization.
 
 ### What is device passthrough (VFIO) and when would you use it? {H}
-**Short answer:** Passthrough gives a VM direct, exclusive access to a real hardware device (a PCIe NIC, GPU or an SoC peripheral). The host's **VFIO** framework hands the device's registers and interrupts to user space (QEMU), which maps them into the guest, and the **IOMMU/SMMU** restricts the device's DMA to that guest's memory. The guest's normal driver then talks to the hardware at near-native speed.
+Device passthrough assigns a physical device or function to a guest so the guest driver can operate it directly. VFIO is a Linux framework for secure userspace device access, commonly using an IOMMU.
 
-**How it works**
-
-1. Unbind the device from its host driver and bind it to `vfio-pci` (or `vfio-platform` for SoC devices).
-2. QEMU opens the device's VFIO group/container (or the newer iommufd), maps the device's BARs (registers) into guest physical space so accesses do not exit, and programs the IOMMU so the device's DMA addresses are the guest's physical addresses.
-3. Device interrupts (MSI/MSI-X) are delivered to the guest through irqfd, or directly with GICv4 / posted interrupts.
-
-```bash
-qemu-system-aarch64 ... -device vfio-pci,host=0000:01:00.0
+```text
+Guest driver -> assigned device
+                    | DMA
+                    v
+             IOMMU mappings -> permitted guest RAM
 ```
 
-**Requirements:** an IOMMU/SMMU, and devices that can be isolated in their own IOMMU group (devices behind the same PCIe bridge without ACS may have to be passed through together).
+The host must release the device from its normal driver, configure isolation and expose resources/interrupts through the VMM. IOMMU grouping and reset capabilities constrain assignment; newer VFIO interfaces may use IOMMUFD.
 
-**Trade-offs**
+#### Trade-offs
+Passthrough can reduce emulation overhead and provide native hardware features. It reduces sharing and migration flexibility and may introduce reset and security constraints.
 
-| | Passthrough | virtio / emulated |
-|---|---|---|
-| Performance | near native | good (virtio) to slow (emulated) |
-| Sharing | one VM owns the device (unless SR-IOV) | many VMs share |
-| Live migration | hard (device state is in hardware) | supported |
-| Isolation | depends on IOMMU and device reset quality | hypervisor controls everything |
+**Interview takeaway:** An IOMMU limits device DMA to authorized memory. Do not use unsafe no-IOMMU assignment as a substitute for isolation in untrusted environments.
 
-**SR-IOV:** a PCIe device presents several **virtual functions** (VFs), each passed through to a different VM, which gives near-native I/O with sharing (common for NICs in cloud servers).
-
-**Embedded use:** on automotive SoCs, a display controller, camera or CAN controller is often passed through to the VM that owns it (e.g. the safety cluster VM gets the display it must drive), while less critical devices are shared with virtio.
