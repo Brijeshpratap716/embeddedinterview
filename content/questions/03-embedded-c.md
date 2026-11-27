@@ -196,29 +196,44 @@ For FreeRTOS, a higher-priority task woken by an ISR may require the port-specif
 **Interview takeaway:** An ISR should capture the event and defer substantial work. Its latency and execution time both affect real-time deadlines.
 
 ### Can you pass parameters to or return a value from an ISR? {E}
-**Short answer:** No. The hardware calls the ISR asynchronously, at an arbitrary point in the program, so there is no caller to supply arguments or to receive a return value. ISRs are declared `void handler(void)`. Data goes in and out through shared variables, buffers, queues or RTOS objects.
+A raw hardware interrupt is not an ordinary C function call. The processor enters an exception handler using the architecture's exception convention, so it does not supply arbitrary C arguments or consume a normal return value.
 
-**Why it is impossible**
+#### 1. Cortex-M example
 
-- The CPU jumps to the address in the vector table when the interrupt occurs; it does not set up argument registers.
-- The interrupted code did not call the ISR and does not expect any result.
-- On Cortex-M, the exception entry pushes `r0`–`r3`, `r12`, `lr`, `pc`, `xPSR` automatically and loads `LR` with an `EXC_RETURN` value; the ISR returning normally restores everything. Any value left in `r0` is discarded.
+```c
+void TIM2_IRQHandler(void)
+{
+    // Check and clear the timer status.
+    timer_event = 1;
+}
+```
 
-**How to get data in and out**
+The vector table contains the handler entry address. Cortex-M hardware saves a basic exception frame and uses an exception-return sequence; the exact handler declaration follows the toolchain's ABI.
 
-| Direction | Mechanism |
-|---|---|
-| ISR → main/tasks | `volatile` flags, ring buffers, RTOS queues/notifications/semaphores given "FromISR" |
-| Main → ISR (configuration) | `volatile` variables set before enabling the interrupt |
-| Context for a shared handler | a static table indexed by peripheral instance, e.g. `uart_ctx[instance]` |
+#### 2. How to communicate information
 
-**Exceptions to know**
+The handler can read device registers, update a suitable shared flag, enqueue a message or notify a task. Use synchronization appropriate to the ISR and consumer.
 
-- **SVC (supervisor call)** handlers do receive "arguments": the caller's `r0`–`r3` are in the stacked exception frame, and the handler can read them (and write a return value into the stacked `r0`). RTOS kernels and secure-call gateways use this.
-- **HardFault handlers** commonly read the stacked frame to find the faulting PC; they get the stack pointer through a small assembly wrapper.
-- On some other architectures (e.g. AVR with `ISR()` macros, or the `interrupt` keyword on older compilers), the compiler generates special prologue/epilogue code; still no parameters.
+#### 3. OS interrupt callbacks are different
 
-**Linux contrast:** a Linux interrupt handler is registered with `request_irq()` and does receive arguments (`int irq, void *dev_id`) and returns `IRQ_HANDLED`/`IRQ_NONE`, because the kernel's generic interrupt code calls it like a normal function.
+Linux, for example, invokes registered driver handlers through its IRQ framework:
+
+```c
+static irqreturn_t my_irq(int irq, void *dev_id)
+{
+    struct my_device *dev = dev_id;
+
+    if (!device_irq_pending(dev))
+        return IRQ_NONE;
+
+    device_ack_irq(dev);
+    return IRQ_HANDLED;
+}
+```
+
+The kernel supplies irq and dev_id and uses the returned status. This is a software callback called by the IRQ framework, not the raw architectural exception entry.
+
+**Interview takeaway:** Raw ISR signatures follow the architecture/compiler convention; OS frameworks can supply arguments and return status through their own handler API.
 
 ### What is interrupt latency and how do you reduce it? {M}
 **Short answer:** Interrupt latency is the time from the interrupt signal being asserted until the first instruction of the ISR runs. On Cortex-M3/M4 the hardware minimum is 12 clock cycles with zero-wait-state memory (Cortex-M0 is 16, M0+ 15). In real systems it is dominated by software: periods with interrupts disabled, higher-priority interrupts running, and memory wait states.
