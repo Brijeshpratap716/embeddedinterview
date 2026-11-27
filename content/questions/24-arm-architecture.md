@@ -792,6 +792,23 @@ MSR ICC_EOIR1_EL1, X0 // end priority
 
 **Interview takeaway:** The GIC routes and prioritizes interrupts; the device driver handles the interrupt source.
 
+#### End-to-end interrupt flow in Linux
+
+Assume an I2C-connected touch controller asserts a GPIO interrupt. The GPIO controller may route or cascade that interrupt through a parent interrupt controller; the GIC presents the relevant interrupt to the CPU.
+
+```text
+Peripheral IRQ -> GPIO / interrupt routing -> GIC
+    -> CPU exception vector -> Linux IRQ subsystem
+    -> device driver's registered handler
+    -> acknowledge device and complete interrupt
+```
+
+GICv3's distributor handles shared interrupt configuration, redistributors hold per-processor SGI/PPI configuration and related state, and CPU system-register interfaces handle acknowledgement and priority operations. For MSI-based devices, an ITS can translate device/event identifiers to LPIs when that facility is implemented.
+
+A level-triggered device interrupt generally requires its source to be serviced or deasserted before it is allowed to retrigger. Otherwise, repeated interrupts may occur even after end-of-interrupt at the GIC. Read /proc/interrupts to examine interrupt counts and CPU distribution, and inspect the device's own status registers when diagnosing missing or repeated interrupts.
+
+The raw assembly illustration assumes a valid acknowledged interrupt and a suitable GIC configuration; spurious INTIDs and split EOI/deactivate mode require their documented handling. Ordinary Linux device drivers use request_irq or request_threaded_irq instead of manipulating the GIC directly.
+
 ### What is TrustZone? {M}
 **Short answer:** TrustZone provides hardware-backed security state separation. A typical system has a normal world and a secure world, with controlled transitions and protected resources.
 
