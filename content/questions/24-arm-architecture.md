@@ -1566,3 +1566,37 @@ Exact internal function names and EOI placement depend on the kernel version and
 
 Note: ARM Cortex-M uses an NVIC instead of a GIC and has a different hardware context-saving mechanism.
 
+### What are L1, L2 and L3 caches? {M}
+
+They are cache hierarchy levels, typically progressing from smaller and faster to larger and slower; sharing depends on the processor.
+
+
+### What is a cache line? {M}
+
+The fixed-size unit of cache allocation and coherence, commonly 64 bytes on modern CPUs.
+
+
+### What is false sharing? {M}
+
+Independent variables on the same cache line cause unnecessary coherence traffic when different cores write them.
+
+
+### What is the MESI protocol? {M}
+
+A coherence protocol with Modified, Exclusive, Shared and Invalid cache-line states.
+
+
+### What is write-back versus write-through caching? {M}
+
+Write-back delays lower-level writes until eviction or cleaning; write-through propagates writes to the next level promptly.
+
+
+### What is cache eviction? {M}
+
+Replacing a cached line to make space for another; dirty lines may require writeback.
+
+
+### What are spatial and temporal locality? {M}
+
+Spatial locality means accessing nearby addresses; temporal locality means reusing recently accessed data.
+
