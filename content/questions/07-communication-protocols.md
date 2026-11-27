@@ -658,16 +658,32 @@ Classical-only CAN nodes generally cannot participate transparently in a bus car
 **Interview takeaway:** CAN FD improves payload efficiency and potential throughput. It is not simply Classical CAN with a larger buffer; frame format, CRC and timing differ.
 
 ### Why does a CAN bus need 120 Ω termination? {E}
-**Short answer:** A CAN bus is a differential transmission line (twisted pair) with a characteristic impedance of about 120 Ω. A 120 Ω resistor at **each end** matches that impedance so signals are absorbed instead of reflecting back and corrupting bits. The two resistors in parallel (60 Ω) also provide the load that pulls the bus back to the recessive state quickly when no node drives it dominant.
+High-speed CAN commonly uses 120-ohm termination resistors at the two physical ends of the main bus. Termination matches the approximate characteristic impedance of the twisted pair and reduces signal reflections.
 
-**Quick check:** with all nodes powered off, measure the resistance between CAN_H and CAN_L: about **60 Ω** means both terminators are present; **120 Ω** means one is missing; much lower means too many terminators (or a short).
+#### 1. Bus topology
 
-**Design details**
+```text
+120 Ω across CAN_H/L                      120 Ω across CAN_H/L
+        |                                          |
+        +========= main twisted-pair bus ==========+
+                   |                     |
+                Node A                Node B
+                 short stubs
+```
 
-- Terminate only the two physical **ends** of the bus, not every node; nodes in the middle connect with short stubs (a few tens of cm at high bit rates).
-- **Split termination:** two 60 Ω resistors in series with a capacitor (e.g. 4.7 nF) from the midpoint to ground improves EMC by filtering common-mode noise.
-- Missing termination may still "work" at low speed on a short bench setup, then fail in the vehicle or at higher bit rates: a classic bring-up trap.
-- CAN levels: recessive ≈ 2.5 V on both lines (differential ~0 V); dominant ≈ CAN_H 3.5 V, CAN_L 1.5 V (differential ~2 V).
+The resistors are across the differential pair, not in series with the signal.
+
+#### 2. Resistance check
+
+With the network safely powered down and no other paths affecting the measurement, two 120-ohm terminations in parallel give about 60 ohms between CAN_H and CAN_L.
+
+One termination typically gives about 120 ohms; extra terminations can lower the measured resistance and overload drivers.
+
+#### 3. Signal integrity
+
+Use a suitable cable, short stubs and the network's required grounding and common-mode design. Some systems use split termination to improve common-mode behavior.
+
+**Interview takeaway:** Terminate the two ends of a high-speed CAN trunk, not every node. Termination rules depend on the physical-layer standard and topology.
 
 ### What is a CAN bit time and how are its segments configured? {H}
 **Short answer:** Each CAN bit is divided into **time quanta (tq)** derived from the CAN controller clock through a prescaler. The bit consists of the **Sync segment** (always 1 tq, where edges are expected), the **Propagation segment** (compensates for signal round-trip delays), **Phase segment 1** and **Phase segment 2**. The **sample point** is between phase 1 and phase 2, typically at 75–87.5% of the bit. The **SJW** (synchronisation jump width) limits how much the controller may lengthen phase 1 or shorten phase 2 to resynchronise on edges.
