@@ -730,38 +730,38 @@ If processing exceeds the period, the delay-until operation may return without b
 **Interview takeaway:** Delay is relative; delay-until maintains a periodic release schedule. Neither guarantees the task actually executes exactly at the wake tick.
 
 ### How do you protect a shared resource between a task and an ISR? {M}
-**Short answer:** A mutex cannot be used, because an ISR cannot block or own a mutex. Instead: protect the task's short access with a **critical section** that masks the interrupt (`taskENTER_CRITICAL()` / `taskEXIT_CRITICAL()`, which raises `BASEPRI` on Cortex-M3+); design the data flow so each variable has a **single writer** (lock-free ring buffer); or pass data through an RTOS **queue/stream buffer** and let only the task own the resource.
+A shared resource between a task and an ISR requires synchronization that does not block in interrupt context.
 
-**Options**
+#### 1. Event and data transfer
 
-1. **Critical section in the task**
+Prefer an ISR-safe queue or notification when the ISR produces work for a task.
 
 ```c
-/* task side */
-taskENTER_CRITICAL();
-uint32_t count = shared_count;    /* read-modify-write that the ISR also does */
-shared_count = 0;
-taskEXIT_CRITICAL();
+void IRQ_Handler(void)
+{
+    BaseType_t woken = pdFALSE;
+    uint32_t value = read_and_ack_device();
 
-/* ISR side: if a higher-priority ISR can also touch it */
-UBaseType_t s = taskENTER_CRITICAL_FROM_ISR();
-shared_count++;
-taskEXIT_CRITICAL_FROM_ISR(s);
+    xQueueSendFromISR(queue, &value, &woken);
+    portYIELD_FROM_ISR(woken);
+}
 ```
 
-Keep it a few instructions long; it delays all interrupts at or below the masked priority.
+Handle queue-full errors and follow the interrupt-priority restrictions.
 
-2. **Disable only that interrupt** (`NVIC_DisableIRQ` / `NVIC_EnableIRQ`) around the access, when only one ISR is involved and you do not want to affect other interrupts.
+#### 2. Shared counter or short update
 
-3. **Lock-free single-producer/single-consumer structures:** the ISR writes the head, the task writes the tail; no locks needed on a single core (add barriers on Cortex-M7/multi-core).
+Use a supported lock-free atomic operation or an appropriate RTOS critical-section API. On a single-core system, masking the relevant interrupt can protect the task's short update, provided the ISR is within the masked set. Save/restore mask state when required.
 
-4. **Message passing:** the ISR sends the event/data to a queue, stream buffer or task notification; the task is the only one that touches the resource. This is usually the cleanest design.
+#### 3. What not to do
 
-5. **Atomic operations** for single variables (C11 atomics on Cortex-M3+).
+Do not take a blocking mutex from an ISR. Do not rely solely on volatile for multi-step updates. Local interrupt masking does not stop DMA or other CPUs.
 
-**Do not:** take a mutex in an ISR, call blocking APIs from it, or rely on `volatile` alone for read-modify-write operations.
+#### 4. Ownership example
 
-**Interrupt priority check:** if the ISR calls `...FromISR` APIs, its priority must be at or below `configMAX_SYSCALL_INTERRUPT_PRIORITY` (numerically ≥).
+For a DMA receive buffer, the ISR signals completion and transfers ownership according to the driver protocol. The task accesses the completed buffer only after the required cache and ordering synchronization.
+
+**Interview takeaway:** Use a handoff instead of sharing mutable state wherever practical. Select synchronization according to ISR priority, CPU count and device ownership.
 
 ### How do you measure task execution time and CPU load in an RTOS? {M}
 **Short answer:** Use the RTOS's run-time statistics (FreeRTOS `configGENERATE_RUN_TIME_STATS` with a fast timer, then `vTaskGetRunTimeStats()`), measure idle time to compute CPU load (`load = 1 − idle time / total time`), toggle GPIOs at task entry/exit and watch them on a logic analyser, or use trace tools (Percepio Tracealyzer, SEGGER SystemView) that record every context switch and interrupt with timestamps.
