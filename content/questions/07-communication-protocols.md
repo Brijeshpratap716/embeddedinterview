@@ -890,33 +890,37 @@ TCP and UDP do not provide encryption by themselves. Use suitable TLS, DTLS or a
 **Interview takeaway:** Choose based on whether every byte must arrive in order or whether timely individual messages are more important. Neither protocol guarantees a real-time deadline.
 
 ### What is MQTT, and how do you make an MQTT client secure? {M}
-**Short answer:** MQTT is a lightweight **publish/subscribe** messaging protocol over TCP, widely used in IoT. Devices connect to a **broker**, **publish** messages to hierarchical **topics** (e.g. `factory/line1/temp`) and **subscribe** to topics they are interested in; the broker forwards messages, so senders and receivers never talk directly. It offers three **QoS** levels, retained messages, a "last will" message for unexpected disconnects, and keep-alive. Security comes from **TLS** (encryption and server authentication), **client authentication** (X.509 client certificates or username/password/tokens), and **authorisation** (each client can only publish/subscribe to its own topics).
+MQTT is a lightweight publish/subscribe application protocol commonly used for IoT messaging through a broker.
 
-**QoS levels**
+#### 1. Message flow
 
-| QoS | Guarantee | Mechanism | Use |
-|---|---|---|---|
-| 0 | at most once | fire and forget | frequent telemetry where loss is fine |
-| 1 | at least once | PUBACK; duplicates possible | most commands and events (make handlers idempotent) |
-| 2 | exactly once | 4-step handshake | rarely needed; expensive |
+```text
+Sensor client --> publish topic "sensor/temp" --> broker
+                                                  |
+                                         subscribed client
+```
 
-**Useful features**
+Publishers and subscribers do not need direct connections to each other. Topic names and subscription filters determine message delivery.
 
-- **Retained message:** the broker keeps the last message on a topic and sends it to new subscribers (current state).
-- **Last Will and Testament:** the broker publishes it if the client disappears without disconnecting (device offline detection).
-- **Keep-alive** pings detect dead connections; **persistent sessions** queue QoS 1/2 messages while a client is offline.
-- **MQTT 5** adds reason codes, message expiry, user properties, shared subscriptions and request/response.
+#### 2. Quality of Service
 
-**Securing an embedded MQTT client**
+| QoS | Delivery semantics |
+|---|---|
+| 0 | At most once |
+| 1 | At least once; duplicates possible |
+| 2 | Exactly once at the MQTT protocol delivery level |
 
-1. **TLS 1.2/1.3** on port 8883, with the broker's CA certificate pinned in the device; verify the server certificate and hostname.
-2. **Mutual TLS:** a unique client certificate and private key per device, ideally generated and stored in a secure element or TrustZone/secure storage (never the same key in every device).
-3. **Least-privilege topics:** broker ACLs so device 123 can only publish to `devices/123/#` and subscribe to its own command topic.
-4. **Validate payloads** from command topics (sizes, ranges); treat the broker as untrusted input.
-5. **Time:** certificate validation needs a correct clock (SNTP or RTC), and plan for certificate rotation before expiry.
-6. **Resilience:** reconnect with exponential back-off and jitter, buffer messages while offline, and secure OTA for updates.
+Application side effects still need idempotency or appropriate state handling, especially across retries and reconnects.
 
-**Embedded clients:** Eclipse Paho Embedded C, coreMQTT (FreeRTOS), Zephyr's MQTT library, lwIP's MQTT app; with mbedTLS or wolfSSL for TLS.
+#### 3. Secure embedded client
+
+Use authenticated TLS with server certificate validation, secure credential storage, per-client identity and restricted topic permissions. Keep trust roots and time validation appropriate to the platform. Do not disable certificate checks to fix connection errors.
+
+#### 4. Reliability
+
+Use bounded reconnect backoff, keepalive, explicit session/retained-message policy and a limited offline queue. Consider stale telemetry and local operation during network loss.
+
+**Interview takeaway:** MQTT QoS controls messaging delivery, not device safety or confidentiality. Secure the connection, broker permissions and application-level handling separately.
 
 ### What is Bluetooth Low Energy, and how do GAP and GATT work? {M}
 **Short answer:** Bluetooth Low Energy (BLE) is a 2.4 GHz wireless protocol designed for very low power, short-range communication (sensors, wearables, phone accessories). **GAP** (Generic Access Profile) defines how devices discover and connect: **advertisers/peripherals** broadcast advertising packets, **scanners/centrals** listen and initiate connections. **GATT** (Generic Attribute Profile) defines how data is exchanged once connected: a **server** exposes **services**, each containing **characteristics** (values with properties: read, write, notify, indicate), identified by UUIDs, and a **client** reads, writes or subscribes to them.
