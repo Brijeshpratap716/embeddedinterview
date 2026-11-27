@@ -909,6 +909,10 @@ full when top1 == top2 + 1 (or top1 > top2 with inclusive indices)
 
 **Real-world analogy:** a classic process memory layout uses the same idea — the heap grows upward and the stack grows downward towards each other, with a collision meaning out of memory.
 
+#### Shared capacity invariant
+
+Stack 1 grows from index 0 upward; stack 2 grows from CAP−1 downward. The free space is top2−top1−1. For CAP=4, push1(A),push2(B),push1(C),push2(D) occupies all four slots. Neither can push again until either pops. This is more flexible than splitting storage into two fixed halves, but does not reserve a minimum capacity for each client. Add quotas if a client must always have room.
+
 ### Implement a queue using two stacks. {M}
 **Short answer:** Use an **in** stack for enqueue and an **out** stack for dequeue. Enqueue pushes onto `in`. Dequeue pops from `out`; if `out` is empty, first move every element from `in` to `out`, which reverses their order so the oldest element ends up on top. Each element is moved at most once, so operations are O(1) amortised.
 
