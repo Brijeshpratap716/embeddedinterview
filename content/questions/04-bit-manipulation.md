@@ -78,32 +78,38 @@ Use this mask with the documented UART control register. A dedicated set/clear r
 **Interview takeaway:** OR sets, AND with inverted mask clears, XOR toggles, AND tests. Do not shift by a negative count or a count greater than or equal to the operand width.
 
 ### Is right shift of a negative number arithmetic or logical? {M}
-**Short answer:** For unsigned types `>>` is always a logical shift (zeros come in from the left). For a negative signed value the result is **implementation-defined**; GCC, Clang and Arm compilers do an arithmetic shift that copies the sign bit, but portable code must not rely on it.
+A logical right shift fills vacated high bits with zeros. An arithmetic right shift replicates the sign bit. In traditional C standards, right shifting a negative signed integer is implementation-defined; an unsigned right shift is logical.
 
-**The two kinds of right shift**
-
-- **Logical:** fills the vacated high bits with 0. `0xF0000000u >> 4 == 0x0F000000u`.
-- **Arithmetic:** fills them with copies of the sign bit, so the value stays negative. `-16 >> 2 == -4` on GCC (`0xFFFFFFF0 → 0xFFFFFFFC`).
-
-On Arm these are two different instructions, `LSR` and `ASR`. The compiler picks `LSR` for unsigned and `ASR` for signed operands.
-
-**Left shift is worse.** Left-shifting a negative value, or shifting a 1 into or past the sign bit of a signed int, is **undefined behaviour** in C99/C11/C17. C23 made the representation two's complement but the overflow cases are still problems. An optimiser is allowed to assume undefined behaviour never happens and can delete code that depends on it.
-
-**Arithmetic shift is not exact division.** `-7 >> 1` gives `-4` (rounds toward minus infinity) while `-7 / 2` gives `-3` (C rounds toward zero). That is why compilers emit extra fix-up instructions when you divide a signed value by a power of two.
-
-**Rule for interviews and production:** do bit manipulation on `uint8_t`/`uint16_t`/`uint32_t`. If you must sign-extend a field, do it explicitly:
+#### 1. Example on a typical two's-complement 32-bit target
 
 ```c
-/* sign-extend the low 'bits' bits of x */
-int32_t sign_extend(uint32_t x, unsigned bits)
-{
-    uint32_t m = 1u << (bits - 1);
-    x &= (1u << bits) - 1u;          /* bits < 32 */
-    return (int32_t)((x ^ m) - m);
-}
+int32_t a = -8;
+uint32_t b = (uint32_t)a;
+
+int32_t s = a >> 1;
+uint32_t u = b >> 1;
 ```
 
-**Follow-up:** "What does `(int8_t)0x80 >> 1` give?" The `int8_t` is promoted to `int` (-128) first, then shifted: -64 on GCC. Integer promotion happens before every shift.
+| Operation | Typical bit pattern | Value |
+|---|---|---:|
+| a | 0xFFFFFFF8 | -8 |
+| Arithmetic right shift | 0xFFFFFFFC | -4 |
+| Logical right shift | 0x7FFFFFFC | 2147483644 |
+
+#### 2. ARM instructions
+
+```asm
+ASR W0, W0, #1  // Arithmetic
+LSR W1, W1, #1  // Logical
+```
+
+The compiler chooses an instruction according to operand type and implementation semantics.
+
+#### 3. Why division is different
+
+On a target using arithmetic right shift, -3 >> 1 commonly gives -2. In C99 and later, -3 / 2 gives -1 because signed integer division truncates toward zero.
+
+**Interview takeaway:** Use unsigned types for portable logical shifts. Do not assume negative signed shifts are equivalent to division, and never use out-of-range shift counts.
 
 ### How do you check if a number is a power of two? {E}
 **Short answer:** `x && !(x & (x - 1))`. A power of two has exactly one bit set, and `x & (x - 1)` clears the lowest set bit, so the result is zero only when there was a single bit.
