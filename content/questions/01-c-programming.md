@@ -1319,31 +1319,57 @@ Casting before shifting ensures unsigned 32-bit arithmetic. On a common 32-bit-i
 **Interview takeaway:** Small integer operands may be promoted before arithmetic. Watch the type of intermediate expressions, especially when manipulating registers, shifts and masks.
 
 ### What happens when you compare signed and unsigned integers? {M}
-**Short answer:** If the two operands have the same rank (e.g. `int` and `unsigned int`), the usual arithmetic conversions convert the **signed** one to **unsigned**. A negative number becomes a very large positive one, so comparisons give the "wrong" answer.
+C applies the **usual arithmetic conversions** to operands of comparisons. Depending on type rank and representable range, a signed value can be converted to an unsigned value.
+
+#### 1. Unexpected result
 
 ```c
-int i = -1;
-unsigned int u = 1;
-if (i < u) puts("less");       /* not printed: -1 becomes 0xFFFFFFFF */
+int a = -1;
+unsigned int b = 1;
 
-if (-1 < sizeof(int)) puts("yes");   /* not printed: sizeof is size_t (unsigned) */
-
-for (unsigned i = 10; i >= 0; i--) { }   /* infinite loop: unsigned is always >= 0 */
-
-size_t len = strlen(s);
-if (len - 1 >= 0) { }          /* always true; if len is 0, len - 1 wraps to SIZE_MAX */
+if (a < b)
+    printf("True");
+else
+    printf("False");
 ```
 
-**When it does not happen:** if the signed type is wider and can represent all values of the unsigned one, the unsigned operand is converted to the signed type instead. `long long x = -1; unsigned int u = 1; x < u` is true, because `u` becomes `long long`. Small types (`uint8_t`, `uint16_t`) are promoted to `int` first, so `int8_t a = -1; uint8_t b = 1; a < b` is true.
+**Output:** `False`
 
-**How to avoid it**
+Because both have the same rank, a is converted to unsigned int. Conversion of -1 gives UINT_MAX.
 
-- Compile with `-Wall -Wextra` (which includes `-Wsign-compare`) and fix every warning.
-- Use one signedness consistently for sizes and indexes (`size_t`), and check for negative values before converting signed to unsigned.
-- Compare explicitly: `if (i < 0 || (unsigned)i < u)`.
-- For "count down to zero" with unsigned indices, use `for (size_t i = n; i-- > 0; )`.
+On a typical 32-bit target:
 
-**C23** adds checked-arithmetic helpers (`ckd_add`, `ckd_sub`, `ckd_mul` in `<stdckdint.h>`), and GCC/Clang have `__builtin_add_overflow` for overflow-safe arithmetic.
+| Operand | Before conversion | After conversion |
+|---|---:|---:|
+| a | -1 | 4294967295 |
+| b | 1 | 1 |
+
+The converted comparison is false.
+
+#### 2. Why this matters in embedded code
+
+```c
+int index = -1;
+size_t len = 16;
+
+if (index < len) {
+    // Do not rely on mixed-type comparison alone.
+}
+```
+
+The correct check must first reject a negative index.
+
+```c
+if (index >= 0 && (size_t)index < len) {
+    // Access buffer[index] if buffer is valid.
+}
+```
+
+#### 3. Does unsigned always win?
+
+No. If a higher-ranked signed type can represent all values of the unsigned operand, the unsigned operand is converted to the signed type. Otherwise, the rules may select an unsigned common type.
+
+**Interview takeaway:** Do not mix signed error values and unsigned lengths without checking their ranges. Enable compiler warnings such as `-Wsign-compare`.
 
 ### What is the difference between ++i and i++? {E}
 **Short answer:** `++i` (pre-increment) increments `i` and gives the **new** value. `i++` (post-increment) gives the **old** value, and `i` is incremented as a side effect. Used alone as a statement, for example in a `for` loop, they generate identical code for integers; the difference only matters when the result is used.
