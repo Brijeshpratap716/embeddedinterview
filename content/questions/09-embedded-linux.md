@@ -9,34 +9,24 @@ desc: The full boot flow from boot ROM to U-Boot to start_kernel to init, root f
 Embedded Linux roles care about the whole system: how the board boots, how the image is built, and how it is updated in the field. Interviewers love "walk me through the boot process" because it shows whether you have actually brought up a board. Each answer starts with the short version, then goes into the detail you would add if the interviewer keeps asking.
 
 ### Walk through the complete boot process of an embedded Linux system, from power-on to the login prompt. {M}
-**Short answer:** Boot ROM → first-stage loader (SPL/FSBL) in on-chip SRAM, which initialises DRAM → full bootloader (U-Boot) in DRAM → kernel + device tree (+ initramfs) loaded and started → kernel initialises the CPU, memory, interrupts, scheduler and drivers → mounts the root filesystem → starts `/sbin/init` as PID 1 → init starts services and a `getty`/login or the product application.
+Embedded Linux boot proceeds from reset through platform firmware, bootloader, Linux kernel and userspace. Exact stages differ between SoCs.
 
-**Stage by stage (typical ARM SoC)**
+#### 1. Typical boot sequence
 
-| Stage | Runs from | Main job |
-|---|---|---|
-| 1. Boot ROM | on-chip ROM (mask ROM) | read boot pins/fuses, pick boot device (eMMC, SD, SPI NOR, USB, UART), load first stage into SRAM, optionally verify its signature |
-| 2. SPL / FSBL | on-chip SRAM (tens–hundreds of KB) | clocks, PMIC, **DRAM controller init and training**, load the next stage into DRAM |
-| 3. (ARM64) TF-A BL31 | secure DRAM/SRAM | EL3 secure monitor, PSCI (CPU on/off, suspend), sometimes OP-TEE (BL32) |
-| 4. U-Boot proper | DRAM | console, storage, network, environment, `bootcmd`; loads kernel, DTB, initramfs |
-| 5. Kernel | DRAM | decompress (zImage) or run directly (Image), `head.S` → `start_kernel()` → drivers → mount root |
-| 6. init (PID 1) | user space | systemd / BusyBox init / SysVinit starts services, mounts other filesystems, starts getty or the app |
+<div style="max-width:650px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 365" width="100%" role="img" aria-label="Boot ROM to firmware, U-Boot, kernel, root filesystem, PID 1 and login">
+<rect x="13" y="5" width="314" height="44" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="22" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Boot ROM</text><text x="170" y="37" text-anchor="middle" font-size="10" fill="currentColor">Select boot medium and load initial firmware</text><path d="M170 49 v16 m-4-5 4 5 4-5" stroke="currentColor" fill="none"/><rect x="13" y="65" width="314" height="44" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="82" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Early firmware / SPL</text><text x="170" y="97" text-anchor="middle" font-size="10" fill="currentColor">Initialize required clocks, RAM and security state</text><path d="M170 109 v16 m-4-5 4 5 4-5" stroke="currentColor" fill="none"/><rect x="13" y="125" width="314" height="44" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="142" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">U-Boot</text><text x="170" y="157" text-anchor="middle" font-size="10" fill="currentColor">Load kernel Image, DTB, optional initramfs</text><path d="M170 169 v16 m-4-5 4 5 4-5" stroke="currentColor" fill="none"/><rect x="13" y="185" width="314" height="44" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="202" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Linux kernel</text><text x="170" y="217" text-anchor="middle" font-size="10" fill="currentColor">MMU, memory, scheduler, interrupts, drivers</text><path d="M170 229 v16 m-4-5 4 5 4-5" stroke="currentColor" fill="none"/><rect x="13" y="245" width="314" height="44" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="262" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Root filesystem / PID 1</text><text x="170" y="277" text-anchor="middle" font-size="10" fill="currentColor">Mount filesystems and start init</text><path d="M170 289 v16 m-4-5 4 5 4-5" stroke="currentColor" fill="none"/><rect x="13" y="305" width="314" height="44" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="322" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Services / login</text><text x="170" y="337" text-anchor="middle" font-size="10" fill="currentColor">getty, authentication, shell or UI</text></svg></div>
 
-**Why so many stages?** At power-on DRAM does not work yet: its controller must be configured and trained, which needs code. The boot ROM is tiny and fixed, and on-chip SRAM is small, so a small stage that fits in SRAM brings up DRAM and then loads the large bootloader.
+#### 2. Example: Arm application SoC
 
-**What gets passed along**
+Boot ROM is immutable on-chip code. It reads the boot source and starts platform firmware. Some systems use SPL in SRAM to initialize DRAM, trusted firmware or a system controller before full U-Boot. Others have different firmware arrangements.
 
-- Boot ROM → SPL: nothing much; the SPL image header tells the ROM where to load it.
-- U-Boot → kernel: the **kernel command line** (`bootargs`), the **device tree blob** address and, optionally, the **initramfs** address. On ARM64 the DTB address is in register `x0`.
-- Kernel → init: the command line options it did not consume, and the environment.
+U-Boot loads the Linux image and hardware description, supplies boot arguments and enters the kernel using its boot protocol. Linux initializes memory, interrupts, scheduler, driver subsystems and filesystems.
 
-**What to say if asked "where would you look if it hangs?"**
+#### 3. Userspace
 
-- No output at all: boot ROM did not find a valid image (check boot pins, image header, signature).
-- SPL prints then stops: DRAM init or the next-stage load.
-- U-Boot works but "Starting kernel ..." is the last line: wrong load address, wrong DTB, wrong `console=`, or the kernel crashed before the console driver started. Enable `earlycon` on the command line.
-- Kernel panics with "VFS: Unable to mount root fs": wrong `root=`, missing storage driver or filesystem driver.
-- "No working init found": `/sbin/init` missing, wrong architecture binary, or missing shared libraries.
+The kernel executes the first userspace init program. It starts necessary services, mounts additional filesystems, configures networking and launches a login service or application. Android normally uses its own /init.
+
+**Interview takeaway:** Boot is a dependency chain. Identify the last successful stage before debugging; do not assume every SoC uses SPL or the same trusted-firmware order.
 
 ### What happens inside U-Boot from reset until it boots the kernel? {M}
 **Short answer:** U-Boot starts in architecture assembly (`start.S`), sets up the CPU and a temporary stack, runs `board_init_f()` (the pre-relocation init list: clocks, serial, DRAM), relocates itself to the top of DRAM, then runs `board_init_r()` (post-relocation init: MMC, flash, environment, network, console) and finally `main_loop()`, which either waits for commands or runs `bootcmd` after the `bootdelay` countdown.
