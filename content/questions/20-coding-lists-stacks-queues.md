@@ -953,6 +953,10 @@ bool sq_pop(squeue_t *q, int *v)
 
 **Why interviewers ask:** to test amortised analysis and thinking in terms of invariants ("the front of the queue is always the top of `out` when `out` is non-empty").
 
+#### Amortized versus worst-case cost
+
+Push 1,2,3 onto the input stack. First pop transfers all three to output, reversing their order, and returns 1. The next two pops return 2 and 3 without transferring. Each item is pushed and popped at most once per stack, so amortized time is O(1), but a single pop can take O(n). In a hard real-time system, a circular array gives a simpler constant worst-case operation count.
+
 ### Implement a min stack (getMin in O(1)). {M}
 **Short answer:** Keep a second stack that stores, at each level, the minimum of all elements at or below that level. On push, push `min(value, current minimum)` onto the min stack; on pop, pop both stacks. `getMin` simply reads the top of the min stack. Every operation is O(1).
 
