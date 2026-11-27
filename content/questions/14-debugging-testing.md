@@ -125,40 +125,19 @@ Use ITM/SWO or RTT for low-overhead events and timestamps. Use ETM when the exec
 **Interview takeaway:** Trace is not infinitely fast. Check buffer overflow, timestamp accuracy, target support and whether the implementation can block.
 
 ### How do you find memory corruption and stack overflows in firmware? {M}
-**Short answer:** Detect them as close to the cause as possible: **stack overflows** with MPU guard regions below each stack (immediate MemManage fault), the Armv8-M stack limit registers (MSPLIM/PSPLIM), RTOS stack checking (canary patterns checked at context switches), and high-water marks from stack painting; **memory corruption** with data watchpoints on the corrupted variable, canary values around buffers and heap blocks, MPU regions that make code and constant data read-only and catch NULL pointer access, and host-side tools (AddressSanitizer, Valgrind) by running the same code in unit tests on a PC.
+Memory corruption occurs when code writes outside an object's valid storage, uses freed memory or exceeds a stack boundary.
 
-**Stack painting and high-water mark**
+#### Investigation
+- Enable compiler warnings, AddressSanitizer and UndefinedBehaviorSanitizer in host tests.
+- Add canaries, guard regions or MPU stack protection where supported.
+- Fill unused stack with a known pattern and measure the high-water mark.
+- Set a hardware watchpoint on a damaged location.
+- Verify DMA buffer size, ownership, alignment and cache maintenance.
 
-```c
-#include <stdint.h>
-#include <stddef.h>
+#### Example
+A task with a 512-byte stack declares a 600-byte local buffer. Increase or redesign the stack only after inspecting the actual call chain and worst-case nesting.
 
-#define STACK_WORDS 512
-static uint32_t task_stack[STACK_WORDS];              /* grows down from the top */
-
-void stack_paint(void) { for (size_t i = 0; i < STACK_WORDS; i++) task_stack[i] = 0xA5A5A5A5u; }
-
-size_t stack_free_words(void)                         /* words never touched since painting */
-{
-    size_t n = 0;
-    while (n < STACK_WORDS && task_stack[n] == 0xA5A5A5A5u) n++;
-    return n;
-}
-```
-
-**Typical sources of corruption**
-
-| Source | How to catch it |
-|---|---|
-| Buffer overrun (array index, `strcpy`, missing length check on received data) | watchpoints, canaries, bounds-checked functions, static analysis |
-| Stack overflow into adjacent RAM (other stacks, globals) | MPU guard, PSPLIM, RTOS checks, large margins |
-| Use after free / double free | pools with poisoning (fill freed blocks with a pattern), heap integrity checks, ASan on host |
-| DMA writing beyond its buffer or into a freed buffer | check DMA lengths, MPU, guard patterns after DMA buffers |
-| Cache maintenance errors (Cortex-M7) | aligned DMA buffers, invalidate/clean correctly or use non-cacheable regions |
-| ISR and task race on shared structures | critical sections, review all ISR-shared data |
-| Wild pointers (uninitialised, stale function pointers) | initialise everything, `-Wall -Wextra`, static analysis |
-
-**Linker tricks:** place stacks at the **bottom** of RAM (below globals) so an overflow runs into non-existent memory or a guard region and faults immediately, rather than silently overwriting variables.
+**Interview takeaway:** Stack watermarking estimates observed usage, not a mathematical worst-case guarantee. Test interrupt nesting and fault paths as well.
 
 ### How do you unit test embedded C code? {M}
 **Short answer:** Separate hardware access from logic behind thin interfaces (HAL functions, function pointers or link-time substitution), then compile and run the logic **on the host PC** with a test framework (Unity, CppUTest, GoogleTest, CMocka), replacing hardware functions with **fakes or mocks** (CMock, FFF, hand-written fakes). Run the tests on every commit in CI, measure coverage, and add on-target and hardware-in-the-loop tests for what only real hardware can show.
