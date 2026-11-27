@@ -957,39 +957,51 @@ Optimized string and memory routines may check several bytes at a time. Never re
 **Interview takeaway:** The expression detects whether any zero byte exists, not necessarily which bytes are zero. Use unsigned arithmetic and width-appropriate constants.
 
 ### What is a bit mask and how is GENMASK built? {M}
-**Short answer:** A mask is a constant whose 1 bits select the bits you want to read or change. `GENMASK(h, l)` builds a contiguous run of ones from bit `l` to bit `h` (inclusive) by shifting all-ones, which avoids the undefined `1u << 32`.
+A bit mask is a value that selects particular bit positions. A GENMASK-style operation creates a contiguous inclusive field between a high bit h and low bit l.
+
+#### 1. Construct a 32-bit mask
 
 ```c
-#define GENMASK(h, l)  (((~0u) << (l)) & (~0u >> (31 - (h))))
-/* GENMASK(7, 4)  == 0x000000F0 */
-/* GENMASK(31, 0) == 0xFFFFFFFF  (no overflow) */
+bool genmask32(unsigned h, unsigned l, uint32_t *out)
+{
+    if (!out || h >= 32 || l > h)
+        return false;
+
+    *out = (UINT32_MAX << l) &
+           (UINT32_MAX >> (31U - h));
+    return true;
+}
 ```
 
-**How it is built**
+The left operand sets bits 31:l. The right operand sets bits h:0. Their intersection selects exactly bits h:l.
 
-- `~0u << l` gives ones from bit `l` upward: for `l = 4`, `0xFFFFFFF0`.
-- `~0u >> (31 - h)` gives ones from bit `h` downward: for `h = 7`, `0x000000FF`.
-- AND keeps the overlap: bits 7..4, `0x000000F0`.
+#### 2. Example: GENMASK(6, 3)
 
-**Why not `((1u << (h - l + 1)) - 1) << l`?** For a full 32-bit field, `h - l + 1 == 32`, and `1u << 32` is undefined behaviour. With GENMASK every shift amount stays in the range 0..31.
+```text
+Bits 7 6 5 4 3 2 1 0
+Mask 0 1 1 1 1 0 0 0
+     = 0x78
+```
 
-**Using masks**
+The field has h-l+1 = 4 bits. Both endpoints are included.
 
-| Operation | Code |
-|---|---|
-| set the bits | `x |= MASK` |
-| clear the bits | `x &= ~MASK` |
-| toggle | `x ^= MASK` |
-| all set? | `(x & MASK) == MASK` |
-| any set? | `(x & MASK) != 0` |
-| read field | `(x & MASK) >> l` |
+#### 3. Linux driver example
 
-**Naming conventions in real code**
+```c
+#define MODE_MASK GENMASK(6, 3)
 
-- CMSIS: `USART_CR1_UE_Pos` (bit position) and `USART_CR1_UE_Msk` (mask).
-- Linux: `GENMASK()`, `BIT(n)`, `FIELD_PREP()`, `FIELD_GET()`, and `GENMASK_ULL()` for 64-bit.
+mode = FIELD_GET(MODE_MASK, reg);
+reg = (reg & ~MODE_MASK) |
+      FIELD_PREP(MODE_MASK, new_mode);
+```
 
-**Follow-up:** "Why `~0u` and not `~0`?" `~0` is `-1` as a signed int, and shifting a negative value left is undefined. `~0u` is unsigned.
+Linux provides these helpers with appropriate width and input checks depending on the macro. The example operates on a register value; actual MMIO writes must respect device semantics.
+
+#### 4. Boundary case
+
+A full-width mask from bit 31 to bit 0 is UINT32_MAX. Avoid expressions such as (1U << 32) - 1, which have invalid shift counts on 32-bit operands.
+
+**Interview takeaway:** GENMASK builds a contiguous inclusive range; BIT(n) selects one position. Validate widths and use the operating system's native helpers when available.
 
 ### How do you rotate bits left and right? {M}
 **Short answer:** Combine two shifts with OR: rotate left is `(x << n) | (x >> (32 - n))`. Mask the shift amounts with `& 31` so that `n = 0` does not produce a shift by 32, which is undefined.
