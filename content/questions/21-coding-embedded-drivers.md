@@ -947,6 +947,12 @@ UNINIT --init--> IDLE --start--> BUSY --irq_done--> DATA_READY --read--> IDLE
 
 **Testing:** a transition coverage test that feeds every event in every state; log every transition (state, event, next) to a trace buffer for field debugging.
 
+#### Complete the asynchronous lifecycle
+
+A robust driver serializes events through one worker or lock-protected state machine. Before starting a transfer, establish BUSY state and a transaction identifier so a fast completion cannot arrive before state is ready. On timeout or fault, stop DMA/interrupt activity, invalidate the old transaction, release resources and notify the caller exactly once. Ignore or diagnose late completions from the previous transaction.
+
+Test every valid state/event pair, repeated START while BUSY, initialization retry exhaustion, timeout and RESET during failure. Hardware actions must have error-return handling; a state transition is not proof that the peripheral actually changed state.
+
 ### Implement atomic bit set and clear on a shared flags word. {M}
 **Short answer:** `flags |= bit` is a load, OR and store, so an interrupt or another core can change the word in between and one update is lost. Use an atomic read-modify-write: C11 `atomic_fetch_or` / `atomic_fetch_and` (LDREX/STREX loops on Cortex-M3 and above), or on cores without exclusive instructions, a tiny critical section that disables interrupts around the read-modify-write.
 
