@@ -121,26 +121,27 @@ Cortex-M uses Thumb instruction encodings, an NVIC-based exception model, and ha
 **Interview takeaway:** Cortex-M is a processor family, not a single set of optional peripherals. Confirm capabilities from the actual core and device reference manuals.
 
 ### What are the differences between Cortex-M, Cortex-R and Cortex-A, and why can't a Cortex-M0+ run Linux? {M}
-**Short answer:** **Cortex-A** cores are application processors with an MMU, caches and high clock speeds, designed to run Linux or Android. **Cortex-R** cores target real-time processing, often with an MPU and tightly coupled memory; some models also support an MMU. **Cortex-M** cores are microcontroller cores optimised for low cost, low power and simple, fast interrupt handling. A Cortex-M0+ is not a supported normal Linux target: it lacks the required architectural features and typical systems have far too little memory. Linux also has no-MMU configurations for suitable supported processors, so absence of an MMU alone does not rule out Linux on every CPU.
+Cortex-A targets application computing, Cortex-R targets real-time and safety-oriented processing, and Cortex-M targets microcontrollers.
 
-| | Cortex-M | Cortex-R | Cortex-A |
-|---|---|---|---|
-| Memory protection | MPU (optional) | MPU (R52 has two stages; R82 has an optional MMU) | MMU with virtual memory |
-| Instruction sets | Thumb only | Arm + Thumb (AArch32); R82 AArch64 | AArch64 + AArch32 (A32/T32) |
-| Interrupt controller | NVIC (in the core) | GIC | GIC |
-| Typical clock | 10–1000 MHz | 400 MHz–1.6 GHz | 1–3+ GHz |
-| Typical memory | on-chip flash/SRAM | TCM + external | external DRAM, large caches |
-| Real-time | excellent, deterministic | excellent | weaker (caches, virtual memory, OS) |
-| Example uses | MCUs, sensors, IoT | car brake/airbag ECUs, SSD controllers, modems | phones, gateways, infotainment, Raspberry Pi |
+| Profile | Typical use | Memory protection / translation |
+|---|---|---|
+| Cortex-A | Linux, Android, application workloads | MMU common |
+| Cortex-R | Storage, automotive, deterministic control | MPU or MMU depending on core |
+| Cortex-M | Bare metal, RTOS, low-power control | MPU on supported implementations |
 
-**Why the Cortex-M0+ is not suitable for Linux**
+#### 1. Why ordinary Linux needs more than Cortex-M0+
 
-- **No MMU:** mainline Linux relies on virtual memory for process isolation, `fork()`, demand paging and memory-mapped files. A no-MMU Linux (uClinux) exists, but it has been dropped or limited on many architectures and still needs megabytes of RAM.
-- **Memory:** M0+ chips typically have 8–256 KB of flash and 4–64 KB of RAM. A minimal Linux needs several MB of RAM and storage.
-- **Performance:** tens of MHz, no caches, no hardware divide.
-- **Limited architectural features:** Armv6-M has only basic privileged/unprivileged modes and an optional, small MPU.
+Conventional Linux distributions expect features such as virtual memory, protected processes, sufficient RAM, a supported architecture/exception model and platform drivers. Cortex-M0+ has no full virtual-memory MMU and is designed around a different exception and memory model. Typical M0+ devices also have very limited RAM.
 
-**What a Cortex-M0+ is good for:** simple sensor nodes, battery-powered devices (very low µA/MHz and deep-sleep currents), smart cards, power management controllers, motor drivers, as a co-processor next to a bigger CPU, and anywhere cost per unit is critical (cents per chip).
+Linux has no-MMU configurations on supported architectures/platforms, so absence of an MMU alone does not make all Linux variants impossible. It does not mean an arbitrary Cortex-M0+ can boot standard Linux.
+
+#### 2. Practical examples
+
+- Cortex-A53: embedded Linux and Android.
+- Cortex-R: timing-sensitive storage or control processing.
+- Cortex-M4: sensor acquisition, motor control or RTOS tasks.
+
+**Interview takeaway:** Select a profile based on workload and timing requirements. Don't equate all Cortex-M cores or all Cortex-R cores with one memory-protection configuration.
 
 ### What are the Cortex-M core registers? {M}
 **Short answer:** Cortex-M has 16 core registers: `R0`–`R12` general purpose, `R13` the stack pointer (banked as MSP and PSP), `R14` the link register, `R15` the program counter, plus the program status register `xPSR` and the special registers `PRIMASK`, `FAULTMASK`, `BASEPRI` (interrupt masking) and `CONTROL` (privilege and stack selection). Cores with an FPU add `S0`–`S31` and `FPSCR`.
