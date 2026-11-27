@@ -1209,6 +1209,16 @@ MRS X2, MAIR_EL1
 
 **Interview takeaway:** Page tables alone are insufficient; the translation configuration and attributes determine how the mapping behaves. Changing them requires the architecture-defined synchronization and invalidation sequence.
 
+#### Concrete 4 KiB translation configuration
+
+For a typical 48-bit VA setup, TCR_EL1.T0SZ and T1SZ may be 16, since 64−16=48 address bits for the respective ranges. TG0 and TG1 select the translation granules using their architecture-defined encodings; their encodings are not necessarily identical. TCR also describes table-walk cacheability/shareability, physical address size and other translation controls.
+
+TTBR0_EL1 commonly serves the lower virtual-address range (userspace), while TTBR1_EL1 commonly serves the upper range (kernel). TTBR fields and ASID selection depend on the active translation configuration.
+
+MAIR_EL1 contains eight eight-bit attribute slots in the conventional setup. A page descriptor's AttrIndx selects one of those slots. For example, an attribute byte of 0xFF denotes a common Normal write-back cacheable encoding, and 0x00 denotes Device-nGnRnE. Other descriptor bits supply permissions, execute-never and shareability information. These encodings are examples, not a claim that Linux uses a particular index on every system.
+
+SCTLR_EL1.M controls stage-1 MMU enablement for the applicable regime. A valid table structure is not sufficient if the root address, granule, VA range or memory attributes are wrong. Updating live mappings must follow the architecture's break-before-make rules where applicable, TLB invalidation and required synchronization. Use kernel architecture helpers rather than arbitrary MSR sequences.
+
 ### What are ASIDs, VMIDs and TLB shootdowns? {H}
 **Short answer:** ASIDs distinguish address spaces, VMIDs distinguish virtual-machine translation contexts, and a TLB shootdown invalidates cached translations on CPUs that could still use an outdated mapping.
 
