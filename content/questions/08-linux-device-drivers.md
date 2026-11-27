@@ -388,30 +388,33 @@ Ordinary user copies may fault and sleep. Do not perform them under a raw spinlo
 **Interview takeaway:** A user pointer is untrusted and potentially faulting. Use the correct uaccess API, validate copied data and interpret the residual-byte return correctly.
 
 ### What is the Linux device model (bus, device, driver)? {M}
-**Short answer:** The kernel represents hardware as **devices** that sit on **buses** (platform, I2C, SPI, PCI, USB, virtio). **Drivers** register with a bus and declare which devices they support (ID tables, OF/ACPI match tables). When the bus core finds a device and a driver that match, it calls the driver's `probe()`; on removal or unbinding it calls `remove()`. Everything is exposed in sysfs (`/sys/bus`, `/sys/devices`, `/sys/class`), and board-specific details come from the device tree or ACPI rather than driver code.
+The Linux device model represents hardware instances as devices, driver implementations as drivers and discovery/matching rules through buses. It provides a common binding and lifecycle framework.
 
-**Core objects**
+#### 1. Binding flow
 
-| Object | Role |
-|---|---|
-| `struct bus_type` | knows how to match devices and drivers (`match()`), probe, uevents |
-| `struct device` | one instance of hardware; parent/child hierarchy, power state, resources, `of_node` |
-| `struct device_driver` | probe/remove/shutdown, PM ops, match tables |
-| `struct class` | a user-facing grouping (input, net, tty, backlight), independent of the bus |
-| `struct kobject` | reference counting and sysfs representation underneath all of these |
+```text
+Device registered (DT, ACPI, enumeration, board code)
+                    |
+Bus match logic <--- Driver registered
+                    |
+                 probe()
+                    |
+         Driver binds and registers interfaces
+                    |
+           remove / unbind when needed
+```
 
-**Matching order for platform devices:** device tree `compatible` → ACPI ID → ID table (`platform_device_id`) → driver name.
+A bus_type defines matching and related operations. A device carries resources and identity; a driver supplies callbacks.
 
-**Probe lifecycle**
+#### 2. Example
 
-1. The device is registered (from the device tree at boot, by a bus scan such as PCI/USB enumeration, or by hot-plug).
-2. The core tries each driver on that bus; the first match runs `probe()`.
-3. If `probe()` returns `-EPROBE_DEFER` (a needed clock, regulator or GPIO provider is not ready yet), the core retries later.
-4. On `remove()` (module unload, unbind, hot-unplug), the driver releases everything; `devm_` resources are freed automatically after `remove()`.
+An I2C target described by a device-tree node becomes an i2c_client. The I2C core matches its compatible string or supported ID against an i2c_driver. The driver's probe configures the target and registers its functional subsystem.
 
-**Manual binding:** `echo 1-0048 > /sys/bus/i2c/drivers/tmp102/unbind` and `.../bind`; `driver_override` forces a specific driver (used with VFIO).
+#### 3. Resources and lifetime
 
-**Benefit:** one driver works on any board; the same kernel image boots many boards; power management walks the device hierarchy in the correct order (children suspend before parents).
+Drivers acquire clocks, regulators, IRQs, memory mappings and other resources during initialization. Probe failure must unwind safely; remove must stop external access and asynchronous work before resources disappear. Device references protect object lifetime.
+
+**Interview takeaway:** Device, driver and bus are separate objects. The bus determines matching; probe initializes a specific bound instance.
 
 ### What is a platform device and platform driver? {M}
 **Short answer:** Platform devices are peripherals that are not on a discoverable bus: SoC blocks at fixed memory addresses (UARTs, timers, I2C/SPI controllers, GPIO banks, display controllers), usually described in the device tree. A platform driver registers a `struct platform_driver` with an OF match table; in `probe()` it gets its memory region, interrupts, clocks, resets and regulators from the device's resources and sets up the hardware.
