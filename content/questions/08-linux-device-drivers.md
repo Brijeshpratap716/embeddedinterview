@@ -778,48 +778,37 @@ Softirq/tasklet processing normally cannot sleep. Workqueue callbacks and thread
 **Interview takeaway:** Minimize hard IRQ work and choose the deferred mechanism according to latency and sleeping requirements. Deferred processing is not one uniform execution context.
 
 ### What is the difference between a tasklet, a workqueue and a threaded IRQ? {H}
-**Short answer:** A **tasklet** runs in softirq context: soon after the interrupt, on the same CPU, but it cannot sleep, and tasklets are deprecated for new code. A **workqueue** item runs in a kernel thread (`kworker`) in process context, so it can sleep, at the cost of more scheduling latency. A **threaded IRQ** gives each interrupt its own kernel thread (`irq/NN-name`) with real-time priority; it can sleep and is the standard choice for devices on slow buses like I2C and SPI.
+Tasklets, workqueues and threaded IRQ handlers defer work from interrupt handling, but have different context and lifetime semantics.
 
-| | Tasklet / softirq | Workqueue | Threaded IRQ |
-|---|---|---|---|
-| Context | softirq (atomic) | process (kworker thread) | process (dedicated irq thread) |
-| Can sleep | no | yes | yes |
-| Latency | low | higher (normal priority, shared workers) | low, SCHED_FIFO priority |
-| Concurrency | a given tasklet never runs on two CPUs at once | configurable (ordered, unbound, per-CPU) | one thread per IRQ |
-| Typical use | legacy fast deferral | slow or delayed work, firmware loading, retries | I2C/SPI devices, GPIO interrupts, most new drivers |
-| Status | deprecated (use BH workqueues) | current | current |
+| Mechanism | Typical execution context | May sleep? |
+|---|---|---|
+| Tasklet | Softirq-related atomic context | No |
+| Workqueue | Worker thread (ordinary workqueue) | Generally yes |
+| Threaded IRQ | IRQ kernel thread | Generally yes |
 
-**Threaded IRQ for an I2C device**
+Tasklets are a legacy mechanism; new driver designs often use threaded IRQs or workqueues when suitable.
+
+#### 1. Workqueue example
 
 ```c
-static irqreturn_t sensor_thread(int irq, void *data)
+static void my_work(struct work_struct *work)
 {
-    struct mysensor *s = data;
-    unsigned int status;
-
-    if (regmap_read(s->map, REG_STATUS, &status))     /* sleeps: OK in the thread */
-        return IRQ_NONE;
-    if (!(status & DATA_READY))
-        return IRQ_NONE;
-    read_sample_and_push(s);
-    return IRQ_HANDLED;
+    struct demo *d = container_of(work, struct demo, work);
+    process_device(d);
 }
-
-ret = devm_request_threaded_irq(dev, client->irq, NULL, sensor_thread,
-                                IRQF_ONESHOT, "mysensor", s);
 ```
 
-With no primary handler and `IRQF_ONESHOT`, the core masks the line until the thread finishes, which is required for level-triggered interrupts that can only be cleared by an I2C read.
+Initialize with INIT_WORK and queue the work using the appropriate workqueue API. Before freeing d, stop new work from being queued and cancel/flush existing work as required.
 
-**Workqueue example**
+#### 2. Threaded IRQ example
 
-```c
-INIT_WORK(&d->work, mydev_work_fn);                 /* in probe */
-schedule_work(&d->work);                            /* from the IRQ handler */
-cancel_work_sync(&d->work);                         /* in remove: wait for it to finish */
-```
+Use devm_request_threaded_irq for a device whose interrupt requires an I2C register read or another sleeping operation. IRQF_ONESHOT may keep the interrupt masked while the threaded handler runs, when appropriate for the source and sharing rules.
 
-**Follow-up:** with PREEMPT_RT, all interrupt handlers are forced into threads (except those marked `IRQF_NO_THREAD`), and softirqs run in thread context too.
+#### 3. Choosing
+
+Use a threaded IRQ for interrupt-driven work closely tied to a device. Use a workqueue for general asynchronous processing. Special workqueue types such as BH workqueues have different context constraints.
+
+**Interview takeaway:** Choose by execution context, latency and teardown requirements, not merely because one mechanism is called a bottom half.
 
 ### What is atomic context and what can't you do in it? {M}
 **Short answer:** Code is in atomic context when it must not sleep or be scheduled out: hard IRQ handlers, softirqs and tasklets, sections holding a spinlock, and sections with pre-emption or interrupts disabled (also `rcu_read_lock()` sections on non-RT kernels). In atomic context you must not call anything that may sleep: `mutex_lock`, `msleep`, `kmalloc(GFP_KERNEL)`, `copy_to_user`/`copy_from_user`, I2C/SPI transfers, `wait_event`, `vmalloc`, `request_firmware`, and most `regulator`/`clk_prepare` calls.
