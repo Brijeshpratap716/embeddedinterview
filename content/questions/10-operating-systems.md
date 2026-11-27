@@ -809,38 +809,35 @@ A 4096-byte request does not guarantee page alignment, exactly one page, a sysca
 **Interview takeaway:** malloc manages userspace allocation, while Linux manages virtual mappings and physical backing. Do not confuse allocated virtual size with resident memory.
 
 ### What is a memory barrier, and why is it needed on ARM? {M}
-**Short answer:** A memory barrier constrains compiler and/or hardware reordering of memory operations. Cache coherency alone does not guarantee ordering between different addresses.
+A memory barrier constrains ordering or completion of memory operations. Arm permits weak ordering of normal memory accesses, so a producer and consumer cannot assume every store becomes visible in source order.
 
-Suppose a producer writes data = 100 and then flag = 1. On a weakly ordered architecture, without proper synchronization a consumer may see the flag before the data is visible.
+#### 1. Example without ordering
 
-Linux kernel example (initially data and flag are zero; one producer publishes once):
+A producer writes data=100 and then flag=1. A consumer observes flag=1 and reads data. Without synchronization, it may not observe the intended payload; in ordinary threaded C, a data race is also undefined.
+
+#### 2. Linux kernel publication
 
 ```c
-/* Producer */
+// Producer
 WRITE_ONCE(data, 100);
-smp_wmb();
-WRITE_ONCE(flag, 1);
+smp_store_release(&flag, 1);
 
-/* Consumer */
-if (READ_ONCE(flag) == 1) {
-    smp_rmb();
+// Consumer
+if (smp_load_acquire(&flag) == 1)
     value = READ_ONCE(data);
-}
 ```
 
-Alternatively, use smp_store_release(&flag, 1) and smp_load_acquire(&flag) for this publication pattern.
+If the acquire reads the release in this one-time publication protocol, the ordering ensures the associated data is available to the consumer.
 
-| ARM instruction | Purpose |
+#### 3. ARM barrier instructions
+
+| Instruction | Purpose |
 |---|---|
-| DMB | Orders relevant memory accesses across the barrier. |
-| DSB | Also waits for relevant preceding operations to complete as required by its scope and type. |
-| ISB | Synchronizes subsequent instruction execution with context changes. |
+| DMB | Orders specified memory accesses in the relevant scope |
+| DSB | Requires specified operations to complete before proceeding as defined |
+| ISB | Synchronizes subsequent instruction execution after context changes |
 
-| Linux API | Purpose |
-|---|---|
-| smp_rmb() | Orders reads across the barrier. |
-| smp_wmb() | Orders writes across the barrier. |
-| smp_mb() | Orders reads and writes across the barrier. |
-| barrier() | Compiler barrier only. |
+A compiler barrier does not emit a hardware fence. Cache maintenance and DMA ownership may require additional APIs.
 
-**Interview trap:** Barriers do not make read-modify-write operations atomic, and do not necessarily flush caches to DRAM. SMP barriers are for CPU-to-CPU ordering; device drivers must use the appropriate MMIO accessors and DMA barriers for device communication. In portable user-space C, use C11 atomics with release/acquire ordering instead of plain shared variables.
+**Interview takeaway:** Coherency is not ordering, and volatile is not synchronization. Use acquire/release, locks or documented barrier APIs appropriate to the observer and memory type.
+
