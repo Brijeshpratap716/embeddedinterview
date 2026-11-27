@@ -177,37 +177,40 @@ On standard Cortex-M exception entry, hardware stacks R0–R3, R12, LR, PC and x
 **Interview takeaway:** R0–R12 hold untyped bits; the instruction determines whether they represent data or addresses. Optional registers and features vary between Cortex-M cores.
 
 ### What are MSP and PSP and why are there two stack pointers? {M}
-**Short answer:** Cortex-M has two banked stack pointers. The **Main Stack Pointer (MSP)** is used after reset, by all exception handlers, and by bare-metal code. The **Process Stack Pointer (PSP)** can be used by code in Thread mode (when `CONTROL.SPSEL = 1`). An RTOS gives each task its own stack through PSP, while all interrupts run on the single main stack.
+Cortex-M provides two stack pointers: the Main Stack Pointer (MSP) and the Process Stack Pointer (PSP). They allow firmware or an RTOS to separate handler stack usage from thread stack usage.
 
-**Why two stacks help**
+#### 1. Execution modes
 
-1. **Smaller task stacks:** interrupts never use a task's stack, so each task stack does not need extra space for the worst-case nesting of interrupts (which could be several hundred bytes). With 20 tasks this saves a lot of RAM.
-2. **Robustness:** a task that overflows or corrupts its own stack does not break the stack that interrupts and the kernel rely on.
-3. **Fast context switches:** the RTOS only saves/restores PSP and the task's registers; handler mode keeps using MSP.
-4. **Privilege separation:** combined with unprivileged thread mode and the MPU, tasks cannot touch the kernel's stack.
+| Mode | Stack selection |
+|---|---|
+| Reset / initial Thread mode | Normally MSP |
+| Thread mode | MSP or PSP, selected by CONTROL.SPSEL |
+| Handler mode | MSP |
 
-**How the hardware uses them**
+#### 2. RTOS example
 
-- On exception entry, the core pushes the exception frame onto whichever stack the interrupted code was using (MSP or PSP), then switches to MSP for the handler.
-- `LR` gets an `EXC_RETURN` value: `0xFFFFFFF9` return to Thread mode using MSP, `0xFFFFFFFD` return to Thread mode using PSP, `0xFFFFFFF1` return to Handler mode (nested). (Values with FP context differ in bit 4: `0xFFFFFFE9`/`0xFFFFFFED`.)
+```text
+Task A --> PSP points to task A stack
+Task B --> PSP points to task B stack
+Interrupt handlers --> MSP points to handler stack
+```
 
-**How an RTOS starts:** the scheduler sets PSP to the first task's prepared stack and then either sets `CONTROL.SPSEL` and branches, or triggers an SVC whose return uses `EXC_RETURN = 0xFFFFFFFD` to "return" into the first task on PSP.
+When an interrupt occurs during a task using PSP, hardware saves the task's basic exception frame on the interrupted stack (PSP). The handler itself then executes using MSP. The scheduler may save remaining context and select another task's PSP.
 
-**Bare-metal code** usually never touches PSP; everything runs on MSP. The initial MSP value comes from the first entry of the vector table.
+#### 3. Why separate stacks?
 
-**Debugging tip:** in a HardFault handler, test bit 2 of `LR` to know which stack holds the faulting frame:
+Each task can have its own bounded stack while interrupt handlers share a separate main stack. This helps context switching and resource accounting. Correct sizing must include hardware exception stacking and possible floating-point state.
+
+#### 4. CMSIS inspection
 
 ```c
-__attribute__((naked)) void HardFault_Handler(void)
-{
-    __asm volatile(
-        "tst lr, #4      \n"
-        "ite eq          \n"
-        "mrseq r0, msp   \n"
-        "mrsne r0, psp   \n"
-        "b hard_fault_c  \n");   /* hard_fault_c(uint32_t *frame) reads frame[6] = PC */
-}
+uint32_t msp = __get_MSP();
+uint32_t psp = __get_PSP();
 ```
+
+These intrinsics read the respective stack pointers on supporting targets.
+
+**Interview takeaway:** MSP is used in Handler mode; PSP is commonly used by RTOS tasks. Exception entry stacks onto the interrupted context's selected stack, not always MSP.
 
 ### What happens in hardware when an exception is taken on Cortex-M? {M}
 **Short answer:** The core automatically pushes an 8-word stack frame (`R0`–`R3`, `R12`, `LR`, `PC`, `xPSR`) onto the current stack, fetches the handler's address from the vector table at the same time, loads `LR` with a special `EXC_RETURN` value, switches to Handler mode using MSP, and starts the handler. When the handler returns (branching to the `EXC_RETURN` value), the hardware unstacks the registers and resumes the interrupted code. This is why ISRs can be ordinary C functions.
