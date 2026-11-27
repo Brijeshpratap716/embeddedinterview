@@ -1343,3 +1343,8 @@ Answer: length 3, starting at 0 (`"bab"`; `"aba"` is equally valid).
 | Manacher's algorithm | O(n) | O(n) |
 
 **Related:** "is the whole string a palindrome" (two pointers from the ends, O(n)), "longest palindromic subsequence" (DP, characters need not be contiguous).
+
+#### Odd and even centres
+
+"racecar" expands from its middle e; "abba" expands from the gap between the two b characters. There are 2n−1 candidate centres for nonempty strings. For "cbbd", expanding the centre between b and b first matches both, then fails on c versus d, producing start 1, length 2. Use size_t-safe boundary checks when inputs can exceed LONG_MAX; Manacher's algorithm reduces worst-case time to O(n) at the cost of extra state.
+
