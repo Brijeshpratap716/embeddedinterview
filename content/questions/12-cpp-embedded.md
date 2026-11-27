@@ -433,39 +433,46 @@ Global constructors may run before application hardware initialization. Function
 **Interview takeaway:** Avoid hidden hardware dependencies in global constructors. Explicit startup ordering makes firmware initialization and failure handling easier to reason about.
 
 ### How do you call C code from C++ and C++ from C (extern "C")? {E}
-**Short answer:** C++ compilers **mangle** function names to encode namespaces and parameter types (for overloading), while C uses plain names. Declaring functions `extern "C"` tells the C++ compiler to use C linkage (unmangled names and the C calling convention), so C and C++ object files can link together. C headers used from C++ wrap their declarations in `extern "C"` guarded by `#ifdef __cplusplus`; C++ functions that C code must call (including interrupt handlers referenced by a C vector table) are defined `extern "C"`.
+extern "C" gives a C++ declaration C language linkage, commonly avoiding C++ name mangling and enabling interoperability with C functions.
 
-```cpp
-/* hal_uart.h — usable from both C and C++ */
-#ifndef HAL_UART_H
-#define HAL_UART_H
-#include <stdint.h>
+#### 1. Shared header
+
+```c
+#ifndef DRIVER_H
+#define DRIVER_H
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void hal_uart_init(uint32_t baud);
-void hal_uart_putc(char c);
+int driver_start(void);
 
 #ifdef __cplusplus
 }
 #endif
 #endif
+```
 
-/* irq.cpp — C++ handler with the exact name the startup file expects */
-extern "C" void USART2_IRQHandler(void)
+The header can be included by both C and C++ source files.
+
+#### 2. C++ implementation exposed to C
+
+```cpp
+#include "driver.h"
+
+int driver_start(void)
 {
-    uart_driver.on_interrupt();     // forward into a C++ object
+    return start_cpp_driver();
 }
 ```
 
-**What can cross the boundary:** plain functions with C-compatible parameter types (integers, pointers, POD structs, function pointers). Not classes with virtual functions, references, overloaded functions, templates or exceptions (an exception must never propagate into C code).
+The earlier declaration establishes C linkage. The wrapper exposes a C-compatible signature while hiding C++ implementation details.
 
-**Common bugs**
+#### 3. Limits
 
-- An ISR written in C++ without `extern "C"` gets a mangled name (`_Z17USART2_IRQHandlerv`), so the weak default handler in the vector table is used instead and the interrupt "never fires" or hangs in `Default_Handler`.
-- Passing a C++ member function as a C callback: use a static member or a free function with a `void *context` parameter that you cast back to the object.
-- Mismatched struct layouts if C++ adds a vptr or non-standard-layout members; check with `static_assert(std::is_standard_layout_v<T>)`.
+Do not expose C++ references, exceptions or arbitrary class layouts as a portable C ABI. Use opaque handles and explicit create/destroy functions when sharing object ownership across the boundary.
+
+**Interview takeaway:** extern "C" controls linkage, not automatic type conversion or exception compatibility. Design a C-compatible API and keep C++ details behind it.
 
 ### Which standard library features are safe on a microcontroller? {M}
 **Short answer:** Most of the **algorithm and type** parts of the standard library are header-only and do not allocate: `std::array`, `std::span`, `std::optional`, `std::variant`, `std::string_view`, `std::bitset`, `<algorithm>` (`std::sort`, `std::find`, `std::min/max`), `<type_traits>`, `<limits>`, `<chrono>` durations, `std::atomic` and `<cstdint>`. The parts that allocate or are large — `std::vector`, `std::string`, `std::map`, `std::function` (may allocate), `<iostream>`, `std::thread` — are avoided or used only at initialisation. Fixed-capacity alternatives come from the **ETL** (Embedded Template Library) or similar.
