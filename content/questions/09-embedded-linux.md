@@ -126,32 +126,30 @@ The initial init task begins in kernel context and becomes a userspace program w
 **Interview takeaway:** Separate early architecture setup, generic kernel initialization, device initialization and userspace startup. Exact symbols and ordering are version-specific.
 
 ### What does the init process (PID 1) do, and what special rules apply to it? {M}
-**Short answer:** PID 1 is the first user-space process. It brings the system to a working state (mounts filesystems, starts daemons, starts login terminals or the main application) and then supervises it. It must never exit (the kernel panics if it does), it becomes the parent of every orphaned process so it must reap zombies, and the kernel does not deliver signals to it that it has not installed a handler for.
+PID 1 is the first userspace process in the initial Linux PID namespace. It initializes userspace, manages service lifecycles and has special responsibilities for orphaned processes.
 
-**Typical jobs of init**
+#### 1. Typical tasks
 
-1. Mount `/proc`, `/sys`, `/dev` (devtmpfs), `/tmp`, `/run`, and remount the root read-write if needed.
-2. Set the hostname, load kernel modules, start `udev`/`mdev` to create device nodes and load firmware.
-3. Start services in the right order (logging, networking, the product application).
-4. Start `getty` on the console/serial lines so users can log in.
-5. Watch services and restart them, handle shutdown/reboot (`SIGTERM` to everything, unmount, sync, then `reboot()` syscall).
+- Mount required virtual and additional filesystems such as /proc and /sys.
+- Start services and device-management components.
+- Configure networking and start login services or applications.
+- Adopt/reap orphaned descendants when required by namespace and subreaper rules.
 
-**Special requirements**
+#### 2. What is special about PID 1?
 
-- **Must not die.** If PID 1 exits or crashes, the kernel reports "Attempted to kill init!" and panics. Embedded products often rely on this plus `panic=5` to reboot automatically.
-- **Reaps orphans.** When a parent dies, its children are re-parented to init (or to a "subreaper"). Init must call `wait()` on them, otherwise zombies accumulate.
-- **Signal protection.** The kernel ignores signals sent to PID 1 unless init has a handler for them, so even `kill -9 1` from root does nothing. This also matters in containers: a shell script as PID 1 will not stop on `SIGTERM` unless it traps it, which is why tools like `tini` exist.
+Its signal behavior differs from ordinary processes, especially for signals without installed handlers. A namespace's init process also has special lifecycle rules. The loss of the initial namespace's PID 1 is fatal to normal system operation.
 
-**Common inits**
+#### 3. Example
 
-| Init | Configuration | Typical use |
-|---|---|---|
-| BusyBox init | `/etc/inittab` + shell scripts | tiny images, Buildroot |
-| SysVinit | runlevels, `/etc/init.d/` scripts in order | older systems |
-| systemd | unit files, dependency graph, parallel start, journald, watchdog | larger devices, Yocto default for many BSPs |
-| Your application | `init=/usr/bin/app` | single-purpose appliances |
+On a systemd-based distribution, PID 1 starts configured units and tracks dependencies. BusyBox init can use a much smaller configuration. Android init parses its own init configuration and starts platform services.
 
-**Running your application directly as init** is possible but you then take on all of these duties (mounting, reaping zombies, handling shutdown), which is why most products still use a small init.
+```sh
+ps -p 1 -o pid,comm,args
+```
+
+This shows which init program is running on a Linux system.
+
+**Interview takeaway:** The kernel initializes the OS core; PID 1 initializes userspace and manages its process hierarchy. The exact service behavior depends on the init implementation.
 
 ### How does a Raspberry Pi boot, and how is it different from a typical SoC? {M}
 **Short answer:** On the Raspberry Pi the **GPU (VideoCore)** boots first, not the ARM cores. The GPU's ROM loads the boot firmware (on Pi 1–3 `bootcode.bin` and `start.elf` from the SD card's FAT partition; on Pi 4/5 a bootloader stored in an on-board SPI EEPROM), reads `config.txt`, loads the device tree, the kernel (`kernel8.img` for 64-bit) and `cmdline.txt`, and only then releases the ARM cores to run the kernel.
