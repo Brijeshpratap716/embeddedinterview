@@ -515,44 +515,41 @@ Dedicated GPIO set/clear registers and atomic software operations are alternativ
 **Interview takeaway:** Bit-banding converts a bit selection into a word-addressed access. It is a platform-specific feature, not a universal Cortex-M capability.
 
 ### What happens before main() runs on a microcontroller? {M}
-**Short answer:** On reset, the Cortex-M core reads the initial stack pointer from the first word of the vector table and the reset handler's address from the second word, then starts executing the reset handler. The reset handler (start-up code) typically configures clocks and the FPU (`SystemInit`), copies the `.data` section's initial values from flash to RAM, zeroes `.bss`, runs C/C++ constructors, and finally calls `main()`.
+On a microcontroller, startup code prepares the processor and C runtime before calling main. The exact sequence depends on the boot ROM, device and toolchain.
 
-**Step by step**
+#### 1. Typical Cortex-M reset flow
 
-1. **Hardware reset sequence:** the core loads `MSP` from address `VTOR + 0` (usually `0x00000000`, aliased to flash at `0x08000000` on STM32) and `PC` from `VTOR + 4`. Thumb mode, privileged, all interrupts enabled but no peripheral interrupts enabled yet.
-2. **Reset_Handler** (in `startup_<device>.s` or a C file):
-   - `SystemInit()`: set up clocks/PLL (or leave that to `main`), flash wait states, enable the FPU (`SCB->CPACR`), set `VTOR` if the image is not at the default address.
-   - **Copy `.data`:** from its load address in flash (`_sidata`) to its run address in RAM (`_sdata`..`_edata`).
-   - **Zero `.bss`:** `_sbss`..`_ebss`.
-   - Optionally copy code into RAM/ITCM (`.ramfunc`) and initialise other memories (e.g. external SDRAM must be set up **before** any data placed there is initialised).
-   - `__libc_init_array()`: runs C++ static constructors and functions marked `__attribute__((constructor))`.
-   - Call `main()`; if it returns, loop forever.
+<div style="max-width:600px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 302" width="100%" role="img" aria-label="Reset, vector fetch, startup, memory initialization and main">
+<rect x="20" y="5" width="300" height="44" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="22" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Reset</text><text x="170" y="37" text-anchor="middle" font-size="10" fill="currentColor">Hardware loads initial MSP and reset PC</text><path d="M170 49 v16 m-4-5 4 5 4-5" stroke="currentColor" fill="none"/><rect x="20" y="65" width="300" height="44" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="82" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Reset_Handler</text><text x="170" y="97" text-anchor="middle" font-size="10" fill="currentColor">Early processor and board setup</text><path d="M170 109 v16 m-4-5 4 5 4-5" stroke="currentColor" fill="none"/><rect x="20" y="125" width="300" height="44" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="142" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Runtime memory</text><text x="170" y="157" text-anchor="middle" font-size="10" fill="currentColor">Copy .data; clear .bss</text><path d="M170 169 v16 m-4-5 4 5 4-5" stroke="currentColor" fill="none"/><rect x="20" y="185" width="300" height="44" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="202" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Runtime initialization</text><text x="170" y="217" text-anchor="middle" font-size="10" fill="currentColor">Library / constructors as applicable</text><path d="M170 229 v16 m-4-5 4 5 4-5" stroke="currentColor" fill="none"/><rect x="20" y="245" width="300" height="44" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="262" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">main()</text><text x="170" y="277" text-anchor="middle" font-size="10" fill="currentColor">Application begins</text></svg></div>
+
+#### 2. Why memory initialization is required
 
 ```c
-extern uint32_t _sidata, _sdata, _edata, _sbss, _ebss;
-extern int main(void);
-void SystemInit(void);
-void __libc_init_array(void);
-
-void Reset_Handler(void)
-{
-    SystemInit();
-    for (uint32_t *s = &_sidata, *d = &_sdata; d < &_edata; ) *d++ = *s++;
-    for (uint32_t *d = &_sbss; d < &_ebss; ) *d++ = 0;
-    __libc_init_array();
-    main();
-    for (;;) { }
-}
+int count = 10; // .data: initial image commonly in flash
+int flag;       // .bss: starts at zero
 ```
 
-**Things that commonly go wrong**
+The linker assigns runtime and load addresses. Startup copies initialized writable data to RAM and clears zero-initialized storage.
 
-- Writing the reset handler in C is fine, but it must not rely on initialised globals before they are copied, and the compiler may turn the copy loops into `memcpy`/`memset` calls (fine if those do not depend on `.data` either).
-- A watchdog enabled by option bytes can reset the chip during a long `.bss` clear on large-RAM parts.
-- Variables meant to survive a reset must be in a `.noinit` section, or the zeroing wipes them.
-- Clock configuration done too late can make the copy loops slow on big images.
+#### 3. Illustrative startup pseudocode
 
-**Follow-up:** "What runs before the reset handler?" On many MCUs a **boot ROM** (system memory bootloader) runs first, reads boot pins/option bytes and decides whether to start user flash, the built-in UART/USB DFU bootloader, or SRAM.
+```text
+Reset_Handler:
+    perform required early CPU/system setup
+    copy initial_data_image to data_ram
+    zero bss_ram
+    initialize runtime
+    call main
+    handle unexpected return
+```
+
+Some startup implementations call SystemInit before RAM initialization; early code must not rely on uninitialized C objects. External RAM must be configured before copying data into it.
+
+#### 4. Debugging before main
+
+Check the vector table, initial stack address, reset PC, flash/RAM placement, clocks and fault status. Use a breakpoint in Reset_Handler and examine linker symbols.
+
+**Interview takeaway:** main is not the processor's reset entry. Hardware and startup code establish the conditions required for valid C execution.
 
 ### What is a linker script and what does it contain? {M}
 **Short answer:** A linker script tells the linker what memory the target has and where each output section (code, constants, initialised data, zeroed data, stack, heap) goes. It defines `MEMORY` regions (start address, size, permissions) and a `SECTIONS` command mapping input sections to output sections and regions, and it exports symbols (such as `_sdata`, `_ebss`, `_estack`) that the start-up code uses.
