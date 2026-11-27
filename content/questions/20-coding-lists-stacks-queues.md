@@ -789,6 +789,10 @@ bool balanced(const char *s)
 }
 ```
 
+#### Stack boundary test
+
+For capacity 3, push 10,20,30; a fourth push must fail without changing the stack. Pop returns 30, then 20, then 10, and the next pop fails. The array top is a count, so the last valid value is at top−1. A linked stack instead stores its top in a pointer and can grow until memory is exhausted (not literally unbounded). For deterministic firmware, use a fixed array or preallocated node pool.
+
 ### Implement a queue using an array (circular queue) and using a linked list. {E}
 **Short answer:** A queue is first-in, first-out. With an **array**, use a circular buffer: `head` is where you dequeue, `tail` where you enqueue, both wrap around with modulo (or a mask for power-of-two sizes), and a `count` (or one empty slot) distinguishes full from empty. With a **linked list**, keep both a head and a tail pointer: enqueue appends at the tail and dequeue removes from the head. Both are O(1).
 
