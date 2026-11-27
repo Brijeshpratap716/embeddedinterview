@@ -655,29 +655,39 @@ Use configured RTOS stack-overflow checking, MPU guards where available, compile
 **Interview takeaway:** Size stacks using worst-case analysis plus measured margins. Hardware exception stacking and task stack units are common sources of sizing mistakes.
 
 ### What are software timers in an RTOS? {E}
-**Short answer:** Software timers run a callback function after a delay, either once (one-shot) or repeatedly (auto-reload), without needing a dedicated task per timer. In FreeRTOS all timer callbacks execute in a single **timer service (daemon) task**, so callbacks must be short and must never block, otherwise every other timer is delayed.
+An RTOS software timer tracks a timeout or periodic interval in software and invokes a callback or posts an event when it expires. It uses a kernel time base rather than dedicating a physical timer to every timeout.
+
+#### 1. FreeRTOS example
 
 ```c
-static void led_timer_cb(TimerHandle_t t) { (void)t; toggle_led(); }
+static void timer_cb(TimerHandle_t timer)
+{
+    xTaskNotifyGive(worker);
+}
 
-TimerHandle_t led_timer = xTimerCreate("led", pdMS_TO_TICKS(500), pdTRUE /* auto-reload */,
-                                       NULL, led_timer_cb);
-xTimerStart(led_timer, 0);
+TimerHandle_t t = xTimerCreate(
+    "periodic", pdMS_TO_TICKS(100),
+    pdTRUE, NULL, timer_cb);
+
+if (t != NULL)
+    xTimerStart(t, 0);
 ```
 
-**How it works**
+Check the start result in production. pdTRUE selects auto-reload. The callback runs in the timer service task, not a hardware ISR.
 
-- API calls (`xTimerStart`, `xTimerStop`, `xTimerChangePeriod`, `xTimerReset`) send commands through the **timer command queue** to the daemon task, so they can fail if the queue is full; check the return value and use a block time.
-- The daemon task keeps active timers in a list sorted by expiry and blocks until the next one expires.
-- Its priority (`configTIMER_TASK_PRIORITY`) decides how promptly callbacks run relative to other tasks; set it appropriately (often high, with very short callbacks).
+#### 2. One-shot vs periodic
 
-**Good uses:** LED blinking, timeouts for protocols (e.g. "no response in 2 s"), debouncing, periodic housekeeping, retry back-off, watchdog supervision.
+A one-shot timer expires once unless restarted. A periodic timer automatically reloads according to the kernel's timer semantics.
 
-**Avoid:** heavy processing or blocking calls in callbacks (send an event to a worker task instead), and using software timers for precise, jitter-free timing (use a hardware timer interrupt for that).
+#### 3. Callback rules
 
-**Resolution:** limited to the tick period.
+Keep callbacks short and nonblocking. A slow callback can delay other software timers because they share the timer service context. Send lengthy work to a worker task.
 
-**Zephyr:** `k_timer` runs its expiry function in the system timer **interrupt** context (so it must be ISR-safe and very short); use `k_work_delayable` for work that should run in a thread.
+#### 4. Hardware timer distinction
+
+Hardware timers are preferable for precise signal generation, capture or timing requirements beyond the kernel's tick resolution. Software timer expiration and callback execution are not necessarily simultaneous.
+
+**Interview takeaway:** Software timers simplify application timeouts but their callback latency depends on scheduler and timer-service load.
 
 ### What is the difference between vTaskDelay and vTaskDelayUntil? {M}
 **Short answer:** `vTaskDelay(n)` blocks the task for `n` ticks counted **from the moment it is called**, so if the task's own work takes variable time, its period drifts. `vTaskDelayUntil(&last_wake, period)` (or `xTaskDelayUntil`) blocks until an **absolute** time `last_wake + period` and then updates `last_wake`, giving a fixed-frequency loop with no drift.
