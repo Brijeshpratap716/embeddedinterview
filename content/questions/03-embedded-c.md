@@ -1158,74 +1158,53 @@ Use nonblocking drivers, explicit state machines and event-driven processing. If
 **Interview takeaway:** A super loop is cooperative: every service must return promptly. Interrupts alone do not guarantee the foreground loop meets deadlines.
 
 ### How do you write a state machine in C? {M}
-**Short answer:** Represent the states with an `enum`. Either use a **`switch` on the current state** inside a function that receives events (clear for small machines), or a **table** indexed by state and event that gives the next state and an action function (scales well and maps directly to a state diagram). Always handle unexpected events explicitly.
+A finite state machine (FSM) models behavior using a finite set of states and explicit transitions triggered by events. It avoids scattered flags and makes nonblocking control flow easier to test.
 
-**1. Switch-based**
+#### 1. Example: device startup
+
+<div style="max-width:620px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 168" width="100%" role="img" aria-label="Idle transitions to starting on start, starting to running on ready, and starting or running to fault on error">
+<rect x="8" y="15" width="94" height="32" rx="5" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="55" y="35" font-size="11" font-weight="600" text-anchor="middle" fill="currentColor">IDLE</text><rect x="123" y="15" width="94" height="32" rx="5" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="170" y="35" font-size="11" font-weight="600" text-anchor="middle" fill="currentColor">STARTING</text><rect x="238" y="15" width="94" height="32" rx="5" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="285" y="35" font-size="11" font-weight="600" text-anchor="middle" fill="currentColor">RUNNING</text><rect x="123" y="124" width="94" height="32" rx="5" fill="#dc2626" fill-opacity=".13" stroke="#dc2626"/><text x="170" y="144" font-size="11" font-weight="600" text-anchor="middle" fill="currentColor">FAULT</text><path d="M102 31 H123 m-4-3 4 3-4 3 M217 31 H238 m-4-3 4 3-4 3 M170 47 V124 m-4-5 4 5 4-5 M285 47 V140 H217 m5-4 -5 4 5 4" stroke="currentColor" fill="none"/><text x="112" y="11" text-anchor="middle" font-size="9" fill="currentColor">START</text><text x="227" y="11" text-anchor="middle" font-size="9" fill="currentColor">READY</text><text x="176" y="88" font-size="10" fill="currentColor">ERROR</text><text x="291" y="87" font-size="10" fill="currentColor">ERROR</text></svg></div>
+
+#### 2. Implementation
 
 ```c
-typedef enum { ST_IDLE, ST_CONNECTING, ST_CONNECTED } state_t;
-typedef enum { EV_START, EV_OK, EV_FAIL, EV_TIMEOUT } event_t;
+enum State { IDLE, STARTING, RUNNING, FAULT };
+enum Event { START, READY, ERROR };
 
-static state_t state = ST_IDLE;
+static enum State state = IDLE;
 
-void fsm_dispatch(event_t ev)
+void handle_event(enum Event event)
 {
     switch (state) {
-    case ST_IDLE:
-        if (ev == EV_START) { start_link(); state = ST_CONNECTING; }
+    case IDLE:
+        if (event == START) {
+            begin_startup();
+            state = STARTING;
+        }
         break;
-    case ST_CONNECTING:
-        if (ev == EV_OK)                          { notify_up(); state = ST_CONNECTED; }
-        else if (ev == EV_FAIL || ev == EV_TIMEOUT) { log_fail();  state = ST_IDLE; }
+    case STARTING:
+        if (event == READY)
+            state = RUNNING;
+        else if (event == ERROR)
+            state = FAULT;
         break;
-    case ST_CONNECTED:
-        if (ev == EV_FAIL) { notify_down(); state = ST_IDLE; }
+    case RUNNING:
+        if (event == ERROR)
+            state = FAULT;
         break;
-    default:
-        state = ST_IDLE;                          /* corrupted state: recover */
+    case FAULT:
         break;
     }
 }
 ```
 
-**2. Table-driven**
+The example assumes a single event-processing context and nonblocking startup. A real implementation adds timeouts, shutdown/recovery actions and handling of unexpected events.
 
-```c
-typedef struct { bool valid; state_t next; void (*action)(void); } trans_t;
+#### 3. Testing
 
-static const trans_t table[3][4] = {                 /* [state][event] */
-    [ST_IDLE]       = { [EV_START]   = { true, ST_CONNECTING, start_link } },
-    [ST_CONNECTING] = { [EV_OK]      = { true, ST_CONNECTED, notify_up },
-                        [EV_FAIL]    = { true, ST_IDLE, log_fail },
-                        [EV_TIMEOUT] = { true, ST_IDLE, log_fail } },
-    [ST_CONNECTED]  = { [EV_FAIL]    = { true, ST_IDLE, notify_down } },
-};
+Build a state/event transition table and test each defined transition, error path and invalid event. A queue can serialize events produced by interrupts or other tasks.
 
-void fsm_dispatch_table(event_t ev)
-{
-    const trans_t *t = &table[state][ev];
-    if (!t->valid) {
-        log_unexpected(state, ev);                   /* unhandled pair: log, ignore or fault */
-        return;
-    }
-    if (t->action) t->action();
-    state = t->next;
-}
-```
-
-Entries not listed are zero-initialised, so `valid` is `false` for every unhandled (state, event) pair.
-
-**3. State functions:** each state is a function returning the next state function; compact, and each state's logic is together.
-
-**Good practice**
-
-- Keep the table `const` (it lives in flash and cannot be corrupted).
-- Events come from ISRs through a queue; the state machine runs in the main loop or a task, never inside the ISR.
-- Use entry/exit actions for things like starting and stopping timers.
-- Log state transitions; it makes field debugging much easier.
-- For complex behaviour, use hierarchical state machines (UML statecharts; QP/C, or code generation from a diagram).
-
-**Embedded examples:** protocol parsers (byte-by-byte frame decoding), connection managers, button handling (idle/pressed/long-press), power management, bootloader update flows.
+**Interview takeaway:** Keep state transitions explicit and actions bounded. State machines make asynchronous firmware easier to reason about than implicit combinations of flags.
 
 ### How do you design error handling in firmware? {M}
 **Short answer:** Combine several layers: functions return explicit status codes that callers must check; `assert`-style checks catch programming errors during development; peripherals and communication have timeouts and retries; hardware faults (HardFault, bus errors) are caught by fault handlers that record diagnostic data; and the system has a defined recovery strategy (retry, degrade, safe state, reset) plus a watchdog as the last line of defence. Errors are logged so field failures can be analysed.
