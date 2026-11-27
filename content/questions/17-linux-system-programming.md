@@ -285,18 +285,17 @@ OSI is a conceptual seven-layer model; Linux implementation boundaries and offlo
 **Interview takeaway:** Separate packet data, skb metadata and DMA ownership. NAPI reduces interrupt overhead by polling batches of packets under load.
 
 ### How do you find out why a Linux program is slow or stuck? {M}
-**Short answer:** First look at what the process is doing and waiting for: `top`/`htop` (CPU, state), `ps -o stat,wchan` (where it sleeps), `strace -p PID` (system calls), `cat /proc/PID/stack` (kernel stack, as root), and `gdb -p PID` / `thread apply all bt` (user stacks). Then measure the right resource: `perf top`/`perf record` for CPU, `vmstat`/`iostat` for memory and I/O, `ss` for sockets, and PSI files for contention.
+Debug a slow or blocked Linux program by identifying whether it is CPU-bound, waiting on I/O, contending on locks or under memory pressure.
 
-**Step by step**
+```bash
+top -H -p PID
+ps -L -p PID -o tid,stat,wchan:32,comm
+strace -f -tt -T -p PID
+perf top -p PID
+cat /proc/PID/status
+```
 
-1. **Is it using CPU?** `top -H -p PID` (per thread). High CPU → profile with `perf record -g -p PID` then `perf report`, or `perf top`.
-2. **If not, what is it waiting for?** State `S` or `D` in `ps`. `strace -f -p PID` shows the blocking call (`read` on a socket, `futex` = waiting on a lock, `poll` with a timeout). `/proc/PID/wchan` names the kernel function it sleeps in.
-3. **Deadlock?** `gdb -p PID`, `thread apply all bt`: look for threads waiting in `pthread_mutex_lock` on each other's locks.
-4. **Memory?** `/proc/PID/status` (`VmRSS`, `VmSwap`), `smem`, `valgrind --tool=massif`, or `heaptrack` for growth; `vmstat 1` for swapping.
-5. **I/O?** `iostat -x 1` (device utilisation and latency), `iotop`, `pidstat -d`.
-6. **Network?** `ss -tinp` (per-connection queues, retransmits, RTT), `tcpdump`/Wireshark.
-7. **System-wide pressure:** `/proc/pressure/{cpu,memory,io}` shows how much time tasks were stalled waiting for each resource.
+For a hang, inspect thread stacks using GDB if authorized and safe to pause. futex waits often indicate synchronization; poll/epoll waits may be normal idle behavior; D state can indicate an uninterruptible kernel wait. For latency, correlate scheduler, IRQ and driver events with ftrace/perf where supported.
 
-**Tracing tools for deeper problems:** `ftrace` (`trace-cmd`, function graph, scheduler events), `perf sched latency` (scheduling delays), `bpftrace`/BCC tools (`offcputime`, `biolatency`, `runqlat`), and `ltrace` for library calls.
+**Interview takeaway:** Start with measurement and timestamps. A thread waiting is not necessarily hung; distinguish expected blocking from missing progress, and consider instrumentation overhead.
 
-**Embedded tip:** many of these tools are missing from a minimal image. Build a debug image variant with `perf`, `strace`, `gdbserver` and `trace-cmd`, and use `gdbserver` + a cross `gdb` on your PC with the unstripped binaries from the build system.
