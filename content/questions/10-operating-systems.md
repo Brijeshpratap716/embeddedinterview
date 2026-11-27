@@ -83,28 +83,34 @@ A read from an empty blocking pipe puts a thread to sleep. A writer supplies dat
 **Interview takeaway:** Waking a task makes it eligible; it does not guarantee immediate execution. Linux R includes runnable tasks as well as currently running ones.
 
 ### What information does the OS keep about each process (the PCB / task_struct)? {M}
-**Short answer:** The OS keeps a **process control block** for every process; in Linux this is `struct task_struct`. It holds three kinds of information: **identity** (PID, parent, user and group IDs), **saved execution context** (registers, stack pointer, program counter, memory map) so the process can be resumed after a context switch, and **scheduling and accounting** data (state, priority, policy, CPU time used, statistics), plus pointers to resources (open files, signal handlers).
+The process control block (PCB) holds information the OS needs to manage a task. Linux uses task_struct and related objects.
 
-| Category | Examples (Linux `task_struct` fields) |
+| Information | Purpose |
 |---|---|
-| Identity | `pid`, `tgid` (process ID shared by threads), `real_parent`, `cred` (UID/GID, capabilities), `comm` (name) |
-| Saved context | `thread` (saved registers: SP, PC, callee-saved regs, FP/SIMD state), `stack` (kernel stack pointer), `mm` (address space / page tables) |
-| Scheduling control | `__state` (older: `state`), `prio`, `static_prio`, `rt_priority`, `policy`, `se` (CFS/EEVDF entity with vruntime), `cpus_mask` (affinity) |
-| Resources | `files` (open file table), `fs` (cwd, root), `signal`, `sighand`, `nsproxy` (namespaces), `cgroups` |
-| Accounting/statistics | `utime`, `stime`, `nvcsw`/`nivcsw` (context switches), `min_flt`/`maj_flt` (page faults) |
+| PID and relationships | Identity, parent and thread group |
+| Scheduling state | Priority, policy, runqueue information |
+| CPU context | Saved architecture-specific state |
+| Memory context | Address-space description (mm_struct for normal user tasks) |
+| File and credential references | Open files, UID/GID and permissions |
+| Signal/accounting state | Pending signals and execution statistics |
 
-**Classifying fields (a typical exam question)**
+#### 1. Linux structure relationships
 
-- `rt_priority` → scheduling control.
-- `pid` → identity.
-- `state` → scheduling control (the scheduler only runs `TASK_RUNNING` tasks).
-- `files` → a resource (sometimes grouped with identity/context in textbooks).
-- `stack` → saved context (where the kernel stack and saved registers are).
-- `maj_flt` → accounting/statistics (major page faults).
+```text
+task_struct
+   -> mm_struct -> virtual memory areas / page tables
+   -> files_struct -> file descriptors
+   -> credentials
+   -> architecture thread state / stack
+```
 
-**Where to see it from user space:** `/proc/<pid>/status`, `/proc/<pid>/stat`, `/proc/<pid>/sched`, `/proc/<pid>/maps`, and tools such as `ps`, `top`, `pidstat`.
+Threads may share some referenced objects rather than duplicate them.
 
-**RTOS comparison:** a FreeRTOS task has a much smaller **TCB** (`TCB_t`): the saved stack pointer (registers are on the task's own stack), priority, state list links, stack bounds, name and notification values. There is no address space or file table, because all tasks share one memory space.
+#### 2. Debugging
+
+Use /proc/PID/status, /proc/PID/maps and appropriate kernel debugging tools to inspect task information. Internal structure fields are not a stable userspace ABI.
+
+**Interview takeaway:** The PCB is task metadata and saved state, not a copy of all process memory. Linux separates shared resources into referenced objects.
 
 ### What happens during an OS context switch, and why is it expensive? {M}
 **Short answer:** The kernel saves the CPU state of the current task (registers, stack pointer, program counter, FP/SIMD state as needed) into its PCB, chooses the next task, switches the address space if it belongs to a different process (page table base register, ASID), restores the new task's registers, and returns into it. The direct cost is a few microseconds; the indirect cost (cold caches, TLB misses, branch predictors) is often larger.
