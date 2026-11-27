@@ -337,3 +337,57 @@ html.dark .qa summary:hover .qt{color:var(--accent)}
 .edtop #codeLang{background:#202b39;color:#e6edf3;border:1px solid #425166;border-radius:6px;padding:5px 7px;font:12px var(--mono);max-width:100%}
 .edtop #codeLang:focus-visible{outline:2px solid #73b7ff;outline-offset:2px}
 #solution-c[hidden],#solution-cpp[hidden]{display:none}
+
+/* Homepage: focused learning portal with an embedded coding preview */
+.home-hero{margin:0;background:radial-gradient(ellipse at 82% 28%,#164235 0,transparent 52%),linear-gradient(135deg,#0b1624,#101f2c);color:#f8fafc;padding:48px 0 46px;border-bottom:1px solid #223d3d}
+.home-hero-grid{display:grid;grid-template-columns:minmax(0,1.18fr) minmax(0,.82fr);gap:48px;align-items:center}
+.home-kicker{display:flex;align-items:center;gap:9px;font:600 11.5px/1.5 var(--mono);letter-spacing:.08em;color:#9ce9cb;margin:0 0 15px}
+.home-live{width:8px;height:8px;border-radius:50%;background:#43dfac;box-shadow:0 0 0 4px #43dfac20;flex:none}
+.home-hero h1{font-size:clamp(35px,4.25vw,55px);line-height:1.12;letter-spacing:-.045em;margin:0 0 17px;font-weight:800;max-width:690px}
+.home-hero h1 span{color:#62e2b5}
+.home-intro{font-size:16px;line-height:1.75;color:#c4d2df;margin:0;max-width:610px}
+.home-actions{display:flex;flex-wrap:wrap;gap:11px;margin:24px 0 25px}
+.home-actions a{display:inline-flex;justify-content:center;align-items:center;gap:10px;padding:12px 17px;border-radius:9px;font-size:14px;font-weight:700;transition:background .15s}
+.home-primary{background:#63e6b6;color:#092d23!important;border:1px solid #63e6b6}
+.home-primary:hover{background:#95f0ce;text-decoration:none}
+.home-secondary{background:#192d3b;border:1px solid #405965;color:#f4f8fc!important}
+.home-secondary:hover{background:#264350;text-decoration:none}
+.home-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;padding-top:20px;border-top:1px solid #ffffff20}
+.home-metrics strong{display:block;font-size:26px;line-height:1.2;letter-spacing:-.04em;color:#f8fafc;font-variant-numeric:tabular-nums}
+.home-metrics span{font-size:11.5px;line-height:1.4;color:#aebfce;display:block;margin-top:5px}
+.home-preview{background:#0b121a;border:1px solid #35524f;border-radius:15px;box-shadow:0 22px 48px #0005;min-width:0;overflow:hidden}
+.home-preview-top{display:flex;align-items:center;gap:11px;background:#182431;border-bottom:1px solid #2a3c49;padding:11px 15px;font:12px var(--mono);color:#b4c5d6}
+.home-dots{display:flex;gap:5px}.home-dots i{display:block;width:9px;height:9px;border-radius:50%;background:#fa7875}.home-dots i:nth-child(2){background:#f4c36b}.home-dots i:nth-child(3){background:#52d6a2}
+.home-lang{margin-left:auto;color:#8fe3c2;white-space:nowrap}
+.home-preview-content{padding:18px 20px 15px}
+.home-example-label{font:600 10px/1.5 var(--mono);letter-spacing:.06em;color:#8fe3c2}
+.home-preview h2{font-size:19px;margin:8px 0 4px;color:#eef5fc;letter-spacing:-.02em}
+.home-preview p{font-size:13px;margin:0 0 13px;color:#b0c0d0}
+.home-preview pre{margin:0;background:#0e1721;border:1px solid #263745;border-radius:9px;padding:13px 15px;overflow:auto;color:#e0e9f3;font:12.5px/1.6 var(--mono)}
+.home-preview pre code{font-size:inherit;background:none}
+.home-code-key{color:#ffa0b0}.home-code-str{color:#a1e5c6}.home-code-dim{color:#a9b9dc}
+.home-preview-bottom{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:13px;font-size:11.5px;color:#b3c3d3}
+.home-preview-bottom b,.home-preview-bottom a{color:#8fe3c2!important}.home-preview-bottom a{font-weight:700}
+.home-entry-wrap{padding-top:17px}
+.home-entry{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.home-entry a{display:flex;align-items:center;gap:10px;padding:14px 11px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);box-shadow:var(--shadow);min-width:0;transition:border-color .15s,transform .15s}
+.home-entry a:hover{border-color:var(--accent);transform:translateY(-2px);text-decoration:none}
+.home-entry-icon{display:grid;place-items:center;flex:none;width:37px;height:37px;border-radius:9px;background:var(--accent-soft);color:var(--accent-ink);font:700 11px var(--mono)}
+.home-entry-code{font-size:15px}
+.home-entry strong{display:block;font-size:13.5px;line-height:1.35}
+.home-entry small{display:block;font-size:11px;color:var(--muted);line-height:1.4;margin-top:3px}
+.home-entry-arrow{margin-left:auto;color:var(--accent-ink);font-size:15px}
+.home-section-intro{margin:-3px 0 12px;color:var(--muted);font-size:15px}
+.home-topic-links{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 19px}
+.home-topic-links a{color:var(--accent-ink);background:var(--accent-soft);border:1px solid transparent;padding:5px 11px;border-radius:6px;font-size:12.5px;font-weight:600}
+.home-topic-links a:hover{border-color:var(--accent);text-decoration:none}
+.home-top{margin-top:30px}
+.home-top .sechead h2{font-size:clamp(20px,2.3vw,26px)}
+.home-top .sechead{gap:12px}
+.home-top .sechead a{white-space:nowrap;font-size:14px}
+.home-hero a:focus-visible,.home-entry a:focus-visible,.home-topic-links a:focus-visible{outline:3px solid #38bdf8;outline-offset:3px}
+@media(max-width:1120px){.top .bar{gap:13px}.nav a{font-size:13px;padding:8px}.home-hero-grid{gap:30px}.home-entry-arrow{display:none}}
+@media(max-width:960px){.home-hero-grid{grid-template-columns:1fr .85fr;gap:23px}.home-entry{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){.home-hero{padding:34px 0 30px}.home-hero-grid{grid-template-columns:1fr;gap:22px}.home-hero h1{font-size:clamp(34px,8vw,45px)}.home-intro{font-size:15px}.home-metrics strong{font-size:23px}.home-preview{display:none}.home-entry a{padding:12px 9px;gap:8px}.home-entry strong{font-size:12px}.home-entry small{font-size:10.5px}.home-entry-icon{width:31px;height:31px;font-size:10px}.home-entry-code{font-size:13px}}
+@media(max-width:370px){.home-actions a{width:100%}.home-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.home-entry{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){.home-entry a,.home-actions a{transition:none}}

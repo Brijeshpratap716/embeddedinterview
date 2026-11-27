@@ -86,7 +86,7 @@ def write(path, content):
 
 
 # ---------------------------------------------------------------- layout
-NAV = [("Topics", "topics/"), ("Questions", "questions/"), ("Practice", "problems/"),
+NAV = [("Topics", "topics/"), ("Questions", "questions/"), ("Coding Practice", "problems/"),
        ("Quiz", "quiz/"), ("Articles", "articles/"), ("Companies", "companies/"), ("Forum", "forum/"), ("Roadmap", "roadmap/")]
 
 
@@ -101,7 +101,7 @@ def page(path, title, body, desc="", active="", schema=None):
     nav = "".join(
         f'<a href="{root}{url(h)}" class="{"on" if active == h else ""}">{n}</a>' for n, h in NAV)
     canon = SITE_URL + "/" + (path[: -len("index.html")] if path.endswith("index.html") else path)
-    full_title = f"{title} | {SITE_NAME}" if title != SITE_NAME else "Embedded Interview Questions and Answers: Embedded C, RTOS, Linux Drivers | EmbeddedInterview"
+    full_title = f"{title} | {SITE_NAME}" if title != SITE_NAME else "Embedded Systems Interview Questions & C/C++ Practice | EmbeddedInterview"
     ld = f'<script type="application/ld+json">{json.dumps(schema)}</script>' if schema else ""
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -509,25 +509,71 @@ def build_home(topics, problems, articles, nquiz):
     prob = "".join(f'<a class="row" href="{url("problems/" + p["slug"] + "/")}"><span>{html.escape(p["title"])}</span><span class="tt">{html.escape(p["category"])}</span>{badge(p["difficulty"])}</a>' for p in featured)
     arts = "".join(f'<a class="row" href="{url("articles/" + a["slug"] + "/")}"><span>{html.escape(a["title"])}</span><span class="tt">{html.escape(a.get("tag",""))}</span></a>' for a in articles[:6])
     body = f"""
-<section class="wrap home-top"><div class="sechead"><h1>Embedded interview questions by topic</h1><a href="{url('topics/')}">All topics →</a></div><div class="grid cards">{cards}</div></section>
+<section class="home-hero">
+  <div class="wrap home-hero-grid">
+    <div class="home-hero-copy">
+      <p class="home-kicker"><span class="home-live"></span> FREE EMBEDDED SYSTEMS INTERVIEW PREPARATION</p>
+      <h1>Embedded systems interview questions <span>and coding practice.</span></h1>
+      <p class="home-intro">Prepare for embedded software, firmware, BSP and Linux device driver interviews with clear technical answers, hands-on C/C++ coding problems and company interview guides. From freshers to experienced engineers.</p>
+      <div class="home-actions">
+        <a class="home-primary" href="{url('questions/')}">Explore interview questions <span aria-hidden="true">→</span></a>
+        <a class="home-secondary" href="{url('problems/')}"><span aria-hidden="true">&lt;/&gt;</span> Practice C/C++</a>
+      </div>
+      <div class="home-metrics" aria-label="Learning resources">
+        <div><strong>{total:,}</strong><span>Interview questions</span></div>
+        <div><strong>{len(problems)}</strong><span>Coding problems</span></div>
+        <div><strong>{len(topics)}</strong><span>Technical topics</span></div>
+        <div><strong>{nquiz}</strong><span>Quiz questions</span></div>
+      </div>
+    </div>
+    <aside class="home-preview" aria-label="Example coding practice">
+      <div class="home-preview-top"><span class="home-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>Interview practice</span><span class="home-lang">C / C++</span></div>
+      <div class="home-preview-content">
+        <span class="home-example-label">BIT MANIPULATION · SAMPLE PROBLEM</span>
+        <h2>Count set bits in an integer</h2>
+        <p>Can you solve it without checking every bit?</p>
+        <pre aria-label="C code example"><code><span class="home-code-dim">#include</span> <span class="home-code-str">&lt;stdint.h&gt;</span>
+
+<span class="home-code-key">unsigned</span> popcount(uint32_t n)
+{{
+    <span class="home-code-key">unsigned</span> count = 0;
+    <span class="home-code-key">while</span> (n) {{
+        n &amp;= n - 1;
+        ++count;
+    }}
+    <span class="home-code-key">return</span> count;
+}}</code></pre>
+        <div class="home-preview-bottom"><span><b aria-hidden="true">✓</b> Built-in tests &amp; solutions</span><a href="{url('problems/count-set-bits/')}">Try problem →</a></div>
+      </div>
+    </aside>
+  </div>
+</section>
+<div class="wrap home-entry-wrap">
+  <nav class="home-entry" aria-label="Start learning">
+    <a href="{url('questions/')}"><span class="home-entry-icon" aria-hidden="true">Q&amp;A</span><span><strong>Interview questions</strong><small>Browse by topic and difficulty</small></span><span class="home-entry-arrow" aria-hidden="true">→</span></a>
+    <a href="{url('problems/')}"><span class="home-entry-icon home-entry-code" aria-hidden="true">&lt;/&gt;</span><span><strong>Practice questions</strong><small>Run C and C++ code online</small></span><span class="home-entry-arrow" aria-hidden="true">→</span></a>
+    <a href="{url('quiz/')}"><span class="home-entry-icon" aria-hidden="true">MCQ</span><span><strong>Quick quizzes</strong><small>Test your technical knowledge</small></span><span class="home-entry-arrow" aria-hidden="true">→</span></a>
+    <a href="{url('companies/')}"><span class="home-entry-icon" aria-hidden="true">Co.</span><span><strong>Company guides</strong><small>Prepare for interview rounds</small></span><span class="home-entry-arrow" aria-hidden="true">→</span></a>
+  </nav>
+</div>
+<section class="wrap home-top" id="learn"><div class="sechead"><h2>Embedded interview questions by topic</h2><a href="{url('topics/')}">All topics →</a></div><p class="home-section-intro">Build your foundations or revise the topics that matter most for your next interview.</p><div class="home-topic-links" aria-label="Popular topics"><a href="{url('topics/c-programming/')}">C programming</a><a href="{url('topics/embedded-c/')}">Embedded C</a><a href="{url('topics/microcontrollers-arm/')}">ARM Cortex-M</a><a href="{url('topics/rtos/')}">RTOS</a><a href="{url('topics/linux-device-drivers/')}">Linux device drivers</a><a href="{url('topics/embedded-linux/')}">Embedded Linux</a></div><div class="grid cards">{cards}</div></section>
 <section class="wrap two">
 <div class="panel"><div class="sechead"><h2>Practice problems</h2><a href="{url('problems/')}">See all →</a></div>{prob}</div>
 <div class="panel"><div class="sechead"><h2>Latest articles</h2><a href="{url('articles/')}">See all →</a></div>{arts}</div>
 </section>
 <section class="wrap"><div class="banner"><div><h2>Test yourself in 5 minutes</h2><p>10 random MCQs with explanations. Track your best score.</p></div><a class="btn big" href="{url('quiz/')}">Take the quiz</a></div></section>
-<section class="wrap about-home"><h2>Embedded interview questions and answers</h2>
+<section class="wrap about-home"><h2>Free embedded systems interview preparation for freshers and experienced engineers</h2>
 <p>EmbeddedInterview has {total} embedded interview questions with detailed answers, written the way you would answer in a real interview: the short answer first, then the detail, the common mistakes and the follow-up questions interviewers ask next. The questions cover what firmware, embedded software, BSP and Linux driver interviews actually test: <a href="{url('topics/c-programming/')}">C programming</a>, <a href="{url('topics/pointers-memory/')}">pointers and memory</a>, <a href="{url('topics/embedded-c/')}">Embedded C</a> (volatile, interrupts, linker scripts), <a href="{url('topics/bit-manipulation/')}">bit manipulation</a>, <a href="{url('topics/microcontrollers-arm/')}">ARM Cortex-M microcontrollers</a>, <a href="{url('topics/rtos/')}">RTOS</a>, <a href="{url('topics/communication-protocols/')}">I2C, SPI, UART and CAN</a>, and <a href="{url('topics/linux-device-drivers/')}">Linux kernel and device drivers</a>.</p>
-<p>Use the <a href="{url('questions/')}">full list of embedded interview questions</a> to filter by topic and difficulty, practise the {len(problems)} <a href="{url('problems/')}">embedded C coding interview questions</a> with hidden tests, or follow the <a href="{url('roadmap/')}">preparation roadmap</a> from fresher to senior level.</p>
+<p>Use the <a href="{url('questions/')}">full list of embedded interview questions</a> to filter by topic and difficulty, practise the {len(problems)} <a href="{url('problems/')}">embedded C and C++ coding interview questions</a> with a browser-based editor and test cases, or follow the <a href="{url('roadmap/')}">preparation roadmap</a> from fresher to senior level.</p>
 </section>
 <section class="wrap how"><h2>How to use this site</h2><div class="grid three">
 <div><b>1. Read</b><p>Work through a topic. Each answer is written the way you would say it in an interview: the short version first, then the detail.</p></div>
 <div><b>2. Code</b><p>Solve the practice problems in the built-in editor. Press Run and hidden tests check your code instantly; then compare with the reference solution.</p></div>
 <div><b>3. Track</b><p>Mark questions done. Your progress is saved in your browser, so you can see what is left before the interview.</p></div></div></section>"""
     schema = {"@context": "https://schema.org", "@graph": [
-        {"@type": "WebSite", "name": SITE_NAME, "alternateName": "Embedded Interview", "url": SITE_URL,
-         "potentialAction": {"@type": "SearchAction", "target": SITE_URL + "/questions/?q={q}", "query-input": "required name=q"}},
+        {"@type": "WebSite", "name": SITE_NAME, "alternateName": "Embedded Interview", "url": SITE_URL, "inLanguage": "en"},
         {"@type": "Organization", "name": SITE_NAME, "url": SITE_URL, "logo": SITE_URL + "/static/og.png", "founder": AUTHOR}]}
-    write("index.html", page("index.html", SITE_NAME, body, f"{total} embedded interview questions and answers with detailed explanations: Embedded C, RTOS, ARM Cortex-M, I2C, SPI, UART, CAN, Linux device drivers, plus coding practice and quizzes.", "", schema))
+    write("index.html", page("index.html", SITE_NAME, body, f"Free embedded systems interview preparation: {total} questions and answers, {len(problems)} C/C++ coding problems, ARM, RTOS, Linux drivers, quizzes and company guides.", "", schema))
 
 
 def build_search(topics, problems, articles, companies=()):
@@ -551,7 +597,7 @@ def build_sitemap():
             if f == "index.html":
                 rel = os.path.relpath(os.path.join(dp, f), OUT).replace("\\", "/")
                 rel = rel[: -len("index.html")]
-                urls.append(f"<url><loc>{SITE_URL}/{rel}</loc><lastmod>{TODAY}</lastmod></url>")
+                urls.append(f"<url><loc>{SITE_URL}/{rel}</loc></url>")
     write("sitemap.xml", '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + "\n".join(sorted(urls)) + "\n</urlset>\n")
     write("robots.txt", f"User-agent: *\nAllow: /\nSitemap: {SITE_URL}/sitemap.xml\n")
     write("CNAME", "embeddedinterview.com\n")
