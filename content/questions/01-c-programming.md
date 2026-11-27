@@ -298,34 +298,112 @@ An `extern` variable declaration without an initializer normally does not alloca
 **Interview takeaway:** `extern` allows multiple source files to share the same global variable or function. The compiler checks its declaration, and the linker resolves its reference to the corresponding definition.
 
 ### What is the difference between const and #define? {E}
-**Short answer:** `#define` is plain text substitution done by the preprocessor before compilation: it has no type, no scope and is invisible in the debugger. `const` creates a real, typed, scoped object that the compiler checks and that can live in flash (`.rodata`). Prefer `const` or `enum` for type safety, but note that in C a `const int` is **not** a compile-time constant expression.
+Both `const` and `#define` are used to represent constant values in C, but they work differently.
 
-| | `#define N 10` | `const int n = 10;` | `enum { N = 10 };` |
-|---|---|---|---|
-| Handled by | preprocessor | compiler | compiler |
-| Type | none (text) | `int` | `int` |
-| Scope | from definition to end of file (or `#undef`) | block or file | block or file |
-| Visible in debugger | no | yes | yes (usually) |
-| Constant expression in C (array size at file scope, `case` label, `static` initialiser) | yes | **no** | yes |
-| Takes memory | no | possibly (often optimised away) | no |
+`const` creates a **type-qualified object**, whereas `#define` performs **textual substitution during preprocessing**.
+
+#### 1. Using const
 
 ```c
-#define BUF_LEN 64
-static uint8_t buf[BUF_LEN];        /* fine */
+const int max = 100;
 
-const int len = 64;
-static uint8_t buf2[len];           /* error in C (OK in C++): not a constant expression */
+int main(void)
+{
+    printf("%d", max);
+    return 0;
+}
 ```
 
-**C23 adds `constexpr`** for objects, which fixes this: `constexpr int len = 64;` can size arrays.
+- Has a specific data type.
+- Cannot be modified through its const-qualified name.
+- Can have a memory address.
+- Follows C scope rules.
 
-**Macro pitfalls that `const` avoids**
+#### 2. Using #define
 
-- `#define MAX 100 + 1` used as `MAX * 2` gives 102, not 202 (no parentheses, no type).
-- Macros ignore scope: a `#define count 5` in a header silently breaks any variable named `count` after it.
-- Error messages show the expanded text, not the macro name.
+```c
+#define MAX 100
 
-**When `#define` is still right:** conditional compilation (`#if DEBUG`), constants needed by the preprocessor, include guards, and register addresses in vendor headers. For typed constants (`const uint32_t timeout_ms = 500;`), lookup tables (`static const uint8_t crc_table[256] = {...};` in flash), and groups of related integers (`enum state { IDLE, RUN }`), use `const` and `enum`.
+int main(void)
+{
+    printf("%d", MAX);
+    return 0;
+}
+```
+
+Before compilation, the preprocessor replaces `MAX` with `100`.
+
+```c
+printf("%d", 100);
+```
+
+The macro itself does not create a variable or allocate memory.
+
+#### 3. How the compiler handles them
+
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 225" width="100%" role="img" aria-label="Comparison of const and define preprocessing and compilation"><text x="82.5" y="16" font-size="13" font-weight="600" text-anchor="middle" fill="currentColor">const</text>
+<rect x="5" y="28" width="155" height="34" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/>
+<text x="82.5" y="49" font-size="11" font-family="monospace" text-anchor="middle" fill="currentColor">const int x = 100;</text>
+<path d="M82.5 62 v16 m-4 -5 4 5 4 -5" stroke="currentColor" fill="none"/>
+<rect x="5" y="78" width="155" height="30" rx="5" fill="#eab308" fill-opacity=".12" stroke="#ca8a04"/>
+<text x="82.5" y="97" font-size="11" text-anchor="middle" fill="currentColor">Preprocessor</text>
+<path d="M82.5 108 v16 m-4 -5 4 5 4 -5" stroke="currentColor" fill="none"/>
+<rect x="5" y="124" width="155" height="33" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/>
+<text x="82.5" y="145" font-size="11" font-family="monospace" text-anchor="middle" fill="currentColor">const int x = 100;</text>
+<path d="M82.5 157 v16 m-4 -5 4 5 4 -5" stroke="currentColor" fill="none"/>
+<rect x="5" y="173" width="155" height="44" rx="5" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/>
+<text x="82.5" y="190" font-size="11" text-anchor="middle" fill="currentColor">Compiler</text>
+<text x="82.5" y="205" font-size="11" font-weight="600" text-anchor="middle" fill="currentColor">Typed object</text>
+<text x="257.5" y="16" font-size="13" font-weight="600" text-anchor="middle" fill="currentColor">#define</text>
+<rect x="180" y="28" width="155" height="34" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/>
+<text x="257.5" y="49" font-size="11" font-family="monospace" text-anchor="middle" fill="currentColor">#define X 100</text>
+<path d="M257.5 62 v16 m-4 -5 4 5 4 -5" stroke="currentColor" fill="none"/>
+<rect x="180" y="78" width="155" height="30" rx="5" fill="#eab308" fill-opacity=".12" stroke="#ca8a04"/>
+<text x="257.5" y="97" font-size="11" text-anchor="middle" fill="currentColor">Preprocessor</text>
+<path d="M257.5 108 v16 m-4 -5 4 5 4 -5" stroke="currentColor" fill="none"/>
+<rect x="180" y="124" width="155" height="33" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/>
+<text x="257.5" y="145" font-size="11" font-family="monospace" text-anchor="middle" fill="currentColor">X replaced by 100</text>
+<path d="M257.5 157 v16 m-4 -5 4 5 4 -5" stroke="currentColor" fill="none"/>
+<rect x="180" y="173" width="155" height="44" rx="5" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/>
+<text x="257.5" y="190" font-size="11" text-anchor="middle" fill="currentColor">Compiler</text>
+<text x="257.5" y="205" font-size="11" font-weight="600" text-anchor="middle" fill="currentColor">Literal value</text>
+</svg></div>
+
+#### 4. Memory location
+
+```c
+const int a = 10;
+#define B 20
+```
+
+- `a` may be stored in `.rodata`, stack or another memory region, depending on its scope and compiler optimization.
+- `B` has no dedicated memory location. Its value is substituted wherever the macro is used.
+
+#### 5. Difference between const and #define
+
+| Feature | `const` | `#define` |
+|---|---|---|
+| Processed by | Compiler | Preprocessor |
+| Data type | Yes | No inherent type |
+| Type checking | Yes | After macro expansion |
+| Memory allocation | May require storage | No dedicated storage |
+| Address | Can be obtained | Macro itself has no address |
+| Scope | C scope rules | Until `#undef` or end of translation unit |
+| Debugging | Generally easier | Generally harder |
+| Use in `#if` | No | Yes |
+
+#### 6. Use in embedded systems
+
+```c
+#define UART_BASE 0x40011000U
+#define BUFFER_SIZE 256
+
+const int timeout_ms = 100;
+```
+
+`#define` is commonly used for hardware addresses, register masks and compile-time configuration, while `const` is useful for typed, read-only configuration objects.
+
+**Interview takeaway:** Prefer `const` for type safety and read-only objects. Use `#define` for preprocessing, conditional compilation and compile-time constants. In C, a `const int` is not generally an integer constant expression.
 
 ### What does const int *p, int *const p and const int *const p mean? {M}
 **Short answer:** Read the declaration from the variable name outward (right to left). `const int *p` is a pointer to a constant int: you can move `p`, but not change `*p`. `int *const p` is a constant pointer to int: you can change `*p`, but `p` always points to the same place. `const int *const p` allows neither.
