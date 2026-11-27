@@ -31,6 +31,16 @@ The ISA defines instructions, registers and the programmer-visible behavior. A p
 
 **Interview takeaway:** Arm architecture is the software-visible contract; Cortex is a family of processor designs.
 
+#### How to select an ARM profile for a real product
+
+| Example workload | Suitable profile | Reason |
+|---|---|---|
+| Linux graphics and networking | Cortex-A | Virtual memory, rich operating systems, application performance |
+| Deadline-sensitive storage or control | Cortex-R | Real-time-oriented implementation and memory architecture |
+| Small sensor and motor-control firmware | Cortex-M | Low-overhead exception model, MCU integration |
+
+The profile describes an architectural family, not a fixed feature list. For example, Cortex-R implementations differ in MMU/MPU support, and Cortex-M implementations differ in FPU, MPU, TrustZone and cache support. Cortex-A can also run bare-metal software. The actual SoC adds interconnect, memory controllers, peripherals, power domains and interrupt hardware. Choose the processor using measured performance, worst-case latency, memory, isolation and power requirements.
+
 ### What is AArch64 versus AArch32? {E}
 **Short answer:** AArch64 is the 64-bit execution state using A64 instructions. AArch32 is the 32-bit state using A32 or T32 instructions, where supported. AArch64 instructions are 32 bits wide.
 
