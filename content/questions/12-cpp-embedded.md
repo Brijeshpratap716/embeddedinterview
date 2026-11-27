@@ -33,51 +33,47 @@ Use extern "C" interfaces to call C libraries or expose selected functions to C 
 **Interview takeaway:** C++ is not inherently slower than C. Evaluate the generated code, runtime configuration, allocation policy and worst-case behavior of the features actually used.
 
 ### How do virtual functions work? What is a vtable? {M}
-**Short answer:** For each class with virtual functions, the compiler builds a **vtable**, a table in flash holding pointers to that class's implementations of each virtual function. Each object of such a class contains a hidden **vptr** that points to its class's vtable, set by the constructor. A virtual call loads the vptr, loads the function pointer from the right slot and calls it indirectly. The cost is one pointer of RAM per object, one vtable per class in flash, and an indirect call that prevents inlining (unless the compiler can devirtualise it).
+A virtual function supports runtime polymorphism: calling through a base reference or pointer selects the override belonging to the object's dynamic type.
+
+#### 1. Example
 
 ```cpp
-#include <cstdio>
-
-struct Sensor {
-    virtual int read() = 0;               // pure virtual: interface
-    virtual ~Sensor() = default;          // virtual destructor if deleted via base pointer
+struct Device {
+    virtual void start() = 0;
+    virtual ~Device() = default;
 };
 
-struct Tmp102 : Sensor { int read() override { return 25; } };
-struct Bme280 : Sensor { int read() override { return 21; } };
+struct Uart : Device {
+    void start() override { /* Enable UART */ }
+};
 
-int average(Sensor *const *s, int n)      // works with any sensor type
+void enable(Device& d)
 {
-    int sum = 0;
-    for (int i = 0; i < n; i++) sum += s[i]->read();   // ldr vptr; ldr [vptr, #slot]; blx
-    return sum / n;
-}
-
-int main()
-{
-    Tmp102 a; Bme280 b;
-    Sensor *list[] = { &a, &b };
-    std::printf("%d\n", average(list, 2));   // 23
+    d.start();
 }
 ```
 
-**What a virtual call compiles to (conceptually)**
+Calling enable with a Uart object invokes Uart::start.
 
-```c
-struct Sensor_vtbl { int (*read)(struct Sensor *); void (*dtor)(struct Sensor *); };
-struct Sensor { const struct Sensor_vtbl *vptr; };
-/* s->read()  ==>  s->vptr->read(s) */
+#### 2. Typical implementation
+
+```text
+Object: [vptr | data members]
+          |
+          v
+Virtual table: [start address | destructor entries | ...]
+          |
+          v
+Indirect call to selected override
 ```
 
-This is exactly the "struct of function pointers" pattern C drivers use (e.g. Linux `file_operations`), but generated and type-checked by the compiler.
+Most common C++ ABIs use a hidden virtual-table pointer and tables of function entries, but the language does not mandate a particular layout. The compiler can sometimes devirtualize a call.
 
-**Details interviewers ask**
+#### 3. Embedded impact
 
-- Calling a virtual function from a constructor or destructor calls the version of the class being constructed, not the derived one.
-- A base class with virtual functions that is deleted through a base pointer needs a **virtual destructor**, otherwise the derived destructor does not run (undefined behaviour).
-- `final` on a class or function lets the compiler devirtualise calls.
-- Multiple inheritance can add several vptrs per object and "thunks" to adjust `this`.
-- Abstract interfaces with pure virtual functions still need a vtable; on very small MCUs, consider CRTP (next question) when the type is known at compile time.
+Virtual dispatch can add object storage and an indirect branch, and complicate worst-case timing. A virtual destructor is needed if objects are deleted polymorphically through the base pointer.
+
+**Interview takeaway:** Virtual functions enable runtime substitution. A vtable is a common implementation technique, not a required C++ object layout.
 
 ### What is CRTP and how does static polymorphism compare with virtual functions? {H}
 **Short answer:** The Curiously Recurring Template Pattern (CRTP) is a class that derives from a template instantiated with itself: `class Uart1 : public UartBase<Uart1>`. The base can call derived-class functions through `static_cast<Derived*>(this)`, which the compiler resolves at **compile time**, so there is no vtable, no vptr and calls can be inlined. It gives a common interface and shared code with zero run-time cost, but you lose the ability to store different types behind one base pointer at run time.
