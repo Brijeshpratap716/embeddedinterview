@@ -502,42 +502,28 @@ void bubble(int a[], size_t n)
 **Interview takeaway:** Bubble sort is stable with strict greater-than swaps, and takes O(1) extra space. It is usually unsuitable for large arrays.
 
 ### How do you solve Two Sum (find two numbers that add up to a target)? {E}
-**Short answer:** For an unsorted array, the brute-force check of every pair is O(n²). If the array is **sorted** (or you can sort a copy with indices), use two pointers from both ends: if the sum is too small move the left pointer up, if too large move the right pointer down, O(n). With a hash table of values already seen, it is O(n) on unsorted input.
+Two Sum asks for two distinct indices whose values sum to target. A hash table storing previously seen values and indices gives expected O(n) time and O(n) space. At index i, look up target−a[i] before inserting a[i].
+
+For sorted input, two pointers give a simpler solution:
 
 ```c
-#include <stdbool.h>
-#include <stddef.h>
-
-/* sorted input: two pointers, O(n) time, O(1) space */
-bool two_sum_sorted(const int *a, size_t n, int target, size_t *i_out, size_t *j_out)
+bool two_sum_sorted(const int32_t a[], size_t n,
+                    int64_t target, size_t *i, size_t *j)
 {
-    if (n < 2) return false;
-    size_t i = 0, j = n - 1;
-    while (i < j) {
-        long sum = (long)a[i] + a[j];          /* avoid int overflow */
-        if (sum == target) { *i_out = i; *j_out = j; return true; }
-        if (sum < target) i++;
-        else              j--;
+    if (n<2) return false;
+    size_t l=0,r=n-1;
+    while (l<r) {
+        int64_t s=(int64_t)a[l]+a[r];
+        if (s==target) { *i=l; *j=r; return true; }
+        if (s<target) ++l;
+        else --r;
     }
     return false;
 }
-/* {1, 3, 4, 6, 9}, target 10 -> indices 0 and 4 (1 + 9) */
 ```
+[2,7,11,15], target 9 gives indices 0 and 1. Use the hash method if original unsorted indices are required. Widen arithmetic to avoid signed overflow.
 
-**Why moving the pointers is safe:** if `a[i] + a[j]` is too small, `a[i]` cannot pair with any element left of `j` either (they are all ≤ `a[j]`), so `i` can be discarded. The symmetric argument discards `j` when the sum is too big.
-
-**Unsorted input options**
-
-| Method | Time | Extra memory | Embedded suitability |
-|---|---|---|---|
-| Nested loops | O(n²) | O(1) | fine for n < ~100 |
-| Sort a copy of (value, index) pairs + two pointers | O(n log n) | O(n) | good, deterministic |
-| Hash set of seen values | O(n) average | O(n) | needs a hash table; avoid dynamic allocation on MCUs |
-| Lookup table (small value range, e.g. 0..255) | O(n) | O(range) | excellent when values are small |
-
-**Watch for:** using the same element twice (target 8 with a single 4), duplicate values, and overflow when adding two large `int`s.
-
-**Follow-ups:** count all pairs, closest sum to the target (track the minimum |sum − target| while moving the pointers), and 3Sum (fix one element, run two pointers on the rest: O(n²)).
+**Complexity:** Sorted method O(n) time, O(1) space.
 
 ### How do you find the longest common prefix of a set of strings? {E}
 **Short answer:** Compare the strings column by column: take character `i` of the first string and check that every other string has the same character at `i`. Stop at the first mismatch or at the end of any string; the prefix is the first `i` characters. O(total characters) time, O(1) extra space.
