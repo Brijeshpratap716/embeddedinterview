@@ -46,38 +46,36 @@ For MMIO, ensure the register permits read-modify-write. C integer promotions ca
 **Interview takeaway:** Bitwise operators work on individual integer bits; logical operators such as && and || work on truth values and may short-circuit. Use unsigned operands and valid shift counts.
 
 ### How do you set, clear, toggle and check the nth bit? {E}
-**Short answer:** Build a mask with `1u << n`, then use OR to set, AND with the inverted mask to clear, XOR to toggle and AND to test.
+Use a mask containing one set bit at position n. Bit positions are zero-based: bit 0 is the least significant bit.
+
+#### 1. Code
 
 ```c
-#include <stdint.h>
-#include <stdbool.h>
+uint32_t mask = UINT32_C(1) << n;
 
-static inline uint32_t bit_set(uint32_t x, unsigned n)    { return x |  (1u << n); }
-static inline uint32_t bit_clear(uint32_t x, unsigned n)  { return x & ~(1u << n); }
-static inline uint32_t bit_toggle(uint32_t x, unsigned n) { return x ^  (1u << n); }
-static inline bool     bit_test(uint32_t x, unsigned n)   { return (x >> n) & 1u; }
-
-/* In-place versions, the style many people write first: */
-void set_nth_bit(uint32_t *num, unsigned n)   { *num |=  (1u << n); }
-void clear_nth_bit(uint32_t *num, unsigned n) { *num &= ~(1u << n); }
+x |= mask;             // Set
+x &= ~mask;            // Clear
+x ^= mask;             // Toggle
+bool bit = (x & mask) != 0; // Check
 ```
 
-**Why each works**
+Here n must be in the range 0–31.
 
-- OR with 1 forces a bit to 1; OR with 0 leaves it unchanged. The mask has a single 1, so only bit `n` changes.
-- `~(1u << n)` is all ones except bit `n`. AND with 0 forces that bit to 0 and AND with 1 keeps the others.
-- XOR with 1 flips a bit; XOR with 0 keeps it.
-- `x & (1u << n)` is non-zero if bit `n` is set. It is **not** 1; it is `2ⁿ`. If you need exactly 0 or 1, use `(x >> n) & 1u` or `!!(x & (1u << n))`.
+#### 2. Worked example
 
-**Worked example:** `x = 0b1010`, `n = 2`. Set gives `0b1110`, clear gives `0b1010` (already clear), toggle gives `0b1110`, test gives 0.
+Take x = 0x22 (00100010) and n = 3. The mask is 00001000.
 
-**Common mistakes**
+<div style="max-width:620px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 150" width="100%" role="img" aria-label="Bit 3 mask changes 00100010 to 00101010 and clearing restores the original"><text x="8" y="24" font-size="11" fill="currentColor">Original</text><rect x="96" y="5" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="109.5" y="23" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="125" y="5" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="138.5" y="23" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="154" y="5" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="167.5" y="23" text-anchor="middle" font-size="13" fill="currentColor">1</text><rect x="183" y="5" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="196.5" y="23" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="212" y="5" width="27" height="27" rx="3" fill="#16a34a" fill-opacity=".15" stroke="#16a34a"/><text x="225.5" y="23" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="241" y="5" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="254.5" y="23" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="270" y="5" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="283.5" y="23" text-anchor="middle" font-size="13" fill="currentColor">1</text><rect x="299" y="5" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="312.5" y="23" text-anchor="middle" font-size="13" fill="currentColor">0</text><text x="8" y="59" font-size="11" fill="currentColor">Mask</text><rect x="96" y="40" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="109.5" y="58" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="125" y="40" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="138.5" y="58" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="154" y="40" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="167.5" y="58" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="183" y="40" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="196.5" y="58" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="212" y="40" width="27" height="27" rx="3" fill="#16a34a" fill-opacity=".15" stroke="#16a34a"/><text x="225.5" y="58" text-anchor="middle" font-size="13" fill="currentColor">1</text><rect x="241" y="40" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="254.5" y="58" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="270" y="40" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="283.5" y="58" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="299" y="40" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="312.5" y="58" text-anchor="middle" font-size="13" fill="currentColor">0</text><text x="8" y="94" font-size="11" fill="currentColor">Set: OR</text><rect x="96" y="75" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="109.5" y="93" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="125" y="75" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="138.5" y="93" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="154" y="75" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="167.5" y="93" text-anchor="middle" font-size="13" fill="currentColor">1</text><rect x="183" y="75" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="196.5" y="93" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="212" y="75" width="27" height="27" rx="3" fill="#16a34a" fill-opacity=".15" stroke="#16a34a"/><text x="225.5" y="93" text-anchor="middle" font-size="13" fill="currentColor">1</text><rect x="241" y="75" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="254.5" y="93" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="270" y="75" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="283.5" y="93" text-anchor="middle" font-size="13" fill="currentColor">1</text><rect x="299" y="75" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="312.5" y="93" text-anchor="middle" font-size="13" fill="currentColor">0</text><text x="8" y="129" font-size="11" fill="currentColor">Clear result</text><rect x="96" y="110" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="109.5" y="128" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="125" y="110" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="138.5" y="128" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="154" y="110" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="167.5" y="128" text-anchor="middle" font-size="13" fill="currentColor">1</text><rect x="183" y="110" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="196.5" y="128" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="212" y="110" width="27" height="27" rx="3" fill="#16a34a" fill-opacity=".15" stroke="#16a34a"/><text x="225.5" y="128" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="241" y="110" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="254.5" y="128" text-anchor="middle" font-size="13" fill="currentColor">0</text><rect x="270" y="110" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="283.5" y="128" text-anchor="middle" font-size="13" fill="currentColor">1</text><rect x="299" y="110" width="27" height="27" rx="3" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="312.5" y="128" text-anchor="middle" font-size="13" fill="currentColor">0</text></svg></div>
 
-- Using `int` and `1 << 31`: undefined behaviour. Use `uint32_t` and `1u`.
-- Shifting by 32 or more: undefined for a 32-bit type. Check `n < 32` or mask `n &= 31`.
-- Writing `bit = number & (1 << n)` and then comparing `bit == 1`. That is only true for `n == 0`.
+#### 3. Hardware example
 
-**Follow-up on real hardware:** `reg |= mask` on a peripheral register is a read-modify-write. If an ISR changes the same register between the read and the write, the ISR's change is lost. Fixes: disable interrupts around it, use hardware set/clear registers (STM32 `GPIOx->BSRR`, NXP `SET`/`CLR` registers), or Cortex-M bit-banding.
+```c
+#define UART_ENABLE (UINT32_C(1) << 3)
+```
+
+Use this mask with the documented UART control register. A dedicated set/clear register is preferable when available because ordinary read-modify-write can lose concurrent updates or mishandle special register semantics.
+
+**Interview takeaway:** OR sets, AND with inverted mask clears, XOR toggles, AND tests. Do not shift by a negative count or a count greater than or equal to the operand width.
 
 ### Is right shift of a negative number arithmetic or logical? {M}
 **Short answer:** For unsigned types `>>` is always a logical shift (zeros come in from the left). For a negative signed value the result is **implementation-defined**; GCC, Clang and Arm compilers do an arithmetic shift that copies the sign bit, but portable code must not rely on it.
