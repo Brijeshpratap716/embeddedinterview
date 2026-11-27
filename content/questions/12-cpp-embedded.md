@@ -9,28 +9,28 @@ desc: Classes, virtual functions and vtables, CRTP, RAII, move semantics, templa
 More firmware teams now use a subset of modern C++ (C++17/20) on Cortex-M. Interviewers want to know which features are free, which cost RAM, flash or determinism, and how you would keep a codebase safe. Each answer gives the short version, then code and follow-ups.
 
 ### What is the difference between C and C++ for embedded systems? {E}
-**Short answer:** C++ adds classes, templates, references, RAII, `constexpr`, namespaces, stronger type checking and a large standard library on top of (mostly) C. Most of these are **zero-cost abstractions**: they generate the same machine code as careful C. The features with run-time cost or non-determinism — exceptions, RTTI, dynamic allocation, and some standard containers — are usually disabled or avoided on microcontrollers. Used as "a better C with zero-cost abstractions", C++ produces code that is as small and fast as C but safer and easier to maintain.
+C and C++ can both produce efficient embedded software. C++ adds language features for abstraction, type safety and resource management, while retaining low-level hardware access.
 
-| Feature | Cost on an MCU | Typical policy |
-|---|---|---|
-| Classes, inheritance (non-virtual), namespaces, references | none | use |
-| `constexpr`, templates, `enum class`, `std::array`, `std::span` | none at run time (templates may grow code) | use, watch code size |
-| Virtual functions | vtable pointer per object, indirect call | use where runtime polymorphism is needed |
-| RAII (constructors/destructors) | none beyond the code you'd write anyway | use |
-| Lambdas | none (unless stored in `std::function`) | use |
-| Exceptions | unwind tables, larger code, non-deterministic timing | usually disabled (`-fno-exceptions`) |
-| RTTI (`dynamic_cast`, `typeid`) | type info tables | usually disabled (`-fno-rtti`) |
-| `new`/`delete`, `std::vector`, `std::string`, `std::map` | heap use, fragmentation | avoid after start-up; use fixed-capacity containers or pools |
-| `<iostream>` | very large code size | avoid; use `snprintf` or a small formatter |
+| C | C++ |
+|---|---|
+| Functions, structs and explicit interfaces | Classes, templates, RAII and overloads |
+| Manual resource cleanup | Destructors can manage resource lifetime |
+| Function pointers for dynamic dispatch | Function pointers or virtual functions |
+| Straightforward small runtime common | Runtime requirements depend on features used |
 
-**Practical differences when switching**
+#### 1. Example
 
-- Name mangling: C++ function names are mangled, so C headers need `extern "C"`.
-- Stricter rules: no implicit conversion from `void *`, designated initialisers only from C++20 (and in declaration order), no VLAs, different `const` linkage.
-- Start-up code must run global constructors (`__libc_init_array` calls `.init_array`).
-- Guidelines: MISRA C++:2023, AUTOSAR C++14 and the C++ Core Guidelines define safe subsets.
+A C driver can expose init/read/deinit functions. A C++ driver can wrap the same operations in an object whose destructor releases an owned resource.
 
-**Interview line:** "I use C++ for type safety and abstraction without overhead: classes for drivers, templates and `constexpr` for configuration, RAII for locks and critical sections; I disable exceptions and RTTI and avoid heap allocation after initialisation."
+#### 2. Embedded considerations
+
+Templates and inline functions can provide abstraction without runtime dispatch. Exceptions, dynamic allocation, RTTI and some library components can increase memory or timing complexity. They are not mandatory features for every C++ firmware project.
+
+#### 3. Interoperability
+
+Use extern "C" interfaces to call C libraries or expose selected functions to C code.
+
+**Interview takeaway:** C++ is not inherently slower than C. Evaluate the generated code, runtime configuration, allocation policy and worst-case behavior of the features actually used.
 
 ### How do virtual functions work? What is a vtable? {M}
 **Short answer:** For each class with virtual functions, the compiler builds a **vtable**, a table in flash holding pointers to that class's implementations of each virtual function. Each object of such a class contains a hidden **vptr** that points to its class's vtable, set by the constructor. A virtual call loads the vptr, loads the function pointer from the right slot and calls it indirectly. The cost is one pointer of RAM per object, one vtable per class in flash, and an indirect call that prevents inlining (unless the compiler can devirtualise it).
