@@ -37,21 +37,30 @@ An STM32 Cortex-M4 can run a motor-control loop directly from flash. An i.MX8 Co
 **Interview takeaway:** Choose based on memory, performance, timing, power and software requirements. Integration alone is not a strict distinction: some MPUs contain extensive on-chip peripherals and memory.
 
 ### What is the difference between Harvard and von Neumann architecture? {E}
-**Short answer:** In a **von Neumann** architecture, instructions and data share one memory and one bus, so an instruction fetch and a data access cannot happen at the same time. In a **Harvard** architecture, instructions and data have separate memories and buses, so both can happen in the same cycle. Most modern cores, including Cortex-M3/M4/M7 and Cortex-A, are **modified Harvard**: separate instruction and data buses or caches, but one unified address space.
+Harvard architecture separates instruction and data storage or access paths. Von Neumann architecture uses a unified instruction/data memory model.
 
-| | Von Neumann | Harvard | Modified Harvard |
-|---|---|---|---|
-| Buses | one shared | separate instruction and data | separate paths/caches, single address map |
-| Can execute from RAM / read constants from flash | yes | not directly (separate spaces) | yes |
-| Examples | Cortex-M0/M0+ (single AHB-Lite bus), original 8086 | 8051, AVR, PIC, many DSPs | Cortex-M3/M4/M7, Cortex-A (split L1 I/D caches) |
+#### 1. Conceptual comparison
 
-**Cortex-M3/M4 bus details:** an **I-code** bus fetches instructions from the code region (flash), a **D-code** bus reads literal data from the code region, and a **System** bus accesses SRAM and peripherals. Code can still run from SRAM (via the System bus, typically slower) and data can still be read from flash, because all buses share one 4 GB address map.
+```text
+Harvard:
+Instruction memory <-- instruction bus --> CPU
+Data memory        <-- data bus        --> CPU
 
-**Practical consequences**
+Von Neumann:
+Combined code/data memory <--> shared path <--> CPU
+```
 
-- On classic Harvard MCUs like AVR, a constant table in flash needs special access (`PROGMEM`, `pgm_read_byte`), because a normal pointer points into RAM. On Arm this is unnecessary: `const` data in flash is read with normal pointers.
-- On Cortex-M7, putting code in ITCM and data in DTCM gives the full Harvard benefit (single-cycle, parallel access).
-- Self-modifying code or loading code into RAM on a modified Harvard core with caches needs cache maintenance (clean D-cache, invalidate I-cache) because the two paths are separate.
+Separate paths can allow simultaneous instruction fetch and data access. A shared path may create contention, although real processors use many techniques to improve throughput.
+
+#### 2. Modified Harvard architecture
+
+Many modern Arm cores have separate L1 instruction and data caches but a unified address space and shared lower-level memory. They can fetch instructions and access data concurrently without having strictly separate programmer-visible memory spaces.
+
+#### 3. Firmware example
+
+A Cortex-M implementation may use separate instruction and data bus interfaces while exposing flash and RAM through one address map. An AArch64 application may execute instructions from memory that was previously written as data, subject to execute permissions and required instruction-cache synchronization.
+
+**Interview takeaway:** Distinguish physical bus/cache organization from the programmer-visible memory model. Modern architectures often combine features of both models.
 
 ### What is RISC, how does it differ from CISC, and why did Arm succeed? {E}
 **Short answer:** **RISC** (Reduced Instruction Set Computer) uses a small set of simple, fixed-length instructions, each doing one thing, with memory accessed only by explicit load and store instructions and many general-purpose registers. **CISC** (Complex Instruction Set Computer, e.g. x86) has many variable-length instructions, some doing a lot of work and operating directly on memory. RISC makes the hardware simpler, easier to pipeline and more power-efficient, which is why Arm became dominant in phones and embedded systems.
