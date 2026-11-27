@@ -8,80 +8,482 @@ desc: Every linked-list operation interviewers ask (insert, delete, nth from end
 ---
 Linked-list and stack/queue questions check pointer handling under pressure: NULL checks, the empty list, a one-element list, and not losing the rest of the list while rewiring pointers. Each answer is compact C that was compiled and tested, plus what to say about complexity and edge cases. See the Data Structures topic for reversal, loop detection and ring buffers.
 
-### Create a singly linked list and insert at the beginning and the end. {E}
-**Short answer:** A singly linked list is a chain of nodes, each holding a value and a pointer to the next node, with the last node pointing to NULL. Inserting at the front creates a node, points it at the current head and makes it the new head: O(1). Inserting at the end walks to the last node's `next` pointer and stores the new node there: O(n), or O(1) if you keep a tail pointer.
+### Singly Linked List in C – All Operations for Interview Preparation {E}
+
+A linked list consists of nodes where each node contains data and a pointer to the next node.
+
+`head → 10 → 20 → 30 → NULL`
+
+#### 1. Define structure and create a node
 
 ```c
+#include <stdio.h>
 #include <stdlib.h>
 
-typedef struct node { int val; struct node *next; } node_t;
+struct Node {
+    int data;
+    struct Node *next;
+};
 
-node_t *new_node(int v)
+struct Node *head = NULL;
+
+struct Node *createNode(int data)
 {
-    node_t *n = malloc(sizeof *n);
-    if (n) { n->val = v; n->next = NULL; }
-    return n;
+    struct Node *new = malloc(sizeof(struct Node));
+
+    if (new == NULL)
+        exit(EXIT_FAILURE);
+
+    new->data = data;
+    new->next = NULL;
+
+    return new;
 }
+```
 
-int push_front(node_t **head, int v)              /* O(1) */
+
+
+#### 2. Insert at beginning
+
+```c
+void insertBegin(int data)
 {
-    node_t *n = new_node(v);
-    if (!n) return -1;
-    n->next = *head;
-    *head = n;
-    return 0;
+    struct Node *new = createNode(data);
+
+    new->next = head;
+    head = new;
 }
+```
 
-int push_back(node_t **head, int v)               /* O(n); keep a tail pointer for O(1) */
+**Time complexity:** O(1)
+
+#### 3. Insert at end
+
+```c
+void insertEnd(int data)
 {
-    node_t *n = new_node(v);
-    if (!n) return -1;
-    node_t **pp = head;
-    while (*pp) pp = &(*pp)->next;                /* walk to the last next-pointer */
-    *pp = n;
+    struct Node *new = createNode(data);
+
+    if (head == NULL) {
+        head = new;
+        return;
+    }
+
+    struct Node *temp = head;
+
+    while (temp->next != NULL)
+        temp = temp->next;
+
+    temp->next = new;
+}
+```
+
+**Time complexity:** O(n)
+
+#### 4. Insert at any position
+
+```c
+void insertPos(int data, int pos)
+{
+    if (pos < 1)
+        return;
+
+    if (pos == 1) {
+        insertBegin(data);
+        return;
+    }
+
+    struct Node *temp = head;
+
+    for (int i = 1; i < pos - 1 && temp; i++)
+        temp = temp->next;
+
+    if (temp == NULL)
+        return;
+
+    struct Node *new = createNode(data);
+
+    new->next = temp->next;
+    temp->next = new;
+}
+```
+
+Position starts from 1. **Time complexity:** O(n)
+
+#### 5. Delete from beginning
+
+```c
+void deleteBegin()
+{
+    if (head == NULL)
+        return;
+
+    struct Node *temp = head;
+
+    head = head->next;
+    free(temp);
+}
+```
+
+**Time complexity:** O(1)
+
+#### 6. Delete from end
+
+```c
+void deleteEnd()
+{
+    if (head == NULL)
+        return;
+
+    if (head->next == NULL) {
+        free(head);
+        head = NULL;
+        return;
+    }
+
+    struct Node *temp = head;
+
+    while (temp->next->next != NULL)
+        temp = temp->next;
+
+    free(temp->next);
+    temp->next = NULL;
+}
+```
+
+**Time complexity:** O(n)
+
+#### 7. Delete from any position
+
+```c
+void deletePos(int pos)
+{
+    if (head == NULL || pos < 1)
+        return;
+
+    if (pos == 1) {
+        deleteBegin();
+        return;
+    }
+
+    struct Node *temp = head;
+
+    for (int i = 1; i < pos - 1 && temp; i++)
+        temp = temp->next;
+
+    if (temp == NULL || temp->next == NULL)
+        return;
+
+    struct Node *del = temp->next;
+
+    temp->next = del->next;
+    free(del);
+}
+```
+
+**Time complexity:** O(n)
+
+#### 8. Delete by value
+
+```c
+void deleteValue(int data)
+{
+    struct Node *temp = head;
+    struct Node *prev = NULL;
+
+    while (temp && temp->data != data) {
+        prev = temp;
+        temp = temp->next;
+    }
+
+    if (temp == NULL)
+        return;
+
+    if (prev == NULL)
+        head = temp->next;
+    else
+        prev->next = temp->next;
+
+    free(temp);
+}
+```
+
+Deletes the first occurrence of the given value.
+
+#### 9. Print linked list
+
+```c
+void printList()
+{
+    struct Node *temp = head;
+
+    while (temp != NULL) {
+        printf("%d -> ", temp->data);
+        temp = temp->next;
+    }
+
+    printf("NULL\n");
+}
+```
+
+
+
+#### 10. Search an element
+
+```c
+int search(int data)
+{
+    struct Node *temp = head;
+    int pos = 1;
+
+    while (temp) {
+        if (temp->data == data)
+            return pos;
+
+        temp = temp->next;
+        pos++;
+    }
+
+    return -1;
+}
+```
+
+Returns its position or -1 if not found.
+
+#### 11. Count number of nodes
+
+```c
+int countNodes()
+{
+    int count = 0;
+    struct Node *temp = head;
+
+    while (temp) {
+        count++;
+        temp = temp->next;
+    }
+
+    return count;
+}
+```
+
+
+
+#### 12. Reverse a linked list (very important)
+
+```c
+void reverse()
+{
+    struct Node *prev = NULL;
+    struct Node *curr = head;
+    struct Node *next;
+
+    while (curr) {
+        next = curr->next;
+        curr->next = prev;
+        prev = curr;
+        curr = next;
+    }
+
+    head = prev;
+}
+```
+
+**Time:** O(n) | **Space:** O(1)
+
+Original: `10 → 20 → 30 → NULL`. Reverse each link in turn. Result: `30 → 20 → 10 → NULL`.
+
+#### 13. Find middle node
+
+```c
+struct Node *findMiddle()
+{
+    struct Node *slow = head;
+    struct Node *fast = head;
+
+    while (fast && fast->next) {
+        slow = slow->next;
+        fast = fast->next->next;
+    }
+
+    return slow;
+}
+```
+
+Using slow and fast pointers.
+
+- Slow moves one node at a time.
+- Fast moves two nodes at a time.
+- When fast reaches the end, slow is at the middle.
+
+For even-length lists, this returns the second middle node.
+
+#### 14. Detect loop (Floyd's algorithm)
+
+```c
+int detectLoop()
+{
+    struct Node *slow = head;
+    struct Node *fast = head;
+
+    while (fast && fast->next) {
+        slow = slow->next;
+        fast = fast->next->next;
+
+        if (slow == fast)
+            return 1;
+    }
+
     return 0;
 }
 ```
 
-**Points:** pass `node_t **head` so the function can change the head; the pointer-to-pointer walk removes the special case for an empty list; check `malloc` failure; keep a tail pointer if appends are frequent. On an MCU, nodes usually come from a static pool instead of `malloc`.
+**Time:** O(n) | **Space:** O(1)
 
-**Why `node_t **head`:** C passes arguments by value. If the function received `node_t *head`, assigning a new head would only change its local copy; the caller's list would still start at the old node (or stay NULL when the list was empty).
-
-**The pointer-to-pointer walk in `push_back`:** `pp` points at "the link that should receive the new node" — first the caller's `head` variable, then each node's `next` field. When `*pp` is NULL, that link is the end of the list, whether the list was empty or not, so no special case is needed.
-
-**Dry run:** start empty → `push_back(&h, 1)` sets `h` → [1]; `push_front(&h, 0)` → [0] → [1]; `push_back(&h, 2)` → [0] → [1] → [2].
-
-**Printing and freeing (always mention freeing)**
+#### 15. Find Nth node from end
 
 ```c
-void print_list(const node_t *h) { for (; h; h = h->next) printf("%d -> ", h->val); puts("NULL"); }
-
-void free_list(node_t **head)
+struct Node *nthFromEnd(int n)
 {
-    node_t *n = *head;
-    while (n) { node_t *next = n->next; free(n); n = next; }   /* save next before free */
-    *head = NULL;
+    struct Node *fast = head;
+    struct Node *slow = head;
+
+    if (n <= 0)
+        return NULL;
+
+    while (n--) {
+        if (!fast)
+            return NULL;
+
+        fast = fast->next;
+    }
+
+    while (fast) {
+        slow = slow->next;
+        fast = fast->next;
+    }
+
+    return slow;
 }
 ```
 
-**Embedded variant:** allocate nodes from a fixed array pool with a free list (O(1), no fragmentation, no `malloc` failures at run time).
 
-**Insert after a given node** is O(1): `n->next = pos->next; pos->next = n;` — order matters, otherwise the rest of the list is lost.
 
-#### Complete list lifetime
+#### 16. Remove duplicates from a sorted linked list
 
 ```c
-void destroy_list(node_t **head)
+void removeDuplicates()
 {
-    while (*head) {
-        node_t *dead = *head;
-        *head = dead->next;
-        free(dead);
+    struct Node *temp = head;
+
+    while (temp && temp->next) {
+        if (temp->data == temp->next->data) {
+            struct Node *del = temp->next;
+            temp->next = del->next;
+            free(del);
+        }
+        else
+            temp = temp->next;
     }
 }
 ```
 
-Starting with NULL, push_front(10), push_back(20), push_front(5) produces 5 → 10 → 20 → NULL. Destroying the list leaves head equal to NULL. If a tail is maintained for O(1) appending, deletion of the last node must also update it. Nodes must be exclusively owned by the list or follow a documented sharing protocol.
+
+
+#### 17. Delete entire linked list
+
+```c
+void freeList()
+{
+    while (head)
+        deleteBegin();
+}
+```
+
+
+
+#### 18. Main function to test operations
+
+```c
+int main()
+{
+    insertBegin(10);
+    insertBegin(5);
+    insertEnd(20);
+    insertEnd(30);
+    insertPos(15, 3);
+
+    printList();
+
+    deleteBegin();
+    deleteEnd();
+    deletePos(2);
+
+    printList();
+
+    reverse();
+    printList();
+
+    printf("Count = %d\n", countNodes());
+
+    freeList();
+
+    return 0;
+}
+```
+
+Combine the above functions into a single C file.
+
+**Output:**
+
+```text
+5 -> 10 -> 15 -> 20 -> 30 -> NULL
+10 -> 20 -> NULL
+20 -> 10 -> NULL
+Count = 2
+```
+
+#### Time complexity cheat sheet
+
+| Operation | Time complexity |
+|---|---|
+| Insert at beginning | O(1) |
+| Insert at end | O(n) |
+| Insert at position | O(n) |
+| Delete beginning | O(1) |
+| Delete end | O(n) |
+| Delete at position | O(n) |
+| Delete by value | O(n) |
+| Search | O(n) |
+| Traversal | O(n) |
+| Reverse | O(n) |
+| Find middle | O(n) |
+| Detect loop | O(n) |
+| Nth node from end | O(n) |
+| Remove duplicates (sorted) | O(n) |
+
+#### Most important linked list questions for embedded interviews
+
+For Microsoft, Arm, Cisco and other embedded software interviews, prioritize these:
+
+1. Reverse a linked list.
+2. Detect a loop in a linked list.
+3. Detect the starting point of a loop.
+4. Remove a loop.
+5. Find the middle node.
+6. Find the Nth node from the end.
+7. Merge two sorted linked lists.
+8. Find the intersection of two linked lists.
+9. Reverse a linked list in groups of K.
+10. Check whether a linked list is a palindrome.
+11. Implement a doubly linked list.
+12. Implement a circular linked list.
+13. Implement a linked list without `malloc()` using a static memory pool.
+14. Implement an LRU cache using a doubly linked list and hash table.
+
+**Embedded-specific tip:** The above implementation uses a global `head` pointer to keep the code simple for interviews. In production code, prefer passing `struct Node **head` to functions that modify the head. For deterministic embedded systems, also understand static memory pool allocation as an alternative to `malloc()`.
+
+**Note for subsequent questions:** The remaining examples in this topic use a separate type, `typedef struct node { int val; struct node *next; } node_t;`, rather than `struct Node` used above.
 
 ### Delete a node with a given value from a singly linked list. {E}
 **Short answer:** Walk the list with a pointer to the link that points at the current node (`node_t **pp`). When `(*pp)->val` matches, make the link skip the node (`*pp = node->next`) and free the node. Using the pointer-to-pointer means deleting the head needs no special case. O(n) time, O(1) space.
