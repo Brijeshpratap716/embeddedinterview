@@ -579,38 +579,36 @@ For a small dedicated appliance, BusyBox init may be sufficient. For multiple in
 **Interview takeaway:** Init is responsible for starting and managing userspace. Choose based on service complexity, resource constraints and distribution integration.
 
 ### How do you reduce boot time on an embedded Linux device? {M}
-**Short answer:** Measure first, then remove or defer work at every stage: shorten the bootloader (no countdown, minimal init, or Falcon mode), make the kernel smaller and quieter (only needed drivers built in, `quiet`, fast decompression, deferred probing), and start the critical application early in user space (fewer services, read-only compressed root, no unnecessary waits).
+Boot-time optimization begins by measuring where time is spent rather than disabling features blindly.
 
-**Measure**
+#### 1. Break down stages
 
-- Timestamp the serial output: `grabserial -t` or the terminal's timestamp option.
-- Kernel: `printk.time=1`, `initcall_debug` (shows how long each driver init takes), `bootgraph.pl`.
-- User space: `systemd-analyze`, `systemd-analyze blame`, `systemd-analyze critical-chain`, bootchart.
+```text
+Firmware -> bootloader -> kernel -> init -> application ready
+```
 
-**Bootloader**
+Measure each stage using serial timestamps, hardware trace or platform timing facilities. For systemd-based systems:
 
-- `bootdelay=0` (or -2) to remove the autoboot countdown.
-- Remove unused drivers and commands; skip USB/network init unless needed.
-- Load only what is needed, from the fastest storage; use DMA and the highest eMMC bus speed.
-- **Falcon mode**: SPL loads the kernel directly, skipping U-Boot proper.
+```sh
+systemd-analyze
+systemd-analyze critical-chain
+```
 
-**Kernel**
+These report supported userspace/kernel timing information; not every firmware stage is measured.
 
-- Build in only the drivers needed for the boot path; make the rest modules loaded later, or remove them.
-- `quiet` (printing to a 115200-baud UART can cost seconds).
-- Use **LZ4** or an uncompressed image if storage is fast (decompression is CPU time).
-- `CONFIG_PRINTK_TIME` for measurement, then disable debugging options.
-- Async probe and deferred initcalls for slow, non-critical devices.
-- Use `rootwait` only where needed and avoid unnecessary delays such as `rootdelay=`.
+#### 2. Common optimizations
 
-**User space**
+Reduce unnecessary bootloader delays, choose efficient storage/image formats, remove unused kernel features and services, eliminate avoidable probe retries and long fixed delays, and parallelize independent userspace services where safe.
 
-- Start the critical application first (a dedicated early systemd unit, or directly from init).
-- Remove unused services; avoid network-wait targets unless needed.
-- Use a **read-only SquashFS/EROFS** root (no filesystem check), prelink or statically link the main application, reduce shared library count.
-- Show a splash screen or "early camera" output from the bootloader or kernel to improve perceived boot time (automotive rear-view cameras must show within about 2 seconds).
+#### 3. Example
 
-**Results:** with this approach, 1–3 seconds to the application is achievable on modern Cortex-A SoCs. Hibernation-based "snapshot boot" can be faster still for complex systems.
+If a driver sleeps 500 ms waiting for a device that is ready after 20 ms, a bounded readiness poll based on the hardware specification can reduce delay. Do not remove required power/reset timing.
+
+#### 4. Define readiness
+
+The relevant metric may be time to display, first control action or application-ready state, not merely time to login.
+
+**Interview takeaway:** Optimize the measured critical path while preserving security, reliability and required initialization. A fast boot that occasionally fails is not an improvement.
 
 ### How do you access GPIO from Linux user space? {M}
 **Short answer:** Use the **GPIO character device** (`/dev/gpiochipN`) through **libgpiod** and its command-line tools (`gpiodetect`, `gpioinfo`, `gpioget`, `gpioset`, `gpiomon`). The old sysfs interface (`/sys/class/gpio`) is deprecated. For production, describe fixed-function pins in the device tree and let a kernel driver own them.
