@@ -170,51 +170,62 @@ This can inspect an object's representation.
 **Interview takeaway:** A void pointer provides a generic interface, not runtime type information. The caller and callee must agree on the actual object type, alignment and lifetime.
 
 ### What is a double pointer and when do you need one? {M}
-**Short answer:** A double pointer (`int **pp`) is a pointer to a pointer. You need one when a function must change **which object the caller's pointer points to** (because C passes the pointer itself by value), and for arrays of pointers such as `char **argv`.
+A double pointer is a **pointer to another pointer**. It is useful when a function needs to modify the caller's pointer itself.
+
+#### 1. Understanding two levels of indirection
 
 ```c
-#include <stdlib.h>
-#include <stdint.h>
+int a = 10;
+int *p = &a;
+int **pp = &p;
 
-int alloc_buf(uint8_t **out, size_t n)
-{
-    *out = malloc(n);              /* changes the caller's pointer */
-    return *out ? 0 : -1;
-}
-
-uint8_t *buf = NULL;
-if (alloc_buf(&buf, 64) == 0) { /* buf now points to 64 bytes */ }
+**pp = 50;
 ```
 
-With a single pointer (`uint8_t *out`), assigning `out = malloc(n)` would only change the function's local copy; the caller's `buf` would still be NULL, and the memory would leak.
+Now a is 50. The expression *pp accesses p, while **pp accesses a.
 
-**Other uses**
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 92" width="100%" role="img" aria-label="Double pointer pp points to p, which points to integer a">
+<rect x="5" y="15" width="90" height="45" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="50" y="32" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">pp</text><text x="50" y="49" text-anchor="middle" font-size="12" fill="currentColor">&amp;p</text><rect x="125" y="15" width="90" height="45" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="32" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">p</text><text x="170" y="49" text-anchor="middle" font-size="12" fill="currentColor">&amp;a</text><rect x="245" y="15" width="90" height="45" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="290" y="32" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">a</text><text x="290" y="49" text-anchor="middle" font-size="12" fill="currentColor">50</text><path d="M95 37 H125 m-5-4 5 4-5 4 M215 37 H245 m-5-4 5 4-5 4" stroke="currentColor" fill="none"/><text x="170" y="80" text-anchor="middle" font-size="11" fill="currentColor">*pp is p; **pp is a</text></svg></div>
 
-- **Arrays of strings:** `int main(int argc, char **argv)`, where `argv[i]` is a `char *`.
-- **Linked-list operations without special-casing the head:**
+#### 2. Changing the caller's pointer
 
 ```c
-struct node { int val; struct node *next; };
-
-void remove_val(struct node **pp, int val)
+void assign(int **p, int *target)
 {
-    while (*pp) {
-        if ((*pp)->val == val) {
-            struct node *dead = *pp;
-            *pp = dead->next;        /* works for the head and for inner nodes */
-            free(dead);
-        } else {
-            pp = &(*pp)->next;
-        }
-    }
+    *p = target;
+}
+
+int a = 10;
+int *ptr = NULL;
+assign(&ptr, &a);
+```
+
+After the call, ptr points to a. Passing ptr alone would only pass a copy of its pointer value.
+
+#### 3. Linked-list insertion example
+
+```c
+struct node {
+    int data;
+    struct node *next;
+};
+
+int insert_front(struct node **head, int value)
+{
+    struct node *n = malloc(sizeof *n);
+    if (!n)
+        return -1;
+
+    n->data = value;
+    n->next = *head;
+    *head = n;
+    return 0;
 }
 ```
 
-`pp` points to "the pointer that points to the current node": either the list head or some node's `next` field. Linus Torvalds often cites this as an example of "good taste" in C.
+Call with `insert_front(&head, 10)` after initializing head to NULL. The function updates the caller's list head, including when the list is empty. Release allocated nodes when no longer needed.
 
-- **Dynamically allocated 2-D arrays** as an array of row pointers (each row allocated separately), though a single block with index arithmetic is usually better for cache and fragmentation.
-
-**Note:** `int **` is **not** compatible with a 2-D array `int m[3][4]`; that decays to `int (*)[4]`.
+**Interview takeaway:** Use a double pointer when the object to modify is itself a pointer. It is common in linked lists, allocation output parameters and APIs returning handles.
 
 ### What is the difference between char *s = "hello" and char s[] = "hello"? {M}
 **Short answer:** `char *s = "hello";` makes `s` a **pointer** to a string literal, which usually lives in read-only memory (`.rodata`, often flash on an MCU); modifying it is undefined behaviour. `char s[] = "hello";` creates a writable **array** of 6 chars (including `'\0'`) initialised with a copy of the literal.
