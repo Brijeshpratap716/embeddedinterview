@@ -177,40 +177,31 @@ RTOS priority numbering varies: FreeRTOS task priorities use higher numbers for 
 **Interview takeaway:** Priority is considered only among eligible tasks. Blocking a high-priority task allows lower-priority ready tasks to execute.
 
 ### What is the difference between a mutex and a binary semaphore? {M}
-**Short answer:** A **mutex** is for **mutual exclusion**: it has an owner, only the task that took it may give it back, it supports priority inheritance, and it can be recursive. A **binary semaphore** is for **signalling**: it has no owner, any task or ISR can give it, and it has no priority inheritance. Use a mutex to protect a shared resource; use a semaphore (or a task notification) to signal that an event happened.
+A mutex protects a shared resource through ownership; a binary semaphore represents a zero-or-one availability/event state and is commonly used for signaling.
 
-| | Mutex | Binary semaphore |
-|---|---|---|
-| Purpose | protect a resource (critical section) | signal an event / synchronise |
-| Ownership | yes: only the holder releases it | no: anyone can give |
-| Priority inheritance | yes (FreeRTOS, Zephyr) | no |
-| Usable from an ISR | no (an ISR cannot own/block) | give from ISR: yes (`xSemaphoreGiveFromISR`) |
-| Recursive variant | yes (`xSemaphoreCreateRecursiveMutex`) | no |
-| Initial state | available | usually empty (0) |
+| Mutex | Binary semaphore |
+|---|---|
+| Owned by acquiring task | Usually no task ownership |
+| Released by owner | Can be signaled by another permitted context |
+| Often supports priority inheritance | Usually no priority inheritance |
+| Protects shared resources | Signals events or availability |
 
-**Typical patterns**
+#### 1. Mutex example
 
 ```c
-/* mutex: protect a shared I2C bus */
-if (xSemaphoreTake(i2c_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-    i2c_read(...);
-    xSemaphoreGive(i2c_mutex);
+if (xSemaphoreTake(bus_mutex, timeout) == pdTRUE) {
+    i2c_transfer();
+    xSemaphoreGive(bus_mutex);
 }
-
-/* binary semaphore: ISR signals a task */
-void EXTI0_IRQHandler(void)
-{
-    BaseType_t woken = pdFALSE;
-    clear_exti_flag();
-    xSemaphoreGiveFromISR(button_sem, &woken);
-    portYIELD_FROM_ISR(woken);
-}
-void button_task(void *p) { for (;;) { xSemaphoreTake(button_sem, portMAX_DELAY); handle_press(); } }
 ```
 
-**Why it matters:** using a binary semaphore as a lock loses priority inheritance (priority inversion risk), and nothing stops another task from "unlocking" it by mistake. Using a mutex for signalling fails because the giver does not own it.
+The task owns the bus while performing the transfer. Use a bounded timeout and release on every relevant path.
 
-**Modern FreeRTOS advice:** for "ISR wakes one task", use a **direct-to-task notification** (`vTaskNotifyGiveFromISR` / `ulTaskNotifyTake`): faster and uses less RAM than a semaphore.
+#### 2. Binary semaphore example
+
+A DMA completion ISR gives a binary semaphore using the appropriate FromISR API. A worker waits for it, then processes the completed buffer. A binary semaphore cannot count multiple pending events; repeated signals can merge.
+
+**Interview takeaway:** Use a mutex for task-owned mutual exclusion and a semaphore or notification for signaling. Do not acquire a blocking mutex in an ISR.
 
 ### What is a counting semaphore? {E}
 **Short answer:** A semaphore whose count can go above one. Each `take` decrements the count (blocking at zero) and each `give` increments it. It is used for **resource counting** (initialise it to N for N identical resources) and for **event counting** (an ISR gives once per event, so events that arrive faster than the task handles them are not lost).
