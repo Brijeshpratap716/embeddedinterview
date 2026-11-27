@@ -974,41 +974,43 @@ An interrupt or worker calls complete(&d->done) when the operation finishes. Ini
 **Interview takeaway:** Wait queues depend on a properly synchronized condition. Completions simplify one-operation signaling, but timeout and lifetime races still require handling.
 
 ### How does user space wait for events from a driver (poll/select)? {M}
-**Short answer:** Implement `.poll` in `file_operations`. It calls `poll_wait()` to add the caller to the driver's wait queue (this does **not** sleep) and returns a mask of the events that are ready **now** (`EPOLLIN | EPOLLRDNORM` for readable, `EPOLLOUT | EPOLLWRNORM` for writable, `EPOLLERR`/`EPOLLHUP`). When data arrives, the driver calls `wake_up_interruptible(&wq)`, which makes `poll`, `select` and `epoll` callers re-check.
+Userspace can wait for driver readiness using poll, select or epoll. A driver's poll callback registers relevant wait queues and returns a mask describing current readiness.
+
+#### 1. Driver example
 
 ```c
-static __poll_t mydev_poll(struct file *f, poll_table *wait)
+static __poll_t demo_poll(struct file *file, poll_table *pt)
 {
-    struct mydev *d = f->private_data;
+    struct demo *d = file->private_data;
     __poll_t mask = 0;
 
-    poll_wait(f, &d->wq, wait);                 /* registers; the VFS does the sleeping */
-    if (READ_ONCE(d->data_ready))
+    poll_wait(file, &d->waitq, pt);
+
+    if (READ_ONCE(d->ready))
         mask |= EPOLLIN | EPOLLRDNORM;
-    if (fifo_has_space(d))
-        mask |= EPOLLOUT | EPOLLWRNORM;
-    if (d->disconnected)
-        mask |= EPOLLHUP;
+
     return mask;
 }
 ```
 
-**User space**
+Register this function as the file_operations .poll callback. The actual readiness predicate and buffer state must be protected by the appropriate synchronization.
 
-```c
-struct pollfd p = { .fd = fd, .events = POLLIN };
-int r = poll(&p, 1, 1000);                      /* 1 s timeout */
-if (r > 0 && (p.revents & POLLIN)) read(fd, &val, sizeof val);
+#### 2. Event flow
+
+```text
+poll(fd) --> driver .poll --> register wait queue
+        --> no data: sleep
+Device event --> update readiness --> wake_up...
+        --> poll callback rechecks and returns readiness
 ```
 
-**How it works internally:** the VFS calls your `.poll`; if no requested event is ready, it sleeps; your `wake_up` wakes it, and it calls `.poll` again to get the new mask. That is why `.poll` must be cheap and must not block.
+Userspace should handle nonblocking read returning EAGAIN because another reader can consume data after readiness was reported.
 
-**Other notification mechanisms**
+#### 3. Hangup and errors
 
-- `fasync` / `SIGIO` (`kill_fasync`): asynchronous signal to user space; rarely used now.
-- `eventfd`: a simple counter file descriptor, used by KVM/VFIO/vhost to signal interrupts.
-- sysfs `sysfs_notify()` wakes user programs polling a sysfs attribute (used by GPIO and IIO events).
-- uevents (`kobject_uevent`) for device state changes handled by udev.
+Report appropriate EPOLLERR or EPOLLHUP conditions when relevant. Keep the device and wait-queue objects alive while registered userspace watchers may refer to them.
+
+**Interview takeaway:** poll_wait does not itself wait for the event. It registers a wait source; the poll framework handles waiting and readiness rechecks.
 
 ### What is sysfs and how do you add attributes? {M}
 **Short answer:** Sysfs (`/sys`) exposes the kernel's device model as a directory tree: each device is a directory, and each **attribute** is a file holding one value (in text). Drivers add attributes with `DEVICE_ATTR_RW(name)` plus `name_show()`/`name_store()` functions, group them, and attach the group through the driver's `.dev_groups` field so they are created and removed together with the device (no race with user space).
