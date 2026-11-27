@@ -1191,3 +1191,91 @@ A single set bit is accepted because it has no adjacent equal pair. Zero is reje
 
 **Interview takeaway:** Adjacent-bit XOR converts alternating patterns into runs of ones. Clearly define whether leading zeros and zero itself count.
 
+### Explain the memory address alignment formula step by step {E}
+This expression rounds a memory address up to the nearest aligned memory boundary (or leaves it unchanged if already aligned).
+
+```c
+addr = (addr + ALIGNMENT - 1) & ~(uintptr_t)(ALIGNMENT - 1);
+```
+
+Assume addr = 0x1004 and ALIGNMENT = 64.
+
+#### Step 1: Calculate ALIGNMENT - 1
+
+64 - 1 = 63. Binary: 0011 1111. The last 6 bits are set because 64 = 2^6.
+
+#### Step 2: Add 63 to the address
+
+```text
+addr + ALIGNMENT - 1
+= 0x1004 + 0x3F
+= 0x1043
+```
+
+This addition ensures that we reach or cross the next alignment boundary if the original address is not aligned.
+
+#### Step 3: Perform bitwise NOT (~)
+
+Assuming a 32-bit address for simplicity:
+
+```text
+ 63 = 00000000 00000000 00000000 00111111
+~63 = 11111111 11111111 11111111 11000000
+```
+
+This creates a mask that clears the last 6 bits while preserving all other bits.
+
+#### Step 4: Perform bitwise AND (&)
+
+```text
+0x1043   00010000 01000011
+Mask     11111111 11000000
+AND      00010000 01000000
+0x1040
+```
+
+**Final aligned address = 0x1040.** The last six bits are now zero.
+
+#### Why do we add 63 before applying the mask?
+
+Without adding 63, we would round the address down instead of up.
+
+```c
+// Round down
+addr & ~(uintptr_t)63;          // 0x1000
+
+// Round up
+(addr + 63) & ~(uintptr_t)63;   // 0x1040
+```
+
+#### What if the address is already aligned?
+
+| Original address | After adding 63 | After applying mask |
+|---|---|---|
+| 0x1000 | 0x103F | 0x1000 |
+| 0x1004 | 0x1043 | 0x1040 |
+| 0x1020 | 0x105F | 0x1040 |
+| 0x103F | 0x107E | 0x1040 |
+| 0x1040 | 0x107F | 0x1040 |
+
+An already aligned address remains unchanged.
+
+#### Why use uintptr_t?
+
+uintptr_t is an unsigned integer type capable of holding a pointer value. Casting before applying ~ ensures that the mask has the appropriate integer width, including on 64-bit systems.
+
+#### Remember these three formulas for interviews
+
+```c
+// Check alignment
+!(addr & (alignment - 1));
+
+// Round down to aligned address
+addr & ~(uintptr_t)(alignment - 1);
+
+// Round up to aligned address
+(addr + alignment - 1) & ~(uintptr_t)(alignment - 1);
+```
+
+**Note:** These formulas work only when alignment is a nonzero power of two, such as 4, 8, 16, 32, 64 or 128. The round-up operation also assumes the addition does not overflow.
+
