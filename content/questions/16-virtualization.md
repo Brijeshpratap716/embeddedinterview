@@ -83,6 +83,368 @@ Start with system/vl.c (or the corresponding startup code in the checked-out ver
 
 **Interview takeaway:** Separate machine realization, vCPU execution and device/event processing. Starting QEMU does not automatically reproduce every physical SoC.
 
+### Explain full QEMU flow in brief, with all functions for ARM SoC i.MX8 on x86 {H}
+When you run an **ARM-based i.MX8 SoC on an x86 laptop using QEMU**, QEMU uses **TCG (Tiny Code Generator)** to dynamically translate ARM instructions into x86 instructions.
+
+KVM cannot accelerate ARM guest CPU execution on an x86 host because the guest and host CPU architectures are different.
+
+#### 1. Complete QEMU architecture
+
+```text
+Guest applications (ARM64 applications)
+    ↓
+Guest operating system (ARM Linux kernel and device drivers)
+    ↓
+Virtual i.MX8 hardware (Cortex-A CPU, GIC, UART, RAM, I2C)
+    ↓
+QEMU (TCG, softMMU, device emulation)
+    ↓
+Host operating system (Linux / Windows)
+    ↓
+Physical x86 hardware (CPU, RAM, storage)
+```
+
+#### 2. QEMU initialization flow
+
+```text
+main()
+  └── qemu_init()
+       ├── Module initialization
+       ├── Command-line parsing
+       ├── qemu_create_machine()
+       ├── Accelerator initialization (TCG)
+       ├── Board initialization
+       ├── Device initialization
+       └── System reset
+  └── qemu_main_loop()
+```
+
+| Function | Purpose |
+|---|---|
+| `main()` | Entry point of QEMU. |
+| `qemu_init()` | Initializes the QEMU environment. |
+| `module_call_init()` | Registers machine, CPU and device types. |
+| `qemu_create_machine()` | Creates the selected machine object. |
+| `configure_accelerator()` | Selects and initializes TCG. |
+| `machine_run_board_init()` | Initializes board-specific hardware models. |
+| `qemu_system_reset()` | Resets the virtual system. |
+| `qemu_main_loop()` | Handles timers, events and I/O. |
+
+#### 3. i.MX8 SoC initialization
+
+QEMU uses **QOM (QEMU Object Model)** to represent hardware components as software objects.
+
+| Function | Purpose |
+|---|---|
+| `type_register_static()` | Registers a hardware object type. |
+| `object_initialize_child()` | Creates embedded CPU or peripheral objects. |
+| `qdev_realize()` | Initializes and activates a device. |
+| `memory_region_init_ram()` | Allocates guest RAM. |
+| `memory_region_init_io()` | Registers MMIO operations. |
+| `memory_region_add_subregion()` | Maps memory into the guest physical address space. |
+| `sysbus_mmio_map()` | Maps peripheral registers. |
+| `sysbus_connect_irq()` | Connects peripheral interrupts to the interrupt controller. |
+| `arm_load_kernel()` | Prepares the ARM kernel boot environment. |
+| `qemu_init_vcpu()` | Initializes virtual CPU execution. |
+
+The emulated SoC can contain Cortex-A cores, DDR, UART, GIC, GPIO, I2C and other supported peripherals.
+
+#### 4. Virtual CPU execution flow
+
+Each virtual CPU can execute in a separate host thread using multi-threaded TCG.
+
+```text
+qemu_init_vcpu()
+    ↓
+mttcg_start_vcpu_thread()
+    ↓
+mttcg_cpu_thread_fn()
+    ↓
+tcg_cpu_exec()
+    ↓
+cpu_exec()
+    ↓
+cpu_exec_loop()
+    ↓
+Translation Block lookup
+    ↓
+Execute or generate TB
+```
+
+| Function | Purpose |
+|---|---|
+| `mttcg_start_vcpu_thread()` | Creates a host thread for the virtual CPU. |
+| `tcg_cpu_exec()` | Starts TCG CPU execution. |
+| `cpu_exec()` | Manages guest CPU execution and exceptions. |
+| `cpu_exec_loop()` | Repeatedly executes translation blocks. |
+| `tb_lookup()` | Searches for previously translated code. |
+| `tb_gen_code()` | Generates a new translation block if required. |
+
+#### 5. TCG instruction translation
+
+This is the most important part when running ARM on x86.
+
+```text
+ARM64 instructions (ADD X0, X1, X2)
+    ↓
+ARM frontend / decoder (Decode ARM instructions)
+    ↓
+TCG intermediate representation (add_i64 t0, t1, t2)
+    ↓
+TCG optimization (Optimize intermediate operations)
+    ↓
+x86 backend (Generate native x86 machine code)
+    ↓
+Physical x86 CPU (Execute translated instructions)
+```
+
+**Function flow**
+
+```text
+tb_gen_code()
+    ↓
+gen_intermediate_code()
+    ↓
+translator_loop()
+    ↓
+aarch64_tr_translate_insn()
+    ↓
+ARM instruction decoding
+    ↓
+tcg_gen_*()
+    ↓
+tcg_gen_code()
+    ↓
+x86 machine code generation
+```
+
+| Function | Purpose |
+|---|---|
+| `tb_gen_code()` | Generates a translation block. |
+| `gen_intermediate_code()` | Starts guest instruction translation. |
+| `translator_loop()` | Iterates through guest instructions. |
+| `aarch64_tr_translate_insn()` | Translates ARM64 instructions. |
+| `tcg_gen_add_i64()` | Generates an intermediate addition operation. |
+| `tcg_optimize()` | Optimizes intermediate operations. |
+| `tcg_gen_code()` | Generates native host machine code. |
+| `tcg_out_*()` | Backend functions emitting host instructions. |
+
+#### 6. Translation Block (TB) execution
+
+A Translation Block is a sequence of guest instructions translated into host machine code.
+
+```text
+cpu_exec_loop()
+       ↓
+   TB lookup
+       ↓
+  TB available?
+    /       \
+  Yes        No
+   |         |
+   |    tb_gen_code()
+   |         |
+   └────┬────┘
+        ↓
+cpu_loop_exec_tb()
+        ↓
+cpu_tb_exec()
+        ↓
+tcg_qemu_tb_exec()
+        ↓
+Physical x86 CPU
+```
+
+The translated code is cached so QEMU does not need to translate the same instructions repeatedly. TB chaining further reduces execution overhead.
+
+#### 7. Memory management (SoftMMU)
+
+The guest ARM MMU is also emulated in software.
+
+```text
+Guest virtual address
+    ↓ QEMU SoftMMU / TLB
+Guest physical address
+    ↓ QEMU memory mapping
+Host virtual address
+    ↓ Host MMU
+Host physical address
+```
+
+| Function | Purpose |
+|---|---|
+| `tcg_gen_qemu_ld_i64()` | Generates a guest memory load. |
+| `tcg_gen_qemu_st_i64()` | Generates a guest memory store. |
+| `arm_cpu_tlb_fill()` | Handles ARM TLB misses in applicable QEMU versions. |
+| `get_phys_addr()` | Performs ARM address translation. |
+| `tlb_set_page()` | Updates the software TLB. |
+| `address_space_read()` | Reads an address space. |
+| `address_space_write()` | Writes to an address space. |
+
+QEMU maintains a software TLB to avoid repeatedly walking guest page tables.
+
+#### 8. Peripheral emulation (MMIO)
+
+Suppose the guest Linux UART driver writes to a UART register.
+
+```c
+writel('A', uart_base + TX_REG);
+```
+
+The execution flow is approximately:
+
+```text
+Guest UART driver
+    ↓
+ARM STR instruction
+    ↓
+TCG translated store
+    ↓
+SoftMMU / MMIO dispatch
+    ↓
+memory_region_dispatch_write()
+    ↓
+i.MX UART write callback
+    ↓
+qemu_chr_fe_write_all()
+    ↓
+Host terminal
+```
+
+QEMU registers peripheral read/write callbacks using a `MemoryRegionOps` structure.
+
+```c
+static const MemoryRegionOps uart_ops = {
+    .read  = uart_read,
+    .write = uart_write,
+};
+```
+
+Therefore, accessing a hardware register inside the guest ultimately invokes a software function in QEMU.
+
+#### 9. Interrupt handling flow
+
+Example: UART receives data from the host.
+
+```text
+Host keyboard input
+    ↓
+QEMU UART receive callback
+    ↓
+Update virtual UART registers
+    ↓
+qemu_set_irq()
+    ↓
+Virtual GIC
+    ↓
+cpu_interrupt()
+    ↓
+arm_cpu_exec_interrupt()
+    ↓
+ARM exception handling
+    ↓
+Guest Linux UART ISR
+```
+
+| Function | Purpose |
+|---|---|
+| `qemu_set_irq()` | Asserts or deasserts a virtual interrupt. |
+| `cpu_interrupt()` | Signals an interrupt to the virtual CPU. |
+| `cpu_handle_interrupt()` | Checks pending CPU interrupts. |
+| `arm_cpu_exec_interrupt()` | Handles ARM-specific interrupts. |
+| `arm_cpu_do_interrupt()` | Performs ARM exception entry. |
+
+#### 10. QEMU main event loop
+
+```text
+qemu_main_loop()
+    ↓
+main_loop_wait()
+    ↓
+Host I/O polling
+    ↓
+Timer callbacks
+    ↓
+Device callbacks
+    ↓
+Interrupt generation
+```
+
+The main event loop handles asynchronous I/O, timers, networking, storage and peripheral events alongside vCPU execution.
+
+#### 11. Running i.MX8 on an x86 machine
+
+For example, using direct kernel boot on a supported i.MX8M Plus model:
+
+```bash
+qemu-system-aarch64 \
+    -M imx8mp-evk \
+    -accel tcg \
+    -smp 4 \
+    -m 3G \
+    -kernel Image \
+    -dtb imx8mp-evk.dtb \
+    -display none \
+    -serial null \
+    -serial stdio \
+    -append "console=ttymxc1"
+```
+
+A compatible root filesystem must also be supplied for a complete Linux boot.
+
+**Note:** Upstream QEMU supports i.MX8M Plus and i.MX8M Mini machine models. For i.MX8 QM/QXP, you may need a custom machine implementation. The function names and exact call hierarchy above are representative and may vary between QEMU versions.
+
+#### 12. Important QEMU source files
+
+| Source file | Responsibility |
+|---|---|
+| `system/vl.c` | System initialization |
+| `hw/arm/` | ARM board and SoC models |
+| `hw/arm/fsl-imx8mp.c` | i.MX8M Plus SoC |
+| `target/arm/tcg/translate-a64.c` | ARM64 translation |
+| `target/arm/ptw.c` | ARM page-table walking |
+| `accel/tcg/cpu-exec.c` | CPU execution loop |
+| `accel/tcg/translate-all.c` | Translation block generation |
+| `accel/tcg/translator.c` | Generic instruction translation |
+| `accel/tcg/cputlb.c` | SoftMMU and TLB |
+| `tcg/tcg.c` | TCG code generation |
+| `tcg/i386/` | x86 code-generation backend |
+| `system/memory.c` | Memory and MMIO management |
+| `hw/char/imx_serial.c` | i.MX UART emulation |
+| `hw/intc/` | Interrupt controller emulation |
+
+#### 13. Interview-ready summary
+
+QEMU creates a virtual i.MX8 SoC using QOM and initializes its CPU, memory and peripherals. Since the guest is ARM and the host is x86, it uses TCG instead of KVM.
+
+TCG decodes ARM instructions, converts them into intermediate operations, optimizes them and generates native x86 machine code. The translated instructions are cached as Translation Blocks.
+
+SoftMMU handles guest memory translation, MMIO callbacks emulate peripheral operations, and the virtual GIC delivers interrupts to guest CPUs. The main event loop handles asynchronous I/O and timers.
+
+**Remember this overall flow:**
+
+```text
+QEMU initialization
+    ↓
+Board and SoC creation
+    ↓
+CPU, RAM and peripheral initialization
+    ↓
+vCPU thread creation
+    ↓
+ARM instruction decoding
+    ↓
+TCG intermediate representation
+    ↓
+x86 code generation
+    ↓
+TB caching and execution
+    ↓
+Memory / MMIO / Interrupt handling
+    ↓
+Repeat
+```
+
 ### How does QEMU's TCG translate and run guest code? {H}
 TCG (Tiny Code Generator) is QEMU's dynamic binary translation engine. It converts guest instructions into intermediate operations and then native host instructions.
 
