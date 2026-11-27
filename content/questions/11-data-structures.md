@@ -30,51 +30,46 @@ Average complexity does not establish a deadline. A hard real-time task needs bo
 **Interview takeaway:** Big-O describes growth, not exact milliseconds. In embedded systems consider worst-case time, stack usage, allocation and actual hardware behavior.
 
 ### How do you reverse a singly linked list? {E}
-**Short answer:** Walk the list once with three pointers (previous, current, next) and point each node's `next` back to the previous node. The old tail becomes the new head. O(n) time and O(1) extra memory.
+Reverse a singly linked list by changing each node's next pointer to point toward the previous node.
+
+#### 1. Algorithm
+
+```text
+Before: 10 -> 20 -> 30 -> NULL
+After:  NULL <- 10 <- 20 <- 30 (new head)
+```
+
+Maintain three pointers: prev, current and saved next. Save the next pointer before changing it, then advance both working pointers.
+
+#### 2. C implementation
 
 ```c
-#include <stdio.h>
-#include <stddef.h>
-
-struct node { int val; struct node *next; };
+struct node {
+    int data;
+    struct node *next;
+};
 
 struct node *reverse(struct node *head)
 {
     struct node *prev = NULL;
+
     while (head) {
-        struct node *next = head->next;   /* remember the rest */
-        head->next = prev;                /* reverse this link */
-        prev = head;                      /* advance */
+        struct node *next = head->next;
+        head->next = prev;
+        prev = head;
         head = next;
     }
-    return prev;                          /* new head */
-}
-
-struct node *reverse_rec(struct node *head)   /* recursive: O(n) stack, avoid in firmware */
-{
-    if (!head || !head->next) return head;
-    struct node *rest = reverse_rec(head->next);
-    head->next->next = head;
-    head->next = NULL;
-    return rest;
-}
-
-int main(void)
-{
-    struct node n[4] = { {1, &n[1]}, {2, &n[2]}, {3, &n[3]}, {4, NULL} };
-    struct node *h = reverse(&n[0]);
-    for (; h; h = h->next) printf("%d ", h->val);      /* 4 3 2 1 */
-    printf("\n");
-    h = reverse_rec(&n[3]);
-    for (; h; h = h->next) printf("%d ", h->val);      /* 1 2 3 4 */
-    printf("\n");
-    return 0;
+    return prev;
 }
 ```
 
-**Why iterative in embedded code:** recursion uses one stack frame per node, so a 10,000-node list could overflow a 2 KB task stack; the iterative version has constant, predictable stack use.
+Call with head = reverse(head). An empty or single-node list is handled naturally. Assume the list is acyclic and exclusively owned during the update.
 
-**Follow-ups:** reverse in groups of k, reverse only positions m to n, check whether a list is a palindrome (find the middle, reverse the second half, compare, restore), and reverse a doubly linked list (swap `next` and `prev` in each node).
+#### 3. Complexity
+
+Time O(n), auxiliary space O(1). A recursive approach may use O(n) call-stack space.
+
+**Interview takeaway:** Save the next link before overwriting it. Return the new head; the old head becomes the tail.
 
 ### How do you detect a loop in a linked list? {M}
 **Short answer:** Use Floyd's tortoise-and-hare algorithm: move one pointer by one node and another by two. If there is a cycle, the fast pointer eventually laps the slow one and they meet; if the fast pointer reaches `NULL`, there is no cycle. To find where the loop starts, move one pointer back to the head after they meet and advance both one step at a time; they meet at the loop's first node. O(n) time, O(1) memory.
