@@ -60,24 +60,20 @@ Both can support halting, stepping, register/memory access and flash programming
 **Interview takeaway:** Debug access may be locked by security configuration or power domains. Do not confuse JTAG boundary scan with CPU instruction debugging.
 
 ### What is the difference between a breakpoint and a watchpoint? {E}
-**Short answer:** A **breakpoint** stops execution when the CPU reaches a particular **instruction address**. A **watchpoint** (data breakpoint) stops execution when a particular **data address** is read or written (or both), possibly only when the value matches. Watchpoints are the fastest way to find out who corrupts a variable. In flash-based MCUs, breakpoints use a limited number of **hardware comparators** (Cortex-M3/M4: 6 instruction comparators in the FPB, 4 data watchpoints in the DWT; Cortex-M0: 4 and 2).
+A breakpoint stops execution at an instruction address. A watchpoint stops on access to a selected data address.
 
-| | Breakpoint | Watchpoint |
-|---|---|---|
-| Triggers on | executing an instruction address | reading/writing a data address |
-| Hardware unit (Cortex-M) | FPB (Flash Patch and Breakpoint) | DWT (Data Watchpoint and Trace) |
-| Typical count | 2–8 | 1–4 |
-| GDB command | `break file.c:42`, `hbreak` | `watch var`, `rwatch`, `awatch` |
-| Software version | `BKPT` instruction (RAM code only, or flash patching by the probe) | single-stepping and comparing (extremely slow) |
+```text
+(gdb) break process_packet
+(gdb) watch state
+(gdb) awatch *0x20001000
+```
 
-**Useful variants**
+Hardware breakpoints compare instruction addresses; software breakpoints replace instructions with a trap where permitted. Hardware watchpoints use limited data-address comparators and may have alignment/size restrictions.
 
-- **Conditional breakpoints:** `break foo if len > 512` (the debugger halts every time and checks, which can be slow; prefer a code-level `if (...) __BKPT(0);` in hot paths).
-- **Watchpoint with a value:** some DWT implementations can match on data value, e.g. stop when a variable becomes 0.
-- **Tracepoints / logpoints:** record or print without stopping (GDB `dprintf`, IDE logpoints).
-- **`__BKPT(0)`** in code: an explicit breakpoint (e.g. in an assertion handler); without a debugger attached it causes a HardFault, so guard it with a "debugger attached" check (`CoreDebug->DHCSR & C_DEBUGEN`).
+#### Example
+When a variable is corrupted unexpectedly, watch its address rather than breaking wherever it is read. The debugger can identify the CPU instruction responsible.
 
-**Watchpoint example:** a global `config.mode` is randomly overwritten. Set `watch config.mode` (or `watch *(uint32_t *)0x20001234`), run, and the CPU halts on the instruction that writes it; `bt` shows the culprit, often a buffer overrun in a neighbouring array.
+**Interview takeaway:** CPU watchpoints do not necessarily detect writes from DMA or other bus masters. Check hardware support and comparator limits.
 
 ### What are the essential GDB commands for embedded debugging? {E}
 **Short answer:** Connect to the probe's GDB server with `target extended-remote :3333` (OpenOCD) or `:2331` (J-Link), then `load` to flash the ELF, `monitor reset halt` to reset, `break`/`hbreak` and `watch` to stop, `continue`/`next`/`step`/`finish` to run, `bt` for the call stack, `info registers`, `print`/`p/x` and `x/16wx addr` to inspect data and memory, `frame N` to switch stack frames, and `set var x = 5` to change values.
