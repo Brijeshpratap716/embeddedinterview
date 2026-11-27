@@ -461,28 +461,38 @@ Use the adapter driver's supported bus-recovery mechanism where available. Do no
 **Interview takeaway:** Recovery is conditional on the actual fault and bus ownership. Use bounded timeouts and the hardware/controller's recovery procedure; do not assume nine pulses always fix a stuck bus.
 
 ### What is the difference between 7-bit and 10-bit I2C addressing? {E}
-**Short answer:** 7-bit addressing gives 128 addresses, of which 16 are reserved, so 112 are usable; it is used by almost all devices. 10-bit addressing sends a first byte `11110xx` + R/W (where `xx` are the two high address bits) followed by a second byte with the low 8 bits, giving 1024 addresses; 10-bit devices are rare.
+I2C supports 7-bit and 10-bit target addresses. The address width changes the address-phase encoding, not the width of a data byte.
 
-**Reserved 7-bit addresses**
+#### 1. 7-bit addressing
 
-| Address | Use |
-|---|---|
-| 0x00 | general call / START byte |
-| 0x01 | CBUS |
-| 0x02 | other bus formats |
-| 0x03 | future use |
-| 0x04–0x07 | Hs-mode controller code |
-| 0x78–0x7B | 10-bit addressing prefix |
-| 0x7C–0x7F | device ID / future use |
+A seven-bit address is followed by a read/write bit in the first transmitted byte.
 
-**Address conflicts between identical devices**
+```text
+7-bit address: 0x50
+Write address byte: (0x50 << 1) | 0 = 0xA0
+Read address byte:  (0x50 << 1) | 1 = 0xA1
+```
 
-- Address-select pins (A0, A1…) let you choose among a few addresses (e.g. 4 options for many sensors).
-- An **I2C multiplexer/switch** (TCA9548A) puts devices on separate downstream channels.
-- A second I2C peripheral on the MCU.
-- Some devices allow the address to be reprogrammed.
+Some address values are reserved by the specification.
 
-**7-bit vs 8-bit confusion:** datasheets sometimes give an "8-bit address" that includes the R/W bit, e.g. 0x90 (write) / 0x91 (read) for device 0x48. Most software APIs (Linux, Zephyr, most HALs except STM32 HAL, which expects the shifted value) take the 7-bit address.
+#### 2. 10-bit addressing
+
+The initial address byte contains the reserved prefix 11110, the two high address bits and the direction bit. A second byte carries the remaining eight address bits. A 10-bit read uses the specified repeated-START/address sequence.
+
+#### 3. Linux configuration
+
+In a device tree, an ordinary 7-bit I2C target commonly uses its unshifted address:
+
+```dts
+sensor@50 {
+    compatible = "vendor,sensor";
+    reg = <0x50>;
+};
+```
+
+Ten-bit devices require the appropriate binding/address flag and adapter support.
+
+**Interview takeaway:** Most driver APIs use the unshifted 7-bit address. Check the API before shifting; 10-bit addressing uses a different protocol sequence.
 
 ### What is SMBus, and what is I3C? {M}
 **Short answer:** **SMBus** (System Management Bus) is a stricter variant of I2C used for system management (batteries, power supplies, temperature monitors on PC and server boards): it defines voltage levels, a 25–35 ms clock-low timeout, a minimum 10 kHz clock, optional Packet Error Checking (a CRC-8 byte), standard command formats and an alert line. **I3C** (MIPI Improved Inter-Integrated Circuit) is the modern successor to I2C: push-pull signalling at up to 12.5 MHz (more in HDR modes), dynamic address assignment, in-band interrupts, and backward compatibility with many I2C targets on the same bus.
