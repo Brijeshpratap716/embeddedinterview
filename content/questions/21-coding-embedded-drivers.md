@@ -732,6 +732,12 @@ void scheduler_run(void)
 
 **Improvements:** priority order in the table, overrun detection (log when `now` is already past the next run time by more than one period), idle sleep (`__WFI()`) when no task is due, and a watchdog kick after a full pass.
 
+#### Cooperative timing analysis
+
+Consider three services with worst-case times 0.2 ms, 0.5 ms and 0.1 ms. A simultaneous release can require 0.8 ms before the pass completes, excluding interrupt and scheduler overhead. A long-running earlier service delays later ready services because this scheduler cannot preempt them. Initialize each next_ms from the current tick rather than assuming boot time zero; keep release intervals below the modular half range.
+
+Advancing the previous release time preserves phase but can cause repeated catch-up work after an overrun. Define a skip/coalesce policy and record missed deadlines. Use an RTOS or hardware timer for deadlines that this cooperative design cannot satisfy.
+
 ### Write a watchdog service routine. {E}
 **Short answer:** Configure an independent watchdog timer early in start-up and refresh ('kick') it only when the whole system is healthy. A robust design has every critical task set its bit in a 'checked-in' word; a supervisor kicks the watchdog only when all bits are set, then clears them for the next period. If any task hangs, the watchdog is not refreshed and the MCU resets.
 
