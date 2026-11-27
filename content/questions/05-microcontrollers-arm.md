@@ -213,34 +213,26 @@ These intrinsics read the respective stack pointers on supporting targets.
 **Interview takeaway:** MSP is used in Handler mode; PSP is commonly used by RTOS tasks. Exception entry stacks onto the interrupted context's selected stack, not always MSP.
 
 ### What happens in hardware when an exception is taken on Cortex-M? {M}
-**Short answer:** The core automatically pushes an 8-word stack frame (`R0`–`R3`, `R12`, `LR`, `PC`, `xPSR`) onto the current stack, fetches the handler's address from the vector table at the same time, loads `LR` with a special `EXC_RETURN` value, switches to Handler mode using MSP, and starts the handler. When the handler returns (branching to the `EXC_RETURN` value), the hardware unstacks the registers and resumes the interrupted code. This is why ISRs can be ordinary C functions.
+When Cortex-M accepts an exception, hardware saves part of the interrupted context and fetches the handler address from the vector table. This reduces the amount of software required for interrupt entry.
 
-**Step by step**
+#### 1. Basic exception stack frame
 
-1. **Stacking:** push `xPSR`, `PC` (return address), `LR`, `R12`, `R3`, `R2`, `R1`, `R0` onto the active stack (MSP or PSP), 8-byte aligned (an extra padding word is added if needed, recorded in xPSR bit 9). If the FPU is active, `S0`–`S15` and `FPSCR` are also stacked (18 more words), unless **lazy stacking** reserves the space and saves them only if the handler uses the FPU.
-2. **Vector fetch:** read the handler address from `VTOR + 4 × exception_number`, in parallel with stacking (Harvard buses).
-3. **Update registers:** `PC` = handler address, `LR` = `EXC_RETURN`, `IPSR` = exception number, switch to Handler mode (always privileged) on MSP.
-4. **Handler runs.** Higher-priority exceptions can pre-empt it (nesting).
-5. **Return:** `BX LR` (or `POP {..., PC}`) with an `EXC_RETURN` value tells the core to perform an exception return: unstack, restore mode and stack pointer, continue the interrupted code.
+<div style="max-width:580px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 219" width="100%" role="img" aria-label="Basic Cortex-M exception frame, xPSR at high address and R0 at stack pointer">
+<rect x="100" y="8" width="140" height="25" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="24" font-size="12" text-anchor="middle" fill="currentColor">xPSR</text><rect x="100" y="33" width="140" height="25" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="49" font-size="12" text-anchor="middle" fill="currentColor">PC</text><rect x="100" y="58" width="140" height="25" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="74" font-size="12" text-anchor="middle" fill="currentColor">LR</text><rect x="100" y="83" width="140" height="25" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="99" font-size="12" text-anchor="middle" fill="currentColor">R12</text><rect x="100" y="108" width="140" height="25" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="124" font-size="12" text-anchor="middle" fill="currentColor">R3</text><rect x="100" y="133" width="140" height="25" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="149" font-size="12" text-anchor="middle" fill="currentColor">R2</text><rect x="100" y="158" width="140" height="25" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="174" font-size="12" text-anchor="middle" fill="currentColor">R1</text><rect x="100" y="183" width="140" height="25" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="199" font-size="12" text-anchor="middle" fill="currentColor">R0</text><text x="90" y="20" font-size="10" text-anchor="end" fill="currentColor">High address</text><text x="90" y="198" font-size="10" text-anchor="end" fill="currentColor">SP →</text><path d="M258 10 V200 m-4-5 4 5 4-5" stroke="currentColor" fill="none"/><text x="265" y="106" font-size="10" fill="currentColor">Growth</text></svg></div>
 
-**Timing:** 12 cycles from the interrupt to the first handler instruction on Cortex-M3/M4 (zero wait states), similar on exit, and only 6 cycles between back-to-back handlers with tail-chaining.
+The basic frame is eight words. Alignment padding, floating-point state and security extensions can add information.
 
-**The stacked frame layout (lowest address first)**
+#### 2. Entry sequence
 
-| Offset | Register |
-|---|---|
-| 0x00 | R0 |
-| 0x04 | R1 |
-| 0x08 | R2 |
-| 0x0C | R3 |
-| 0x10 | R12 |
-| 0x14 | LR (of the interrupted code) |
-| 0x18 | PC (return address) |
-| 0x1C | xPSR |
+1. Exception priority and masking determine acceptance.
+2. Hardware saves the basic frame on the current selected stack.
+3. It obtains the handler address from the vector table and sets exception state.
+4. Handler mode executes using MSP; LR contains EXC_RETURN.
+5. Exception return restores the saved context according to EXC_RETURN.
 
-Fault handlers read `frame[6]` to find the instruction that faulted.
+Software saves other registers when necessary, for example during an RTOS context switch.
 
-**What the hardware does not save:** `R4`–`R11` (and `S16`–`S31`). The compiler saves them in the handler if it uses them (AAPCS callee-saved), and an RTOS saves them in software during a context switch.
+**Interview takeaway:** Cortex-M hardware stacks a basic context automatically, not every register. EXC_RETURN encodes the return mode and stack/frame information.
 
 ### What is the NVIC? {E}
 **Short answer:** The **Nested Vectored Interrupt Controller** is the interrupt controller built into every Cortex-M core. It enables and disables each external interrupt, records pending interrupts, assigns programmable priorities, lets higher-priority interrupts pre-empt lower ones (nesting), and fetches the handler address directly from the vector table (vectored), with hardware optimisations such as tail-chaining and late arrival.
