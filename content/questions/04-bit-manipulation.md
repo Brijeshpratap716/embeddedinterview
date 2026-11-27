@@ -346,58 +346,53 @@ A software scheduler or interrupt dispatcher may keep pending events in a bitmap
 **Interview takeaway:** CTZ gives the zero-based index; n & -n isolates a one-bit mask for unsigned n. Handle zero explicitly.
 
 ### How do you reverse the bits of a byte or an n-bit number? {E}
-**Short answer:** Loop over the bits: if bit `i` is set in the input, set bit `(width - 1 - i)` in the output. The width must be the number of **bits**, not bytes.
+Bit reversal changes the order of individual bits, not the order of bytes. An n-bit value is reversed by moving its least significant bit into the most significant position of the result.
+
+#### 1. Reverse an eight-bit value
 
 ```c
 #include <stdint.h>
 
-uint32_t reverse_n_bits(uint32_t a, unsigned width)   /* width = 1..32 */
+uint8_t reverse8(uint8_t x)
 {
-    uint32_t out = 0;
-    for (unsigned i = 0; i < width; i++) {
-        if (a & (1u << i))
-            out |= 1u << (width - 1 - i);
+    uint8_t out = 0;
+
+    for (unsigned i = 0; i < 8; i++) {
+        out = (uint8_t)((out << 1) | (x & 1U));
+        x >>= 1;
     }
     return out;
 }
-
-/* reverse_n_bits(15, 8)   = 0xF0  (0b00001111 -> 0b11110000) */
-/* reverse_n_bits(1, 32)   = 0x80000000 */
 ```
 
-**A common bug.** This version looks right but is wrong:
+For input 00010110 (0x16), the output is 01101000 (0x68).
+
+#### 2. General n-bit reversal
 
 ```c
-unsigned int a = 1;
-int n = sizeof(a);            /* 4 -- that is BYTES, not bits */
-for (int i = 0; i < n; i++)
-    if (a & (1U << i)) temp |= 1U << ((n - 1) - i);
-/* prints 8 instead of 2147483648 */
-```
-
-`sizeof` returns bytes. Use `sizeof(a) * CHAR_BIT` (from `<limits.h>`), which is 32.
-
-**Shift-in version** (no reverse index, often clearer):
-
-```c
-uint8_t reverse_byte(uint8_t b)
+uint32_t reverse_n(uint32_t x, unsigned n)
 {
-    uint8_t r = 0;
-    for (int i = 0; i < 8; i++) {
-        r = (uint8_t)((r << 1) | (b & 1u));  /* take LSB of b, push into r */
-        b >>= 1;
+    uint32_t out = 0;
+    if (n > 32)
+        return 0; // Invalid width
+
+    for (unsigned i = 0; i < n; i++) {
+        out = (out << 1) | (x & 1U);
+        x >>= 1;
     }
-    return r;
+    return out;
 }
 ```
 
-**Faster options**
+This reverses only the lowest n bits and returns them in the lowest n positions. For n = 0, the result is zero.
 
-- 256-entry lookup table for bytes: one memory read.
-- Swap halves, then quarters, then pairs: `b = (b >> 4) | (b << 4); b = ((b & 0xCC) >> 2) | ((b & 0x33) << 2); b = ((b & 0xAA) >> 1) | ((b & 0x55) << 1);`
-- On Cortex-M3 and later, `__RBIT()` reverses 32 bits in one instruction; shift right by `32 - width` for narrower values.
+#### 3. Example of one iteration
 
-**Where it shows up:** LSB-first vs MSB-first serial protocols, CRC implementations ("reflected" CRCs), and FFT bit-reversed addressing.
+Read the rightmost input bit using x & 1, shift the output left to make space, append that bit, then shift the input right.
+
+This is useful for bit-oriented protocols, some CRC implementations and bit-order conversion when hardware requires it.
+
+**Interview takeaway:** A byte swap preserves the bits within each byte. Bit reversal reverses every selected bit; a fixed width must be specified.
 
 ### How do you reverse the bits of a 32-bit integer? {M}
 **Short answer:** Swap progressively larger groups of bits (1, 2, 4, 8, then 16) using masks. It runs in constant time with no loop. On Cortex-M3 and later it is a single `RBIT` instruction.
