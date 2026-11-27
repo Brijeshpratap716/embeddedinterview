@@ -881,3 +881,74 @@ svc  #0               // trap to EL1
 - Avoid swap entirely on real-time systems and use `mlockall()` for time-critical processes.
 
 **Embedded note:** most embedded Linux devices have no swap, so instead of thrashing on swap they thrash on **file-backed pages**: code pages of running programs are evicted and re-read from flash over and over, which also wears the flash. Watch memory headroom in testing.
+
+### Walk through what happens when malloc(4 KB) is called on ARM64 Linux. {M}
+**Short answer:** malloc(4096) is a user-space allocator request. The allocator may reuse existing space, or obtain virtual memory through brk or mmap. Physical pages are often allocated on demand when accessed.
+
+```c
+char *ptr = malloc(4096);
+if (ptr) {
+    ptr[0] = 'A';
+    free(ptr);
+}
+```
+
+**Typical flow (glibc, anonymous memory, 4 KiB base pages assumed)**
+
+1. malloc checks allocator-managed free chunks and arenas.
+2. If more space is needed, the allocator may call brk or mmap. On ARM64, the SVC instruction enters the kernel from EL0 (normally EL1).
+3. The kernel establishes or extends a virtual memory area (VMA). Not every page needs physical backing yet.
+4. malloc returns a virtual address; allocator bookkeeping may already have touched some pages.
+5. A subsequent store uses the MMU and TLB. On a TLB miss, hardware walks the page tables.
+6. If a valid anonymous mapping has no writable physical page, a page fault enters the kernel. Linux checks permissions, allocates and zeroes a page as necessary, and updates the page tables.
+7. The instruction is retried; the write may initially update only the CPU cache.
+
+```asm
+MOV X0, #4096
+BL  malloc
+CBZ X0, failed
+MOV W1, #65
+STRB W1, [X0]
+failed:
+```
+
+A representative Linux fault path is do_mem_abort -> do_page_fault -> handle_mm_fault -> __handle_mm_fault -> handle_pte_fault, with anonymous-page handling such as do_anonymous_page. Exact paths depend on the kernel and mapping.
+
+**Follow-ups:** malloc is not a syscall; not every allocation causes a fault; 4096 bytes need not be page-aligned and may span pages; ARM64 Linux may use other base page sizes. free does not necessarily release memory to the kernel immediately.
+
+### What is a memory barrier, and why is it needed on ARM? {M}
+**Short answer:** A memory barrier constrains compiler and/or hardware reordering of memory operations. Cache coherency alone does not guarantee ordering between different addresses.
+
+Suppose a producer writes data = 100 and then flag = 1. On a weakly ordered architecture, without proper synchronization a consumer may see the flag before the data is visible.
+
+Linux kernel example (initially data and flag are zero; one producer publishes once):
+
+```c
+/* Producer */
+WRITE_ONCE(data, 100);
+smp_wmb();
+WRITE_ONCE(flag, 1);
+
+/* Consumer */
+if (READ_ONCE(flag) == 1) {
+    smp_rmb();
+    value = READ_ONCE(data);
+}
+```
+
+Alternatively, use smp_store_release(&flag, 1) and smp_load_acquire(&flag) for this publication pattern.
+
+| ARM instruction | Purpose |
+|---|---|
+| DMB | Orders relevant memory accesses across the barrier. |
+| DSB | Also waits for relevant preceding operations to complete as required by its scope and type. |
+| ISB | Synchronizes subsequent instruction execution with context changes. |
+
+| Linux API | Purpose |
+|---|---|
+| smp_rmb() | Orders reads across the barrier. |
+| smp_wmb() | Orders writes across the barrier. |
+| smp_mb() | Orders reads and writes across the barrier. |
+| barrier() | Compiler barrier only. |
+
+**Interview trap:** Barriers do not make read-modify-write operations atomic, and do not necessarily flush caches to DRAM. SMP barriers are for CPU-to-CPU ordering; device drivers must use the appropriate MMIO accessors and DMA barriers for device communication. In portable user-space C, use C11 atomics with release/acquire ordering instead of plain shared variables.
