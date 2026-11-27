@@ -1268,45 +1268,75 @@ The return value can communicate success or failure, while output parameters car
 **Interview takeaway:** Prefer clear ownership and error contracts. Do not return a pointer to a local automatic array or structure that ceases to exist on function return.
 
 ### What is a flexible array member? {M}
-**Short answer:** A flexible array member is an array with no size declared as the **last** member of a struct (C99). The struct describes a header followed by a variable amount of data, allocated in one block: `malloc(sizeof(struct packet) + n)`. `sizeof` the struct does not include the array.
+A flexible array member is an unsized array declared as the final member of a structure. It allows a fixed-size header and variable-length payload to occupy one allocation.
+
+#### 1. Declaration
+
+```c
+#include <stddef.h>
+
+struct Packet {
+    size_t len;
+    unsigned char data[];
+};
+```
+
+The structure has a fixed header containing len. The flexible array has no fixed element count in the declaration.
+
+#### 2. Memory representation
+
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 112" width="100%" role="img" aria-label="One allocation contains packet header followed by five payload bytes">
+<text x="10" y="15" font-size="11" font-weight="600" fill="currentColor">One allocation: sizeof(struct Packet) + 5</text>
+<rect x="10" y="31" width="100" height="38" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="60" y="54" font-size="12" text-anchor="middle" fill="currentColor">len = 5</text>
+<rect x="110" y="31" width="44" height="38" fill="#16a34a" fill-opacity=".13" stroke="#16a34a"/><text x="132" y="54" text-anchor="middle" font-size="12" fill="currentColor">A</text><text x="132" y="83" font-size="9" text-anchor="middle" fill="currentColor">data[0]</text><rect x="154" y="31" width="44" height="38" fill="#16a34a" fill-opacity=".13" stroke="#16a34a"/><text x="176" y="54" text-anchor="middle" font-size="12" fill="currentColor">B</text><text x="176" y="83" font-size="9" text-anchor="middle" fill="currentColor">data[1]</text><rect x="198" y="31" width="44" height="38" fill="#16a34a" fill-opacity=".13" stroke="#16a34a"/><text x="220" y="54" text-anchor="middle" font-size="12" fill="currentColor">C</text><text x="220" y="83" font-size="9" text-anchor="middle" fill="currentColor">data[2]</text><rect x="242" y="31" width="44" height="38" fill="#16a34a" fill-opacity=".13" stroke="#16a34a"/><text x="264" y="54" text-anchor="middle" font-size="12" fill="currentColor">D</text><text x="264" y="83" font-size="9" text-anchor="middle" fill="currentColor">data[3]</text><rect x="286" y="31" width="44" height="38" fill="#16a34a" fill-opacity=".13" stroke="#16a34a"/><text x="308" y="54" text-anchor="middle" font-size="12" fill="currentColor">E</text><text x="308" y="83" font-size="9" text-anchor="middle" fill="currentColor">data[4]</text><text x="60" y="83" font-size="10" text-anchor="middle" fill="currentColor">Header</text><text x="170" y="102" font-size="10" text-anchor="middle" fill="currentColor">Conceptual layout; actual header may include padding.</text></svg></div>
+
+#### 3. Allocation and use
 
 ```c
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
-struct packet {
-    uint16_t len;
-    uint8_t  type;
-    uint8_t  data[];          /* flexible array member: must be last */
-};
-
-struct packet *packet_new(uint8_t type, const uint8_t *payload, uint16_t n)
+struct Packet *make_packet(const void *src, size_t n)
 {
-    struct packet *p = malloc(sizeof *p + n);   /* header + n bytes, one allocation */
-    if (p == NULL) return NULL;
-    p->len = n;
-    p->type = type;
-    memcpy(p->data, payload, n);
-    return p;                                   /* one free(p) releases everything */
+    if (n > SIZE_MAX - sizeof(struct Packet))
+        return NULL;
+
+    struct Packet *p = malloc(sizeof *p + n);
+
+    if (p != NULL) {
+        p->len = n;
+        if (n != 0)
+            memcpy(p->data, src, n);
+    }
+
+    return p;
 }
 ```
 
-**Why use it**
+The caller must provide n readable bytes if n is nonzero.
 
-- One allocation and one `free` instead of a header plus a separately allocated buffer.
-- The data is contiguous with the header (good for cache and for sending the whole thing with one DMA or `write` call).
+```c
+struct Packet *p = make_packet("hello", 5);
+if (p != NULL) {
+    // p->data contains five bytes, no NUL terminator
+    free(p);
+}
+```
 
-**Rules**
+Only one free is needed because header and data belong to the same allocation.
 
-- It must be the last member, and the struct must have at least one other member.
-- A struct with a flexible array member cannot be an element of an array or a member of another struct (GCC allows the latter as an extension).
-- `sizeof(struct packet)` may include padding before `data`; using `offsetof(struct packet, data) + n` gives the minimum size.
-- Assigning or copying such structs by value copies only the header.
+#### 4. Difference from a pointer member
 
-**Older tricks you will see in legacy code:** `uint8_t data[1];` (the "struct hack": accessing beyond index 0 is technically undefined) and `uint8_t data[0];` (a GNU extension). Modern compilers with `-fstrict-flex-arrays` and bounds checking treat these differently, so convert them to `[]`. The Linux kernel completed this conversion and uses `__counted_by(len)` annotations so the compiler can bounds-check the array.
+| Flexible array member | Pointer member |
+|---|---|
+| Payload follows header in same allocation | May refer to a separate allocation |
+| No separate pointer field | Stores a pointer value |
+| Payload copied explicitly | Structure assignment copies pointer, not pointed-to data |
 
-**Embedded note:** with static allocation, you can use the same type over a fixed buffer: `static uint8_t storage[sizeof(struct packet) + 64]` and a pointer to it, keeping the alignment of the struct in mind.
+A flexible array must be the last member of a structure with more than one named member. sizeof the structure excludes the flexible array elements, though it may include trailing padding. Structure assignment does not copy the variable-length payload.
+
+**Interview takeaway:** Flexible arrays are useful for packets, variable-length messages and Linux kernel objects. Check allocation-size overflow and track payload length explicitly.
 
 ### What are offsetof and container_of? {M}
 **Short answer:** `offsetof(type, member)` (from `<stddef.h>`) gives the byte offset of a member within a struct, as a compile-time constant. `container_of(ptr, type, member)` (a Linux kernel macro) uses it the other way round: given a pointer to a member, it computes the address of the struct that contains it. Together they let generic code (lists, queues, callbacks) work with embedded "hook" members.
