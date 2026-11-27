@@ -586,37 +586,42 @@ High-priority tasks should block when idle. An always-ready high-priority pollin
 **Interview takeaway:** RMS is optimal among fixed-priority assignments under its classical assumptions. It is not a universal priority rule for arbitrary deadlines, dependencies or multicore systems.
 
 ### How do you check whether a task set is schedulable? Give a worked example. {H}
-**Short answer:** First compute utilisation and compare with the RMS bound; if it is above the bound, use **response-time analysis (RTA)**: for each task, iterate `Rᵢ = Cᵢ + Bᵢ + Σⱼ∈hp(i) ⌈Rᵢ / Tⱼ⌉ · Cⱼ` (its own execution, blocking by lower-priority tasks, plus interference from every higher-priority task) until it converges. The set is schedulable if every `Rᵢ ≤ Dᵢ`.
+Schedulability analysis determines whether all tasks can finish by their deadlines under a stated scheduling model. Consider independent periodic tasks, one CPU, fixed-priority preemption, deadlines equal to periods, and negligible blocking/overhead.
 
-**Example (times in ms, RMS priorities: shortest period highest)**
+#### 1. Worked example
 
-| Task | Period T = deadline D | WCET C | Utilisation |
-|---|---|---|---|
-| T1 | 10 | 3 | 0.300 |
-| T2 | 15 | 4 | 0.267 |
-| T3 | 40 | 10 | 0.250 |
-| Total | | | **0.817** |
+| Task | Worst-case execution C | Period T | Utilization C/T |
+|---|---:|---:|---:|
+| A | 1 ms | 4 ms | 0.25 |
+| B | 2 ms | 5 ms | 0.40 |
+| Total | | | 0.65 |
 
-The RMS bound for 3 tasks is 0.780, and 0.817 is above it, so the simple test is inconclusive. Run RTA (no blocking):
+For two tasks, the classical RMS sufficient utilization bound is 2(√2−1), approximately 0.828. Since 0.65 is below the bound, the task set is schedulable under the stated assumptions.
 
-- **T1:** R = 3 (no higher-priority tasks) ≤ 10 ✓
-- **T2:** R₀ = 4 → R = 4 + ⌈4/10⌉·3 = 7 → R = 4 + ⌈7/10⌉·3 = 7 (converged) ≤ 15 ✓
-- **T3:** R₀ = 10
-  - R = 10 + ⌈10/10⌉·3 + ⌈10/15⌉·4 = 10 + 3 + 4 = 17
-  - R = 10 + ⌈17/10⌉·3 + ⌈17/15⌉·4 = 10 + 6 + 8 = 24
-  - R = 10 + ⌈24/10⌉·3 + ⌈24/15⌉·4 = 10 + 9 + 8 = 27
-  - R = 10 + ⌈27/10⌉·3 + ⌈27/15⌉·4 = 10 + 9 + 8 = 27 (converged) ≤ 40 ✓
+#### 2. Response-time analysis
 
-All tasks meet their deadlines even though utilisation is above the bound.
+For task i, iterate:
 
-**Adding reality**
+```text
+R_i(next) = C_i + B_i
+          + sum over higher-priority tasks j:
+              ceil(R_i(current) / T_j) * C_j
+```
 
-- **Blocking time `Bᵢ`:** the longest time a lower-priority task can hold a resource that task i needs (with priority inheritance/ceiling, typically one critical section).
-- **ISR load:** treat interrupts as the highest-priority "tasks" with their own C and minimum inter-arrival time.
-- **Kernel overhead:** add context switch time to each C (twice per job: switch in and out).
-- **Jitter:** release jitter adds to the interference terms.
+B_i is a suitable bound on blocking. Here A has highest priority and R_A = 1 ms. For B, start R_B = 2:
 
-**Interview tip:** even if you do not remember the formula exactly, explain the idea: "a task's worst-case response is its own work plus the work of every higher-priority job released during that window plus blocking; iterate until stable and compare with the deadline."
+```text
+2 + ceil(2/4)*1 = 3
+2 + ceil(3/4)*1 = 3 (converged)
+```
+
+R_B = 3 ms, below its 5 ms deadline.
+
+#### 3. Real-world analysis
+
+Include interrupt interference, scheduling/context-switch costs, blocking, release jitter, and the actual deadline model. Utilization greater than the RMS sufficient bound does not automatically prove failure; exact analysis may still find a feasible schedule.
+
+**Interview takeaway:** Average CPU utilization alone cannot prove deadlines. Use an appropriate worst-case response-time analysis and validate on the target.
 
 ### How much stack does a task need and how do you size it? {M}
 **Short answer:** Estimate it from the worst-case call depth of the task's code (local variables, saved registers, function arguments, padding) plus the context-switch frame (16 words on Cortex-M, plus 18 more for FP context if the task uses the FPU, and on some ports a little more). Then **measure** under worst-case conditions with the high-water mark and add a safety margin (20–50%). Interrupts use the main stack on Cortex-M, so they do not need to be included in task stacks.
