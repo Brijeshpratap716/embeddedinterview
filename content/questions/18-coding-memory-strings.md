@@ -180,11 +180,28 @@ for (int i = 0; i < n; i++)
     end += sprintf(end, "%d,", vals[i]);      /* better: snprintf with remaining size */
 ```
 
-**Safe bounded version (`strlcat` style):** find `len = strlen(dst)`; if `len >= size` the buffer was not terminated → return; copy at most `size - len - 1` characters; terminate; return `len + strlen(src)` so truncation is visible.
+**Safe bounded version (`strlcat` style):** scan at most `size` bytes for the terminator; if no terminator exists the buffer was not terminated → return; copy at most `size - len - 1` characters; terminate; return `len + strlen(src)` so truncation is visible.
 
 **Points interviewers check:** overlapping `src`/`dst` is undefined, `dst` must already be a valid terminated string (an uninitialised buffer leads to scanning random memory), and the return value is the original `dst`.
 
 **Complexity:** O(len(dst) + len(src)) time, O(1) space.
+
+#### Capacity-aware concatenation
+
+```c
+bool append(char *dst, size_t cap, const char *src)
+{
+    size_t d = 0;
+    while (d < cap && dst[d]) ++d;
+    if (d == cap) return false;
+    size_t n = strlen(src);
+    if (n >= cap - d) return false;
+    memcpy(dst + d, src, n + 1);
+    return true;
+}
+```
+
+This version rejects insufficient capacity without modifying the destination. It assumes a valid terminated source and nonoverlapping buffers. Track the used length in a packet or logging buffer to avoid repeatedly scanning the existing contents.
 
 ### Implement your own memcpy(). {E}
 **Short answer:** Copy `n` bytes from `src` to `dst` and return `dst`. The simple version is a byte loop. A faster version first copies single bytes until the destination is word aligned, then copies whole 32-bit words (only when source and destination have the same alignment), then copies the remaining tail bytes. Overlapping regions are not allowed; that is what `memmove` is for.
