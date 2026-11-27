@@ -628,41 +628,42 @@ A larger window smooths noise but increases delay and reduces responsiveness. In
 **Interview takeaway:** A running sum and circular storage provide constant-time updates. Size the accumulator for the worst-case sum and define startup behavior.
 
 ### How do you find the maximum subarray sum (Kadane's algorithm)? {M}
-**Short answer:** Scan the array once, tracking the best sum of a subarray that **ends at the current element** (either extend the previous best-ending subarray or start fresh at this element) and the best sum seen overall. O(n) time and O(1) memory. Initialising both with the first element (not 0) makes it correct for arrays where every number is negative (the answer is then the largest single element).
+Kadane's algorithm finds the maximum sum of a nonempty contiguous subarray in linear time. At each index, decide whether to extend the previous subarray or begin a new one.
+
+#### 1. C implementation
 
 ```c
-#include <stdio.h>
-#include <stddef.h>
-
-/* returns the max sum and the [start, end] indices of one maximum subarray; n must be >= 1 */
-long max_subarray(const int *a, size_t n, size_t *start, size_t *end)
+bool max_subarray(const int *a, size_t n, int64_t *out)
 {
-    long cur = a[0], best = a[0];
-    size_t cur_start = 0;
-    *start = *end = 0;
+    if (!n || !out)
+        return false;
+
+    int64_t current = a[0], best = a[0];
     for (size_t i = 1; i < n; i++) {
-        if (cur < 0) { cur = a[i]; cur_start = i; }     /* a negative prefix only hurts: restart */
-        else         { cur += a[i]; }
-        if (cur > best) { best = cur; *start = cur_start; *end = i; }
-    }
-    return best;
-}
+        if (current > 0)
+            current += a[i];
+        else
+            current = a[i];
 
-int main(void)
-{
-    int a[] = { -2, 1, -3, 4, -1, 2, 1, -5, 4 };
-    int b[] = { -8, -3, -6, -2, -5 };
-    size_t s, e;
-    long m = max_subarray(a, 9, &s, &e);
-    printf("%ld [%zu..%zu]\n", m, s, e);               /* 6 [3..6] */
-    m = max_subarray(b, 5, &s, &e);
-    printf("%ld [%zu..%zu]\n", m, s, e);               /* -2 [3..3] */
-    return 0;
+        if (current > best)
+            best = current;
+    }
+    *out = best;
+    return true;
 }
 ```
 
-**Why it works:** the best subarray ending at position i is either a[i] alone or a[i] plus the best subarray ending at i − 1; if that previous best is negative, dropping it can only improve the sum.
+Assume all intermediate sums fit int64_t.
 
-**Common mistakes:** starting with `best = 0` (returns 0 for all-negative input, which is the answer only if an empty subarray is allowed), and integer overflow on long arrays (use a wider type for the sum).
+#### 2. Worked example
 
-**Variants:** maximum circular subarray (max of the normal answer and total − minimum subarray, handling the all-negative case), maximum product subarray (track both max and min because negatives flip signs), and the embedded version: "find the window of samples with the highest energy".
+Array: {-2,1,-3,4,-1,2,1,-5,4}. The maximum subarray is {4,-1,2,1} with sum 6. When the current sum becomes nonpositive, starting over cannot reduce the best possible sum ending at the next index.
+
+#### 3. Edge cases
+
+Initializing best to a[0] handles all-negative arrays: {-5,-2,-8} returns -2, not zero. Empty input needs an explicit policy.
+
+Time O(n); extra space O(1).
+
+**Interview takeaway:** Track the best sum ending at the current index and the best sum overall. Do not initialize the answer to zero unless empty subarrays are allowed.
+
