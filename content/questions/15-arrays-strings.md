@@ -226,51 +226,24 @@ size_t longest_alternating(const int a[], size_t n)
 **Complexity:** O(n) time, O(1) space.
 
 ### How do you count the frequency of each element in a sorted array? {E}
-**Short answer:** Equal values are adjacent in a sorted array, so walk once with a counter: increment while the value stays the same, and print the value and count when it changes. Print the final run after the loop. O(n) time, O(1) space.
+For sorted input, each distinct value occupies a contiguous run. Count its length and move to the next run.
 
 ```c
-#include <stdio.h>
-#include <stddef.h>
-
-void print_frequencies(const int *arr, size_t n)
+void frequencies(const int a[], size_t n)
 {
-    if (n == 0) return;
-    size_t count = 1;
-    for (size_t i = 1; i < n; i++) {
-        if (arr[i] == arr[i - 1]) {
-            count++;
-        } else {
-            printf("%d occurs %zu times\n", arr[i - 1], count);
-            count = 1;
-        }
+    size_t i = 0;
+    while (i < n) {
+        size_t j = i + 1;
+        while (j < n && a[j] == a[i]) ++j;
+        printf("%d: %zu\n", a[i], j-i);
+        i = j;
     }
-    printf("%d occurs %zu times\n", arr[n - 1], count);   /* last run */
 }
-/* {10, 10, 10, 10, 30, 30} -> 10 occurs 4 times, 30 occurs 2 times */
 ```
 
-**The last group is the classic slip.** The loop only prints when the value *changes*, so the final run never triggers it. You must print it after the loop, using `arr[n - 1]`, not a hard-coded index like `arr[5]`, which breaks for any other length.
+[1, 1, 3, 3, 3, 8] gives 1:2, 3:3, 8:1. Every element participates in at most a constant number of comparisons.
 
-**Unsorted arrays**
-
-- Small known range (e.g. ADC codes 0–255, characters): a count array `count[256]`, O(n + range).
-- Arbitrary values: sort first (O(n log n)), or a hash map.
-
-**Follow-up: count of one value in a sorted array in O(log n).** Binary search for the first and the last occurrence; the count is `last - first + 1`.
-
-```c
-/* first index with a[i] >= key */
-size_t lower_bound(const int *a, size_t n, int key)
-{
-    size_t lo = 0, hi = n;
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-        if (a[mid] < key) lo = mid + 1; else hi = mid;
-    }
-    return lo;
-}
-/* count = lower_bound(a, n, key + 1) - lower_bound(a, n, key)  (if key < INT_MAX) */
-```
+**Complexity:** O(n) time, O(1) auxiliary space. For unsorted input use sorting or a hash table.
 
 ### How do you calculate the maximum profit from buying and selling a stock? {M}
 **Short answer:** If you may make as many buy-sell trades as you like (holding at most one share at a time), add up every positive day-to-day increase: `profit += max(0, price[i] - price[i-1])`. If only one trade is allowed, track the minimum price so far and the best `price - min` (the maximum-difference problem).
