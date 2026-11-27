@@ -495,28 +495,26 @@ Ten-bit devices require the appropriate binding/address flag and adapter support
 **Interview takeaway:** Most driver APIs use the unshifted 7-bit address. Check the API before shifting; 10-bit addressing uses a different protocol sequence.
 
 ### What is SMBus, and what is I3C? {M}
-**Short answer:** **SMBus** (System Management Bus) is a stricter variant of I2C used for system management (batteries, power supplies, temperature monitors on PC and server boards): it defines voltage levels, a 25–35 ms clock-low timeout, a minimum 10 kHz clock, optional Packet Error Checking (a CRC-8 byte), standard command formats and an alert line. **I3C** (MIPI Improved Inter-Integrated Circuit) is the modern successor to I2C: push-pull signalling at up to 12.5 MHz (more in HDR modes), dynamic address assignment, in-band interrupts, and backward compatibility with many I2C targets on the same bus.
+SMBus and I3C are related to I2C but define additional or different protocol and electrical behavior.
 
-**SMBus details**
+#### 1. SMBus
 
-- Timeout means a stuck device cannot hold the bus forever (unlike plain I2C).
-- Defined transactions: Quick Command, Send/Receive Byte, Read/Write Byte/Word, Block Read/Write, Process Call.
-- **PEC:** CRC-8 (polynomial x⁸ + x² + x + 1) over the whole transaction including addresses.
-- **SMBALERT#:** a shared interrupt line plus the Alert Response Address (0x0C) to find which device raised it.
-- **PMBus** builds on SMBus for power supply control.
-- Linux: `i2c_smbus_read_byte_data()` etc.
+System Management Bus is an I2C-derived interface used for management functions such as battery, temperature and power monitoring. It defines standardized transactions, timing constraints and optional packet error checking (PEC), depending on the device/protocol.
 
-**I3C advantages over I2C**
+A device may be compatible with both I2C and SMBus transactions, but not every arbitrary I2C transaction maps to an SMBus helper.
 
-| | I2C | I3C |
+#### 2. I3C
+
+MIPI I3C is a newer two-wire interface designed for higher throughput and additional features, including dynamic address assignment, in-band interrupts and push-pull signaling during supported phases. It can support certain legacy I2C targets subject to bus restrictions.
+
+| Feature | SMBus | I3C |
 |---|---|---|
-| Speed | up to 1 MHz (3.4 MHz HS) | 12.5 MHz SDR, ~25–33 Mbps with HDR modes |
-| Signalling | open-drain (slow rising edges, power in pull-ups) | push-pull for data (open-drain only during arbitration) |
-| Addressing | static, set by pins | dynamic address assignment, plus 48-bit provisioned IDs |
-| Interrupts | separate GPIO per device | in-band interrupts on the bus |
-| Power | pull-up current | lower |
+| Main purpose | System management | Efficient modern sensor/device bus |
+| Address handling | Typically static | Dynamic assignment supported |
+| Signaling | Open-drain style | Open-drain and push-pull phases |
+| Interrupts | Separate mechanisms possible | In-band interrupts supported |
 
-I3C is used for new sensors in phones and wearables, and for DDR5 memory module management (SPD hubs).
+**Interview takeaway:** Do not treat SMBus, I2C and I3C as identical. Match the controller, target, electrical requirements and transaction type.
 
 ### What is I2S, and how is it different from I2C? {E}
 **Short answer:** I2S (Inter-IC Sound) is a synchronous serial bus for **digital audio** between processors, codecs, DACs, ADCs and digital microphones. Despite the similar name, it has nothing to do with I2C: it has a bit clock (**BCLK/SCK**), a word-select or frame clock (**LRCLK/WS**, which selects left or right channel and runs at the sample rate), and one or more data lines (**SD**), plus often a master clock (**MCLK**) for the codec. It streams audio continuously at a fixed sample rate.
