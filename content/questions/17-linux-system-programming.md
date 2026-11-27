@@ -299,3 +299,57 @@ For a hang, inspect thread stacks using GDB if authorized and safe to pause. fut
 
 **Interview takeaway:** Start with measurement and timestamps. A thread waiting is not necessarily hung; distinguish expected blocking from missing progress, and consider instrumentation overhead.
 
+### What is the difference between malloc() and calloc()? {M}
+
+malloc allocates uninitialized storage; calloc allocates an array and initializes its bytes to zero.
+
+
+### What is malloc() versus mmap() versus brk()? {M}
+
+malloc is a userspace allocator; mmap creates virtual mappings; brk changes the program break. Allocators may use both mmap and brk.
+
+
+### What are anonymous and file-backed mappings? {M}
+
+Anonymous mappings have no ordinary backing file; file-backed mappings associate virtual pages with file offsets.
+
+
+### What is MAP_SHARED versus MAP_PRIVATE? {M}
+
+MAP_SHARED allows updates to be visible through shared mappings; MAP_PRIVATE uses copy-on-write for private modifications.
+
+
+### How can mmap improve I/O performance? {M}
+
+It permits direct access to mapped file pages, avoiding some explicit read/write copies and calls, but page faults and writeback still cost time.
+
+
+### What is a FIFO versus an unnamed pipe? {M}
+
+Both carry byte streams; a FIFO has a filesystem name, while an unnamed pipe is accessed through inherited or passed file descriptors.
+
+
+### What is a message queue? {M}
+
+An IPC mechanism that sends discrete messages between processes, often with blocking and notification support.
+
+
+### What is a dentry? {M}
+
+A VFS directory-entry cache object associates a name with an inode or records a negative lookup.
+
+
+### What is VFS? {M}
+
+The Virtual File System provides a common interface for different filesystem implementations.
+
+
+### What is ext4? {M}
+
+A Linux journaling filesystem supporting extents, metadata checksums and large files.
+
+
+### What is writeback caching? {M}
+
+Dirty cached pages are written to backing storage later; fsync is used when durability is required.
+
