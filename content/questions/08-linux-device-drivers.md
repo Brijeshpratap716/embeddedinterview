@@ -1156,35 +1156,44 @@ It cannot use ordinary blocking reclaim and may have constrained memory availabi
 **Interview takeaway:** Select flags according to actual context and allocation requirements. Do not use GFP_ATOMIC everywhere to hide incorrect locking or interrupt design.
 
 ### How does a driver access device registers? {M}
-**Short answer:** Map the physical register range into kernel virtual address space (`devm_platform_ioremap_resource()` or `devm_ioremap()`), which returns an `void __iomem *`, then access registers only through the I/O accessors `readl`/`writel` (and `readb/w/q`, `writeb/w/q`), never through plain pointer dereferences. The accessors use the right instruction width, include the barriers needed to order MMIO against DMA and normal memory, and handle endianness. For complex register maps, many drivers use **regmap**.
+Linux drivers access device registers through mapped MMIO addresses and architecture-aware accessor functions. A physical resource address is not normally directly dereferenced as a kernel pointer.
+
+#### 1. Map a platform resource
 
 ```c
-void __iomem *base = devm_platform_ioremap_resource(pdev, 0);
-if (IS_ERR(base)) return PTR_ERR(base);
+void __iomem *base;
 
-u32 v = readl(base + CTRL);
-writel(v | CTRL_EN, base + CTRL);
+base = devm_platform_ioremap_resource(pdev, 0);
+if (IS_ERR(base))
+    return PTR_ERR(base);
 
-/* poll a status bit with timeout (sleeps between reads) */
-ret = readl_poll_timeout(base + STATUS, v, v & STATUS_READY, 10, 1000);   /* 10 µs, 1 ms */
-if (ret) return dev_err_probe(dev, ret, "device not ready\n");
+u32 status = readl(base + STATUS_OFFSET);
+writel(ENABLE_MASK, base + CONTROL_OFFSET);
 ```
 
-**Accessor variants**
+The offsets and register widths must match the device documentation.
 
-| Accessor | Ordering |
-|---|---|
-| `readl` / `writel` | ordered against other MMIO and DMA buffers: `writel` comes after earlier normal memory writes (so a descriptor written before the doorbell is visible to the device) |
-| `readl_relaxed` / `writel_relaxed` | no barriers against normal memory; faster for register-only sequences |
-| `ioread32` / `iowrite32` | work for both MMIO and port I/O (PCI) |
-| `ioread32be`, `readl_be` (via `__raw` + swab) | big-endian device registers |
-| `readl_poll_timeout(_atomic)` | polling with a timeout |
+#### 2. Access flow
 
-**Why not a plain pointer:** the compiler may reorder, merge or cache accesses (`volatile` only partly helps), the architecture may need specific instructions or barriers (Arm device memory, `dsb`/`dmb`), and sparse checks `__iomem` annotations to catch mistakes.
+```text
+Driver readl / writel
+       |
+Mapped kernel MMIO virtual address
+       |
+CPU MMU and device-memory attributes
+       |
+SoC interconnect --> peripheral register
+```
 
-**Bit helpers:** `FIELD_PREP(GENMASK(7, 4), val)` and `FIELD_GET` from `<linux/bitfield.h>` make field updates clear.
+The mapping helper reserves/maps the resource using appropriate attributes.
 
-**Debugging from user space:** `devmem2` or `busybox devmem 0x40010000 32` (needs `/dev/mem` access, often restricted with `CONFIG_STRICT_DEVMEM`).
+#### 3. Important semantics
+
+Use readb/readw/readl or appropriate wider/endian-specific accessors. Relaxed accessors have weaker ordering guarantees and require a documented reason. Posted writes may need a readback or another device-specific completion mechanism.
+
+Do not blindly perform read-modify-write on W1C, read-to-clear or concurrently updated registers.
+
+**Interview takeaway:** Use MMIO resource mappings and accessors, not arbitrary physical-address casts or ordinary memcpy. Width, byte order, ordering and side effects matter.
 
 ### How do drivers do DMA in Linux? {H}
 **Short answer:** Drivers use the **DMA API**, which hides IOMMUs, bus-address translation, bounce buffers and cache maintenance. **Coherent mappings** (`dma_alloc_coherent()`) give a buffer that CPU and device can both access at any time without explicit cache operations, used for descriptor rings and long-lived shared structures. **Streaming mappings** (`dma_map_single()`, `dma_map_sg()`) map an existing buffer for one transfer in one direction, with ownership handed between CPU and device by `dma_unmap_*` or `dma_sync_*_for_cpu/for_device`. The device is told the returned `dma_addr_t`, never the CPU virtual or physical address. Transfers through a separate DMA controller use the **dmaengine** API.
