@@ -9,9 +9,9 @@ desc: Keywords, storage classes, scope, the preprocessor, integer rules, undefin
 Almost every embedded interview opens with C. These questions cover the language itself: types, storage classes, the preprocessor, integer conversion rules, and the corners where C stops protecting you. Each answer gives the one-line answer first, then the explanation, an example, and the traps interviewers look for.
 
 ### What are the storage classes in C? {E}
-**Short answer:** Storage classes in C determine the **storage duration and linkage** of variables. Scope depends on where a declaration appears.
+Storage classes in C determine the **lifetime, storage duration and linkage** of variables.
 
-**1. Types of storage classes**
+#### **1. Types of storage classes**
 
 | Storage class | Scope | Lifetime | Default value |
 |---|---|---|---|
@@ -21,11 +21,9 @@ Almost every embedded interview opens with C. These questions cover the language
 | `extern` | Depends on declaration | Entire program for ordinary objects | Zero at definition, if not explicitly initialized |
 | `_Thread_local` | Depends on declaration | Thread lifetime | Zero |
 
-**2. Example**
+#### **2. Example**
 
 ```c
-#include <stdio.h>
-
 int global = 100;
 
 void fun(void)
@@ -41,13 +39,13 @@ void fun(void)
 
 Calling `fun()` three times prints `1 2 3`, because `static` retains its value between function calls.
 
-**3. Typical memory location**
+#### **3. Typical memory location**
 
 | Variable | Memory location |
 |---|---|
 | `auto` | Stack |
 | `register` | CPU register or stack |
-| Non-zero initialized static/global | `.data` |
+| Initialized static/global | `.data` |
 | Zero-initialized static/global | `.bss` |
 
 Actual placement depends on the compiler and linker.
