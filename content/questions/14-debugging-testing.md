@@ -192,23 +192,18 @@ Requirements depend on the applicable standard, edition, assurance/integrity lev
 **Interview takeaway:** Coverage is evidence of test completeness relative to code structure, not proof of correctness. Investigate uncovered code and trace tests to requirements.
 
 ### What is static analysis and which tools are used? {E}
-**Short answer:** Static analysis examines source code without running it to find bugs and rule violations: NULL dereferences, buffer overruns, uninitialised variables, integer overflow, resource leaks, dead code, concurrency issues and violations of coding standards such as MISRA C. It runs in CI on every change and catches issues that tests miss because they occur only on rare paths.
+Static analysis examines source or compiled representations without executing the firmware to detect defects and rule violations.
 
-| Tool | Type |
-|---|---|
-| Compiler warnings (`-Wall -Wextra -Wshadow -Wconversion -Wcast-align -Werror`), GCC `-fanalyzer` | free, first line of defence |
-| clang-tidy, Clang Static Analyzer (`scan-build`) | free, deep path analysis |
-| cppcheck | free, low false positives, MISRA addon |
-| Coverity, Klocwork, Polyspace, PC-lint Plus, Parasoft C/C++test, Helix QAC | commercial, MISRA/CERT checking, certification support |
-| CodeQL, SonarQube | queries, dashboards |
-| Polyspace Code Prover, Frama-C, Astrée | abstract interpretation: prove absence of some run-time errors |
-| Stack analysis (`-fstack-usage`, puncover), WCET tools (aiT) | resource bounds |
+#### Examples
+Compiler warnings, clang-tidy, Cppcheck, Coverity and commercial MISRA checkers can identify issues such as uninitialized values, null dereferences, suspicious conversions and unreachable code.
 
-**Coding standards:** MISRA C:2012/2023 (automotive, industrial; rules with mandatory/required/advisory categories and a deviation process), CERT C (security), AUTOSAR C++14 / MISRA C++:2023, and the Barr Group Embedded C Coding Standard.
+```bash
+gcc -Wall -Wextra -Wconversion -Wshadow -c module.c
+```
 
-**Making it work in practice:** start with compiler warnings as errors; add one analyser to CI; fix or explicitly suppress (with a justification) each finding so the baseline stays clean; run analysis on new code first for legacy codebases.
+Configure the analyzer with the actual target defines, include paths and compilation commands. Triage false positives, document justified deviations and integrate checks into CI.
 
-**Dynamic analysis complements it:** sanitizers (ASan, UBSan, TSan) and Valgrind on host builds, fuzzing (libFuzzer, AFL++) for parsers and protocol handlers.
+**Interview takeaway:** Static analysis complements tests and review. It cannot generally prove the absence of all runtime, concurrency or hardware faults.
 
 ### What is the difference between Make and CMake? {E}
 **Short answer:** **Make** is a build tool that executes rules from a Makefile: targets, their dependencies and the commands to build them, rebuilding only what changed. **CMake** is a build-system **generator**: you describe targets, sources, include paths and options in `CMakeLists.txt`, and CMake generates Makefiles or Ninja files (or IDE projects) for the chosen toolchain. CMake handles cross-platform details, dependencies and configuration better, so most modern embedded projects (Zephyr, Pico SDK, ESP-IDF, STM32 CMake projects) use it, often with Ninja for speed.
