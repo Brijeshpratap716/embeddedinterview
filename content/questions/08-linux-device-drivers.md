@@ -1603,28 +1603,37 @@ Do not touch the buffer while owned by the device. For persistent mappings use m
 **Interview takeaway:** Use coherent memory for shared control structures when appropriate and streaming DMA for transient data. Always use the device's DMA address, correct direction and matching release API.
 
 ### How do you debug a display underflow or a black screen on Linux DRM/KMS? {H}
-**Short answer:** Separate panel power and link failures from scanout and bandwidth failures. Verify the atomic state, clocks, timing and buffer readiness before changing hardware settings.
+A display underflow occurs when scanout hardware cannot obtain pixel data fast enough to maintain the configured output timing. A black screen is broader: it may result from missing power, modesetting, invalid buffers, link errors or underflow.
 
-**1. Check connector and modes:** Use modetest and inspect the connector status and advertised modes.
-
-**2. Check pipeline:** Verify framebuffer, plane, CRTC, encoder/bridge and panel enable state. Check regulators, reset, link initialization and backlight where applicable.
-
-```text
-Framebuffer -> Plane -> CRTC -> Encoder / bridge -> Panel
-                ^         ^
-             format    bandwidth / timing
-```
-
-**3. Check interrupts and fences:** Missing vblank, unsignaled render fences or FIFO underrun counters can narrow the failure.
-
-**4. Reproduce:** Try a known supported mode and simple test framebuffer using modetest on a test system where taking display ownership is safe.
+#### 1. Check the DRM state first
 
 ```sh
-modetest -M msm -c -p
-cat /sys/kernel/debug/dri/0/state
-dmesg | grep -Ei 'drm|dsi|underflow|underrun'
+modetest -M msm -c
+modetest -M msm -p
+dmesg | grep -iE 'drm|underflow|dsi|panel'
 ```
 
-Driver name, debugfs access and card index vary by platform.
+Use the actual driver name and supported debug interfaces. Inspect connector status, selected mode, CRTC active state, plane framebuffer, pixel format, stride, source/destination dimensions and atomic commit return values.
 
-**Interview takeaway:** Black screen is a symptom, not a diagnosis; follow the pixel data path and control/power path separately.
+#### 2. Debug by pipeline stage
+
+| Stage | Checks |
+|---|---|
+| Buffer | Valid DMA mapping, format/modifier, stride, fences |
+| Plane/CRTC | Active state, blending, coordinates, mode timings |
+| Memory/interconnect | Bandwidth vote, clock rates, FIFO watermark, contention |
+| Encoder/bridge/link | PHY clocks, lane configuration, link errors |
+| Panel | Regulators, reset, initialization sequence, backlight |
+
+#### 3. Estimate bandwidth
+
+For a simple 1920×1080, 60 Hz, four-byte-per-pixel scanout, visible-pixel data alone is about 498 MB/s. Real requirements can be higher due to multiple planes, scaling, fetch inefficiencies, timing and platform-specific margins.
+
+A bandwidth estimate is a starting point; inspect actual FIFO/underflow counters and interconnect performance under load.
+
+#### 4. Isolate the failure
+
+Test a known valid simple framebuffer/mode using the supported modesetting tools, temporarily reduce composition complexity, compare good and bad hardware states, and inspect panel control transactions. Do not change unrelated timing or bandwidth settings without evidence.
+
+**Interview takeaway:** Debug black screens from buffer to panel. Underflow is primarily a data-delivery/timing issue, but identify the failing stage before changing clocks or bandwidth votes.
+
