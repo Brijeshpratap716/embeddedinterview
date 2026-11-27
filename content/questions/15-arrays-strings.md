@@ -475,48 +475,31 @@ For "ababaca", LPS is [0,0,1,2,3,0,1]. On mismatch, KMP retains the reusable pre
 **Complexity:** O(n+m) time and O(m) auxiliary space.
 
 ### How does bubble sort work, and how is it different from binary search? {E}
-**Short answer:** Bubble sort repeatedly walks the array and swaps neighbouring elements that are in the wrong order, so the largest remaining value "bubbles" to the end on each pass. It is O(n²). Binary search is a different thing: it **finds** a key in an already sorted array by halving the search range, in O(log n).
+Bubble sort repeatedly swaps adjacent inversions until the array is sorted. Binary search instead locates a key in an already sorted array.
 
 ```c
-#include <stdbool.h>
-#include <stddef.h>
-
-void bubble_sort(int *a, size_t n)
+void bubble(int a[], size_t n)
 {
-    for (size_t pass = 0; pass + 1 < n; pass++) {
-        bool swapped = false;
-        for (size_t i = 0; i + 1 < n - pass; i++) {    /* last 'pass' items are done */
-            if (a[i] > a[i + 1]) {
-                int t = a[i]; a[i] = a[i + 1]; a[i + 1] = t;
-                swapped = true;
+    for (size_t end=n; end>1; --end) {
+        bool changed=false;
+        for (size_t i=1; i<end; ++i) {
+            if (a[i-1]>a[i]) {
+                int t=a[i-1]; a[i-1]=a[i]; a[i]=t;
+                changed=true;
             }
         }
-        if (!swapped) break;           /* already sorted: best case O(n) */
+        if (!changed) break;
     }
 }
-
-/* binary search: returns index or -1 */
-long binary_search(const int *a, size_t n, int key)
-{
-    size_t lo = 0, hi = n;             /* search in [lo, hi) */
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;   /* avoids (lo + hi) overflow */
-        if (a[mid] == key) return (long)mid;
-        if (a[mid] < key) lo = mid + 1;
-        else              hi = mid;
-    }
-    return -1;
-}
-/* {1, 2, 3, 5, 7, 11, 44, 234}, key 7 -> 4 */
 ```
+[3,1,2] → [1,3,2] → [1,2,3]. Each pass settles the largest remaining element.
 
-**Name your functions for what they do.** A function called `bubbleshort` that actually performs a binary search confuses a reviewer immediately; interviewers notice.
+| Algorithm | Purpose | Worst-case time |
+|---|---|---|
+| Bubble sort | Rearrange elements | O(n²) |
+| Binary search | Find a key | O(log n) |
 
-**Bubble sort dry run, {5, 1, 4, 2}:** pass 1: 1 5 4 2 → 1 4 5 2 → 1 4 2 5. Pass 2: 1 4 2 5 → 1 2 4 5. Pass 3: no swaps, stop.
-
-**Properties of bubble sort:** stable (equal values keep their order), in place (O(1) memory), O(n²) average and worst case, O(n) best case with the `swapped` flag. It is only reasonable for very small or nearly sorted arrays. Insertion sort has the same complexity but is usually faster in practice.
-
-**Binary search notes:** the array must be sorted; `mid = lo + (hi - lo) / 2` avoids overflow of `lo + hi`; the half-open range `[lo, hi)` with `size_t` avoids the `high = mid - 1` underflow when `mid` is 0.
+**Interview takeaway:** Bubble sort is stable with strict greater-than swaps, and takes O(1) extra space. It is usually unsuitable for large arrays.
 
 ### How do you solve Two Sum (find two numbers that add up to a target)? {E}
 **Short answer:** For an unsorted array, the brute-force check of every pair is O(n²). If the array is **sorted** (or you can sort a copy with indices), use two pointers from both ends: if the sum is too small move the left pointer up, if too large move the right pointer down, O(n). With a hash table of values already seen, it is O(n) on unsorted input.
