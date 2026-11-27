@@ -286,26 +286,28 @@ If multiple tasks share one SPI controller, serialize entire transactions, inclu
 **Interview takeaway:** SPI has no standard in-band device addressing. Chip selection and bus ownership determine which target communicates.
 
 ### What are Dual, Quad and Octal SPI? {M}
-**Short answer:** They are SPI extensions that transfer 2, 4 or 8 bits per clock using bidirectional data lines (IO0–IO7) instead of a single MOSI/MISO pair, multiplying throughput. Quad SPI (QSPI) NOR flash is the standard way to add external code and data storage to MCUs, and many controllers support **execute-in-place (XIP)**, mapping the flash into the address space so the CPU can run code directly from it. Octal SPI and HyperBus reach hundreds of MB/s for external RAM and frame buffers.
+Dual, Quad and Octal SPI extend the number of data lines used during selected phases of a serial-memory transaction. Standard SPI commonly uses one data line per direction, whereas multi-I/O modes can carry multiple bits per clock.
 
-| Variant | Data lines | Example throughput |
-|---|---|---|
-| Single SPI | 1 out + 1 in | 50 MHz → ~6 MB/s |
-| Dual | 2 (half duplex) | ~12 MB/s |
-| Quad (QSPI) | 4 | 133 MHz → ~66 MB/s |
-| Octal (OSPI, DDR) | 8, both edges | 200 MHz DDR → ~400 MB/s |
+| Mode | Data lines in multi-I/O phase | Bits per clock (SDR) |
+|---|---:|---:|
+| Single | 1 | 1 per direction |
+| Dual | 2 | 2 |
+| Quad | 4 | 4 |
+| Octal | 8 | 8 |
 
-**How a quad read works:** the command byte may be sent on one line (1-1-4 mode) or all four (4-4-4), followed by the address, dummy cycles (for the flash to fetch data), then data on four lines. The `x-y-z` notation means lines used for command-address-data.
+#### 1. Example
 
-**Memory-mapped mode / XIP:** the controller automatically issues read commands when the CPU accesses the mapped address range. Combined with a cache (Cortex-M7) this gives reasonable performance for code and graphics assets.
+A quad-data transfer at 40 MHz in single-data-rate mode has a theoretical data-phase throughput of 160 Mbit/s, or 20 MB/s. Command, address, dummy cycles and chip-select gaps reduce effective throughput.
 
-**Design considerations**
+#### 2. Transaction phases
 
-- Use the controller's memory-mapped mode for reads; writes and erases still go through command mode, and you cannot execute from the flash while it is being erased/programmed (run that code from RAM).
-- Some flash chips need the **QE (quad enable)** bit set in a status register before quad modes work.
-- Signal integrity at 100+ MHz needs short, matched traces.
-- Bootloaders must configure the QSPI controller before jumping to code in external flash.
-- Encrypted XIP (on-the-fly decryption, e.g. NXP BEE/OTFAD, ST OTFDEC) protects firmware stored externally.
+A flash device might receive a command on one line, an address on one or four lines, and return data on four lines. The exact protocol depends on the command and device. Some interfaces support double-data-rate operation.
+
+#### 3. Embedded use
+
+QSPI/OSPI controllers can access serial flash through indirect commands or memory-mapped modes, including execute-in-place when supported. Configure dummy cycles, line direction, read opcode and clock timing according to both device and controller.
+
+**Interview takeaway:** Quad SPI is not automatically four times faster for an entire transaction. The gain depends on which phases use multiple lines and the supported timing.
 
 ### What does an I2C transaction look like? {E}
 **Short answer:** **START** (SDA falls while SCL is high), then an **address byte** (7-bit address plus a R/W bit: 0 = write, 1 = read), then an **ACK** from the addressed target (it pulls SDA low on the 9th clock), then **data bytes**, each followed by ACK or NACK, then **STOP** (SDA rises while SCL is high). To read a register, write the register address, then send a **repeated START** with the read bit and read the data, with the controller NACKing the last byte.
