@@ -712,6 +712,14 @@ writel(1, base);
 
 **Interview takeaway:** Memory attributes tell the CPU how accesses may behave; driver accessors enforce the appropriate semantics.
 
+#### Device-memory attribute subtypes
+
+AArch64 defines Device-nGnRnE, Device-nGnRE, Device-nGRE and Device-GRE. The letters describe permitted Gathering, Reordering and Early write acknowledgement. The n prefix disables that behavior. For example, nGnRnE provides the strictest of these device attributes, while nGnRE permits early write acknowledgement. Device memory is not ordinary cacheable RAM.
+
+Consider a UART receive-data register. Each read may consume a byte from its FIFO. Speculatively reading it or merging two reads would change device behavior. A correctly mapped device register and appropriate accessor preserve the required access semantics.
+
+Normal non-cacheable memory is not identical to Device memory: its permitted speculation and access behavior differ. Linux chooses mapping attributes through ioremap, resource helpers and platform configuration. A posted device write can require a documented readback to ensure it has reached the relevant device before a subsequent action. Do not use memcpy on an arbitrary MMIO register range; use suitable I/O accessors and the device's documented widths.
+
 ### How does DMA interact with CPU caches? {M}
 **Short answer:** A coherent device can participate in hardware coherency. Non-coherent DMA requires cache maintenance and ownership transitions; use Linux DMA mapping APIs to handle this.
 
