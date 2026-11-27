@@ -256,50 +256,27 @@ Inheritance reduces interference from intermediate-priority tasks but cannot eli
 **Interview takeaway:** Priority inversion is a resource dependency problem, not merely incorrect priority assignment. Use appropriate mutex protocols and keep critical sections bounded.
 
 ### How do priority inheritance and priority ceiling solve priority inversion? {H}
-**Short answer:** With **priority inheritance**, a task that holds a mutex temporarily runs at the priority of the highest-priority task waiting for it, so medium-priority tasks cannot pre-empt it; when it releases the mutex, it drops back to its own priority. With the **priority ceiling protocol**, each mutex has a ceiling equal to the highest priority of any task that uses it, and a task that takes the mutex immediately runs at that ceiling. Inheritance is automatic and needs no configuration; ceiling also prevents deadlock and bounds blocking but requires knowing which tasks use each mutex.
+Priority inheritance and priority ceiling are synchronization protocols intended to bound priority inversion in real-time systems.
 
-**How a mutex with priority inheritance works (sketch)**
+#### 1. Priority inheritance
 
-```c
-typedef struct { tcb_t *owner; wait_list_t waiters; } pi_mutex_t;
+If high-priority H waits for a mutex held by low-priority L, the kernel temporarily raises L's effective priority. Medium-priority M can no longer preempt L merely because L originally had lower priority. L releases the mutex and H proceeds.
 
-void pi_lock(pi_mutex_t *m)
-{
-    enter_critical();
-    while (m->owner != NULL) {
-        if (current->prio > m->owner->prio)
-            set_effective_prio(m->owner, current->prio);   /* boost the holder (also re-sorts it) */
-        block_on(&m->waiters, current);                     /* sorted by priority */
-        /* critical section re-entered after wake-up; loop re-checks ownership */
-    }
-    m->owner = current;
-    exit_critical();
-}
+#### 2. Priority ceiling
 
-void pi_unlock(pi_mutex_t *m)
-{
-    enter_critical();
-    m->owner = NULL;
-    restore_prio(current);            /* back to base priority, or the highest of other held mutexes' waiters */
-    wake_highest(&m->waiters);        /* may trigger a context switch */
-    exit_critical();
-}
-```
+A resource is assigned a ceiling derived from the highest-priority task that can use it. Ceiling protocols impose scheduling or lock-acquisition rules based on that ceiling. In the immediate-ceiling variant, a task acquiring a resource executes at an appropriately raised effective priority while holding it.
 
-Details real kernels handle: **transitive inheritance** (H waits for L1, which waits for L2: L2 must also be boosted), a task holding several mutexes (its priority is the maximum of all their waiters), and timeouts (a waiter giving up must lower the boost).
+Properly configured ceiling protocols can bound blocking and prevent certain deadlocks under their assumptions.
 
-**Comparison**
+| Inheritance | Ceiling |
+|---|---|
+| Raises priority when contention occurs | Uses predefined resource ceilings |
+| Adapts to actual waiters | Requires knowledge of resource users |
+| May involve nested dependency chains | Can offer stronger analytical bounds |
 
-| | Priority inheritance | Priority ceiling (immediate) |
-|---|---|---|
-| When the holder is boosted | only when a higher task actually waits | as soon as it takes the mutex |
-| Configuration | none | a ceiling per mutex |
-| Deadlock prevention | no | yes (for single-processor, correct ceilings) |
-| Blocking bound | can be chained through several mutexes | at most one critical section |
-| Run-time overhead | when contention happens | on every lock/unlock |
-| Used by | FreeRTOS, Zephyr, POSIX `PTHREAD_PRIO_INHERIT`, Linux rt_mutex | OSEK/AUTOSAR OS (resources), POSIX `PTHREAD_PRIO_PROTECT`, Ada |
+FreeRTOS mutexes implement a simplified priority-inheritance mechanism, not a general priority-ceiling protocol. Inspect the actual kernel's behavior for nested mutexes.
 
-**Limits of both:** they do not help if the lock holder runs for a long time; keep critical sections short. Neither works for semaphores used as signals.
+**Interview takeaway:** Neither protocol removes the critical-section execution time. Choose a supported protocol and include blocking in schedulability analysis.
 
 ### What is a deadlock and how do you prevent it? {M}
 **Short answer:** A deadlock occurs when two or more tasks each wait for a resource held by another, so none can proceed. It needs all four **Coffman conditions**: mutual exclusion, hold-and-wait, no pre-emption of resources, and circular wait. Prevent it by breaking at least one condition, most practically by always taking locks in the same global order.
