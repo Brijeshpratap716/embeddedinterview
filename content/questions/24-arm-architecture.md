@@ -1035,6 +1035,14 @@ DSB SY      // wait for completion; illustrative
 
 **Interview takeaway:** Clean makes dirty data available as required; invalidate removes cached copies. Prefer Linux DMA APIs in drivers.
 
+#### Worked cache-line maintenance example
+
+Assume a 64-byte cache line and a CPU buffer starting at 0x1020 with length 80 bytes. The range touches two complete cache lines: 0x1000–0x103F and 0x1040–0x107F. A raw per-line maintenance operation affects the whole corresponding line, not just the requested bytes. Inappropriate invalidation can discard dirty data belonging to a neighboring object. This is one reason non-coherent DMA buffers need suitable allocation/alignment and ownership rules.
+
+Clean is useful before a non-coherent device reads data produced by the CPU; invalidate or the platform's prescribed synchronization is needed before the CPU reads data produced by a device. The DMA API may perform maintenance at mapping, synchronization and unmapping as required by the platform and direction.
+
+PoC (point of coherency) is the point at which relevant observers are guaranteed to see a coherent copy; PoU (point of unification) concerns the point where relevant instruction and data accesses see a unified copy. Executable-code modification may require data-cache cleaning to PoU, instruction-cache invalidation and prescribed DSB/ISB operations. Use architecture-specific helpers rather than treating a data-cache invalidate as a general instruction-cache synchronization operation.
+
 ### What is endianness in ARM? {E}
 **Short answer:** Endianness determines the byte order of multi-byte values in memory. AArch64 supports little-endian data and implementation-dependent big-endian support; Linux commonly uses little-endian.
 
