@@ -999,6 +999,10 @@ bool ms_min(const minstack_t *s, int *m) { if (s->top == 0) return false; *m = s
 
 **Related:** max stack (same idea), sliding-window maximum (monotonic deque: O(n) for all windows), and queue with getMin using two min stacks.
 
+#### Duplicate minima
+
+Push 5,2,2,7. The minimum array becomes 5,2,2,2. Pop 7: minimum remains 2. Pop one 2: minimum remains 2 because the earlier 2 still exists. Pop the other 2: minimum becomes 5. Storing the minimum at each depth avoids a rescan; an alternative is a second stack of minima with counts for repeated values. Arithmetic encoding tricks need explicit overflow handling.
+
 ### Convert an infix expression to postfix (shunting-yard). {M}
 **Short answer:** Use Dijkstra's shunting-yard algorithm: read tokens left to right; send operands straight to the output; push `(` onto an operator stack; on `)` pop operators to the output until the matching `(`; for an operator, first pop operators of higher precedence (or equal precedence for left-associative operators) to the output, then push it. At the end, pop the remaining operators. O(n) time.
 
