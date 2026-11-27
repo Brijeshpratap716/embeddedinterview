@@ -110,22 +110,36 @@ At 115200 baud, the nominal bit interval is approximately 8.68 microseconds. A l
 **Interview takeaway:** UART resynchronizes at each start bit. Allowable baud error is a combined transmitter/receiver timing budget, not a universal fixed percentage.
 
 ### What are UART framing, parity and overrun errors? {M}
-**Short answer:** A **framing error** means the stop bit was sampled as 0 (baud mismatch, noise, or a break). A **parity error** means the parity bit does not match the data. An **overrun error** means a new byte arrived before software read the previous one, so data was lost. A **noise error** means the oversampled values within a bit disagreed.
+UART hardware reports receive errors when the received frame or software service behavior violates its expectations.
 
-| Error | Typical cause | Fix |
+| Error | Meaning | Common cause |
 |---|---|---|
-| Framing (FE) | wrong baud rate, wrong frame format, noise, break condition | check clocks and settings, add filtering, handle breaks deliberately |
-| Parity (PE) | noise, wrong parity setting | check settings, cabling, use a CRC at the protocol level |
-| Overrun (ORE) | ISR too slow, interrupts disabled too long, no FIFO | faster/shorter ISR, higher priority, FIFO, DMA |
-| Noise (NE) | electrical noise, slow edges | better wiring, ground, shielding, RS-485 |
+| Framing | Expected stop bit not observed correctly | Wrong baud/configuration, noise, break |
+| Parity | Received parity disagrees with calculated parity | Bit error, configuration mismatch |
+| Overrun | New receive data cannot be stored because prior data was not serviced | ISR latency, FIFO full, slow consumer |
 
-**Handling them in firmware**
+#### 1. Example ISR logic
 
-- Read and clear the flags exactly as the reference manual says (e.g. on many STM32 parts, reading `SR` then `DR` clears ORE/FE/NE). If an overrun flag is never cleared, some UARTs stop receiving entirely.
-- Count errors (statistics are very useful for field diagnosis).
-- Discard the corrupted byte and let the higher-level protocol (CRC, sequence numbers, timeouts) recover the message.
+```c
+void uart_irq(void)
+{
+    uint32_t status = uart_read_status();
 
-**Overrun math:** at 921600 baud a byte arrives every ~10.9 µs. If an ISR is delayed by more than one byte time (plus FIFO depth), you lose data. Using DMA into a circular buffer removes the per-byte deadline.
+    if (status & ERROR_MASK)
+        uart_handle_errors(status);
+
+    while (uart_rx_ready())
+        rx_push(uart_read_byte());
+}
+```
+
+This is illustrative: register read/clear order and FIFO behavior depend on the UART. Bound ISR work and handle software-buffer overflow.
+
+#### 2. Debugging
+
+Verify baud, parity and stop-bit settings; inspect TX/RX waveforms; check FIFO interrupt thresholds and handler latency. DMA or a larger receive buffer can reduce service overruns, but does not fix electrical errors.
+
+**Interview takeaway:** Framing and parity indicate receive-format problems; overrun means the receive path failed to keep up. Clear errors using the documented hardware sequence.
 
 ### What is hardware flow control? {E}
 **Short answer:** Hardware flow control uses two extra signals, **RTS** (request to send) and **CTS** (clear to send), so a receiver can tell the transmitter to pause. Each side's RTS output connects to the other side's CTS input. When the receiver's buffer is nearly full it de-asserts RTS; the transmitter checks CTS before sending each character and stops until CTS is asserted again. This prevents overruns at high baud rates.
