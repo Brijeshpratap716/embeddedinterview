@@ -1482,18 +1482,32 @@ Adaptive uses its own architecture and is not simply the Classic RTE/MCAL stack 
 **Interview takeaway:** AUTOSAR standardizes interfaces to make automotive software integration and reuse easier. Classic focuses on traditional ECU control; Adaptive targets more complex computing workloads.
 
 ### What does a typical SoC look like inside? {M}
-A system-on-chip puts a complete computer on one die. A typical application-processor SoC (phone, automotive, IoT gateway) contains:
+A System on Chip (SoC) integrates processors, memory interfaces, interconnects and hardware accelerators/peripherals on one integrated circuit.
 
-- **CPU cluster(s):** several Arm Cortex-A cores, often in big.LITTLE groups, with private L1 caches and a shared L2/L3.
-- **Accelerators:** GPU, DSP, NPU for machine learning, video encoder and decoder, ISP for cameras, display controller.
-- **Microcontroller cores:** Cortex-M or Cortex-R cores for power management, security, sensors or real-time control.
-- **Memory system:** DDR/LPDDR controller, on-chip SRAM, boot ROM, and an MMU/SMMU (IOMMU) so devices can use virtual addresses.
-- **Interconnect:** a bus fabric (AMBA AXI/ACE/CHI, with AHB/APB for slow peripherals) linking everything, with cache coherency between CPUs and some devices.
-- **Peripherals:** UART, SPI, I2C, GPIO, timers, USB, PCIe, Ethernet, SD/eMMC/UFS, MIPI DSI and CSI.
-- **System control:** clock and reset controllers, power domains, PMIC interface, interrupt controller (GIC), watchdog, thermal sensors.
-- **Security:** crypto engines, true random number generator, secure enclave or TrustZone, eFuses for keys and secure boot.
+#### 1. Typical SoC architecture
 
-Interviewers usually ask you to draw this and then trace one flow, for example how a camera frame reaches the display, or what happens from power-on to the kernel running.
+<div style="max-width:720px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 244" width="100%" role="img" aria-label="CPU caches, DMA and accelerators connect through SoC interconnect to DDR controller and peripherals">
+<rect x="5" y="5" width="105" height="47" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="57.5" y="23" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">CPU cluster</text><text x="57.5" y="38" text-anchor="middle" font-size="10" fill="currentColor">L1 / L2 cache</text><rect x="117" y="5" width="105" height="47" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="169.5" y="23" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">DMA engine</text><text x="169.5" y="38" text-anchor="middle" font-size="10" fill="currentColor">Transfers</text><rect x="229" y="5" width="105" height="47" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="281.5" y="23" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">Accelerators</text><text x="281.5" y="38" text-anchor="middle" font-size="10" fill="currentColor">GPU / display</text><rect x="5" y="154" width="105" height="47" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="57.5" y="172" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">DDR controller</text><text x="57.5" y="187" text-anchor="middle" font-size="10" fill="currentColor">External DRAM</text><rect x="117" y="154" width="105" height="47" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="169.5" y="172" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">Peripheral bus</text><text x="169.5" y="187" text-anchor="middle" font-size="10" fill="currentColor">UART / I2C / SPI</text><rect x="229" y="154" width="105" height="47" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="281.5" y="172" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">On-chip SRAM</text><text x="281.5" y="187" text-anchor="middle" font-size="10" fill="currentColor">ROM / SRAM</text><rect x="5" y="85" width="329" height="38" rx="5" fill="#eab308" fill-opacity=".13" stroke="#ca8a04"/><text x="170" y="108" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">System interconnect / address routing</text><path d="M57.5 52 V85 M57.5 123 V154" stroke="currentColor" fill="none"/><path d="M169.5 52 V85 M169.5 123 V154" stroke="currentColor" fill="none"/><path d="M281.5 52 V85 M281.5 123 V154" stroke="currentColor" fill="none"/><text x="170" y="222" font-size="10" text-anchor="middle" fill="currentColor">Interrupt, clock, reset, power and security controllers</text></svg></div>
+
+#### 2. Example: display controller reads a framebuffer
+
+1. CPU or GPU prepares pixel data in memory.
+2. The display controller issues memory transactions over the interconnect.
+3. The memory controller or coherent hierarchy supplies data.
+4. The display engine processes pixels and sends them toward the panel.
+
+If an IOMMU is present, device-visible addresses may require translation. Cache synchronization and memory ordering depend on the coherency architecture.
+
+#### 3. Important software interfaces
+
+- MMIO address ranges for device registers.
+- Interrupt routing and priorities.
+- Clocks, reset lines, regulators and power domains.
+- CPU and device address translation and coherency domains.
+
+Firmware or an OS BSP describes and initializes these resources.
+
+**Interview takeaway:** An SoC is a collection of cooperating hardware masters and slaves, not just a CPU. Drivers must understand the device's memory, clock, interrupt and power dependencies.
 
 ### Which compiler optimisations can change how your C code behaves? {H}
 An optimiser may transform code in any way that keeps the *observable behaviour* defined by the C standard. Code that relies on undefined behaviour, or that forgets to tell the compiler about hardware, can change behaviour between `-O0` and `-O2`. The common ones:
