@@ -238,51 +238,22 @@ Check all return values, handle short sends/receives and define application mess
 **Interview takeaway:** TCP does not preserve application message boundaries. One send may require multiple recv calls, and multiple sends can arrive in one recv.
 
 ### Which socket calls block, and how do select, poll and epoll handle many connections? {M}
-**Short answer:** By default `accept()` (until a client connects), `connect()` (until the handshake completes), `recv()`/`read()` (until data arrives), and `send()`/`write()` (until there is room in the send buffer) can all block. To handle many connections in one thread, make the sockets non-blocking and use an I/O multiplexer: `select()` and `poll()` scan a list of descriptors on every call (O(n)), while **`epoll`** registers descriptors once and returns only the ready ones (O(ready)), which scales to tens of thousands of connections.
+Blocking socket calls wait until progress, timeout, interruption or error. accept waits for a connection; connect can wait for establishment; recv waits for data; send may wait for buffer space.
 
-**Why they block:** each call waits for something outside the program's control: a remote peer, the network, or buffer space. Blocking is efficient (the thread sleeps), but a thread blocked on one socket cannot serve others.
+| API | Behavior |
+|---|---|
+| select | Watches fd sets; fd-number limit and set rebuilding |
+| poll | Watches array of fd/events |
+| epoll | Persistent interest set and ready-event delivery |
 
-**Options for concurrency**
-
-| Approach | Pros | Cons |
-|---|---|---|
-| fork per client | simple, isolated | heavy; one process per connection |
-| thread per client | simple code | memory per thread (stack), context switches, locking |
-| `select` | portable | limited to `FD_SETSIZE` (1024) descriptors, O(n) scan, fd sets rebuilt every call |
-| `poll` | no fd limit | still O(n) per call |
-| `epoll` (Linux) | O(1) per event, edge or level triggered | Linux-specific |
-| `io_uring` | async I/O with few syscalls | newer, more complex |
-
-**epoll event loop sketch**
-
-```c
-#include <sys/epoll.h>
-
-int ep = epoll_create1(0);
-struct epoll_event ev = { .events = EPOLLIN, .data.fd = listen_fd };
-epoll_ctl(ep, EPOLL_CTL_ADD, listen_fd, &ev);
-
-struct epoll_event events[64];
-for (;;) {
-    int n = epoll_wait(ep, events, 64, -1);       /* sleeps until something is ready */
-    for (int i = 0; i < n; i++) {
-        int fd = events[i].data.fd;
-        if (fd == listen_fd) {
-            int c = accept4(listen_fd, NULL, NULL, SOCK_NONBLOCK);
-            struct epoll_event cev = { .events = EPOLLIN, .data.fd = c };
-            epoll_ctl(ep, EPOLL_CTL_ADD, c, &cev);
-        } else {
-            handle_client(fd);                    /* non-blocking recv/send */
-        }
-    }
-}
+```text
+epoll_create1 -> epoll_ctl(ADD socket)
+              -> epoll_wait -> handle ready fd
 ```
 
-**Level vs edge triggered:** level-triggered (default) reports a descriptor as long as it is readable; edge-triggered (`EPOLLET`) reports only when new data arrives, so you must read until `EAGAIN` or you miss data.
+Use nonblocking sockets for event-driven servers. Read/write until no progress is possible; in edge-triggered epoll specifically drain until EAGAIN. Handle EOF, errors and partial operations. Nonblocking connect commonly returns EINPROGRESS; inspect SO_ERROR after readiness.
 
-**Timeouts without blocking forever:** `SO_RCVTIMEO`/`SO_SNDTIMEO`, a timeout argument to `poll`/`epoll_wait`, or non-blocking `connect()` followed by waiting for writability.
-
-**Embedded relevance:** a gateway with a UART, a CAN socket, a few TCP connections and a timer can run everything in one `epoll` loop (using `timerfd`, `signalfd`, `eventfd`), which avoids threads and locks entirely. Event libraries such as libevent, libuv and Boost.Asio wrap this pattern.
+**Interview takeaway:** Readiness is not a guarantee of a complete message or successful operation. Avoid blocking a single event-loop thread.
 
 ### Why does Linux have a separate socket API instead of using only open/read/write? {M}
 **Short answer:** Sockets **are** file descriptors, so `read()`, `write()`, `close()`, `poll()` and `epoll` work on them. But networking needs things a file path cannot express: choosing a protocol family and type (TCP vs UDP vs raw, IPv4 vs IPv6 vs Unix vs CAN), binding to local addresses and ports, connecting to or accepting from remote endpoints that may not exist yet, per-message addresses for datagrams, and many options. The socket API (`socket`, `bind`, `listen`, `accept`, `connect`, `sendto`, `recvfrom`, `setsockopt`, `shutdown`) adds exactly those operations.
