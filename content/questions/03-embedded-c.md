@@ -725,41 +725,48 @@ Verify final placement with the linker map, readelf or nm. Compiler optimization
 **Interview takeaway:** Section attributes select sections, not final addresses. The linker script determines placement; alignment, initialization and DMA access are separate requirements.
 
 ### What is a watchdog timer and how should you use it? {E}
-**Short answer:** A watchdog is an independent hardware timer that resets the microcontroller unless software "kicks" (refreshes) it before it expires. It recovers the system from software hangs, infinite loops, deadlocks and runaway code. To be effective, the kick must prove that the **whole** system is healthy, not just that one timer interrupt is still running.
+A watchdog timer supervises software execution. If the software fails to service it within a configured time window, the watchdog triggers a reset or another defined action.
 
-**Types**
+#### 1. Basic operation
 
-- **Independent watchdog** (e.g. STM32 IWDG): runs from its own low-speed oscillator, so it works even if the main clock fails; often cannot be stopped once started.
-- **Window watchdog** (WWDG): a refresh that comes **too early** also triggers a reset, catching code that runs too fast or loops around the kick.
-- **External watchdog ICs:** a separate chip, required in some safety designs, can also monitor supply voltage.
+```text
+Configure timeout
+        |
+Software periodically checks system health
+        |
+Healthy? -- yes --> Service watchdog
+        |
+        no
+        v
+Timeout --> Reset / configured recovery
+```
 
-**Good practice**
+An independent watchdog may use a separate clock so that it can recover from some CPU or clock failures. Windowed watchdogs can detect servicing too early as well as too late.
 
-1. **Kick from one place, after checking that every critical task has checked in.** Each task sets its bit in a "alive" mask; a supervisor (main loop or low-priority task) kicks only when all bits are set, then clears them.
+#### 2. Good firmware design
 
 ```c
-static volatile uint32_t alive;
-#define TASK_COMMS  (1u << 0)
-#define TASK_CTRL   (1u << 1)
-#define ALL_TASKS   (TASK_COMMS | TASK_CTRL)
-
-void task_checkin(uint32_t bit) { __atomic_fetch_or(&alive, bit, __ATOMIC_RELAXED); }
-
-void supervisor_tick(void)                 /* every 100 ms */
+void supervisor_tick(void)
 {
-    if ((alive & ALL_TASKS) == ALL_TASKS) {
-        IWDG->KR = 0xAAAAu;                /* refresh */
-        alive = 0;
-    }                                      /* else: let the watchdog reset the chip */
+    if (control_task_progressed() &&
+        comm_task_progressed() &&
+        system_state_valid()) {
+        watchdog_refresh();
+    }
 }
 ```
 
-2. **Never kick from a timer ISR alone:** the ISR keeps running when the main loop is stuck, so the watchdog never fires.
-3. **Record the reset cause** at boot (`RCC->CSR` flags on STM32) and log or report watchdog resets; they are evidence of field bugs.
-4. **Choose the timeout** longer than the worst-case loop time (including flash erase and slow operations), but short enough to recover quickly; disable or extend it carefully during long operations instead of kicking in many places.
-5. **Low-power modes:** decide whether the watchdog should run (and wake the device) in stop/sleep modes.
-6. **Debugging:** freeze the watchdog when the core is halted by the debugger (`DBGMCU` freeze bits), or you get resets while stepping.
-7. **After a watchdog reset:** consider a safe mode if resets repeat (count them in a `.noinit` variable), instead of an endless reset loop.
+These functions represent system-specific health checks. Progress should be fresh since the previous check, not a flag left permanently set.
+
+#### 3. Choosing the timeout
+
+Account for worst-case execution time, interrupt latency, boot time and legitimate lengthy operations. The watchdog must trigger before the system's allowed recovery deadline, without resetting a healthy system under worst-case load.
+
+#### 4. Recovery and diagnostics
+
+Read and preserve reset-cause registers early after reboot. Record useful fault context where possible, and handle repeated failures according to system safety requirements.
+
+**Interview takeaway:** Never blindly feed a watchdog in an interrupt or unconditional loop. It should be serviced only after confirming that essential software is progressing.
 
 ### What is debouncing and how do you implement it? {E}
 **Short answer:** Mechanical switches and buttons "bounce": the contacts open and close several times for a few milliseconds (typically 1–10 ms, sometimes more) when pressed or released. Debouncing means accepting a new state only after the input has been stable for a period. Do it in software by sampling periodically, or in hardware with an RC filter and a Schmitt-trigger input.
