@@ -143,32 +143,24 @@ For directories, read lists entries, write permits changes to entries (subject t
 **Interview takeaway:** umask removes permission bits from requested creation modes. Avoid chmod 777 as a debugging shortcut; grant only required access.
 
 ### What is an inode? What is the difference between a hard link and a symbolic link? {E}
-**Short answer:** An **inode** is the on-disk structure that describes a file: its type, permissions, owner, size, timestamps, link count, and where its data blocks are. It does **not** contain the file name; names live in **directory entries**, which map a name to an inode number. A **hard link** is an additional directory entry pointing to the same inode. A **symbolic (soft) link** is a separate small file that contains a path to another file.
+An inode holds filesystem metadata such as ownership, mode, timestamps, size and references to file data. Directory entries associate names with inode numbers.
 
-```bash
-echo hello > a.txt
-ln a.txt b.txt          # hard link: same inode
-ln -s a.txt c.txt       # symbolic link: new inode containing the text "a.txt"
-ls -li
-# 1311 -rw-r--r-- 2 ... a.txt
-# 1311 -rw-r--r-- 2 ... b.txt          <- same inode number, link count 2
-# 1312 lrwxrwxrwx 1 ... c.txt -> a.txt
+```text
+name A ----+
+           +--> inode 123 -> file blocks
+name B ----+   (hard link)
+name C --> symlink inode -> "name A"
 ```
 
-| | Hard link | Symbolic link |
-|---|---|---|
-| What it is | another name for the same inode | a file containing a path |
-| Inode | same as the target | its own |
-| Survives deleting the original name | yes, data stays until the link count is 0 | no, becomes a dangling link |
-| Across file systems | no | yes |
-| To directories | no (would allow loops) | yes |
-| `ls -l` | looks like a normal file | shows `-> target` |
+```bash
+ln original hardlink
+ln -s original symlink
+ls -li original hardlink symlink
+```
 
-**How deleting works:** `rm` calls `unlink()`, which removes one directory entry and decrements the inode's link count. The data is freed only when the link count is 0 **and** no process has the file open. That is why deleting a large log file that a program still has open does not free disk space until the program closes it (find these with `lsof +L1`).
+Hard links refer to the same inode and normally cannot cross filesystem boundaries. A symbolic link has its own inode containing a target pathname and can become dangling. Removing one hard link does not destroy the data while another link or open reference remains.
 
-**"Everything is a file":** in Linux, many objects are accessed through the file interface: regular files, directories, devices (`/dev`), pipes, sockets, and kernel information (`/proc`, `/sys`). They all have inodes in the VFS, and programs use `open`/`read`/`write`/`close` on them. This uniformity is why shell tools can work with devices and kernel data directly.
-
-**Inode limits:** a file system has a fixed number of inodes (ext4 sets it at `mkfs` time). You can run out of inodes with free space still available if you create millions of tiny files: `df -i` shows usage. Dividing free space by free inodes gives the average space available per future file.
+**Interview takeaway:** A filename is not the inode. An open file can remain usable after unlink removes its name.
 
 ### How do file systems store file data: contiguous, linked (FAT), indexed and extents? {M}
 **Short answer:** **Contiguous** allocation stores a file in consecutive blocks (fast, simple, but suffers from fragmentation and files cannot grow easily). **Linked** allocation chains blocks together, as FAT does with its File Allocation Table (no external fragmentation, but random access must follow the chain). **Indexed** allocation keeps a list of block numbers per file in the inode (direct, indirect, double-indirect pointers in ext2/3). **Extents** (ext4, XFS, Btrfs) record runs of consecutive blocks as (start, length), which is compact for large, contiguous files.
