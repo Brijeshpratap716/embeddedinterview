@@ -1296,25 +1296,43 @@ The CMSIS intrinsic has platform-specific semantics and emits the appropriate ba
 **Interview takeaway:** A compiler barrier limits compiler transformations; it does not provide CPU ordering, atomicity, cache maintenance or C11 inter-thread synchronization.
 
 ### How do you make a firmware image position independent or relocatable? {H}
-**Short answer:** Compile with position-independent options (`-fPIC`/`-fpie`, or on Cortex-M `-fropi`/`-frwpi` with Arm Compiler, or GCC's `-msingle-pic-base -mpic-register=r9 -mno-pic-data-is-text-relative` for separate data), so code uses PC-relative addressing and data is reached through a base register or a global offset table (GOT) that is fixed up at load time. In practice most MCU firmware is linked at a **fixed address**, and bootloaders support multiple images with fixed slots or by **swapping** images rather than relocating them.
+Position-independent code (PIC) can execute without assuming a fixed load address for its instruction references. Relocatable firmware can be moved by applying the required address fixups before execution.
 
-**Why it is hard on MCUs**
+#### 1. Why ordinary firmware may fail after moving
 
-- Function pointers, the vector table and any initialised pointer in `.data` contain absolute addresses that must be patched if the image moves.
-- Without an MMU there is no virtual address trick to make the image appear at its link address.
-- Position-independent code is slightly larger and slower (extra indirections through the GOT).
+```text
+Image linked for 0x08000000
+    absolute pointer = 0x08001000
 
-**Common strategies for firmware updates**
+Image copied to 0x20000000
+    absolute pointer still refers to old address
+```
 
-| Strategy | How | Trade-off |
-|---|---|---|
-| Fixed single slot + recovery bootloader | bootloader overwrites the app in place | no rollback if the update fails mid-way, unless the bootloader can always re-download |
-| Two slots, image linked for slot A only, **swap** | MCUboot copies/swaps the new image from slot B into slot A (using a scratch area), with revert support | needs time and flash wear for the swap |
-| Two slots, two builds | build the same firmware twice, linked for each slot; the bootloader runs whichever is valid | the update server must deliver the right build for the inactive slot |
-| Execute-in-place from external flash with **address remapping** | some MCUs (e.g. with OTFDEC/remap registers, or nRF/ESP32 flash mapping/MMU) map either slot to the same execution address | needs hardware support |
-| Real PIC | `-fpie` + loader fix-ups (as in Zephyr's LLEXT, or loadable modules) | complexity and size |
+PC-relative branches often remain valid if the whole image moves together; absolute data pointers or addresses may not.
 
-**What the bootloader must do for any non-default location:** set `SCB->VTOR` to the application's vector table, which must be suitably aligned, before jumping (next question).
+#### 2. Common approaches
+
+- Compile with target-appropriate PIC options when supported.
+- Use PC-relative references and a global offset table where required.
+- Retain relocation records and apply them in a loader.
+- Link separate images for different execution addresses if relocation is unnecessary.
+
+For example, ELF relocations can describe locations that need adjustment when an image's load bias changes. The exact fixup calculation depends on relocation type and architecture.
+
+#### 3. Firmware-specific requirements
+
+Interrupt vectors, absolute peripheral addresses, data initialization, stack placement, exception tables and startup assembly may need separate handling. MMIO addresses usually must remain fixed even when code moves.
+
+Inspect the image using:
+
+```sh
+readelf -r firmware.elf
+objdump -d firmware.elf
+```
+
+A compiler option such as -fPIC alone is not enough to make a bare-metal firmware image relocatable.
+
+**Interview takeaway:** PIC avoids certain fixed-address assumptions; relocation repairs address-dependent references. The entire startup and memory layout must support the chosen scheme.
 
 ### How does a bootloader jump to the application on Cortex-M? {H}
 **Short answer:** The bootloader validates the application image (magic number, size, CRC or signature), puts the system back into a reset-like state (de-initialise peripherals and clocks it changed, disable and clear all interrupts, stop SysTick), sets `SCB->VTOR` to the application's vector table, loads the main stack pointer from the first word of that table, and branches to the reset handler whose address is in the second word.
