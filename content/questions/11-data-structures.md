@@ -351,72 +351,35 @@ Initialize structures to zero and supply valid output pointers. These are single
 **Interview takeaway:** Check overflow and underflow. A circular queue avoids moving elements; a stack needs only a top/count index.
 
 ### What is a binary heap, and how do you use it as a priority queue or timer queue? {M}
-**Short answer:** A binary heap is a complete binary tree stored in an array where each parent is ≤ its children (min-heap). The smallest element is always at index 0, insertion and removal of the minimum take O(log n) by "sifting" elements up or down, and no pointers or allocation are needed. That makes it a good fixed-size **priority queue**, for example a software timer queue ordered by expiry time or an event scheduler.
+A binary heap is a complete binary tree stored compactly in an array. A min-heap keeps every parent no greater than its children, so the minimum is at index zero.
 
-```c
-#include <stdbool.h>
-#include <stdint.h>
-#include <stdio.h>
+#### 1. Index relationships
 
-#define CAP 16
-typedef struct { uint32_t expiry; int id; } tmr_t;
-static tmr_t heap[CAP];
-static int n;
+For zero-based index i, parent=(i−1)/2 for i>0, left=2i+1 and right=2i+2, when children exist.
 
-static void swap(int i, int j) { tmr_t t = heap[i]; heap[i] = heap[j]; heap[j] = t; }
+#### 2. Example insertion
 
-bool heap_push(tmr_t t)
-{
-    if (n == CAP) return false;
-    int i = n++;
-    heap[i] = t;
-    while (i > 0 && heap[(i - 1) / 2].expiry > heap[i].expiry) {   /* sift up */
-        swap(i, (i - 1) / 2);
-        i = (i - 1) / 2;
-    }
-    return true;
-}
-
-bool heap_pop(tmr_t *out)
-{
-    if (n == 0) return false;
-    *out = heap[0];
-    heap[0] = heap[--n];
-    for (int i = 0;;) {                                            /* sift down */
-        int l = 2 * i + 1, r = l + 1, m = i;
-        if (l < n && heap[l].expiry < heap[m].expiry) m = l;
-        if (r < n && heap[r].expiry < heap[m].expiry) m = r;
-        if (m == i) break;
-        swap(i, m);
-        i = m;
-    }
-    return true;
-}
-
-int main(void)
-{
-    tmr_t t[] = { {50, 1}, {10, 2}, {30, 3}, {20, 4}, {40, 5} };
-    for (int i = 0; i < 5; i++) heap_push(t[i]);
-    tmr_t x;
-    while (heap_pop(&x)) printf("t%d@%u ", x.id, x.expiry);   /* t2@10 t4@20 t3@30 t5@40 t1@50 */
-    printf("\n");
-    return 0;
-}
+```text
+Heap: [2, 5, 7, 9]
+Insert 1 at end: [2, 5, 7, 9, 1]
+Sift up:         [2, 1, 7, 9, 5]
+Sift up:         [1, 2, 7, 9, 5]
 ```
 
-**Array layout:** for the node at index i, the parent is `(i − 1) / 2` and the children are `2i + 1` and `2i + 2`.
+To remove the minimum, move the last element to the root and sift it downward using the smaller child.
 
-**Timer queue design comparison**
+| Operation | Complexity |
+|---|---|
+| Peek minimum | O(1) |
+| Insert | O(log n) |
+| Remove minimum | O(log n) |
+| Build heap bottom-up | O(n) |
 
-| Structure | Insert | Next expiry | Cancel |
-|---|---|---|---|
-| Unsorted array | O(1) | O(n) | O(1) with index |
-| Sorted linked list (FreeRTOS delayed list) | O(n) | O(1) | O(1) |
-| Binary heap | O(log n) | O(1) peek, O(log n) pop | O(log n) with stored index |
-| Timer wheel (Linux timers) | O(1) | O(1) amortised | O(1) |
-| Red-black tree (Linux hrtimers) | O(log n) | O(1) cached leftmost | O(log n) |
+#### 3. Embedded use
 
-**Wrap-around note:** with 32-bit tick counters, compare expiry times with `(int32_t)(a - b) < 0` instead of `a < b`, so ordering stays correct across overflow (as long as timeouts are less than half the counter range).
+Store timers by expiry time or jobs by priority. Use fixed-capacity storage where required and a wrap-safe deadline comparison for modular time counters.
+
+**Interview takeaway:** A heap is not a fully sorted array. It maintains the root extreme efficiently and offers bounded logarithmic insertion/removal.
 
 ### How does binary search work and what is the common bug? {E}
 **Short answer:** On a sorted array, compare the target with the middle element and discard the half that cannot contain it, repeating until found or the range is empty: O(log n). The classic bug is computing the middle as `(low + high) / 2`, which can overflow when indices are large; use `low + (high − low) / 2`. The other common bugs are mixing inclusive and exclusive bounds, which causes infinite loops or missed elements, and unsigned underflow with `high = mid − 1` when `mid` is 0.
