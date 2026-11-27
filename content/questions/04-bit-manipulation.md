@@ -894,3 +894,30 @@ uint8_t swap_nibbles(uint8_t x)
 Because `x` is promoted to `int` before shifting, `x << 4` can be up to 12 bits wide; the cast back to `uint8_t` discards the extra bits. The equivalent with explicit masks is `((x & 0x0F) << 4) | ((x & 0xF0) >> 4)`.
 
 Uses: converting between packed BCD digit orders, some display and LCD controllers that expect nibble-swapped data, and as the first stage of reversing bits. Interviewers often extend it to swapping adjacent bits (masks `0x55`/`0xAA`) or reversing all bits of a byte.
+
+### How do you check whether a number has alternating bits? {E}
+**Short answer:** XOR the number with itself shifted right by one. For alternating bits, the result contains consecutive ones from the least significant bit through its highest set bit.
+
+```c
+#include <stdint.h>
+#include <stdbool.h>
+bool alternating(uint32_t n)
+{
+    uint32_t x = n ^ (n >> 1);
+    return n != 0 && (x & (x + 1u)) == 0;
+}
+```
+
+**Example (significant bits):**
+
+```text
+n       101010
+n >> 1  010101
+XOR     111111
+x + 1  1000000
+AND    0000000
+```
+
+**Complexity:** O(1) for a fixed-width integer. Leading zeros are ignored; zero is excluded by definition here. Unsigned wraparound is intentional.
+
+**Interview takeaway:** XOR detects adjacent bit differences; the all-ones mask test validates the result.
