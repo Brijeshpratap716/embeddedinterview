@@ -578,38 +578,44 @@ Use platform resource APIs, of_property_read_* or more generic firmware-node API
 **Interview takeaway:** Device tree describes hardware and board wiring, not arbitrary procedural driver logic. The driver implements behavior; bindings define their contract.
 
 ### What are device tree overlays? {M}
-**Short answer:** An overlay (`.dtbo`) is a device tree fragment applied on top of a base tree to add or modify nodes, usually by the bootloader (`fdt apply` in U-Boot, `dtoverlay=` in the Raspberry Pi firmware) before the kernel starts. Overlays are used for add-on boards (HATs, capes, mezzanines), optional peripherals and per-product variants without rebuilding the base DTB.
+A device-tree overlay is a set of changes applied to a base device tree. It can add nodes or update properties for hardware variants or expansion boards.
+
+#### 1. Example overlay
 
 ```dts
 /dts-v1/;
 /plugin/;
 
-&i2c1 {
-    #address-cells = <1>;
-    #size-cells = <0>;
-    status = "okay";
-
-    rtc@68 {
-        compatible = "dallas,ds1307";
-        reg = <0x68>;
+&i2c0 {
+    sensor@50 {
+        compatible = "vendor,sensor";
+        reg = <0x50>;
+        status = "okay";
     };
 };
 ```
 
-**Build and apply**
+This references a base-tree label. Symbol/fixup support and overlay application mechanism must match the platform.
 
-```sh
-dtc -@ -I dts -O dtb -o rtc.dtbo rtc-overlay.dts      # -@ keeps symbols for &label references
-# U-Boot
-fdt addr ${fdt_addr_r}; fdt resize 8192
-load mmc 0:1 ${loadaddr} rtc.dtbo; fdt apply ${loadaddr}
+#### 2. Flow
+
+```text
+Base DTB + compiled overlay (.dtbo)
+                  |
+          Overlay application
+                  |
+       Updated device-tree description
+                  |
+          Kernel device binding
 ```
 
-The base DTB must also be compiled with `-@` so it contains a `__symbols__` node that overlays can reference.
+A bootloader can apply an overlay before starting Linux. Some kernel/platform configurations also support runtime application.
 
-**Run-time overlays:** applying overlays after boot (configfs overlay interface) is not in mainline in a general form because removing hardware descriptions safely is hard; it exists in vendor kernels and for FPGA manager use cases.
+#### 3. Limitations
 
-**Alternatives:** separate DTBs per variant selected by the bootloader, FIT images with multiple configurations, or U-Boot board code that patches the tree (`ft_board_setup`).
+Overlay removal is not a general-purpose safe hot-unplug mechanism. Drivers and devices must support the relevant lifetime operations. Conflicting addresses, GPIOs and resource ownership can cause failures.
+
+**Interview takeaway:** An overlay modifies hardware description, not driver code. Validate bindings and resource conflicts, and use the platform's supported overlay lifecycle.
 
 ### What are the devm_ (managed) APIs? {M}
 **Short answer:** Device-managed resource functions (`devm_kzalloc`, `devm_platform_ioremap_resource`, `devm_request_irq`, `devm_clk_get_enabled`, `devm_regulator_get`, `devm_gpiod_get`...) record a release action on the device. If `probe` fails, or the device is later unbound, all managed resources are released automatically in reverse order. This removes most error-path cleanup code and the leaks that come with it.
