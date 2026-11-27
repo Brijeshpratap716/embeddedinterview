@@ -272,22 +272,15 @@ For an I²C sensor, verify address straps, power-up delay, supported bus rate, i
 **Interview takeaway:** Use the reference manual for register programming and the errata for hardware limitations. Never guess register meanings.
 
 ### How do you read a schematic as a firmware engineer? {E}
-**Short answer:** Find the MCU and trace from each of its pins to what they connect to: which peripherals use which pins (and therefore which alternate functions to configure), pull-up and pull-down resistors (default states), active-low signals (names with a bar, `n`, `#` or `_N`), power domains and enables, reset and boot-mode circuitry, debug connectors, clock sources and any level shifters. Use net names to follow signals across sheets, and keep a pin-mapping table that becomes your board configuration (device tree, pin mux files, CubeMX configuration).
+A schematic maps firmware configuration to real electrical connectivity.
 
-**Checklist when bringing up firmware on a new board**
+#### Workflow
+Start at power rails and reset. Follow net names to MCU pins, pull resistors, address straps, interrupt polarity, enables, clocks and level translators.
 
-1. Power rails: which regulators exist, which are enabled by GPIOs (and their default state).
-2. Clocks: crystal frequency (HSE/LSE values in the clock configuration).
-3. Boot pins and reset: how the board selects boot mode; reset button; watchdog chips.
-4. Debug: SWD/JTAG pins, UART console pins and levels.
-5. Each peripheral: bus, address (I2C address pins), chip select, interrupt pin (and its polarity, open-drain or push-pull), reset pin, power enable.
-6. LEDs and buttons: polarity (active high/low).
-7. Analog: dividers (scaling factors for ADC conversion), reference voltage, filters.
-8. Protection and level shifting that may limit speed.
+#### Example
+For an I²C device, identify the actual SCL/SDA controller, pull-up voltage, address pins, reset and power-enable GPIOs. Configure pinmux and device-tree resources to match.
 
-**Symbols to recognise:** resistors, capacitors (polarised vs ceramic), inductors/ferrites, diodes (LED, Zener, Schottky, TVS), MOSFETs/BJTs, crystals, test points, net labels and no-connect markers.
-
-**Collaboration tip:** review schematics before layout and ask for test points on key signals, a UART console, SWD, a few spare GPIOs and LEDs; it saves weeks during bring-up.
+**Interview takeaway:** Correct driver code can still fail when the board uses a different bus, voltage domain, polarity or reset sequence.
 
 ### What tools do you use for board bring-up? {E}
 **Short answer:** A **multimeter** (rail voltages, continuity, current), a **bench power supply** with current limiting (catch shorts before they burn parts), an **oscilloscope** (analog behaviour: clocks, power ripple, edges, reset timing), a **logic analyser** (decoding SPI/I2C/UART/CAN over long captures), a **debug probe** (J-Link, ST-LINK, CMSIS-DAP via SWD/JTAG for flashing and debugging), a **USB-UART adapter** for the console, and sometimes a thermal camera (hot spots from shorts or wrong components).
