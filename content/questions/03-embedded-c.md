@@ -277,56 +277,39 @@ The measurement includes instrumentation and peripheral write delays, so documen
 **Interview takeaway:** Optimize worst-case latency and jitter rather than only average interrupt response.
 
 ### What is a critical section and how do you implement one on bare metal? {M}
-**Short answer:** A critical section is a piece of code that must not be interrupted by anything that accesses the same shared data. On a single-core MCU the simplest implementation is to disable interrupts on entry and restore the previous state on exit; saving and restoring (instead of blindly re-enabling) makes it safe to nest.
+A critical section is a region of code that must be protected from conflicting accesses. On a single-core microcontroller, a short interrupt-masked section can protect state shared with an interrupt handler.
+
+#### 1. Why it is needed
 
 ```c
-#include "cmsis_compiler.h"
-
-static inline uint32_t irq_save(void)
-{
-    uint32_t primask = __get_PRIMASK();   /* 1 if interrupts were already disabled */
-    __disable_irq();                      /* CPSID i */
-    return primask;
-}
-
-static inline void irq_restore(uint32_t primask)
-{
-    __set_PRIMASK(primask);               /* re-enable only if they were enabled before */
-}
-
-void counter_add(uint32_t n)
-{
-    uint32_t s = irq_save();
-    shared_counter += n;                  /* read-modify-write is now safe from ISRs */
-    irq_restore(s);
-}
+count++;
 ```
 
-**Why save/restore:** if a function with a critical section is called from inside another critical section, a plain `__enable_irq()` at its end would enable interrupts too early, in the middle of the outer section.
+A load/add/store sequence can be interrupted between operations, causing an ISR update to be overwritten.
 
-**Masking only some interrupts (Cortex-M3 and later):**
+#### 2. Cortex-M implementation using CMSIS
 
 ```c
-uint32_t old = __get_BASEPRI();
-__set_BASEPRI_MAX(5u << (8u - __NVIC_PRIO_BITS));   /* block priority 5 and lower urgency */
-/* ... */
-__set_BASEPRI(old);
+uint32_t saved = __get_PRIMASK();
+
+__disable_irq();
+count++;
+__set_PRIMASK(saved);
 ```
 
-Interrupts more urgent than the threshold still run, so their latency is unaffected. FreeRTOS uses this for `taskENTER_CRITICAL()` on Cortex-M3+.
+The mask is restored to its original value, so the code also works when entered with interrupts already disabled. Use the appropriate CMSIS implementation and platform ordering requirements.
 
-**Other ways to protect shared data**
+#### 3. Limitations
 
-- **Disable only the one peripheral's interrupt** (`NVIC_DisableIRQ(USART2_IRQn)`) when only that ISR shares the data.
-- **Atomic instructions:** `LDREX`/`STREX` (C11 atomics) on Cortex-M3+; not available on M0/M0+.
-- **Lock-free design:** single-producer/single-consumer ring buffers where each index is written by only one side.
-- **RTOS:** `taskENTER_CRITICAL()` from tasks, `taskENTER_CRITICAL_FROM_ISR()` in ISRs, or a mutex if the section is long and no ISR is involved.
+PRIMASK masks configurable exceptions, not NMI and HardFault. It affects only the local processor. DMA and other CPUs can continue accessing memory.
 
-**Rules**
+For multicore sharing, use a supported atomic operation or lock, often combined with local interrupt masking if the same lock is used from interrupt context. In an RTOS use its designated critical-section APIs and respect nesting rules.
 
-- Keep it as short as possible: everything inside adds interrupt latency.
-- Never call blocking functions inside it.
-- On **multi-core** systems disabling interrupts on one core does not stop the other core: you need a spinlock or hardware semaphore (e.g. the HSEM on STM32H7 dual-core) as well.
+#### 4. Practical rule
+
+Do not call blocking functions, run long loops or perform slow I/O while interrupts are masked. Keep only the actual shared-state update inside the critical section.
+
+**Interview takeaway:** Save and restore interrupt state rather than blindly enabling interrupts. Interrupt masking is not a universal multicore lock or DMA protection.
 
 ### What is a reentrant function? {M}
 **Short answer:** A function is reentrant if it can be interrupted partway through and safely called again (from an ISR, a signal handler or recursion) before the first call has finished, with both calls producing correct results. That requires using only its arguments and local variables, or protecting any shared state, and calling only other reentrant functions.
