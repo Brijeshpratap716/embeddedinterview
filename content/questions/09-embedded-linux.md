@@ -235,56 +235,34 @@ A bootloader can select an alternate image, enter recovery, enforce secure boot 
 **Interview takeaway:** A bootloader is not the OS. It establishes the next image's required environment and starts it; the implementation may be split across several firmware stages.
 
 ### What are the common U-Boot commands? {E}
-**Short answer:** Environment commands (`printenv`, `setenv`, `saveenv`), loading commands (`load`/`fatload`/`ext4load`, `tftp`, `mmc`, `sf`), boot commands (`bootm`, `bootz`, `booti`, `run bootcmd`), and hardware debug commands (`md`, `mw`, `i2c`, `gpio`).
+U-Boot offers commands for inspecting the platform, manipulating its environment, loading images and starting an operating system. Available commands depend on build configuration.
 
-**Environment**
+| Command | Purpose |
+|---|---|
+| printenv / setenv | Inspect/change environment variables |
+| saveenv | Persist environment when supported |
+| mmc list / mmc dev | Inspect/select MMC devices |
+| fatload / ext4load | Load a file from supported filesystems |
+| tftpboot | Load using TFTP when network is configured |
+| md / mw | Display/write memory (carefully) |
+| booti / bootm / bootz | Boot supported image formats |
+| reset | Reset platform |
 
-```
-=> printenv bootcmd
-=> setenv bootargs console=ttyS0,115200 root=/dev/mmcblk0p2 rootwait
-=> saveenv                     # write the environment to its storage
-=> run bootcmd                 # execute the variable as a script
-=> env default -a              # restore defaults
-```
+#### 1. Illustrative ARM64 boot commands
 
-**Storage and loading**
-
-```
-=> mmc list                    # list MMC/SD controllers
-=> mmc dev 0                   # select device
-=> mmc part                    # show partitions
-=> ls mmc 0:1                  # list files on partition 1
-=> load mmc 0:1 ${kernel_addr_r} Image
-=> sf probe; sf read ${loadaddr} 0x100000 0x400000   # SPI NOR flash
+```sh
+fatload mmc 0:1 ${kernel_addr_r} Image
+fatload mmc 0:1 ${fdt_addr_r} board.dtb
+booti ${kernel_addr_r} - ${fdt_addr_r}
 ```
 
-**Network (fast development loop)**
+The partition, filenames and addresses must match the actual board. Ensure loaded objects do not overlap.
 
-```
-=> setenv serverip 192.168.1.10; setenv ipaddr 192.168.1.50
-=> tftp ${kernel_addr_r} Image
-=> tftp ${fdt_addr_r} board.dtb
-=> booti ${kernel_addr_r} - ${fdt_addr_r}
-```
+#### 2. Debugging autoboot
 
-Loading over TFTP and using an NFS root filesystem means you can rebuild and test without re-flashing the board.
+Inspect bootcmd and bootargs and interrupt autoboot using the platform's configured console mechanism. Avoid persisting experimental environment changes until the boot flow is validated.
 
-**Booting**
-
-- `booti` – ARM64 `Image`.
-- `bootz` – ARM32 `zImage`.
-- `bootm` – uImage or **FIT** (can verify signatures).
-- `bootefi` – boot an EFI application (GRUB or the kernel's EFI stub).
-
-**Hardware debugging**
-
-- `md.l 0x40000000 10` – dump 16 words of memory (or a peripheral register).
-- `mw.l 0x40000000 0xdeadbeef` – write memory.
-- `i2c dev 0; i2c probe; i2c md 0x50 0 16` – scan the bus and read an EEPROM.
-- `gpio status; gpio set 42` – check and drive pins.
-- `mtest` – simple DRAM test. `bdinfo`, `coninfo`, `version` – board information.
-
-**Follow-up:** "How do you stop autoboot?" Press a key during `bootdelay` (set `bootdelay=-2` to disable the prompt entirely in production, and consider disabling the console or protecting it with a password, since an open U-Boot prompt can boot anything).
+**Interview takeaway:** U-Boot commands manipulate real hardware and memory. Understand address ranges and image formats before issuing memory writes or persistent environment operations.
 
 ### What are kernel command line (bootargs) parameters? {E}
 **Short answer:** The kernel command line is a string of parameters passed by the bootloader (or stored in the device tree's `/chosen/bootargs`, or built into the kernel) that configures the kernel at boot: which console to use, where the root filesystem is, log level, and settings for built-in drivers. The running values are in `/proc/cmdline`.
