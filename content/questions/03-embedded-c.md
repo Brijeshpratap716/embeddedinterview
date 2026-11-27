@@ -1510,14 +1510,54 @@ Firmware or an OS BSP describes and initializes these resources.
 **Interview takeaway:** An SoC is a collection of cooperating hardware masters and slaves, not just a CPU. Drivers must understand the device's memory, clock, interrupt and power dependencies.
 
 ### Which compiler optimisations can change how your C code behaves? {H}
-An optimiser may transform code in any way that keeps the *observable behaviour* defined by the C standard. Code that relies on undefined behaviour, or that forgets to tell the compiler about hardware, can change behaviour between `-O0` and `-O2`. The common ones:
+Compiler optimizations transform a program while preserving its defined observable behavior under the language and implementation rules. Firmware bugs can become visible when optimization exposes incorrect assumptions.
 
-- **Caching values in registers / removing loads:** a polled flag or register read once and never again. Fix with `volatile`.
-- **Dead-store elimination:** writes the compiler thinks nobody reads are removed, such as clearing a key buffer before `free` or writing a register twice. Fix with `volatile` or `explicit_bzero`/`memset_s`.
-- **Reordering:** independent loads and stores may be moved, including across a write to a "data ready" flag. Fix with barriers or atomics.
-- **Assuming no undefined behaviour:** signed overflow cannot happen (so `x + 1 > x` becomes `true`), a dereferenced pointer cannot be NULL (so a later NULL check is deleted), shifts are smaller than the type width.
-- **Strict aliasing:** the compiler assumes an `int *` and a `float *` never point to the same memory, so type-punning through pointer casts can read stale values.
-- **Loop transformations:** empty delay loops are removed entirely; loops become `memcpy`/`memset` calls (a problem inside your own `memcpy` or before `.data` is initialised).
-- **Inlining and constant folding:** can change timing and stack usage, and hide functions from the debugger.
+#### 1. Common optimizations
 
-The interview point is that the optimiser is not buggy; the code relied on something the language does not promise. Use `volatile` for hardware, atomics and barriers for concurrency, `memcpy` for type punning, and compiler warnings and sanitizers (`-Wall -Wextra`, UBSan) to find undefined behaviour.
+| Optimization | Effect |
+|---|---|
+| Dead-code elimination | Removes unused computations |
+| Inlining | Replaces a call with its body where suitable |
+| Constant propagation | Uses known values during compilation |
+| Loop transformations | Changes iteration or instruction structure |
+| Load/store optimization | Reuses or reorders accesses when permitted |
+
+#### 2. Example: polling a hardware register
+
+```c
+uint32_t *status = (uint32_t *)0x40000000U;
+while ((*status & 1U) == 0) {}
+```
+
+Ordinary C accesses do not communicate the register's external hardware changes. A compiler may transform the loop in a way that does not poll the device as intended.
+
+Use the appropriate MMIO access:
+
+```c
+volatile uint32_t *status =
+    (volatile uint32_t *)0x40000000U;
+
+while ((*status & 1U) == 0) {
+    // Add a timeout in production.
+}
+```
+
+This assumes a valid bare-metal register mapping and width.
+
+#### 3. Undefined behavior and optimization
+
+```c
+int test(int x)
+{
+    return x + 1 > x;
+}
+```
+
+A compiler may return 1 unconditionally because signed overflow is undefined. It need not preserve a wraparound assumption for INT_MAX.
+
+#### 4. Debugging optimized firmware
+
+Compare generated assembly, enable warnings and static analysis, use sanitizers on supported targets, and check volatile usage, aliasing, alignment, lifetime and synchronization. Debug builds and release builds may differ in timing and register allocation.
+
+**Interview takeaway:** Optimization does not make invalid C correct. Fix the language or hardware-interface violation rather than permanently disabling optimization.
+
