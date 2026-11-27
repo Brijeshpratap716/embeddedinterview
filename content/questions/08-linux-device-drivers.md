@@ -1013,49 +1013,47 @@ Report appropriate EPOLLERR or EPOLLHUP conditions when relevant. Keep the devic
 **Interview takeaway:** poll_wait does not itself wait for the event. It registers a wait source; the poll framework handles waiting and readiness rechecks.
 
 ### What is sysfs and how do you add attributes? {M}
-**Short answer:** Sysfs (`/sys`) exposes the kernel's device model as a directory tree: each device is a directory, and each **attribute** is a file holding one value (in text). Drivers add attributes with `DEVICE_ATTR_RW(name)` plus `name_show()`/`name_store()` functions, group them, and attach the group through the driver's `.dev_groups` field so they are created and removed together with the device (no race with user space).
+sysfs exposes attributes of kernel objects through a virtual filesystem, commonly under /sys. It is used for structured device information and configuration.
+
+#### 1. Read/write attribute example
 
 ```c
-static ssize_t gain_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t enabled_show(struct device *dev,
+                            struct device_attribute *attr,
+                            char *buf)
 {
-    struct mydev *d = dev_get_drvdata(dev);
-    return sysfs_emit(buf, "%u\n", d->gain);
+    struct demo *d = dev_get_drvdata(dev);
+    return sysfs_emit(buf, "%d\n", READ_ONCE(d->enabled));
 }
 
-static ssize_t gain_store(struct device *dev, struct device_attribute *attr,
-                          const char *buf, size_t count)
+static ssize_t enabled_store(struct device *dev,
+                             struct device_attribute *attr,
+                             const char *buf, size_t count)
 {
-    struct mydev *d = dev_get_drvdata(dev);
-    unsigned int val;
-    int ret = kstrtouint(buf, 0, &val);
-    if (ret) return ret;
-    if (val > 7) return -EINVAL;
-    mutex_lock(&d->lock);
-    d->gain = val;
-    mydev_apply_gain(d);
-    mutex_unlock(&d->lock);
+    struct demo *d = dev_get_drvdata(dev);
+    bool value;
+
+    if (kstrtobool(buf, &value))
+        return -EINVAL;
+
+    WRITE_ONCE(d->enabled, value);
     return count;
 }
-static DEVICE_ATTR_RW(gain);
 
-static struct attribute *mydev_attrs[] = { &dev_attr_gain.attr, NULL };
-ATTRIBUTE_GROUPS(mydev);                     /* defines mydev_groups */
-
-static struct platform_driver mydev_driver = {
-    .driver = { .name = "mydev", .of_match_table = mydev_of_match, .dev_groups = mydev_groups },
-    .probe = mydev_probe,
-};
+static DEVICE_ATTR_RW(enabled);
 ```
 
-Use: `cat /sys/bus/platform/devices/40010000.mydev/gain`, `echo 3 > .../gain`.
+This simple flag example assumes the object's lifetime is managed and the flag is not part of a larger hardware state transition. Use a suitable mutex/state protocol for actual hardware operations.
 
-**Rules**
+#### 2. Registration
 
-- One value per file; text format; `sysfs_emit()` in show functions (bounds-safe).
-- Attributes are ABI: document them in `Documentation/ABI/` and do not change them casually.
-- Validate input in `store` and return `count` on success or a negative error.
-- `DEVICE_ATTR_RO` / `_WO` for read-only/write-only; binary attributes for blobs (e.g. EEPROM contents).
-- For debug-only data, use debugfs instead (next question).
+Use device_create_file/device_remove_file or preferably suitable attribute groups, including managed helpers where applicable. Assign access permissions carefully.
+
+#### 3. ABI guidance
+
+Expose one logical value per attribute where practical, document public ABI semantics and avoid binary or high-throughput data transfer through ordinary text attributes.
+
+**Interview takeaway:** sysfs connects kernel objects to structured userspace attributes. Validate input and use sysfs_emit for formatted output.
 
 ### What is the difference between procfs, sysfs and debugfs? {E}
 **Short answer:** **procfs** (`/proc`) exposes process information and some legacy kernel tunables (`/proc/cpuinfo`, `/proc/<pid>/maps`, `/proc/sys/` sysctls); new device data should not go there. **sysfs** (`/sys`) exposes the structured device model with one value per file and is a stable ABI. **debugfs** (`/sys/kernel/debug`) is a free-form debugging interface with no ABI guarantees, usually root-only and often disabled in production kernels.
