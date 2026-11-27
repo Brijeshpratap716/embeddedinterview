@@ -696,82 +696,153 @@ Change one variable at a time and record evidence. Preserve recovery access and 
 **Interview takeaway:** Boot debugging is stage isolation. Confirm hardware, firmware handoff, kernel initialization and rootfs/userspace independently.
 
 ### Explain full boot flow of i.MX8 in very brief. {M}
-The **NXP i.MX8QM/QXP boot flow** involves Boot ROM, System Controller Firmware (SCFW), ARM Trusted Firmware, U-Boot and the Linux kernel.
 
-#### 1. Complete boot sequence
+The following is the corrected flow for **NXP i.MX8QuadMax (QM) and i.MX8QuadXPlus (QXP)**.
 
-<figure style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 576" width="100%" role="img" aria-label="i.MX8QM/QXP boot flow" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="80" y="3" width="520" height="52" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="24" fill="#0c4a6e" font-size="16" font-weight="600">Power ON / Reset</text><text x="340" y="43" fill="#0c4a6e" font-size="13">SoC reset</text><path d="M340 55 v17 m-5 -5 l5 5 l5 -5" fill="none" stroke="#0369a1" stroke-width="2"/><rect x="80" y="75" width="520" height="52" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="96" fill="#0c4a6e" font-size="16" font-weight="600">Boot ROM</text><text x="340" y="115" fill="#0c4a6e" font-size="13">Boot device selection and image loading</text><path d="M340 127 v17 m-5 -5 l5 5 l5 -5" fill="none" stroke="#0369a1" stroke-width="2"/><rect x="80" y="147" width="520" height="52" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="168" fill="#0c4a6e" font-size="16" font-weight="600">SCFW / SECO Firmware</text><text x="340" y="187" fill="#0c4a6e" font-size="13">Power, clocks, DDR and security initialization</text><path d="M340 199 v17 m-5 -5 l5 5 l5 -5" fill="none" stroke="#0369a1" stroke-width="2"/><rect x="80" y="219" width="520" height="52" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="240" fill="#0c4a6e" font-size="16" font-weight="600">ARM Trusted Firmware (BL31)</text><text x="340" y="259" fill="#0c4a6e" font-size="13">EL3 initialization and secure monitor</text><path d="M340 271 v17 m-5 -5 l5 5 l5 -5" fill="none" stroke="#0369a1" stroke-width="2"/><rect x="80" y="291" width="520" height="52" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="312" fill="#0c4a6e" font-size="16" font-weight="600">U-Boot (BL33)</text><text x="340" y="331" fill="#0c4a6e" font-size="13">Bootloader and peripheral initialization</text><path d="M340 343 v17 m-5 -5 l5 5 l5 -5" fill="none" stroke="#0369a1" stroke-width="2"/><rect x="80" y="363" width="520" height="52" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="384" fill="#0c4a6e" font-size="16" font-weight="600">Linux Kernel + DTB</text><text x="340" y="403" fill="#0c4a6e" font-size="13">Kernel initialization and driver probing</text><path d="M340 415 v17 m-5 -5 l5 5 l5 -5" fill="none" stroke="#0369a1" stroke-width="2"/><rect x="80" y="435" width="520" height="52" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="456" fill="#0c4a6e" font-size="16" font-weight="600">Root Filesystem</text><text x="340" y="475" fill="#0c4a6e" font-size="13">Mount root filesystem</text><path d="M340 487 v17 m-5 -5 l5 5 l5 -5" fill="none" stroke="#0369a1" stroke-width="2"/><rect x="80" y="507" width="520" height="52" rx="8" fill="#e0f2fe" stroke="#0369a1"/><text x="340" y="528" fill="#0c4a6e" font-size="16" font-weight="600">Init / systemd</text><text x="340" y="547" fill="#0c4a6e" font-size="13">Userspace services and applications</text></svg></figure>
+#### 1. Initial boot stages
 
-#### 2. Responsibility of each stage
-
-| Stage | Responsibility |
+| Stage | Explanation |
 |---|---|
-| **Boot ROM** | Executes on SCU Cortex-M4, reads boot pins/eFuses, selects SD/eMMC and loads boot images. |
-| **SECO** | Security Controller firmware handles image authentication and secure boot using AHAB. |
-| **SCFW** | Initializes DDR through its DDR initialization routine, manages clocks, power domains, resource partitioning and releases Cortex-A cores from reset. |
-| **SPL (optional)** | Loads subsequent boot images into DDR, depending on the boot configuration. |
-| **ATF (BL31)** | Runs at EL3, initializes the secure monitor and provides PSCI services. |
-| **U-Boot (BL33)** | Initializes peripherals, loads Linux Image and DTB into DDR, passes boot arguments and starts Linux. |
-| **Linux Kernel** | Initializes MMU, scheduler, interrupts, memory management and device drivers. |
-| **RootFS** | Mounts the root filesystem and starts PID 1 (`systemd` or `init`). |
+| Power ON / Reset | Processor starts executing Boot ROM. |
+| Boot ROM | Identifies the boot device, such as eMMC, SD card or QSPI. |
+| SECO Firmware | Handles security and firmware authentication. |
+| SCFW | System Controller Firmware manages power, clocks, DDR initialization and hardware resources. |
+| SPL (if enabled) | Small bootloader that loads subsequent boot images. |
+| ARM Trusted Firmware (BL31) | Initializes EL3 secure monitor and transfers control to U-Boot. |
+| U-Boot (BL33) | Prepares the system and loads Linux. |
 
-#### 3. Boot image creation
+**Note:** SPL is optional on i.MX8QM/QXP, depending on the boot configuration.
 
-NXP provides the `imx-mkimage` tool to combine the firmware binaries into a bootable image.
+#### 2. U-Boot initialization
 
-```text
-scfw_tcm.bin
-SECO firmware
-bl31.bin
-u-boot.bin
-      |
-  imx-mkimage
-      |
-   flash.bin
-      |
-   SD / eMMC
+| Function | Purpose |
+|---|---|
+| `start.S` | Initializes CPU registers, execution state and masks interrupts. |
+| `_main()` | Sets up the initial stack and global data. |
+| `board_init_f()` | Early board initialization, UART and DRAM setup or detection. |
+| `relocate_code()` | Relocates U-Boot to its final location in DDR. |
+| `board_init_r()` | Initializes remaining hardware and software components. |
+| `env_init()` | Initializes environment handling during early boot. |
+| `console_init_f()` / `console_init_r()` | Initializes console functionality. |
+| `main_loop()` | Starts autoboot or provides the U-Boot command prompt. |
+
+**Correction:** `board_init_f()` executes before relocation and `board_init_r()` executes after relocation.
+
+#### 3. Loading the Linux kernel
+
+U-Boot loads the following into DDR:
+
+- **Image:** Linux kernel binary.
+- **DTB:** Hardware description.
+- **Initramfs:** Optional temporary root filesystem.
+- **Bootargs:** Kernel command-line parameters, typically passed through the DTB.
+
+Boot commands:
+
+| Command | Purpose |
+|---|---|
+| `bootm` | Boots legacy or FIT images. |
+| `bootz` | Boots ARM32 compressed zImage. |
+| `booti` | Boots ARM64 Image. |
+
+For i.MX8 ARM64:
+
+```bash
+booti ${loadaddr} - ${fdt_addr_r}
 ```
 
-#### 4. How Linux communicates with SCFW
+#### 4. Jumping to the Linux kernel
 
-Unlike many other SoCs, i.MX8QM/QXP delegates several hardware management operations to SCFW.
+U-Boot prepares the CPU, disables the MMU and transfers control to the kernel entry address.
 
-```text
-Linux Kernel Driver
-        |
-    SCU RPC API
-        |
-  Messaging Unit (MU)
-        |
-       SCFW
-        |
-  Hardware Resources
+ARM64 kernel entry is equivalent to:
+
+```c
+kernel_entry(dtb_addr, 0, 0, 0);
 ```
 
-SCFW remains running even after Linux boots and handles clock, power and resource management requests.
-
-#### 5. ARM exception levels
-
-| Software | Exception level |
+| Register | Value |
 |---|---|
-| ARM Trusted Firmware | EL3 |
-| OP-TEE (optional) | Secure EL1 |
-| Hypervisor (if present) | EL2 |
-| U-Boot | Typically EL2 |
-| Linux kernel | EL1, normally |
-| Userspace applications | EL0 |
+| X0 | Physical address of DTB |
+| X1 | 0 |
+| X2 | 0 |
+| X3 | 0 |
 
-#### 6. i.MX8QM/QXP vs i.MX8M
+**Correction:** ARM64 does not use the ARM32 machine ID (`machid`) boot mechanism.
 
-| Feature | i.MX8QM/QXP | i.MX8M |
-|---|---|---|
-| SCFW | Yes | No |
-| SECO | Yes | No |
-| DDR initialization | SCFW DDR routine | SPL |
-| Secure boot | AHAB | HAB |
-| SPL | Configuration dependent | Typically required |
+#### 5. Linux kernel initialization
 
-**Key interview point:** In i.MX8QM/QXP, the SCU Cortex-M4 boots before the Cortex-A application processor. It manages system resources and remains active throughout the system's operation.
+**`head.S`**
+
+Location: `arch/arm64/kernel/head.S`
+
+- Configures CPU execution state.
+- Creates initial page tables.
+- Enables MMU.
+- Sets up the kernel stack and exception vectors.
+- Calls `start_kernel()`.
+
+**`start_kernel()`**
+
+Location: `init/main.c`
+
+| Function | Purpose |
+|---|---|
+| `setup_arch()` | Parses DTB, bootargs and physical memory information. |
+| `mm_init()` | Initializes memory management (name varies by kernel version). |
+| `sched_init()` | Initializes the process scheduler. |
+| `init_IRQ()` | Initializes interrupt handling and interrupt controller (GIC). |
+| `init_timers()` | Initializes kernel timers. |
+| `timekeeping_init()` | Initializes system timekeeping. |
+| `rcu_init()` | Initializes Read-Copy-Update synchronization. |
+| `console_init()` | Initializes kernel console. |
+| `workqueue_init_early()` | Initializes early workqueue infrastructure. |
+| `rest_init()` | Creates essential kernel tasks. |
+
+#### 6. `rest_init()`
+
+Creates two important tasks:
+
+| Task | Purpose |
+|---|---|
+| `kernel_init()` — PID 1 | Completes kernel initialization and launches userspace. |
+| `kthreadd()` — PID 2 | Manages the creation of kernel threads. |
+| Idle task — PID 0 | Executes when no runnable task is available. |
+
+#### 7. `kernel_init()`
+
+| Function | Purpose |
+|---|---|
+| `kernel_init_freeable()` | Completes remaining kernel initialization. |
+| `smp_init()` | Brings additional CPU cores online. |
+| `workqueue_init()` | Completes workqueue initialization. |
+| `do_basic_setup()` | Initializes device infrastructure and runs initcalls. |
+| `do_initcalls()` | Executes built-in driver and subsystem initialization functions. |
+| `prepare_namespace()` | Mounts the root filesystem when no early userspace init is used. |
+| `free_initmem()` | Releases initialization-only memory. |
+| `run_init_process()` | Executes the first userspace program. |
+
+#### 8. Userspace initialization
+
+The kernel executes `/init` or `/sbin/init` (typically systemd on modern Linux distributions).
+
+It performs:
+
+- Mounting `/proc`, `/sys`, `/dev` and additional filesystems as needed.
+- Starting system services and daemons.
+- Configuring networking.
+- Starting login prompts or graphical interfaces.
+
+In Android, `/init` is normally the first userspace program.
+
+#### 9. Complete boot flow for interview
+
+<figure style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 1112" width="100%" role="img" aria-label="Complete i.MX8 Linux boot flow" font-family="system-ui,sans-serif" text-anchor="middle"><rect x="16" y="4" width="448" height="49" rx="7" fill="#3b82f6" fill-opacity=".1" stroke="#3b82f6"/><text x="240" y="34" fill="currentColor" font-size="14" font-weight="600">Power ON / Reset</text><path d="M240 53 v15 m-4 -4 l4 4 l4 -4" stroke="currentColor" fill="none"/><rect x="16" y="73" width="448" height="49" rx="7" fill="#3b82f6" fill-opacity=".1" stroke="#3b82f6"/><text x="240" y="92" fill="currentColor" font-size="14" font-weight="600">Boot ROM</text><text x="240" y="109" fill="currentColor" font-size="11">Boot device selection</text><path d="M240 122 v15 m-4 -4 l4 4 l4 -4" stroke="currentColor" fill="none"/><rect x="16" y="142" width="448" height="49" rx="7" fill="#3b82f6" fill-opacity=".1" stroke="#3b82f6"/><text x="240" y="161" fill="currentColor" font-size="14" font-weight="600">SECO Firmware + SCFW</text><text x="240" y="178" fill="currentColor" font-size="11">Security, power, clocks and DDR</text><path d="M240 191 v15 m-4 -4 l4 4 l4 -4" stroke="currentColor" fill="none"/><rect x="16" y="211" width="448" height="49" rx="7" fill="#3b82f6" fill-opacity=".1" stroke="#3b82f6"/><text x="240" y="230" fill="currentColor" font-size="14" font-weight="600">SPL (Optional)</text><text x="240" y="247" fill="currentColor" font-size="11">Loads subsequent boot images</text><path d="M240 260 v15 m-4 -4 l4 4 l4 -4" stroke="currentColor" fill="none"/><rect x="16" y="280" width="448" height="49" rx="7" fill="#3b82f6" fill-opacity=".1" stroke="#3b82f6"/><text x="240" y="299" fill="currentColor" font-size="14" font-weight="600">ARM Trusted Firmware (BL31)</text><text x="240" y="316" fill="currentColor" font-size="11">EL3 secure monitor</text><path d="M240 329 v15 m-4 -4 l4 4 l4 -4" stroke="currentColor" fill="none"/><rect x="16" y="349" width="448" height="49" rx="7" fill="#3b82f6" fill-opacity=".1" stroke="#3b82f6"/><text x="240" y="368" fill="currentColor" font-size="14" font-weight="600">U-Boot: start.S → _main()</text><text x="240" y="385" fill="currentColor" font-size="11">Early CPU initialization</text><path d="M240 398 v15 m-4 -4 l4 4 l4 -4" stroke="currentColor" fill="none"/><rect x="16" y="418" width="448" height="49" rx="7" fill="#3b82f6" fill-opacity=".1" stroke="#3b82f6"/><text x="240" y="437" fill="currentColor" font-size="14" font-weight="600">board_init_f()</text><text x="240" y="454" fill="currentColor" font-size="11">Early board initialization</text><path d="M240 467 v15 m-4 -4 l4 4 l4 -4" stroke="currentColor" fill="none"/><rect x="16" y="487" width="448" height="49" rx="7" fill="#3b82f6" fill-opacity=".1" stroke="#3b82f6"/><text x="240" y="506" fill="currentColor" font-size="14" font-weight="600">relocate_code()</text><text x="240" y="523" fill="currentColor" font-size="11">Relocate U-Boot in DDR</text><path d="M240 536 v15 m-4 -4 l4 4 l4 -4" stroke="currentColor" fill="none"/><rect x="16" y="556" width="448" height="49" rx="7" fill="#3b82f6" fill-opacity=".1" stroke="#3b82f6"/><text x="240" y="575" fill="currentColor" font-size="14" font-weight="600">board_init_r() → main_loop()</text><text x="240" y="592" fill="currentColor" font-size="11">Hardware initialization and autoboot</text><path d="M240 605 v15 m-4 -4 l4 4 l4 -4" stroke="currentColor" fill="none"/><rect x="16" y="625" width="448" height="49" rx="7" fill="#3b82f6" fill-opacity=".1" stroke="#3b82f6"/><text x="240" y="644" fill="currentColor" font-size="14" font-weight="600">booti → Kernel entry</text><text x="240" y="661" fill="currentColor" font-size="11">Pass DTB and jump to Linux</text><path d="M240 674 v15 m-4 -4 l4 4 l4 -4" stroke="currentColor" fill="none"/><rect x="16" y="694" width="448" height="49" rx="7" fill="#3b82f6" fill-opacity=".1" stroke="#3b82f6"/><text x="240" y="713" fill="currentColor" font-size="14" font-weight="600">head.S</text><text x="240" y="730" fill="currentColor" font-size="11">Page tables and MMU</text><path d="M240 743 v15 m-4 -4 l4 4 l4 -4" stroke="currentColor" fill="none"/><rect x="16" y="763" width="448" height="49" rx="7" fill="#3b82f6" fill-opacity=".1" stroke="#3b82f6"/><text x="240" y="782" fill="currentColor" font-size="14" font-weight="600">start_kernel()</text><text x="240" y="799" fill="currentColor" font-size="11">Core kernel subsystems</text><path d="M240 812 v15 m-4 -4 l4 4 l4 -4" stroke="currentColor" fill="none"/><rect x="16" y="832" width="448" height="49" rx="7" fill="#3b82f6" fill-opacity=".1" stroke="#3b82f6"/><text x="240" y="851" fill="currentColor" font-size="14" font-weight="600">rest_init()</text><text x="240" y="868" fill="currentColor" font-size="11">PID 1 and PID 2 creation</text><path d="M240 881 v15 m-4 -4 l4 4 l4 -4" stroke="currentColor" fill="none"/><rect x="16" y="901" width="448" height="49" rx="7" fill="#3b82f6" fill-opacity=".1" stroke="#3b82f6"/><text x="240" y="920" fill="currentColor" font-size="14" font-weight="600">kernel_init()</text><text x="240" y="937" fill="currentColor" font-size="11">Drivers and root filesystem</text><path d="M240 950 v15 m-4 -4 l4 4 l4 -4" stroke="currentColor" fill="none"/><rect x="16" y="970" width="448" height="49" rx="7" fill="#3b82f6" fill-opacity=".1" stroke="#3b82f6"/><text x="240" y="989" fill="currentColor" font-size="14" font-weight="600">/sbin/init or /init</text><text x="240" y="1006" fill="currentColor" font-size="11">Userspace initialization</text><path d="M240 1019 v15 m-4 -4 l4 4 l4 -4" stroke="currentColor" fill="none"/><rect x="16" y="1039" width="448" height="49" rx="7" fill="#3b82f6" fill-opacity=".1" stroke="#3b82f6"/><text x="240" y="1069" fill="currentColor" font-size="14" font-weight="600">System Ready</text></svg></figure>
+
+**Remember:** Boot ROM → SECO/SCFW → SPL (optional) → ATF → U-Boot → Linux Kernel → Init → Userspace.
+
+The exact internal function sequence may vary slightly depending on the U-Boot version, Linux kernel version and board configuration.
+
 
 ### What is the difference between BIOS and UEFI? {M}
 
