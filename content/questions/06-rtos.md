@@ -561,33 +561,29 @@ If the idle task executes for 30% of an observation interval, non-idle task acti
 **Interview takeaway:** Never block the idle task or place essential deadline-sensitive work solely in an idle hook. It may receive little CPU time under heavy load.
 
 ### How do you choose task priorities? Explain rate-monotonic scheduling. {H}
-**Short answer:** For periodic tasks, **rate-monotonic scheduling (RMS)** assigns higher fixed priorities to tasks with shorter periods (higher rates). For independent periodic tasks with deadlines equal to their periods, RMS is optimal among fixed-priority policies, and a task set is guaranteed schedulable if total utilisation `U = Σ Cᵢ/Tᵢ ≤ n(2^(1/n) − 1)`, which approaches **69.3%** for large n. Above that bound a set may still be schedulable, which you check with exact **response-time analysis**.
+Task priorities should reflect deadlines, execution times, dependencies and blocking, not simply how important a task sounds.
 
-**Liu & Layland bound values**
+#### 1. Rate-monotonic scheduling (RMS)
 
-| n tasks | Bound |
-|---|---|
-| 1 | 100% |
-| 2 | 82.8% |
-| 3 | 78.0% |
-| 4 | 75.7% |
-| ∞ | 69.3% |
+For independent periodic tasks on one CPU, with deadlines equal to periods and fixed-priority preemptive scheduling, RMS gives shorter-period tasks higher priorities.
 
-**Variants**
+| Task | Period | Worst-case execution | RMS priority |
+|---|---:|---:|---|
+| Control | 5 ms | 1 ms | Highest |
+| Sampling | 10 ms | 2 ms | Middle |
+| Logging | 50 ms | 4 ms | Lowest |
 
-- **Deadline-monotonic (DMS):** priority by relative deadline (shorter deadline = higher priority); optimal when deadlines are shorter than periods.
-- **EDF (earliest deadline first):** dynamic priorities; schedules any set with U ≤ 100% (deadline = period) but is harder to implement and behaves badly under overload (many tasks can miss). Linux `SCHED_DEADLINE` uses EDF.
+The control task runs most frequently, so it receives the highest fixed priority under the RMS assumptions.
 
-**Practical priority assignment beyond the theory**
+#### 2. Priority selection in real firmware
 
-1. Interrupt handlers do minimal work and defer to tasks.
-2. Hard-deadline control loops get the highest task priorities, by rate.
-3. Communication handlers (with latency requirements) next.
-4. User interface, logging and housekeeping lowest.
-5. Tasks that only react to events get priorities based on how fast they must react (their deadline).
-6. Avoid many tasks at the same priority unless they are equally important.
+Measure worst-case execution, identify deadlines, account for resource blocking, interrupt overhead and release jitter, then assign priorities and validate response times. Aperiodic and sporadic jobs need additional analysis.
 
-**Validate with measurement:** trace tools (Percepio Tracealyzer, SEGGER SystemView) show response times, CPU load and blocking, which reveals when theory and reality differ (interrupts, blocking on shared resources, cache effects).
+#### 3. Avoid starvation
+
+High-priority tasks should block when idle. An always-ready high-priority polling loop can prevent all lower-priority tasks from running.
+
+**Interview takeaway:** RMS is optimal among fixed-priority assignments under its classical assumptions. It is not a universal priority rule for arbitrary deadlines, dependencies or multicore systems.
 
 ### How do you check whether a task set is schedulable? Give a worked example. {H}
 **Short answer:** First compute utilisation and compare with the RMS bound; if it is above the bound, use **response-time analysis (RTA)**: for each task, iterate `Rᵢ = Cᵢ + Bᵢ + Σⱼ∈hp(i) ⌈Rᵢ / Tⱼ⌉ · Cⱼ` (its own execution, blocking by lower-priority tasks, plus interference from every higher-priority task) until it converges. The set is schedulable if every `Rᵢ ≤ Dᵢ`.
