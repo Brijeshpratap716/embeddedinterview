@@ -1120,6 +1120,31 @@ B.LT signed_lower
 
 **Interview takeaway:** NZCV records arithmetic conditions and supports conditional execution and branching.
 
+#### Signed overflow versus unsigned carry
+
+For a 32-bit ADD instruction that updates flags:
+
+```asm
+// W0 = 0x7FFFFFFF, W1 = 1
+ADDS W2, W0, W1
+// W2 = 0x80000000: N=1, Z=0, C=0, V=1
+```
+
+The signed mathematical result exceeds INT32_MAX, so V is set. There is no unsigned carry out of bit 31.
+
+If W0=0xFFFFFFFF and W1=1, the result is zero with N=0, Z=1, C=1 and V=0. Unsigned addition wraps while signed -1+1 is representable.
+
+| Condition | Flag test | Interpretation after CMP |
+|---|---|---|
+| EQ | Z=1 | Equal |
+| NE | Z=0 | Not equal |
+| LO / CC | C=0 | Unsigned lower |
+| HS / CS | C=1 | Unsigned higher or same |
+| LT | N≠V | Signed less than |
+| GE | N=V | Signed greater or equal |
+
+CMP is an alias of a flag-setting subtraction whose result is discarded. Ordinary ADD does not update NZCV; ADDS does. CSEL can select one of two register values using a condition without an explicit branch. The compiler chooses such instructions when appropriate.
+
 ### What is the ARM64 boot flow? {M}
 **Short answer:** Platform firmware initializes hardware and loads the next stage. A typical Linux flow is Boot ROM, platform firmware/bootloader, kernel entry, MMU setup and userspace init. Exact stages vary by SoC.
 
