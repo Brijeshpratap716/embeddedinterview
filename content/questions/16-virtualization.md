@@ -176,52 +176,38 @@ Board code maps the region at a guest physical address. A guest load/store to th
 **Interview takeaway:** A guest physical address is not a host pointer. Address spaces and translation also matter for DMA and IOMMUs. Respect access width, alignment and side effects.
 
 ### How does QEMU use KVM? Explain the ioctl sequence and the run loop. {H}
-**Short answer:** QEMU opens `/dev/kvm`, creates a VM with `KVM_CREATE_VM` (which returns a VM file descriptor), registers guest RAM with `KVM_SET_USER_MEMORY_REGION`, creates each vCPU with `KVM_CREATE_VCPU`, `mmap`s the vCPU's shared `kvm_run` structure, initialises the vCPU (on ARM with `KVM_ARM_VCPU_INIT`) and sets its registers. Each vCPU thread then loops on `ioctl(vcpu_fd, KVM_RUN)`: the guest runs until something needs QEMU, KVM returns with an exit reason in `kvm_run`, QEMU handles it and calls `KVM_RUN` again.
+KVM exposes virtualization through file descriptors and ioctls. QEMU manages the machine and devices while KVM runs compatible guest CPU code.
+
+#### Representative sequence
+```text
+open("/dev/kvm")
+ -> KVM_GET_API_VERSION / KVM_CHECK_EXTENSION
+ -> KVM_CREATE_VM
+ -> KVM_SET_USER_MEMORY_REGION
+ -> KVM_CREATE_VCPU
+ -> mmap shared struct kvm_run
+ -> architecture-specific CPU initialization
+ -> KVM_RUN loop
+```
+
+On ARM64, initialization uses ARM-specific ioctls and register interfaces, including KVM_ARM_VCPU_INIT and KVM_SET_ONE_REG as applicable. On x86 the setup differs.
 
 ```c
-int kvm  = open("/dev/kvm", O_RDWR);
-int vmfd = ioctl(kvm, KVM_CREATE_VM, 0);               /* on ARM the arg can set the IPA size */
-
-void *ram = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-struct kvm_userspace_memory_region mr = {
-    .slot = 0, .guest_phys_addr = 0x40000000, .memory_size = size,
-    .userspace_addr = (uint64_t)ram,
-};
-ioctl(vmfd, KVM_SET_USER_MEMORY_REGION, &mr);
-
-int vcpu = ioctl(vmfd, KVM_CREATE_VCPU, 0);
-int run_sz = ioctl(kvm, KVM_GET_VCPU_MMAP_SIZE, 0);
-struct kvm_run *run = mmap(NULL, run_sz, PROT_READ | PROT_WRITE, MAP_SHARED, vcpu, 0);
-
-struct kvm_vcpu_init init;
-ioctl(vmfd, KVM_ARM_PREFERRED_TARGET, &init);
-ioctl(vcpu, KVM_ARM_VCPU_INIT, &init);
-/* set PC and x0 with KVM_SET_ONE_REG ... */
-
 for (;;) {
-    ioctl(vcpu, KVM_RUN, 0);
-    switch (run->exit_reason) {
-    case KVM_EXIT_MMIO:          /* run->mmio.phys_addr, .data, .len, .is_write */
-        handle_mmio(run);  break;
-    case KVM_EXIT_SYSTEM_EVENT:  /* PSCI SYSTEM_OFF / RESET */
-        return;
-    case KVM_EXIT_INTR:          /* a signal interrupted KVM_RUN */
+    if (ioctl(vcpu_fd, KVM_RUN, 0) < 0) {
+        if (errno == EINTR) continue;
         break;
-    default:
-        abort();
+    }
+    switch (run->exit_reason) {
+    case KVM_EXIT_MMIO: /* emulate access */ break;
+    case KVM_EXIT_HLT:  /* handle idle */ break;
+    default:           /* handle other exit */ break;
     }
 }
 ```
+Illustrative only: QEMU has more complete event handling and not all hardware exits return to userspace.
 
-**In QEMU:** `kvm_init()` (`accel/kvm/kvm-all.c`) creates the VM; `kvm_init_vcpu()` creates vCPUs; `kvm_vcpu_thread_fn()` calls `kvm_cpu_exec()`, which contains the `KVM_RUN` loop and dispatches exits to `address_space_rw()` for MMIO (or to port I/O on x86).
-
-**Inside the kernel, one `KVM_RUN`:** load the guest's registers and stage-2 page table base, enable traps, `ERET` into the guest at EL1. On a trap, save guest state, restore host state, and either handle it in the kernel and re-enter (most exits) or return to user space.
-
-**Corrections to common notes**
-
-- There are **no** `KVM_DESTROY_VM` or `KVM_DESTROY_VCPU` ioctls. A VM and its vCPUs are destroyed when their file descriptors are closed (when QEMU exits).
-- On **arm64** KVM is built into the kernel image (`CONFIG_KVM`); there is no separate `kvm-arm.ko`. On x86 it is `kvm.ko` plus `kvm-intel.ko` or `kvm-amd.ko`.
-- Guest **system calls do not cause VM exits**: `SVC` goes to the guest kernel at EL1. Exits come from MMIO, trapped instructions and registers, `WFI`, `HVC`/`SMC` (PSCI), and interrupts.
+**Interview takeaway:** KVM_RUN enters guest execution; the kernel handles many traps internally and reports selected exits to the VMM.
 
 ### What causes a VM exit on ARM, and how is an MMIO access handled? {H}
 **Short answer:** A VM exit (a trap to EL2) happens when the guest does something the hypervisor configured to trap: accessing an address with no stage-2 mapping (MMIO to an emulated device), executing `HVC`/`SMC` (e.g. PSCI calls to start or stop CPUs), `WFI`/`WFE` when it has nothing to do, accessing trapped system registers, or when a physical interrupt arrives that the host must handle. KVM handles most of these in the kernel; MMIO to a QEMU device is passed to user space as `KVM_EXIT_MMIO`.
