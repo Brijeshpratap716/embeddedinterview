@@ -9,25 +9,32 @@ desc: Arm architecture (RISC, Cortex-M vs A vs R, Cortex-A53), the Cortex-M core
 Most firmware jobs today mean Arm. These questions test whether you understand the core and the peripherals beyond the vendor HAL, plus the Cortex-A side that matters for Linux and multi-core SoCs (several are based on the topics of Arm's *Operating Systems Foundations* textbook, answered in our own words). Each answer gives the short version first, then the explanation and follow-ups.
 
 ### What is the difference between a microcontroller and a microprocessor? {E}
-**Short answer:** A **microcontroller (MCU)** integrates the CPU, flash, RAM and peripherals (timers, UART, SPI, I2C, ADC, GPIO) on one chip, designed for a dedicated control task with low cost and low power; it usually runs bare metal or an RTOS. A **microprocessor** (or application processor / SoC) is built around a more powerful CPU with an MMU and caches, uses external DRAM and storage, and typically runs a full OS such as Linux or Android.
+A microcontroller (MCU) typically integrates CPU, program memory, RAM and peripherals for dedicated control tasks. A microprocessor (MPU) generally targets more complex computing and often relies on external DRAM and storage. Modern SoCs blur this distinction.
 
-| | Microcontroller | Microprocessor / application SoC |
+#### 1. Typical architecture
+
+```text
+MCU                        MPU-based system
++-------------------+      +----------------------+
+| CPU | Flash | RAM |      | CPU cores | Cache    |
+| Timers | UART/SPI |      | MMU | DDR controller |
+| GPIO | ADC | DMA  |      +----------+-----------+
++-------------------+                 |
+                              External DRAM/storage
+```
+
+#### 2. Comparison
+
+| Feature | MCU | MPU-based system |
 |---|---|---|
-| Example cores | Cortex-M0+/M4/M7/M33, RISC-V RV32 | Cortex-A53/A55/A72, x86 |
-| Memory | on-chip flash (KB–few MB) and SRAM (KB–1 MB) | external DRAM (hundreds of MB–GB), eMMC/UFS |
-| MMU | no (MPU at most) | yes |
-| Typical OS | none, FreeRTOS, Zephyr | Linux, Android, QNX |
-| Clock | tens to hundreds of MHz | 1–3 GHz, multi-core |
-| Power | µA in sleep, mA active | hundreds of mA to watts |
-| Boot time | microseconds to milliseconds | seconds |
-| Real-time behaviour | deterministic | needs special care (PREEMPT_RT) |
-| Cost | cents to a few dollars | several dollars upward, plus DRAM, PMIC |
+| Memory | Usually substantial on-chip memory | Often external DRAM |
+| Software | Bare metal or RTOS common | Linux/Android common |
+| Power | Often low-power control | Often higher-performance computing |
+| Timing | Often designed for predictable control | Depends on caches, OS and platform |
 
-**Examples:** STM32F4 (Cortex-M4 MCU), nRF52840 (Cortex-M4 with Bluetooth), i.MX 8M (Cortex-A53 SoC), Raspberry Pi's BCM2711 (Cortex-A72).
+An STM32 Cortex-M4 can run a motor-control loop directly from flash. An i.MX8 Cortex-A system can run Linux with virtual memory, graphics and multiple processes.
 
-**The line is blurring:** many SoCs combine both, e.g. i.MX 8M Plus or STM32MP1 have Cortex-A cores for Linux plus a Cortex-M core for real-time I/O, and high-end MCUs (Cortex-M7 at 600 MHz–1 GHz, Cortex-M85) approach small application processors.
-
-**How to choose in an interview answer:** an MCU for hard real-time control, battery operation, instant start and low cost; an application processor when you need rich UI, networking stacks, large memory, Linux software and processing power.
+**Interview takeaway:** Choose based on memory, performance, timing, power and software requirements. Integration alone is not a strict distinction: some MPUs contain extensive on-chip peripherals and memory.
 
 ### What is the difference between Harvard and von Neumann architecture? {E}
 **Short answer:** In a **von Neumann** architecture, instructions and data share one memory and one bus, so an instruction fetch and a data access cannot happen at the same time. In a **Harvard** architecture, instructions and data have separate memories and buses, so both can happen in the same cycle. Most modern cores, including Cortex-M3/M4/M7 and Cortex-A, are **modified Harvard**: separate instruction and data buses or caches, but one unified address space.
