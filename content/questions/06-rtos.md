@@ -855,25 +855,28 @@ Lock contention, cache false sharing, affinity restrictions and cross-core commu
 **Interview takeaway:** SMP adds true simultaneous execution. A single-core critical-section design must be revisited; local interrupt masking alone is not multicore synchronization.
 
 ### What are common RTOS design mistakes? {M}
-**Short answer:** The usual mistakes are: too many tasks; busy-waiting instead of blocking; blocking or slow calls in ISRs; wrong interrupt priorities relative to the kernel's syscall priority; holding mutexes during slow I/O or taking them in inconsistent orders; sharing globals without protection; undersized stacks; ignoring API return values and timeouts; and creating/deleting tasks and objects at run time.
+Common RTOS design failures arise from incorrect assumptions about timing, ownership and execution context.
 
-| Mistake | Consequence | Better approach |
-|---|---|---|
-| A task per small job | wasted stacks, more switches and sharing | group related work; use event-driven tasks |
-| Polling loops (`while (!flag);`) | starves lower priorities, burns power | block on notifications/queues |
-| `printf`, `malloc`, blocking APIs in ISRs | crashes, deadlocks, latency | defer to tasks; use `FromISR` APIs |
-| ISR priority above `configMAX_SYSCALL_INTERRUPT_PRIORITY` calling the API | rare random corruption | follow the priority rule; enable `configASSERT` |
-| Holding a mutex during flash writes or network calls | priority inversion, latency for others | copy data, release, then do slow work; single-owner tasks |
-| Inconsistent lock order | deadlock | global lock ordering; message passing |
-| Unprotected shared globals | race conditions | mutex, critical section, or atomics |
-| Stack sizes guessed once | random crashes later | measure high-water marks, overflow checks |
-| `portMAX_DELAY` everywhere | silent hangs | finite timeouts and error handling |
-| Ignoring return values (`xQueueSend` failed) | lost data | check and count failures |
-| Dynamic creation/deletion at run time | fragmentation, leaks | create at init; static allocation |
-| Using `vTaskDelay` for periodic loops | drift | `vTaskDelayUntil` or timer-driven tasks |
-| Not watching CPU load / idle time | unnoticed overload | run-time stats, trace, watchdog supervision |
+| Mistake | Better approach |
+|---|---|
+| Blocking API in ISR | Use documented ISR-safe signaling |
+| Highest-priority task never blocks | Wait for events or periodic releases |
+| Unbounded critical section | Keep protected work short and bounded |
+| Inconsistent lock order | Define and enforce resource order |
+| Undersized stack | Analyze stack usage and measure watermarks |
+| Ignored queue-full result | Specify overflow policy and monitor drops |
+| Volatile used as a lock | Use atomics, locks or safe handoff |
+| Blind watchdog feeding | Verify essential task progress |
 
-**Interview tip:** pick two or three from your own experience and describe how you found them (trace tools, high-water marks, `configASSERT`) — that is more convincing than reciting the list.
+#### 1. Example failure
+
+A high-priority UART task spins waiting for a byte. A lower-priority parser never executes even though there is no data to process. A blocking queue receive or interrupt notification allows the UART task to sleep until work is available.
+
+#### 2. Verification
+
+Stress burst traffic, nested interrupts, timeouts, queue saturation, stack margins and deadline misses. Test error recovery, not just the normal path.
+
+**Interview takeaway:** RTOS correctness requires a resource and timing design. Creating tasks and assigning priorities alone does not make firmware real-time.
 
 ### How does Zephyr differ from FreeRTOS? {M}
 **Short answer:** **FreeRTOS** is a small, portable kernel (scheduler, queues, semaphores, timers, event groups) with optional add-on libraries; drivers usually come from the silicon vendor's SDK, and configuration is a header file. **Zephyr** is a full RTOS platform under the Linux Foundation: it uses **Kconfig** and **devicetree** (like Linux) for configuration, has a unified driver model and many in-tree drivers, networking (IPv4/IPv6, Bluetooth LE, Thread/Matter), file systems, a shell, logging, power management, MCUboot integration and optional user-mode isolation, built with CMake and the `west` tool. Zephyr does more out of the box but is larger and has a steeper learning curve.
