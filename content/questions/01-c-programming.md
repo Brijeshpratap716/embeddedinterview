@@ -1587,29 +1587,65 @@ Use masks and shifts that match the hardware specification. Read-modify-write mu
 **Interview takeaway:** Bit-fields are useful for compact compiler-managed flags, but masks and shifts usually provide more explicit and portable control of hardware register and protocol layouts.
 
 ### What is an enum and how big is it? {E}
-**Short answer:** An `enum` defines a set of named integer constants. In C the constants have type `int`, but the size of the enum **type** is implementation-defined: it must be able to hold all its values, and most compilers use `int` (4 bytes). Options such as `-fshort-enums` (the default in some Arm bare-metal ABIs and toolchains) make it the smallest type that fits, often 1 byte.
+An enumeration (`enum`) defines a set of named integer constants and an enumerated type. It improves readability by replacing numeric values with meaningful names.
+
+#### 1. Default values
 
 ```c
-enum state { IDLE, RUN, ERROR = 10, SHUTDOWN };   /* 0, 1, 10, 11 */
-enum state s = RUN;
+enum State {
+    IDLE,
+    RUNNING,
+    ERROR
+};
+
+enum State state = IDLE;
 ```
 
-**Why use enums instead of `#define`**
+By default IDLE is 0, RUNNING is 1 and ERROR is 2.
 
-- They are typed integer constant expressions (usable as array sizes and `case` labels).
-- Debuggers show names instead of numbers.
-- Compilers warn about unhandled cases in a `switch` without a `default` (`-Wswitch`).
-- Values are assigned automatically and stay consistent when items are added.
+#### 2. Explicit values
 
-**Pitfalls**
+```c
+enum Error {
+    OK = 0,
+    TIMEOUT = 10,
+    BUS_ERROR
+};
+```
 
-- **Size differs between builds:** a struct containing an `enum` can have a different layout if one library was built with `-fshort-enums` and another without; the linker cannot detect this. For structs that cross a module, ABI, file or network boundary, store a fixed-width integer (`uint8_t state;`) and convert.
-- **C does not enforce enum ranges:** `enum state s = 42;` compiles. Validate values that come from outside (a received message).
-- Enum constants are `int`; values larger than `INT_MAX` were not allowed before C23.
+BUS_ERROR automatically becomes 11.
 
-**C23 improvements:** you can fix the underlying type: `enum state : uint8_t { IDLE, RUN };`, which makes the size explicit and portable.
+#### 3. Size of enum
 
-**Useful patterns:** a final `STATE_COUNT` member to size lookup tables (`const char *names[STATE_COUNT]`), and X-macros to generate the enum and its string names from one list.
+```c
+printf("%zu", sizeof(enum State));
+```
+
+The size depends on the implementation, supported values, ABI and compiler options such as GCC's `-fshort-enums`. Four bytes is common, but not guaranteed. C23 also supports enums with explicitly specified underlying types.
+
+#### 4. Use in embedded state machines
+
+```c
+enum State state = IDLE;
+
+switch (state) {
+case IDLE:
+    start_device();
+    state = RUNNING;
+    break;
+case RUNNING:
+    process_data();
+    break;
+case ERROR:
+default:
+    recover_device();
+    break;
+}
+```
+
+Use named states to make control flow easier to understand. C does not automatically guarantee an enum object contains only the listed enumerator values.
+
+**Interview takeaway:** An enum is useful for states, errors and configuration choices. Do not assume its memory size is four bytes or directly serialize its representation into a fixed-width protocol.
 
 ### What is the difference between malloc, calloc, realloc and free? {E}
 **Short answer:** `malloc(n)` allocates `n` bytes with **uninitialised** contents. `calloc(count, size)` allocates `count * size` bytes, **zeroed**, and checks the multiplication for overflow. `realloc(p, n)` resizes a block, possibly moving it to a new address. `free(p)` releases a block; `free(NULL)` does nothing.
