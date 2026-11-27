@@ -209,52 +209,27 @@ Compile-time register masks, lookup tables, configuration validation and fixed-s
 **Interview takeaway:** constexpr permits constant evaluation; consteval requires it for immediate calls. Neither implies that arbitrary runtime operations or MMIO reads can be evaluated at compile time.
 
 ### Why are exceptions and RTTI often disabled in embedded C++? {M}
-**Short answer:** **Exceptions** add unwind tables and support code (often tens of KB of flash), make worst-case timing hard to bound (unwinding cost depends on the call stack), may allocate memory for the exception object, and add hidden control-flow paths that safety standards dislike. **RTTI** (`typeid`, `dynamic_cast`) adds type-information tables for every polymorphic class. Many teams compile with `-fno-exceptions -fno-rtti` and use error codes, `std::optional`, or `std::expected` (C++23, or a small equivalent) instead.
+Exceptions provide stack unwinding and error propagation; RTTI (Run-Time Type Information) supports runtime type queries such as certain dynamic_cast operations and typeid.
 
-**Error handling without exceptions**
+#### 1. Why disable them?
+
+Embedded toolchains may disable exceptions or RTTI to reduce runtime support, binary size, metadata and timing-analysis complexity. The actual costs depend on ABI and toolchain; exceptions can have low overhead on the normal path while throwing/unwinding may be expensive.
+
+#### 2. Alternatives
 
 ```cpp
-#include <cstdio>
-#include <optional>
+enum class Error { ok, timeout, invalid };
 
-enum class Err { Timeout, Nack, Range };
-
-template <typename T>
-struct Result {                       // tiny expected-like type
-    bool ok; T value; Err err;
-    static Result success(T v) { return { true, v, {} }; }
-    static Result failure(Err e) { return { false, T{}, e }; }
-};
-
-Result<int> read_temp(bool sensor_present)
-{
-    if (!sensor_present) return Result<int>::failure(Err::Nack);
-    return Result<int>::success(23);
-}
-
-std::optional<int> parse_digit(char c)
-{
-    if (c < '0' || c > '9') return std::nullopt;
-    return c - '0';
-}
-
-int main()
-{
-    auto r = read_temp(false);
-    if (!r.ok) std::printf("error %d\n", static_cast<int>(r.err));   // error 1
-    std::printf("%d\n", parse_digit('7').value_or(-1));             // 7
-}
+Error read_sensor(int& value);
 ```
 
-Mark result types `[[nodiscard]]` so ignoring an error produces a compiler warning.
+Use explicit status values, expected-like result types, tagged variants or static polymorphism when appropriate. RAII still works without exceptions during normal scope exit.
 
-**Consequences of `-fno-exceptions`**
+#### 3. Build considerations
 
-- `new` that fails must not throw: use `new (std::nothrow)` and check for null, or avoid `new`.
-- Standard library functions that would throw call `std::abort()` (or a terminate handler) instead — e.g. `std::vector::at` out of range; provide your own `abort` handler that logs and resets.
-- Third-party libraries that rely on exceptions cannot be used as is.
+Flags such as -fno-exceptions and -fno-rtti are compiler-specific. Ensure libraries and all translation units follow compatible assumptions; disabling a feature does not automatically make error paths safe.
 
-**When exceptions are acceptable:** larger embedded Linux applications, or MCUs with plenty of flash where the team decides the timing impact is acceptable for rare error paths. Modern compilers have "zero-cost" (table-based) exceptions with no cost on the non-throwing path, but the size and worst-case cost remain.
+**Interview takeaway:** Exceptions and RTTI are optional design choices in many embedded projects. Decide based on measured footprint, supported toolchain and timing/error-handling requirements.
 
 ### What are templates and what is code bloat? {M}
 **Short answer:** Templates let you write type- or value-generic code (functions, classes) that the compiler instantiates for each set of template arguments used, producing code as efficient as hand-written specialised code. **Code bloat** is the downside: every distinct instantiation (e.g. `RingBuffer<uint8_t, 64>`, `RingBuffer<uint8_t, 128>`, `RingBuffer<uint16_t, 64>`) generates a separate copy of the functions, which can grow flash usage significantly.
