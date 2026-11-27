@@ -381,21 +381,29 @@ Weak pull-ups give slow rising edges; overly strong pull-ups can violate low-lev
 **Interview takeaway:** Pull-up sizing is an electrical timing/current trade-off, not a universal 4.7 kΩ rule.
 
 ### What is clock stretching? {M}
-**Short answer:** Clock stretching is when a target device holds SCL low after the controller releases it, to tell the controller to wait until it is ready (for example while it finishes a measurement or prepares data). Because SCL is open-drain, the controller sees that SCL has not gone high and must wait before continuing. Every I2C controller must support it, but some implementations handle it badly.
+Clock stretching allows an I2C target to delay communication by holding SCL low after the controller releases it. The bus cannot rise until all participants release the open-drain line.
 
-**When targets stretch**
+#### 1. Sequence
 
-- After receiving a byte, while processing it (slow MCUs acting as I2C targets).
-- Before sending read data that is not ready yet (some sensors during conversion, e.g. certain humidity sensors in "hold master" mode).
-- On a bit level, for slow devices (rare).
+```text
+Controller drives SCL low
+Controller releases SCL
+Target keeps SCL low while preparing data
+Target releases SCL
+SCL rises; transfer continues
+```
 
-**Problems seen in practice**
+This permits a slower device to request additional processing time.
 
-- Some controllers (notably older Raspberry Pi BCM2835 I2C hardware) do not handle stretching correctly in some phases, which corrupts transfers with stretching devices; workarounds are a software (bit-banged) I2C driver or devices configured not to stretch.
-- A target that stretches forever (crashed firmware) hangs the bus; controllers should have a **timeout** (SMBus defines 25–35 ms) and use bus recovery.
-- When designing an MCU as an I2C target, prefer hardware that stretches automatically while firmware handles each byte, but keep the stretch short.
+#### 2. Practical constraints
 
-**Related:** **clock synchronisation** between multiple controllers uses the same wired-AND property: the SCL low period is determined by the device holding it low the longest.
+The controller must support observing the actual SCL line and waiting for it to become high. Some controllers or modes have limitations. SMBus and device-specific protocols may impose timeout requirements.
+
+#### 3. Debugging
+
+If SCL remains low, determine whether a legitimate stretch, stalled target, controller state or electrical fault is responsible. Use a logic analyzer and a bounded driver timeout; do not assume every low period is ordinary clock stretching.
+
+**Interview takeaway:** Clock stretching extends a clock-low interval, not the configured nominal clock frequency. Both hardware support and timeout handling matter.
 
 ### How does I2C arbitration work with multiple controllers? {H}
 **Short answer:** Every controller monitors SDA while it transmits. Because the bus is wired-AND (any device pulling low wins), a 0 overrides a 1. If a controller sends a 1 (releases SDA) but reads back a 0, another controller is sending a 0; it has **lost arbitration** and must stop transmitting immediately, switching to receive mode if needed. Arbitration continues bit by bit through the address and data, so the winner's message is not corrupted.
