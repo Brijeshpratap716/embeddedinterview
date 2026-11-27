@@ -264,6 +264,10 @@ Mention that the iterative version is preferred on embedded targets because of s
 
 **Follow-ups:** merge k sorted lists (min-heap of the k heads: O(N log k), or pairwise merging), merge sort for linked lists (split with slow/fast, sort halves, merge), and merging two sorted arrays from the back into the larger array (O(1) extra space).
 
+#### Ownership after merging
+
+For A=1→4→7 and B=2→3→8, select nodes in order 1,2,3,4,7, then attach 8. The dummy is a temporary local node; only dummy.next is returned, so no pointer to the dummy survives. Both original lists are consumed by relinking, not copied. They must be disjoint acyclic lists; shared suffixes can cause cycles. If independent input lists must survive, allocate/copy new nodes instead.
+
 ### Remove duplicates from a sorted linked list. {E}
 **Short answer:** In a sorted list, equal values are next to each other. Walk the list and, whenever the next node has the same value as the current one, unlink and free the next node; otherwise move forward. One pass, O(n) time, O(1) space.
 
