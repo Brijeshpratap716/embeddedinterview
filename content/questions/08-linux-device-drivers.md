@@ -1416,19 +1416,26 @@ VFIO requires appropriate isolation groups and configuration; direct MMIO access
 **Interview takeaway:** Userspace drivers depend on safe kernel interfaces. Choose them for suitable devices, not as a shortcut around resource management and DMA isolation.
 
 ### How does the kernel boot on an ARM64 system? {M}
-**Short answer:** The boot ROM loads a first-stage loader (SPL or TF-A BL2) that initialises DRAM; Trusted Firmware-A sets up the secure world and EL3 services (PSCI), then hands over to U-Boot or UEFI at EL2; the bootloader loads the kernel `Image`, the device tree and optionally an initramfs, and jumps to the kernel with the DTB address in `x0`, MMU off, at EL2 or EL1. The kernel sets up page tables and enables the MMU, then `start_kernel()` initialises memory, interrupts, timers and the scheduler, brings up secondary CPUs through PSCI, runs driver initcalls (probing devices from the DT), mounts the root filesystem and executes `/sbin/init` as PID 1.
+ARM64 Linux boot begins after platform firmware or a bootloader has prepared the machine and loaded the kernel image according to the architecture boot protocol.
 
-**Kernel-side steps in more detail**
+#### 1. Typical flow
 
-1. `head.S` (`primary_entry`): checks the boot exception level, sets up identity and kernel page tables, enables the MMU, jumps to the virtual address space.
-2. `start_kernel()`: `setup_arch()` (parse DT memory, reserved regions, early console via `earlycon`), memory allocators (memblock → buddy/slab), `trap_init`, IRQ controller (GIC) init, timers (arch timer), `sched_init`, console, `rest_init()`.
-3. `kernel_init` thread: SMP bring-up (`PSCI CPU_ON`), `do_initcalls()` in levels (core → postcore → arch → subsys → fs → device → late), which registers buses and drivers; devices from the DT are created by `of_platform_populate`.
-4. Unpack initramfs (if any) and run its `/init`, or mount the root device given by `root=` and run `/sbin/init`.
-5. PID 1 (systemd, BusyBox init) starts services and user space.
+<div style="max-width:650px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 305" width="100%" role="img" aria-label="Arm64 boot from firmware and bootloader through kernel entry, memory initialization, drivers and PID 1">
+<rect x="20" y="5" width="300" height="44" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="22" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Firmware / bootloader</text><text x="170" y="37" text-anchor="middle" font-size="10" fill="currentColor">Prepare DRAM, load Image and DTB</text><path d="M170 49 v16 m-4-5 4 5 4-5" stroke="currentColor" fill="none"/><rect x="20" y="65" width="300" height="44" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="82" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Kernel early assembly</text><text x="170" y="97" text-anchor="middle" font-size="10" fill="currentColor">head.S and architecture entry</text><path d="M170 109 v16 m-4-5 4 5 4-5" stroke="currentColor" fill="none"/><rect x="20" y="125" width="300" height="44" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="142" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Kernel initialization</text><text x="170" y="157" text-anchor="middle" font-size="10" fill="currentColor">MMU, memory, scheduler, IRQs</text><path d="M170 169 v16 m-4-5 4 5 4-5" stroke="currentColor" fill="none"/><rect x="20" y="185" width="300" height="44" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="202" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Device and filesystem setup</text><text x="170" y="217" text-anchor="middle" font-size="10" fill="currentColor">Initcalls, rootfs, kernel threads</text><path d="M170 229 v16 m-4-5 4 5 4-5" stroke="currentColor" fill="none"/><rect x="20" y="245" width="300" height="44" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="262" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Userspace PID 1</text><text x="170" y="277" text-anchor="middle" font-size="10" fill="currentColor">init / systemd / Android init</text></svg></div>
 
-**Debugging early boot:** `earlycon` on the kernel command line, `initcall_debug`, `ignore_loglevel`, `keep_bootcon`, JTAG with the kernel stopped at `start_kernel`, and checking that the DTB address and memory node are correct.
+#### 2. Bootloader handoff
 
-See the Embedded Linux topic for bootloader details (SPL, U-Boot internals, FIT images).
+For direct device-tree boot, x0 carries the physical address of the DTB; other specified registers, exception level, MMU/cache state and interrupt masks must follow the Linux arm64 boot requirements. UEFI boot has an additional firmware interface.
+
+#### 3. Kernel internals
+
+Early assembly establishes the required execution environment and translation tables, then reaches start_kernel. Architecture setup, memory initialization, scheduler, interrupts and other core subsystems are initialized. The kernel starts threads including the init path, executes initcalls and eventually runs the first userspace init program.
+
+#### 4. Debugging
+
+Use earlycon and UART boot logs to separate bootloader handoff failures from early kernel, driver probe and root filesystem failures. Exact function names/order can change with kernel version.
+
+**Interview takeaway:** Firmware initializes the platform sufficiently to enter Linux; Linux establishes its own memory-management and runtime environment before launching userspace.
 
 ### How do you debug a kernel oops or panic? {M}
 **Short answer:** Read the oops message: it gives the reason (e.g. "Unable to handle kernel NULL pointer dereference at virtual address 0000000000000010"), the faulting instruction (`pc : my_func+0x48/0x120 [mymod]`), registers and the call trace. Translate the offset to a source line with `scripts/faddr2line` or gdb on a debug build, reproduce with debugging options enabled (KASAN, lockdep, KCSAN, `DEBUG_ATOMIC_SLEEP`), and use tracing (ftrace, dynamic debug) to see what led up to it. For crashes that stop the system, capture logs over serial, with pstore/ramoops, or with kdump.
