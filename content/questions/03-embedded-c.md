@@ -1335,56 +1335,44 @@ A compiler option such as -fPIC alone is not enough to make a bare-metal firmwar
 **Interview takeaway:** PIC avoids certain fixed-address assumptions; relocation repairs address-dependent references. The entire startup and memory layout must support the chosen scheme.
 
 ### How does a bootloader jump to the application on Cortex-M? {H}
-**Short answer:** The bootloader validates the application image (magic number, size, CRC or signature), puts the system back into a reset-like state (de-initialise peripherals and clocks it changed, disable and clear all interrupts, stop SysTick), sets `SCB->VTOR` to the application's vector table, loads the main stack pointer from the first word of that table, and branches to the reset handler whose address is in the second word.
+A Cortex-M bootloader hands control to an application by validating its image and establishing the application's expected reset-entry state. A simple C function call to the application's entry address is generally insufficient.
 
-```c
-#include <stdint.h>
-#include "stm32f4xx.h"              /* or the CMSIS header for your MCU */
+#### 1. Application vector table
 
-#define APP_BASE 0x08008000u
-
-static void jump_to_app(void) __attribute__((noreturn));
-static void jump_to_app(void)
-{
-    const uint32_t *vt = (const uint32_t *)APP_BASE;
-    uint32_t app_sp    = vt[0];
-    uint32_t app_reset = vt[1];
-
-    __disable_irq();
-    SysTick->CTRL = 0;                               /* stop SysTick */
-    for (unsigned i = 0; i < 8; i++) {               /* disable and clear every NVIC interrupt */
-        NVIC->ICER[i] = 0xFFFFFFFFu;
-        NVIC->ICPR[i] = 0xFFFFFFFFu;
-    }
-    /* HAL_RCC_DeInit(); deinit peripherals the bootloader used (UART, USB, DMA) */
-
-    SCB->VTOR = APP_BASE;                            /* application's vector table */
-    __DSB();
-    __ISB();
-
-    __set_MSP(app_sp);                               /* from here on, no stack use in C */
-    __enable_irq();                                  /* the app expects interrupts enabled after reset (PRIMASK = 0) */
-    ((void (*)(void))app_reset)();                   /* bit 0 of the address is already set (Thumb) */
-    for (;;) { }
-}
+```text
+APP_BASE + 0 : Initial MSP value
+APP_BASE + 4 : Reset_Handler address (Thumb bit set)
+APP_BASE + 8 : NMI vector
+...
 ```
 
-**Validation before jumping**
+The bootloader validates the initial stack against allowed RAM ranges and the reset vector against executable application memory. If secure boot is required, authenticate the image before execution.
 
-- Check that `app_sp` points into RAM and `app_reset` points into the application's flash region; an erased flash reads `0xFFFFFFFF`.
-- Verify a CRC or a cryptographic signature over the image (secure boot).
+#### 2. Handoff sequence
 
-**Details that cause real-world bugs**
+1. Stop or quiesce relevant peripherals, timers and DMA.
+2. Disable interrupts and clear pending sources as required.
+3. Configure the application's vector table base where VTOR is supported, and perform required barriers.
+4. Establish the documented privilege, stack and interrupt-mask state.
+5. Load the application's MSP and branch to its reset handler using a safe final assembly handoff.
 
-- **Setting MSP from C:** after `__set_MSP`, any local variable stored on the old stack is invalid. Load the reset address into a register first (as above, it is computed before), or do the last steps in a small assembly function.
-- **Interrupts left enabled or pending** from the bootloader fire in the application before it has set up their handlers.
-- **Peripherals left running** (DMA writing into RAM the application now uses, a USB stack still attached) cause random corruption.
-- **Clock configuration:** the application's `SystemInit` may assume reset clock settings; either restore them or make the application tolerant.
-- **Privilege and stack selection:** if the bootloader used the PSP or unprivileged mode, restore `CONTROL` to 0.
-- **VTOR alignment:** the application's vector table must be aligned as the core requires (e.g. 512 bytes on many parts).
-- **Application linker script** must start at `APP_BASE`, not at the start of flash.
+#### 3. Illustrative final handoff (Thumb assembly)
 
-**A cleaner alternative** used by some bootloaders: write a "boot application" flag to a `.noinit` RAM location or backup register, trigger a system reset (`NVIC_SystemReset()`), and have the bootloader jump immediately at the start of its reset handler before initialising anything. Then the application starts from a true reset state.
+```asm
+// r0 = validated initial MSP; r1 = validated reset vector
+// Preconditions: required privileged Thread-mode state,
+// correct vector base and platform handoff preparation.
+MSR MSP, r0
+BX  r1
+```
+
+This fragment deliberately avoids compiler-generated stack accesses after MSP changes. It is not a complete bootloader implementation. Handle CONTROL, PSP, PRIMASK, BASEPRI, cache and security-state requirements as applicable. An application must know whether it must explicitly enable interrupts after the handoff.
+
+#### 4. Alternative
+
+Some systems request a hardware reset after recording the desired boot slot, allowing normal reset initialization to establish a cleaner environment.
+
+**Interview takeaway:** The final branch is only one step. Correct image validation, vector configuration, interrupt/peripheral cleanup and stack/processor state are essential.
 
 ### What is MISRA C? {E}
 **Short answer:** MISRA C is a set of coding guidelines for writing safe, secure, portable and reliable C in critical systems. It was created for the automotive industry by the Motor Industry Software Reliability Association, and is now used in aerospace, medical, railway and industrial devices. Rules restrict language features that commonly cause undefined behaviour or bugs, such as unchecked dynamic memory, recursion, unrestricted `goto`, implicit conversions between "essential types", and unions used for type punning. Compliance is checked with static analysis tools.
