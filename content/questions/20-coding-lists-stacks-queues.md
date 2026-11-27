@@ -1582,3 +1582,39 @@ Capacity 3, front = most recently used:
 
 Key 2 is evicted, and its lookup-table entry must be cleared before its slot is reused. Updating an existing key does not allocate another slot. A general-purpose implementation combines a hash table and doubly linked list, yielding expected O(1) access; the fixed direct-index example gives bounded O(1) operations for its supported key domain. It is not thread-safe without serialization, because get modifies recency as well as reading the value.
 
+### Implement linked-list insertion and deletion using a double pointer. {M}
+**Short answer:** A pointer to a pointer allows a function to update either the head or an existing node's next field directly. This removes the special case for deleting the first node.
+
+```c
+#include <stdlib.h>
+#include <stdbool.h>
+
+struct Node {
+    int data;
+    struct Node *next;
+};
+
+bool insert_front(struct Node **head, int data)
+{
+    struct Node *n = malloc(sizeof *n);
+    if (!n) return false;
+    n->data = data;
+    n->next = *head;
+    *head = n;
+    return true;
+}
+
+bool delete_value(struct Node **head, int data)
+{
+    while (*head && (*head)->data != data)
+        head = &(*head)->next;
+
+    if (!*head) return false;
+    struct Node *old = *head;
+    *head = old->next;
+    free(old);
+    return true;
+}
+```
+
+Call insert_front(&head, 10) or delete_value(&head, 10), where head is a valid initialized node pointer. For 10→20→30, deleting 20 changes 10's next pointer to 30. The double pointer can refer to the original head variable or any predecessor's next member. Insertion O(1), deletion O(n), extra space O(1). Assume exclusively owned nodes allocated with malloc.
