@@ -268,33 +268,31 @@ Lower numerical priority means higher urgency. Only a target-specific number of 
 **Interview takeaway:** NVIC controls processor interrupt delivery, not peripheral event generation. Configure both the device and interrupt controller correctly.
 
 ### What are tail-chaining and late arrival? {H}
-**Short answer:** Both are hardware optimisations in the Cortex-M exception model. **Tail-chaining:** when an interrupt handler finishes and another interrupt is already pending, the core skips the unstacking and re-stacking and goes straight into the next handler (6 cycles instead of about 24 on Cortex-M3/M4). **Late arrival:** if a higher-priority interrupt arrives while the core is still stacking for a lower-priority one, the core uses the same stack frame and runs the higher-priority handler first.
+Tail-chaining and late arrival are Cortex-M exception mechanisms that reduce interrupt handling overhead.
 
-**Tail-chaining timeline**
+#### 1. Tail-chaining
 
-```
-Without:  [ISR A] unstack (12) → stack (12) [ISR B]
-With:     [ISR A] tail-chain (6) [ISR B]
-```
+Without tail-chaining, finishing one ISR before accepting a pending interrupt could require restoring the original context and immediately stacking it again.
 
-The registers saved for the interrupted thread are still on the stack, and both handlers return to the same place, so popping and re-pushing them would be wasted work.
+```text
+Ordinary transition:
+ISR A -> unstack -> stack -> ISR B
 
-**Late arrival timeline**
-
-```
-t0: low-priority IRQ L arrives → core starts stacking
-t1: high-priority IRQ H arrives during stacking
-t2: stacking completes → core fetches H's vector instead of L's and runs H
-t3: H returns → tail-chains into L
+Tail-chained transition:
+ISR A -> ISR B (reuse existing stacked context)
 ```
 
-The higher-priority interrupt gets almost the minimum latency, and no extra stacking is needed.
+If another eligible exception can be serviced at exception return, hardware can transition directly without unnecessary stack-frame restoration and recreation.
 
-**Related optimisation: pop pre-emption.** If a new interrupt arrives while the core is unstacking after a handler, the unstacking is abandoned and the new handler starts (via tail-chaining).
+#### 2. Late arrival
 
-**Why it matters:** these features make Cortex-M interrupt overhead low and predictable without any software effort, which is one reason ISRs can be plain C functions. They also mean a burst of interrupts is handled efficiently, and they explain why measured "exit + entry" time between two ISRs is shorter than you might calculate.
+If a higher-urgency interrupt arrives while hardware is entering a lower-urgency exception, the processor may service the higher-urgency interrupt first. The lower-priority request remains pending for later service, subject to the architectural rules.
 
-**Lazy FP stacking** works with these: if the handlers do not use the FPU, the FP registers are never actually saved.
+#### 3. Why useful?
+
+Both mechanisms reduce unnecessary entry/exit overhead and improve interrupt responsiveness. Exact cycle counts depend on the core, memory wait states, bus conditions and exception configuration; they are not universal.
+
+**Interview takeaway:** Tail-chaining optimizes ISR-to-ISR transitions. Late arrival allows a higher-priority request to take precedence during exception entry.
 
 ### How do interrupt priorities work on Cortex-M? Lower number means? {M}
 **Short answer:** On Cortex-M a **lower priority number means higher urgency**. Reset (−3), NMI (−2) and HardFault (−1) have fixed negative priorities and are the most urgent; configurable exceptions and interrupts have priorities from 0 (most urgent) upward. A higher-priority (lower-number) interrupt can pre-empt a running lower-priority handler; equal priorities never pre-empt each other.
