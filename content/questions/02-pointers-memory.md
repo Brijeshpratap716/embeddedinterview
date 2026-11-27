@@ -603,78 +603,86 @@ The example is single-threaded. Protect shared pool state with an appropriate lo
 **Interview takeaway:** Pools trade flexibility for predictable resource use. Use typed, aligned slots or a carefully designed raw-storage allocator and validate ownership.
 
 ### How would you implement a simple malloc() and free()? {H}
-**Short answer:** Manage a fixed memory region as a list of blocks, each starting with a small header (size and a free flag, or a link to the next free block). `malloc` searches the free list for a block that is big enough (first fit or best fit), splits off the remainder if it is large, marks the block used and returns the address just after the header. `free` marks the block free and **coalesces** it with adjacent free neighbours to fight fragmentation.
+A simple malloc/free implementation manages a reserved heap region using metadata. Allocation finds a suitable free block, and freeing makes its space reusable.
+
+#### 1. Block layout
+
+Each block typically contains a header with its payload size, allocation status and/or links to other blocks.
+
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 189" width="100%" role="img" aria-label="Allocator splits a free block and later merges physically adjacent free blocks" font-family="system-ui,sans-serif"><text x="8" y="17" font-size="11" font-weight="600" fill="currentColor">Initial free region</text><rect x="8" y="24" width="54" height="30" fill="#94a3b8" fill-opacity=".16" stroke="#94a3b8"/><text x="35" y="43" font-size="10" fill="currentColor" text-anchor="middle">Header</text><rect x="62" y="24" width="270" height="30" fill="#16a34a" fill-opacity=".16" stroke="#16a34a"/><text x="197" y="43" font-size="10" fill="currentColor" text-anchor="middle">Free payload</text><text x="8" y="76" font-size="11" font-weight="600" fill="currentColor">After splitting for an allocation</text><rect x="8" y="83" width="54" height="30" fill="#94a3b8" fill-opacity=".16" stroke="#94a3b8"/><text x="35" y="102" font-size="10" fill="currentColor" text-anchor="middle">Hdr</text><rect x="62" y="83" width="108" height="30" fill="#3b82f6" fill-opacity=".16" stroke="#3b82f6"/><text x="116" y="102" font-size="10" fill="currentColor" text-anchor="middle">Used</text><rect x="170" y="83" width="54" height="30" fill="#94a3b8" fill-opacity=".16" stroke="#94a3b8"/><text x="197" y="102" font-size="10" fill="currentColor" text-anchor="middle">Hdr</text><rect x="224" y="83" width="108" height="30" fill="#16a34a" fill-opacity=".16" stroke="#16a34a"/><text x="278" y="102" font-size="10" fill="currentColor" text-anchor="middle">Free</text><text x="8" y="135" font-size="11" font-weight="600" fill="currentColor">After freeing and coalescing</text><rect x="8" y="142" width="54" height="30" fill="#94a3b8" fill-opacity=".16" stroke="#94a3b8"/><text x="35" y="161" font-size="10" fill="currentColor" text-anchor="middle">Header</text><rect x="62" y="142" width="270" height="30" fill="#16a34a" fill-opacity=".16" stroke="#16a34a"/><text x="197" y="161" font-size="10" fill="currentColor" text-anchor="middle">Free payload</text></svg></div>
+
+#### 2. Allocation algorithm (first fit)
+
+1. Reject invalid sizes and check arithmetic overflow.
+2. Round the requested payload up to the required alignment.
+3. Search the free blocks for the first sufficiently large one.
+4. Split the block only if the remainder can hold a valid aligned header and payload.
+5. Mark the selected block allocated and return its payload address.
+
+#### 3. Free algorithm
+
+1. A null pointer is a no-op.
+2. For a valid allocated pointer, find its associated header.
+3. Mark the block free.
+4. Merge with physically adjacent free neighbors.
+5. Update the free-list or block metadata.
+
+Freeing a foreign pointer, an interior pointer or an already freed allocation is invalid.
+
+#### 4. Small educational allocator in C
+
+The following is a bounded, fixed-block implementation of the allocation/free idea. It allocates one suitably aligned block per request and deliberately avoids splitting. It is useful for explaining allocator mechanics without unsafe header arithmetic.
 
 ```c
 #include <stddef.h>
-#include <stdint.h>
+#include <stdbool.h>
 
-#define HEAP_SIZE 4096u
-#define ALIGN8(x) (((x) + 7u) & ~(size_t)7u)
+#define N 8
 
-typedef struct hdr {
-    size_t size;              /* payload size in bytes */
-    struct hdr *next;         /* next block in address order */
-    int free;
-} hdr_t;
-
-static _Alignas(8) uint8_t heap[HEAP_SIZE];
-static hdr_t *head;
-
-static void heap_init(void)
-{
-    head = (hdr_t *)heap;
-    head->size = HEAP_SIZE - sizeof(hdr_t);
-    head->next = NULL;
-    head->free = 1;
-}
+static max_align_t storage[N];
+static bool busy[N];
 
 void *my_malloc(size_t n)
 {
-    if (head == NULL) heap_init();
-    if (n == 0) return NULL;
-    n = ALIGN8(n);
-    for (hdr_t *b = head; b; b = b->next) {
-        if (b->free && b->size >= n) {
-            if (b->size >= n + sizeof(hdr_t) + 8) {           /* split */
-                hdr_t *rest = (hdr_t *)((uint8_t *)(b + 1) + n);
-                rest->size = b->size - n - sizeof(hdr_t);
-                rest->next = b->next;
-                rest->free = 1;
-                b->size = n;
-                b->next = rest;
-            }
-            b->free = 0;
-            return b + 1;                                      /* memory after the header */
+    if (n == 0 || n > sizeof storage[0])
+        return NULL;
+
+    for (unsigned i = 0; i < N; i++) {
+        if (!busy[i]) {
+            busy[i] = true;
+            return &storage[i];
         }
     }
-    return NULL;                                               /* out of memory */
+    return NULL;
 }
 
-void my_free(void *p)
+bool my_free(void *p)
 {
-    if (p == NULL) return;
-    hdr_t *b = (hdr_t *)p - 1;
-    b->free = 1;
-    for (hdr_t *c = head; c; c = c->next) {                   /* coalesce neighbours */
-        while (c->free && c->next && c->next->free) {
-            c->size += sizeof(hdr_t) + c->next->size;
-            c->next = c->next->next;
+    if (p == NULL)
+        return true;
+
+    for (unsigned i = 0; i < N; i++) {
+        if (p == &storage[i] && busy[i]) {
+            busy[i] = false;
+            return true;
         }
     }
+    return false;
 }
 ```
 
-**Design points to discuss**
+This is a demonstration of block reservation, not a conforming general-purpose malloc: the storage has a declared type, requests cannot span slots, and callers must not treat it as unrestricted malloc-provided storage for arbitrary incompatible object types. A real variable-size heap additionally requires the splitting/coalescing algorithm above, alignment guarantees, metadata bounds and synchronization.
 
-- **Alignment:** every returned pointer must be suitably aligned for any type (8 bytes on Cortex-M with `double`/`uint64_t`; 16 on ARM64/x86-64). The header size must keep payloads aligned (it is 12 bytes on 32-bit here, so add padding or use `_Alignas` on the header in a real allocator).
-- **Placement policy:** first fit (fast, fragments the start of the heap), best fit (less wasted space, slower search), next fit, or segregated free lists by size class (what real allocators do).
-- **Coalescing:** this version scans the whole list; real allocators use **boundary tags** (a footer with the size) or doubly linked lists to merge in O(1).
-- **Thread safety:** a lock around both functions (newlib's `__malloc_lock`, FreeRTOS suspends the scheduler).
-- **Safety checks:** detect double free and invalid pointers, add canaries to catch overruns.
-- **Determinism:** for real-time code, use TLSF or pools instead, because search time here grows with the number of blocks.
+#### 5. Allocation strategies
 
-**Where real implementations come from:** newlib/newlib-nano malloc (dlmalloc-based), FreeRTOS `heap_2/4/5`, Zephyr `sys_heap`, TLSF, and the Linux kernel's buddy allocator plus slab caches.
+| Strategy | Selection rule |
+|---|---|
+| First fit | First sufficiently large free block |
+| Best fit | Smallest suitable free block |
+| Segregated lists | Search a size class |
+| Buddy allocator | Split and merge power-of-two blocks |
+
+**Interview takeaway:** Allocation is not just returning a pointer. Correct metadata, alignment, overflow checks, splitting, coalescing and ownership management are the difficult parts.
 
 ### How do you detect a stack overflow on a microcontroller? {M}
 **Short answer:** Combine several techniques: **stack painting** (fill the stack with a known pattern at boot and check how much was overwritten), a **guard region** below the stack using the MPU, **hardware stack limit registers** on Armv8-M (`MSPLIM`/`PSPLIM`), the **RTOS's overflow checks**, and **static worst-case stack analysis** at build time.
