@@ -412,48 +412,35 @@ Use a writable array such as char s[] = "hello"; the result is "olleh". Modifyin
 **Complexity:** O(n) time, O(1) space. Byte reversal does not preserve UTF-8 characters.
 
 ### How do you reverse the order of words in a string? {M}
-**Short answer:** Reverse the whole string, then reverse each word in place. "hello world" → "dlrow olleh" → "world hello". O(n) time, O(1) extra space.
+For space-separated words, reverse the entire string, then reverse each word individually.
 
+```text
+one two three
+eerht owt eno
+three two one
+```
 ```c
-#include <string.h>
-
-static void reverse_range(char *s, size_t lo, size_t hi)   /* inclusive */
+static void rev(char *s, size_t n)
 {
-    while (lo < hi) {
-        char t = s[lo]; s[lo] = s[hi]; s[hi] = t;
-        lo++; hi--;
+    for (size_t i=0; i<n/2; ++i) {
+        char t=s[i]; s[i]=s[n-1-i]; s[n-1-i]=t;
     }
 }
-
 void reverse_words(char *s)
 {
-    size_t len = strlen(s);
-    if (len == 0) return;
-    reverse_range(s, 0, len - 1);           /* step 1: whole string */
-
-    size_t start = 0;
-    for (size_t i = 0; i <= len; i++) {     /* <= len: also handle the last word */
-        if (s[i] == ' ' || s[i] == '\0') {
-            if (i > start)
-                reverse_range(s, start, i - 1);   /* step 2: each word */
-            start = i + 1;
-        }
+    rev(s, strlen(s));
+    char *p=s;
+    while (*p) {
+        while (*p==' ') ++p;
+        char *start=p;
+        while (*p && *p!=' ') ++p;
+        rev(start,(size_t)(p-start));
     }
 }
-/* "hello world" -> "world hello" */
 ```
+This preserves space runs but reverses their positions; normalize whitespace separately if required.
 
-**Dry run:** `"hello world"` → whole reverse → `"dlrow olleh"` → reverse "dlrow" → "world", reverse "olleh" → "hello" → `"world hello"`.
-
-**Details that catch people out**
-
-- **The last word** is not followed by a space. Looping to `i <= len` and treating `'\0'` as a separator handles it.
-- **Consecutive spaces:** `if (i > start)` skips empty "words", so `"a  b"` does not call reverse with `hi < lo`. With `size_t`, `i - 1` when `i == 0` would wrap to a huge number.
-- **Leading, trailing or multiple spaces** that must be collapsed to one: do an extra compaction pass (two pointers, copy a single space between words).
-
-**Why reverse twice?** Reversing the whole string puts the words in the right order but each word is backwards; the second pass fixes each word. It avoids a second buffer, which matters on a small MCU.
-
-**Alternative with extra memory:** split into words (`strtok` or manual), then print them in reverse. Note that `strtok` modifies the string and is not reentrant (`strtok_r` is).
+**Complexity:** O(n) time, O(1) space.
 
 ### How do you search for a pattern in a string (naive and KMP)? {M}
 **Short answer:** The naive method tries every starting position `i` and compares the pattern character by character: O(n·m) in the worst case. KMP precomputes, for each prefix of the pattern, how far it can fall back after a mismatch, so the text is never rescanned: O(n + m).
