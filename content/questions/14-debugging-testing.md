@@ -47,20 +47,17 @@ Replace the address with the captured PC. Validate stack memory before dereferen
 **Interview takeaway:** A fault during exception stacking may invalidate the saved frame. Capture the evidence and use a controlled recovery policy rather than blindly returning.
 
 ### What is the difference between JTAG and SWD, and what can a debug probe do? {E}
-**Short answer:** **JTAG** (IEEE 1149.1) is a 4/5-wire debug and boundary-scan interface (TCK, TMS, TDI, TDO, optional TRST) that can daisy-chain several devices. **SWD** (Serial Wire Debug) is Arm's 2-wire alternative (SWCLK, SWDIO) that gives the same debug access to Cortex cores with fewer pins; it is the default on Cortex-M. Both connect a debug probe (J-Link, ST-LINK, CMSIS-DAP/DAPLink, Lauterbach) to the chip's debug access port, which lets the host flash memory, halt and step the CPU, read and write memory and registers while running, set hardware breakpoints and watchpoints, and receive trace.
+JTAG and SWD are hardware debug transports. A debug probe bridges the host debugger to the target's debug access infrastructure.
 
-| | JTAG | SWD |
-|---|---|---|
-| Pins | TCK, TMS, TDI, TDO (+ nTRST) | SWCLK, SWDIO (+ optional SWO for trace) |
-| Daisy chain | yes (several chips on one chain) | no (point to point; SWD multi-drop exists in v2) |
-| Boundary scan (testing board connections) | yes | no |
-| Cores | any JTAG-capable chip (Arm, RISC-V, FPGAs, DSPs) | Arm Cortex |
+| JTAG | SWD |
+|---|---|
+| TCK, TMS, TDI, TDO (+ optional reset) | SWCLK and bidirectional SWDIO |
+| Can support multiple TAPs and boundary scan | Compact Arm debug connection |
+| More pins | Fewer pins |
 
-**Debug connector advice:** always route SWD (plus nRESET and the SWO pin) to a standard 10-pin Cortex debug header or Tag-Connect footprint, plus a UART console. Many teams also keep the debug port usable in production for failure analysis, protected with readout protection and authenticated debug.
+Both can support halting, stepping, register/memory access and flash programming when the target and probe support them. SWO is an optional trace output, not required for SWD.
 
-**Common connection problems:** firmware reconfigures the SWD pins as GPIOs or enters a low-power mode that disables the debug clock (connect under reset, enable DBGMCU low-power debug bits during development); readout protection blocks access (a mass erase may be the only way back); wrong target voltage reference on the probe.
-
-**Security:** lock debug access in production (RDP levels on STM32, APPROTECT on nRF, debug authentication on Armv8-M) because an open debug port gives full access to memory and keys.
+**Interview takeaway:** Debug access may be locked by security configuration or power domains. Do not confuse JTAG boundary scan with CPU instruction debugging.
 
 ### What is the difference between a breakpoint and a watchpoint? {E}
 **Short answer:** A **breakpoint** stops execution when the CPU reaches a particular **instruction address**. A **watchpoint** (data breakpoint) stops execution when a particular **data address** is read or written (or both), possibly only when the value matches. Watchpoints are the fastest way to find out who corrupts a variable. In flash-based MCUs, breakpoints use a limited number of **hardware comparators** (Cortex-M3/M4: 6 instruction comparators in the FPB, 4 data watchpoints in the DWT; Cortex-M0: 4 and 2).
