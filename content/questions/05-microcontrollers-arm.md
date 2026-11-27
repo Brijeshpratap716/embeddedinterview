@@ -589,27 +589,37 @@ This can show RAM and reserved/resource ranges, subject to permissions and kerne
 **Interview takeaway:** Physical addresses are not necessarily a contiguous range of installed DRAM. Drivers must use OS-managed resources and DMA mappings instead of inventing addresses.
 
 ### How do Arm systems keep DMA and CPU caches coherent (ACP, I/O coherency)? {H}
-**Short answer:** If a DMA master accesses main memory directly while the CPUs work through write-back caches, the two can see different data. There are two solutions. **Software coherency:** the driver cleans and invalidates cache lines around each transfer (what Cortex-M7 firmware and many Linux drivers do via the DMA API). **Hardware (I/O) coherency:** the DMA master is connected so that its accesses are checked against the CPU caches, either through the **Accelerator Coherency Port (ACP)** on the CPU cluster, or through a coherent interconnect (CCI, CCN, CMN) using the ACE-Lite protocol.
+Arm SoCs can provide hardware I/O coherency so a DMA-capable device participates in the CPU cache-coherency system. Non-coherent devices require software-managed cache synchronization.
 
-**ACP (Accelerator Coherency Port)**
+#### 1. Non-coherent DMA
 
-- An AXI slave port on clusters such as Cortex-A53/A9/A72 that lets an external master (DMA engine, accelerator, FPGA logic) read and write memory **through** the cluster's coherency logic (SCU and L2).
-- A read via ACP returns the latest data even if it is dirty in a CPU's L1; a write via ACP updates or invalidates the cached copies.
-- Accesses may also allocate into the L2, so an accelerator and the CPUs can share data with low latency (useful for small, frequent transfers).
-- Limitations: limited bandwidth (it shares the cluster's ports), only certain access sizes and types, and heavy use pollutes the L2.
+```text
+CPU cache (dirty data)     DMA device
+          |                    |
+          +----- RAM ----------+
+```
 
-**Coherent interconnects:** in larger SoCs, the CCI/CMN snoops the CPU caches for I/O masters that use **ACE-Lite**, so DMA from a network controller or GPU is coherent without software maintenance. Linux learns this from the device tree property `dma-coherent`, and the DMA API then skips cache maintenance.
+The DMA device may read stale memory if the CPU's newer data remains dirty in cache. Conversely, CPU cache lines can become stale after DMA writes.
 
-**Choosing between them**
+#### 2. Coherent DMA
 
-| | Software maintenance | ACP / coherent interconnect |
-|---|---|---|
-| Hardware cost | none | needs the port/interconnect |
-| CPU overhead | clean/invalidate per buffer (expensive for many small buffers) | none |
-| Bugs | easy to forget a maintenance call or misalign a buffer | fewer software bugs |
-| Large streaming transfers | fine | may thrash the L2 |
+A coherent interconnect can issue snoop transactions or otherwise ensure that participating agents observe coherent data. Some SoCs expose coherent ports such as an Accelerator Coherency Port (ACP) or ACE/CHI-based interfaces. Exact behavior depends on the port, attributes and platform configuration.
 
-**Interview follow-up:** "What happens if a buffer is not cache-line aligned in the software approach?" Invalidating the buffer also invalidates neighbouring data in the same line, losing recent CPU writes, which is why DMA buffers must be aligned and padded to whole lines.
+#### 3. Linux driver usage
+
+```c
+dma_addr_t dma;
+void *cpu = dma_alloc_coherent(dev, size, &dma, GFP_KERNEL);
+
+if (!cpu)
+    return -ENOMEM;
+```
+
+The allocation gives a CPU-accessible pointer and a device-visible DMA address. Free it with the matching API when hardware no longer accesses it. Coherent visibility does not eliminate required ordering barriers for descriptors or synchronization of ownership.
+
+For streaming buffers, use dma_map_single and matching sync/unmap operations rather than guessing whether explicit cache maintenance is needed.
+
+**Interview takeaway:** Hardware I/O coherency is a property of the device's path and configuration, not merely the CPU architecture. Use the DMA API even on platforms believed to be coherent.
 
 ### What are memory types and shareability domains in the Arm architecture? {H}
 **Short answer:** Arm classifies memory into **Normal** memory (RAM, ROM: accesses may be cached, merged, reordered and speculated) and **Device** memory (peripherals: accesses must not be speculated or merged and keep order, with sub-types `nGnRnE`, `nGnRE`, `nGRE`, `GRE` describing what is allowed). **Shareability** describes which observers (cores, DMA masters) must see a coherent view of a Normal memory location: **Non-shareable** (one core only), **Inner Shareable** (typically all cores in the cluster/system that run the same OS), and **Outer Shareable** (also other masters such as GPUs or DMA on a coherent interconnect). Barriers and cache maintenance instructions take a shareability domain argument.
