@@ -1197,40 +1197,75 @@ Check pointers before use, respect object lifetimes and use MPU protection where
 **Interview takeaway:** A hardware access succeeding does not make null dereferencing valid C. The compiler can optimize on the assumption that undefined behaviour never occurs, so the emitted instruction itself is not guaranteed.
 
 ### How do you write a function that returns multiple values? {E}
-**Short answer:** C functions return only one value, so either return a **struct** containing all the results, or return a **status code** and write the results through **pointer parameters** (output parameters). Embedded APIs usually use the second form so errors are explicit.
+C functions return one value directly. To return multiple results, use output pointer parameters or return a structure containing the results.
+
+#### 1. Using output pointers
 
 ```c
-#include <stdint.h>
+#include <stdbool.h>
+#include <limits.h>
 
-typedef struct { int16_t x, y, z; } accel_t;
+bool divide(int a, int b, int *q, int *r)
+{
+    if (!q || !r || q == r || b == 0 ||
+        (a == INT_MIN && b == -1))
+        return false;
 
-/* 1. return a small struct by value */
-accel_t accel_read(void);
-
-/* 2. status + output parameters */
-typedef enum { OK = 0, ERR_TIMEOUT, ERR_BUS } status_t;
-status_t accel_read2(int16_t *x, int16_t *y, int16_t *z);
-
-/* 3. status + output struct (common and extensible) */
-status_t accel_read3(accel_t *out);
-
-/* usage */
-accel_t a;
-if (accel_read3(&a) != OK) { /* handle error */ }
+    *q = a / b;
+    *r = a % b;
+    return true;
+}
 ```
 
-**Trade-offs**
+Example call:
 
-| Approach | Pros | Cons |
-|---|---|---|
-| Return a struct | clean, no pointers, no aliasing issues | no separate error channel (unless the struct has a status field); large structs are copied |
-| Output pointers | explicit status, caller owns the memory | callers can pass NULL; function must check |
-| Output struct pointer + status | extensible (add fields without changing the signature) | slightly more code |
-| Global variables | none worth mentioning | not reentrant, hidden coupling |
+```c
+int quotient, remainder;
 
-**Performance:** on Arm (AAPCS), a struct of up to 4 bytes is returned in `r0`; larger structs are returned through a hidden pointer to memory reserved by the caller, so returning a 6-byte `accel_t` is still cheap. On AArch64, structs up to 16 bytes come back in registers.
+if (divide(17, 5, &quotient, &remainder))
+    printf("%d %d", quotient, remainder);
+```
 
-**Good API habits:** document whether outputs are written on failure (usually "not modified" or "undefined"), use `const` for inputs, and mark the function `[[nodiscard]]` (C23) or `__attribute__((warn_unused_result))` so callers cannot ignore the status.
+**Output:** 3 2
+
+The function returns a success indicator and writes both results into caller-provided objects.
+
+#### 2. Returning a structure
+
+```c
+struct Result {
+    int quotient;
+    int remainder;
+};
+
+struct Result divide_valid(int a, int b)
+{
+    return (struct Result){a / b, a % b};
+}
+```
+
+Use this function only with valid division operands (nonzero divisor and representable quotient).
+
+```c
+struct Result result = divide_valid(17, 5);
+```
+
+Both results are returned as a single structure value. A compiler may return small structures in registers depending on the ABI.
+
+#### 3. Embedded driver example
+
+```c
+int sensor_read(int *temperature, int *humidity);
+```
+
+The return value can communicate success or failure, while output parameters carry measured data. This pattern is common in firmware and Linux drivers.
+
+| Method | Common use |
+|---|---|
+| Output pointers | Status plus multiple results, caller-owned storage |
+| Structure return | Grouped related values |
+
+**Interview takeaway:** Prefer clear ownership and error contracts. Do not return a pointer to a local automatic array or structure that ceases to exist on function return.
 
 ### What is a flexible array member? {M}
 **Short answer:** A flexible array member is an array with no size declared as the **last** member of a struct (C99). The struct describes a header followed by a variable amount of data, allocated in one block: `malloc(sizeof(struct packet) + n)`. `sizeof` the struct does not include the array.
