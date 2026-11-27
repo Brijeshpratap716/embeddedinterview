@@ -745,27 +745,35 @@ Raw Linux syscall errors commonly use negative errno values. libc wrappers typic
 **Interview takeaway:** A syscall crosses a privilege boundary through an architecture-defined exception. It is not an ordinary C function call into arbitrary kernel code.
 
 ### What is thrashing? {E}
-**Short answer:** Thrashing is when the combined working sets of the running processes do not fit in physical memory, so the system spends most of its time moving pages between RAM and swap (or re-reading evicted file pages) instead of doing useful work. CPU utilisation drops, disk I/O is saturated, and everything becomes extremely slow.
+Thrashing occurs when a system spends excessive time reclaiming and faulting memory pages instead of doing useful work, often because active working sets exceed available memory.
 
-**The feedback loop that makes it worse:** low CPU utilisation (everyone is waiting for page-ins) can trick a naive OS or administrator into starting more work, which increases memory pressure further.
+#### 1. Example
 
-**Symptoms on Linux**
+Several processes repeatedly access more memory than the system can keep resident. The kernel evicts pages to make space; those pages are needed again shortly, causing additional faults and reclaim or storage I/O.
 
-- `vmstat 1`: high `si`/`so` (swap in/out) and `wa` (I/O wait), low `us`/`sy`.
-- `/proc/pressure/memory` (PSI): high "some" and "full" percentages.
-- Major page faults rising in `sar -B` or `perf stat`.
+```text
+Fault -> reclaim/evict -> load/allocate page -> reuse evicted page
+                    repeated under memory pressure
+```
 
-**Working set:** the set of pages a process has used recently. If the sum of all working sets is larger than RAM, thrashing follows no matter how good the replacement algorithm is.
+#### 2. Symptoms
 
-**Fixes**
+High page-fault/reclaim activity, increased I/O where swap or file-backed pages are involved, memory pressure and poor application response. CPU usage alone may not reveal the cause.
 
-- Add RAM, or reduce memory use (fewer processes, smaller caches, fix leaks).
-- Limit memory per service with **cgroups** (`memory.max`, `memory.high`) so one runaway process cannot drag the system down.
-- Let the **OOM killer** or a user-space early-OOM daemon (`systemd-oomd`, `earlyoom`) kill a process before the system becomes unresponsive.
-- **zram** (compressed swap in RAM) on embedded devices without disk swap, as Android and ChromeOS do.
-- Avoid swap entirely on real-time systems and use `mlockall()` for time-critical processes.
+#### 3. Linux diagnosis
 
-**Embedded note:** most embedded Linux devices have no swap, so instead of thrashing on swap they thrash on **file-backed pages**: code pages of running programs are evicted and re-read from flash over and over, which also wears the flash. Watch memory headroom in testing.
+```sh
+vmstat 1
+cat /proc/pressure/memory
+```
+
+Inspect swap activity, working-set behavior and memory limits where supported.
+
+#### 4. Mitigation
+
+Reduce active working sets or concurrency, fix memory leaks, improve memory locality, adjust appropriate memory limits and provision adequate RAM. Adding swap can help some workloads but does not guarantee good latency.
+
+**Interview takeaway:** Thrashing is a working-set and memory-pressure problem, not just one page fault. Identify repeated reclaim/refault behavior before tuning.
 
 ### Walk through what happens when malloc(4 KB) is called on ARM64 Linux. {M}
 **Short answer:** malloc(4096) is a user-space allocator request. The allocator may reuse existing space, or obtain virtual memory through brk or mmap. Physical pages are often allocated on demand when accessed.
