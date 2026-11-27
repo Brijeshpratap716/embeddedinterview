@@ -113,36 +113,21 @@ Use /proc/PID/status, /proc/PID/maps and appropriate kernel debugging tools to i
 **Interview takeaway:** The PCB is task metadata and saved state, not a copy of all process memory. Linux separates shared resources into referenced objects.
 
 ### What happens during an OS context switch, and why is it expensive? {M}
-**Short answer:** The kernel saves the CPU state of the current task (registers, stack pointer, program counter, FP/SIMD state as needed) into its PCB, chooses the next task, switches the address space if it belongs to a different process (page table base register, ASID), restores the new task's registers, and returns into it. The direct cost is a few microseconds; the indirect cost (cold caches, TLB misses, branch predictors) is often larger.
+A context switch changes which task executes on a CPU while preserving the outgoing task's ability to resume.
 
-**When a context switch happens**
+#### 1. Typical sequence
 
-- **Voluntary:** the task blocks (I/O, sleep, mutex) or yields.
-- **Involuntary (pre-emption):** a timer interrupt ends its time slice, or an interrupt wakes a higher-priority task.
+Save required registers and stack state, update scheduling/accounting data, choose the next runnable task, switch memory context if needed, restore the incoming execution state and resume it.
 
-**Linux path (simplified)**
+#### 2. Why expensive?
 
-```
-interrupt or syscall return → need_resched set → schedule()
-   pick_next_task()                     scheduler class chooses the next task
-   context_switch(rq, prev, next)
-      switch_mm()                       new page tables (TTBR0_EL1 + ASID on ARM64; CR3 + PCID on x86)
-      switch_to(prev, next)             cpu_switch_to: save callee-saved regs, SP; load next's
-   ... next task continues from where it called schedule() last time
-```
+The direct cost includes scheduler and register-switch operations. Indirect cost can include lost cache locality, TLB misses and migration-related coherency traffic. ASIDs/PCIDs can avoid a full translation-cache flush when supported and managed correctly.
 
-Registers that the C calling convention says the caller saves are already on the stack, so `switch_to` only saves the callee-saved registers and the stack pointer. FP/SIMD registers are saved lazily on some architectures (only when the next task uses them).
+#### 3. Process versus thread switch
 
-**Thread vs process switch:** switching between two threads of the same process skips `switch_mm`, so there is no address-space change and TLB entries remain valid.
+A switch between threads sharing the same address space may avoid changing the memory context, but still requires task-state and register handling. A context switch does not copy all pages or flush every cache automatically.
 
-**Why it is expensive**
-
-- **Direct:** entering the kernel, the scheduler's work, saving and restoring registers (ARM64 has 31 general registers plus 32 128-bit SIMD registers).
-- **Indirect:** the new task's data is not in the L1/L2 caches; TLB entries may not match (ASIDs/PCIDs avoid full flushes); branch predictors are trained for the previous task. Security mitigations (Spectre/Meltdown) added extra flushes on some CPUs.
-
-**Measuring:** `perf stat -e context-switches,cpu-migrations`, `vmstat 1` (`cs` column), `/proc/<pid>/status` (`voluntary_ctxt_switches`).
-
-**Reducing switches:** fewer threads than cores for CPU-bound work, batching, avoiding lock contention, CPU affinity, and event-driven I/O (one thread handling many sockets with `epoll`).
+**Interview takeaway:** Context-switch cost depends on architecture, working set, CPU migration and memory context. Measure it under representative load rather than assuming one fixed cost.
 
 ### What happens during fork() and exec()? {M}
 **Short answer:** `fork()` creates a new child process that is a copy of the parent. It returns **twice**: the child's PID in the parent and **0** in the child (or -1 on error). Linux makes this cheap with **copy-on-write**: parent and child share the same physical pages, marked read-only, and a page is copied only when one of them writes to it. `exec()` (`execve()`) replaces the current program with a new one in the same process: new code, data, heap and stack, same PID. A shell runs a command with `fork()` + `exec()` + `wait()`.
