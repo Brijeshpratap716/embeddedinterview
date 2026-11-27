@@ -63,22 +63,35 @@ A Cortex-M implementation may use separate instruction and data bus interfaces w
 **Interview takeaway:** Distinguish physical bus/cache organization from the programmer-visible memory model. Modern architectures often combine features of both models.
 
 ### What is RISC, how does it differ from CISC, and why did Arm succeed? {E}
-**Short answer:** **RISC** (Reduced Instruction Set Computer) uses a small set of simple, fixed-length instructions, each doing one thing, with memory accessed only by explicit load and store instructions and many general-purpose registers. **CISC** (Complex Instruction Set Computer, e.g. x86) has many variable-length instructions, some doing a lot of work and operating directly on memory. RISC makes the hardware simpler, easier to pipeline and more power-efficient, which is why Arm became dominant in phones and embedded systems.
+RISC (Reduced Instruction Set Computer) emphasizes regular instruction encodings and efficient register-based operations. CISC (Complex Instruction Set Computer) supports richer instruction forms, often including operations directly on memory.
 
-| | RISC (Arm, RISC-V) | CISC (x86) |
+#### 1. Example
+
+A64 typically loads operands before arithmetic:
+
+```asm
+LDR W0, [X1]
+ADD W0, W0, #1
+STR W0, [X1]
+```
+
+An x86 instruction can express an increment of a memory operand, though the underlying processor may decode it into multiple internal operations.
+
+#### 2. Comparison
+
+| Feature | Typical A64 RISC | Typical x86 CISC |
 |---|---|---|
-| Instruction length | fixed (32-bit A64; 16/32-bit Thumb-2) | variable (1–15 bytes on x86) |
-| Memory access | only load/store instructions | most instructions can use memory operands |
-| Registers | many (16 in AArch32, 31 in AArch64) | fewer architectural registers historically |
-| Decode | simple, cheap | complex; modern x86 decodes into internal RISC-like micro-ops |
-| Code density | lower (helped by Thumb, compressed RISC-V) | higher |
-| Power/area | lower | higher |
+| Encoding | Fixed 32-bit instructions | Variable instruction length |
+| Arithmetic | Usually register operands | Register or memory operands |
+| Implementation | May be simple or superscalar | Often decoded into internal operations |
 
-**Why it mattered for Arm:** Arm's original 1985 design (from Acorn, for the BBC Micro's successor) aimed to bring workstation-class performance to low-cost machines, often summarised as "MIPS for the masses" (MIPS here meaning millions of instructions per second). The simple RISC design needed few transistors, which turned out to make it very power efficient, almost as a side effect. When mobile and battery-powered devices took off, low power per instruction became the most valuable property, and Arm's licensing model (selling designs, not chips) let many companies build Arm SoCs.
+Instruction-set design does not by itself determine speed, power or complexity. Modern high-performance processors use sophisticated pipelines regardless of ISA.
 
-**Modern reality:** the distinction has blurred: x86 cores internally execute RISC-like micro-operations, and Arm added complex instructions (SIMD, crypto, atomics). Energy efficiency now depends more on microarchitecture than on the instruction set label, but the clean load/store design still makes Arm cores smaller and simpler, which matters most at the low end (Cortex-M).
+#### 3. Why Arm gained adoption
 
-**Follow-up:** "What is Thumb?" A compressed instruction set with 16-bit encodings (Thumb-2 mixes 16- and 32-bit) for better code density; Cortex-M executes only Thumb.
+Arm's licensing model, broad silicon partner ecosystem, energy-efficient implementations and scalable profiles helped it become widely used in mobile, embedded and increasingly server systems. The ecosystem and implementation choices matter as much as RISC principles.
+
+**Interview takeaway:** RISC and CISC describe ISA design tendencies, not a universal performance ranking. A64, Thumb and x86 have different encoding and execution characteristics.
 
 ### What are the Cortex-M profiles and how do they differ? {E}
 **Short answer:** Arm's microcontroller cores range from the tiny, low-power Cortex-M0/M0+ (Armv6-M) through the mainstream Cortex-M3/M4 (Armv7-M, M4 adding DSP and an FPU) and the high-performance Cortex-M7 (caches, TCM, superscalar), to the Armv8-M cores Cortex-M23/M33 (TrustZone security) and Cortex-M55/M85 (Helium vector extension for DSP and machine learning).
