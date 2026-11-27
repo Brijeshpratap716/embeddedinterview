@@ -382,47 +382,40 @@ Store timers by expiry time or jobs by priority. Use fixed-capacity storage wher
 **Interview takeaway:** A heap is not a fully sorted array. It maintains the root extreme efficiently and offers bounded logarithmic insertion/removal.
 
 ### How does binary search work and what is the common bug? {E}
-**Short answer:** On a sorted array, compare the target with the middle element and discard the half that cannot contain it, repeating until found or the range is empty: O(log n). The classic bug is computing the middle as `(low + high) / 2`, which can overflow when indices are large; use `low + (high − low) / 2`. The other common bugs are mixing inclusive and exclusive bounds, which causes infinite loops or missed elements, and unsigned underflow with `high = mid − 1` when `mid` is 0.
+Binary search finds a value in a sorted array by repeatedly discarding half of the remaining search range.
+
+#### 1. C implementation
 
 ```c
-#include <stdio.h>
-#include <stddef.h>
-
-/* returns index of key, or -1; half-open range [lo, hi) avoids the unsigned underflow */
-long bsearch_int(const int *a, size_t n, int key)
+bool binary_search(const int *a, size_t n, int key,
+                   size_t *index)
 {
     size_t lo = 0, hi = n;
+
     while (lo < hi) {
         size_t mid = lo + (hi - lo) / 2;
-        if (a[mid] < key)      lo = mid + 1;
-        else if (a[mid] > key) hi = mid;
-        else                   return (long)mid;
+        if (a[mid] == key) {
+            if (index) *index = mid;
+            return true;
+        }
+        if (a[mid] < key)
+            lo = mid + 1;
+        else
+            hi = mid;
     }
-    return -1;
-}
-
-/* lower bound: first index with a[i] >= key (useful for insertion points and lookup tables) */
-size_t lower_bound(const int *a, size_t n, int key)
-{
-    size_t lo = 0, hi = n;
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-        if (a[mid] < key) lo = mid + 1; else hi = mid;
-    }
-    return lo;
-}
-
-int main(void)
-{
-    int a[] = { 2, 5, 8, 12, 16, 23, 38 };
-    printf("%ld %ld %zu\n", bsearch_int(a, 7, 23), bsearch_int(a, 7, 7), lower_bound(a, 7, 13));   /* 5 -1 4 */
-    return 0;
+    return false;
 }
 ```
 
-**Embedded uses:** lookup tables (e.g. a thermistor resistance-to-temperature table, then linear interpolation between the two neighbours), finding a record in a sorted flash log, and bisection when tuning a parameter.
+This uses a half-open interval [lo, hi), avoiding unsigned underflow at mid=0. For [2,4,6,8,10] and key 8, first examine 6, then 10, then 8.
 
-**Variants:** first/last occurrence, search in a rotated sorted array, and searching on the answer (e.g. the smallest buffer size that satisfies a condition).
+#### 2. Common mistakes
+
+Using mid=(lo+hi)/2 can overflow for large indices. Incorrect endpoint updates can leave the search interval unchanged and cause an infinite loop. The array must be sorted according to the comparison used.
+
+Time O(log n), extra space O(1). For duplicates this returns any matching index; lower-bound search is needed for the first occurrence.
+
+**Interview takeaway:** Use overflow-safe midpoint calculation and maintain a clear interval invariant.
 
 ### What is a hash table and how do you handle collisions? {M}
 **Short answer:** A hash table maps keys to array buckets with a hash function, giving O(1) average lookup, insertion and deletion. When two keys map to the same bucket (a collision), it is handled by **chaining** (each bucket holds a linked list of entries) or **open addressing** (probe for another slot: linear, quadratic or double hashing). For embedded use, a fixed-size open-addressing table with linear probing is common: no allocation, cache friendly, and predictable memory; keep the load factor below about 70% so probe sequences stay short.
