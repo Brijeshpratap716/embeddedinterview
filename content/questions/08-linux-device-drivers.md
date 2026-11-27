@@ -811,21 +811,34 @@ Use a threaded IRQ for interrupt-driven work closely tied to a device. Use a wor
 **Interview takeaway:** Choose by execution context, latency and teardown requirements, not merely because one mechanism is called a bottom half.
 
 ### What is atomic context and what can't you do in it? {M}
-**Short answer:** Code is in atomic context when it must not sleep or be scheduled out: hard IRQ handlers, softirqs and tasklets, sections holding a spinlock, and sections with pre-emption or interrupts disabled (also `rcu_read_lock()` sections on non-RT kernels). In atomic context you must not call anything that may sleep: `mutex_lock`, `msleep`, `kmalloc(GFP_KERNEL)`, `copy_to_user`/`copy_from_user`, I2C/SPI transfers, `wait_event`, `vmalloc`, `request_firmware`, and most `regulator`/`clk_prepare` calls.
+Atomic context is a kernel execution context in which sleeping is not allowed. Examples include hard IRQ handlers, many softirq contexts, and code holding a raw spinlock or otherwise disabling preemption/interrupts in a way that prevents scheduling.
 
-**What to use instead**
+#### 1. Forbidden operations
 
-| Instead of | Use in atomic context |
-|---|---|
-| `kmalloc(GFP_KERNEL)` | `kmalloc(GFP_ATOMIC)` (may fail; preallocate where possible) |
-| `msleep`, `usleep_range` | `udelay`/`ndelay` for a few microseconds, or defer |
-| `mutex_lock` | spinlock |
-| I2C/SPI transfer | defer to a threaded IRQ or workqueue |
-| `copy_to_user` | copy to a kernel buffer, then copy out later in process context |
+Do not call APIs that can block, such as ordinary mutex_lock, msleep, GFP_KERNEL allocations or ordinary user-copy operations, unless the documented context explicitly permits them.
 
-**Why sleeping is forbidden:** with a spinlock held or pre-emption disabled, sleeping would let another task run on this CPU that might spin on the same lock forever (deadlock); in interrupt context there is no task to put to sleep at all.
+#### 2. Example
 
-**Detecting bugs:** `CONFIG_DEBUG_ATOMIC_SLEEP` makes `might_sleep()` calls (present in all sleeping functions) print "BUG: sleeping function called from invalid context" with a backtrace. Lockdep also reports locking problems. Check with `in_atomic()`, `in_interrupt()`, `in_task()` only for debugging, not to change behaviour.
+```c
+static irqreturn_t irq_handler(int irq, void *data)
+{
+    // Acknowledge source, capture small state.
+    schedule_work(&device_work);
+    return IRQ_HANDLED;
+}
+```
+
+Perform sleeping operations in the worker instead of the hard IRQ.
+
+#### 3. Allocation
+
+GFP_ATOMIC can be used for supported non-sleeping allocation contexts, but allocations can still fail. Preallocate buffers in probe or task context when predictable resources are required.
+
+#### 4. PREEMPT_RT caveat
+
+PREEMPT_RT changes the implementation of many locks and threads many interrupts. Do not infer sleepability from a lock name alone; follow the actual API and execution-context rules. Hard IRQ and raw-spinlocked regions remain non-sleeping contexts.
+
+**Interview takeaway:** Atomic context is about whether scheduling/sleeping is allowed, not whether every operation is a single atomic CPU instruction.
 
 ### What is the difference between a spinlock and a mutex in the kernel? {M}
 **Short answer:** A **spinlock** busy-waits until the lock is free and disables pre-emption while held, so it can be used in atomic and interrupt context but must only protect very short critical sections that never sleep. A **mutex** puts the waiting task to sleep, so it can only be used in process context, but the holder may sleep (e.g. do I2C transfers) and hold it longer; it also enforces ownership.
