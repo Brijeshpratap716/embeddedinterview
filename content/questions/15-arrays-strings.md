@@ -246,43 +246,26 @@ void frequencies(const int a[], size_t n)
 **Complexity:** O(n) time, O(1) auxiliary space. For unsorted input use sorting or a hash table.
 
 ### How do you calculate the maximum profit from buying and selling a stock? {M}
-**Short answer:** If you may make as many buy-sell trades as you like (holding at most one share at a time), add up every positive day-to-day increase: `profit += max(0, price[i] - price[i-1])`. If only one trade is allowed, track the minimum price so far and the best `price - min` (the maximum-difference problem).
+For at most one buy and one later sell, track the lowest price seen and the best nonnegative profit.
 
 ```c
-#include <stddef.h>
-
-/* unlimited transactions */
-int max_profit_many(const int *price, size_t n)
+int64_t max_profit(const int32_t p[], size_t n)
 {
-    int profit = 0;
-    for (size_t i = 1; i < n; i++)
-        if (price[i] > price[i - 1])
-            profit += price[i] - price[i - 1];
-    return profit;
-}
-/* {1, 5, 3, 1, 2, 8} -> (5-1) + (2-1) + (8-2) = 4 + 1 + 6 = 11 */
-
-/* one transaction (0 if prices only fall) */
-int max_profit_one(const int *price, size_t n)
-{
-    if (n == 0) return 0;
-    int min_price = price[0], best = 0;
-    for (size_t i = 1; i < n; i++) {
-        if (price[i] - min_price > best) best = price[i] - min_price;
-        if (price[i] < min_price) min_price = price[i];
+    if (!n) return 0;
+    int32_t min = p[0];
+    int64_t best = 0;
+    for (size_t i = 1; i < n; ++i) {
+        int64_t profit = (int64_t)p[i] - min;
+        if (profit > best) best = profit;
+        if (p[i] < min) min = p[i];
     }
     return best;
 }
-/* {1, 5, 3, 1, 2, 8} -> 7 (buy at 1, sell at 8) */
 ```
 
-**Why summing the rises is optimal:** any profitable trade from day `a` to day `b` equals the sum of the daily changes between them. Taking only the positive changes is at least as good as any combination of trades, and it can be achieved by buying before each rise and selling after it.
+[7, 1, 5, 3, 6, 4] → 5. A declining market returns 0 (no trade). This is different from allowing multiple transactions.
 
-**Use the length you are given.** A version that declares `n = 5` but loops to a hard-coded 6 works by accident; pass `n` and loop `i < n`.
-
-**Dry run, unlimited:** 1→5 (+4), 5→3 (skip), 3→1 (skip), 1→2 (+1), 2→8 (+6). Total 11.
-
-**Follow-ups:** at most two transactions (track four states: first buy, first sell, second buy, second sell), a transaction fee (subtract the fee on each sell), or a cooldown day. These become small dynamic-programming state machines.
+**Complexity:** O(n) time, O(1) space.
 
 ### How do you solve the trapping rain water problem? {H}
 **Short answer:** Water above bar `i` is `min(max height to the left, max height to the right) - height[i]`, if positive. Precompute left-max and right-max arrays (O(n) time, O(n) space), or use two pointers to do it in O(1) space.
