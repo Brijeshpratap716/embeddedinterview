@@ -552,65 +552,39 @@ For larger inputs with strict bounds, consider an iterative heapsort or another 
 **Interview takeaway:** There is no universal best sort. A small fixed array often benefits from insertion sort; large or deadline-sensitive input requires explicit worst-case analysis.
 
 ### How do you compute a CRC and why is it used? {M}
-**Short answer:** A Cyclic Redundancy Check treats the data as a polynomial over GF(2), divides it by a fixed generator polynomial, and uses the remainder as the check value. It is very good at detecting accidental errors, including all single-bit errors, all bursts shorter than the CRC width, and most other patterns, so it is used in Ethernet, CAN, USB, storage, flash images and serial protocols. Bitwise implementations are tiny; table-driven implementations process a byte per lookup; many MCUs have a hardware CRC unit.
+A CRC (Cyclic Redundancy Check) detects accidental data corruption by computing a polynomial remainder over the message bits.
+
+#### 1. CRC-16/Modbus example
 
 ```c
-#include <stdint.h>
-#include <stdio.h>
-#include <stddef.h>
-
-uint8_t crc8(const uint8_t *d, size_t n)              /* CRC-8, poly 0x07, init 0 (SMBus PEC) */
-{
-    uint8_t crc = 0;
-    while (n--) {
-        crc ^= *d++;
-        for (int i = 0; i < 8; i++)
-            crc = (crc & 0x80) ? (uint8_t)((crc << 1) ^ 0x07) : (uint8_t)(crc << 1);
-    }
-    return crc;
-}
-
-uint16_t crc16_modbus(const uint8_t *d, size_t n)     /* reflected poly 0xA001, init 0xFFFF */
+uint16_t crc16_modbus(const uint8_t *data, size_t n)
 {
     uint16_t crc = 0xFFFF;
-    while (n--) {
-        crc ^= *d++;
-        for (int i = 0; i < 8; i++)
-            crc = (crc & 1) ? (uint16_t)((crc >> 1) ^ 0xA001) : (uint16_t)(crc >> 1);
+
+    for (size_t i = 0; i < n; i++) {
+        crc ^= data[i];
+        for (unsigned b = 0; b < 8; b++) {
+            if (crc & 1U)
+                crc = (crc >> 1) ^ 0xA001U;
+            else
+                crc >>= 1;
+        }
     }
     return crc;
-}
-
-uint32_t crc32(const uint8_t *d, size_t n)            /* IEEE 802.3 (zlib), reflected 0xEDB88320 */
-{
-    uint32_t crc = 0xFFFFFFFFu;
-    while (n--) {
-        crc ^= *d++;
-        for (int i = 0; i < 8; i++) crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
-    }
-    return ~crc;
-}
-
-int main(void)
-{
-    const uint8_t s[] = "123456789";                  /* standard check string */
-    printf("%02X %04X %08X\n", crc8(s, 9), crc16_modbus(s, 9), crc32(s, 9));   /* F4 4B37 CBF43926 */
-    return 0;
 }
 ```
 
-**Parameters that define a CRC:** width, polynomial, initial value, input/output reflection and final XOR. Two "CRC-16" implementations with different parameters give different results, so always check against the standard check value for "123456789".
+For ASCII "123456789", the expected check value is 0x4B37. The wire protocol determines how the CRC bytes are serialized.
 
-**CRC vs checksum vs hash vs MAC**
+#### 2. Parameters matter
 
-| | Detects | Protects against tampering |
-|---|---|---|
-| Sum / XOR checksum | some errors, weak | no |
-| CRC | accidental errors, strong for bursts | no (easy to forge) |
-| Cryptographic hash (SHA-256) | any change | only if the hash itself is protected |
-| MAC / signature (HMAC, ECDSA) | any change | yes |
+CRC width, polynomial, initial value, reflection and final XOR determine the algorithm. A hardware CRC peripheral must be configured to match the exact protocol.
 
-**Embedded uses:** image integrity in bootloaders (CRC32 for corruption, a signature for authenticity), configuration blocks in flash, and frame checks in UART protocols.
+#### 3. Why CRC?
+
+CRC detects many burst and random errors efficiently. It does not authenticate the sender and is not a cryptographic integrity mechanism against intentional modification.
+
+**Interview takeaway:** Match all CRC parameters and verify a known test vector. Hardware, table-driven and bitwise implementations must produce the same protocol-defined result.
 
 ### How do you implement a moving average filter efficiently? {M}
 **Short answer:** Keep a ring buffer of the last N samples and a running sum. For each new sample, subtract the oldest sample, add the newest, and store it in the buffer: O(1) per sample regardless of N. Use a power-of-two N so the division is a shift. When RAM is tight, an **exponential moving average** (`y += (x − y) >> k`) needs no buffer at all.
