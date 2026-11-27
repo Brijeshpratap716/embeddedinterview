@@ -196,6 +196,12 @@ Uncontended lock/unlock never enter the kernel, which is why pthread mutexes are
 
 **Hybrid:** adaptive mutexes spin briefly (the owner is running on another core and will release soon) before sleeping.
 
+#### A CAS lock is not yet a blocking mutex
+
+The example uses sched_yield() to reduce active spinning, but yielding does not guarantee that another thread runs, and it does not park the waiter. A production blocking mutex needs a scheduler-aware wait and wake protocol, for example a Linux futex state machine or an RTOS mutex. A common design has a fast uncontended CAS path and a slow contended path that marks waiters before sleeping; unlock publishes state and wakes a waiter as needed. Prevent lost wakeups by making the sleep conditional on the observed state.
+
+Use acquire on successful lock, release on unlock; a failed CAS updates expected and may use relaxed ordering. Enforce owner-only unlock by contract or implementation. The example does not provide fairness, priority inheritance or recursive locking.
+
 ### Implement a counting semaphore using a mutex and a condition variable. {M}
 **Short answer:** Keep an integer count protected by a mutex. `wait` (P/take) locks the mutex, waits on the condition variable in a `while (count == 0)` loop, then decrements the count and unlocks. `post` (V/give) locks the mutex, increments the count, signals the condition variable and unlocks. The count represents available resources or pending events.
 
