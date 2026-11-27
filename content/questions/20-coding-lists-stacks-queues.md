@@ -870,6 +870,10 @@ bool lq_pop(lqueue_t *q, int *v)
 
 **Deque:** allow insert/remove at both ends with the same circular array (decrement `head` with wrap for push-front).
 
+#### Queue wraparound example
+
+With capacity 4, enqueue A,B,C,D; head=0,count=4. Pop A,B; head=2,count=2. Enqueue E,F; they occupy slots 0,1. Logical order is C,D,E,F although physical slots are E,F,C,D. With explicit count, all slots are usable. The linked version must clear tail when removing the last node. Both examples assume one execution context; shared count needs synchronization.
+
 ### Implement two stacks in one array. {E}
 **Short answer:** Grow the first stack from the left end (index 0 upwards) and the second from the right end (index n − 1 downwards). The array is full only when the two tops meet, so neither stack overflows while there is free space anywhere in the array. Push and pop are O(1).
 
