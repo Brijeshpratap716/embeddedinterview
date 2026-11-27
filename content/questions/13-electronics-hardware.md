@@ -39,22 +39,20 @@ A weaker pull saves current but increases the RC rise time and susceptibility to
 **Interview takeaway:** A floating input is not reliably zero or one. I²C specifically needs pull-ups because devices drive the bus low and release it for high.
 
 ### What are the GPIO output modes (push-pull vs open-drain) and input options? {E}
-**Short answer:** A **push-pull** output actively drives both high (to VDD) and low (to ground), giving fast, strong edges for normal signals. An **open-drain** output can only pull low or release the line (high impedance); a pull-up resistor makes the high level. Open-drain allows several devices to share one line (wired-AND, as in I2C and shared interrupt lines), lets a device "drive" a line to a different voltage than its own supply (within the pin's tolerance), and prevents shorts when two outputs disagree. Inputs can be floating, pulled up or down, with optional Schmitt trigger and analog mode.
+GPIO configuration controls the pad's electrical behavior as well as its logical function.
 
-| Mode | Drives high | Drives low | Use |
-|---|---|---|---|
-| Push-pull output | yes | yes | LEDs, chip selects, SPI, UART TX, enables |
-| Open-drain output | no (pull-up) | yes | I2C, shared IRQ lines, level translation to a lower/equal voltage |
-| Input, floating | – | – | driven by an external push-pull source |
-| Input with pull-up/down | – | – | buttons, open-drain sources |
-| Analog | – | – | ADC/DAC/comparator pins (digital input buffer disabled: lowest leakage) |
-| Alternate function | peripheral controls the pin | | UART, SPI, timers, etc. |
+| Mode | Behavior | Typical use |
+|---|---|---|
+| Push-pull | Actively drives high and low | LED, SPI clock |
+| Open-drain | Drives low or releases line | I²C, shared interrupt |
+| Input | High impedance, optionally with pull | Button, sensor IRQ |
+| Alternate function | Peripheral controls pad | UART, SPI |
+| Analog | Digital input path disabled where supported | ADC, low leakage |
 
-**Other GPIO settings worth knowing:** output speed/slew rate (slower edges = less EMI and ringing), drive strength, and whether a pin is **5 V tolerant** (FT pins on STM32 can accept 5 V inputs when configured as digital, not analog).
+#### Example
+Two open-drain devices can share a line with a pull-up: either can pull it low without opposing a high-side output driver. Connecting opposing push-pull outputs can cause damaging contention.
 
-**Why unused pins should be configured:** floating inputs can toggle and draw current; set unused pins to analog mode (lowest power) or output low.
-
-**Atomic GPIO writes:** use the set/reset register (e.g. STM32 `BSRR`) to change individual pins without a read-modify-write that could race with an interrupt changing other pins on the same port.
+**Interview takeaway:** Check pin multiplexing, voltage tolerance, drive strength, slew rate and external pulls. A correct GPIO register value alone does not guarantee a valid signal.
 
 ### How do you calculate the current-limiting resistor for an LED? {E}
 **Short answer:** **R = (V_supply − V_f) / I_f**, where V_f is the LED's forward voltage and I_f the desired current. For a red LED (V_f ≈ 2.0 V) from 3.3 V at 5 mA: R = (3.3 − 2.0) / 0.005 = **260 Ω** → use 270 Ω. Then check the GPIO's maximum output current and the total current for the port and package.
