@@ -104,32 +104,51 @@ On a single-core Cortex-M, save the interrupt mask, disable relevant interrupts,
 **Interview takeaway:** Use volatile for hardware access; use atomics, locks or interrupt-safe critical sections for shared-state synchronization.
 
 ### Can a pointer be volatile? Explain the declarations. {M}
-**Short answer:** Yes; the position of `volatile` relative to `*` decides what is volatile, exactly like `const`. `volatile int *p` is a pointer to volatile data (the normal case for registers). `int *volatile p` is a volatile pointer to normal data (the pointer variable itself may be changed by an ISR). `volatile int *volatile p` makes both volatile.
+Yes. Volatile can qualify the pointed-to object, the pointer variable itself, or both. Read the declaration around the asterisk.
 
-| Declaration | What is volatile | Typical use |
-|---|---|---|
-| `volatile uint32_t *p` | the data `*p` | pointer to a hardware register or a DMA buffer |
-| `uint32_t *volatile p` | the pointer `p` | a buffer pointer that an ISR swaps (double buffering) |
-| `volatile uint32_t *volatile p` | both | an ISR-swapped pointer to a buffer that DMA writes |
-| `volatile uint32_t *const p` | the data; the pointer is constant | fixed register address |
-| `const volatile uint32_t *p` | data is volatile and read-only through `p` | read-only status register |
+#### 1. Pointer to volatile data
 
 ```c
-/* fixed register: the address never changes, the contents do */
-volatile uint32_t *const UART_DR = (volatile uint32_t *)0x40004404u;
-
-/* double buffering: the ISR flips which buffer the main loop processes */
-static uint8_t buf_a[64], buf_b[64];
-static uint8_t *volatile ready_buf;       /* pointer written by the ISR */
-
-void DMA_IRQHandler(void) { ready_buf = (ready_buf == buf_a) ? buf_b : buf_a; }
+volatile uint32_t *p = (volatile uint32_t *)0x40000000U;
+uint32_t status = *p;
 ```
 
-**Reading tip:** read right to left from the name. `int *volatile p`: "p is a volatile pointer to int". `volatile int *p`: "p is a pointer to an int that is volatile".
+The register access is volatile. The pointer itself may be reassigned.
 
-**Pointers to volatile structs:** declaring the struct members `volatile` (as CMSIS does: `__IO uint32_t CR;`) or the pointer target `volatile GPIO_TypeDef *` both make every member access volatile.
+#### 2. Volatile pointer to ordinary data
 
-**Casting away volatile** (`(uint32_t *)p` from `volatile uint32_t *`) and then accessing the object is undefined behaviour if the object was defined volatile, and in practice lets the compiler optimise away accesses you need.
+```c
+int a = 10;
+int *volatile p = &a;
+```
+
+Accesses to the pointer variable p are volatile; accesses to the int through p are not automatically volatile.
+
+#### 3. Both pointer and data volatile
+
+```c
+volatile int *volatile p;
+```
+
+Both loading the pointer value and accessing its pointed-to int involve volatile-qualified lvalues.
+
+| Declaration | Pointer volatile? | Pointee volatile? |
+|---|---|---|
+| int *p | No | No |
+| volatile int *p | No | Yes |
+| int *volatile p | Yes | No |
+| volatile int *volatile p | Yes | Yes |
+
+#### 4. Fixed read-only status register
+
+```c
+const volatile uint32_t *const status =
+    (const volatile uint32_t *)0x40000010U;
+```
+
+The address cannot be reassigned, writes through status are forbidden, and reads observe hardware according to the target's MMIO rules.
+
+**Interview takeaway:** Qualifiers before the asterisk apply to the pointed-to type; qualifiers after it apply to that pointer. Neither form provides automatic thread safety.
 
 ### What is an ISR and what are the rules for writing one? {E}
 **Short answer:** An Interrupt Service Routine (ISR, interrupt handler) is the function the CPU runs when a hardware interrupt or exception occurs. The rules: keep it short and fast, never block, clear the interrupt source, share data safely with the rest of the program, and do heavy processing elsewhere (main loop, RTOS task, bottom half).
