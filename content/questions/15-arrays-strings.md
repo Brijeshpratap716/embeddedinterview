@@ -372,38 +372,26 @@ bool subsequence(const char *small, const char *large)
 **Complexity:** O(n) time for source length n, O(1) space.
 
 ### How do you check if two strings are anagrams? {E}
-**Short answer:** Two strings are anagrams if they contain the same characters with the same counts. Count each character of the first string up and each character of the second down in a 256-entry table; they are anagrams if every count ends at zero. O(n) time, O(1) space (fixed table).
+Anagrams have equal multiplicities of each character. For an 8-bit-byte system, count each possible byte.
 
 ```c
-#include <stdbool.h>
-#include <string.h>
-
-bool is_anagram(const char *s1, const char *s2)
+bool anagram(const char *a, const char *b)
 {
-    if (strlen(s1) != strlen(s2)) return false;   /* quick reject */
-    int freq[256] = {0};
-    for (const char *p = s1; *p; p++) freq[(unsigned char)*p]++;
-    for (const char *p = s2; *p; p++) freq[(unsigned char)*p]--;
-    for (int i = 0; i < 256; i++)
-        if (freq[i] != 0) return false;
+    size_t count[256] = {0};
+    while (*a) ++count[(unsigned char)*a++];
+    while (*b) {
+        unsigned char c = (unsigned char)*b++;
+        if (!count[c]) return false;
+        --count[c];
+    }
+    for (size_t i = 0; i < 256; ++i)
+        if (count[i]) return false;
     return true;
 }
-/* "listen", "silent" -> true */
 ```
+"listen" and "silent" are anagrams. This is bytewise and case-sensitive; Unicode needs different handling. Cast char to unsigned char before indexing.
 
-**The `(unsigned char)` cast is important.** On most Arm Linux compilers `char` is unsigned, but on x86 and many others it is signed. A byte such as `0xE9` ('é' in Latin-1) is then `-23`, and `freq[s1[i]]` writes to `freq[-23]`, outside the array. Casting to `unsigned char` keeps the index in 0..255.
-
-**Why check lengths first:** it rejects most non-anagrams immediately. It is not required for correctness, because the counts would not all be zero anyway.
-
-**Alternatives**
-
-| Method | Time | Space |
-|---|---|---|
-| Sort both, compare | O(n log n) | O(1)–O(n) |
-| Count table | O(n) | O(256) |
-| Product of primes | O(n) | O(1), but overflows quickly |
-
-**Variants:** ignore case and spaces (`tolower`, skip `' '`), or only lowercase letters (`int freq[26]`, index `c - 'a'`). "Group words that are anagrams of each other" uses the sorted word or the count signature as a hash key.
+**Complexity:** O(n+m) time and O(256) fixed storage.
 
 ### How do you reverse a string in place? {E}
 **Short answer:** Find the length, then swap characters from both ends moving inward, stopping when the indices meet. Do not swap the `'\0'` terminator. O(n) time, O(1) space.
