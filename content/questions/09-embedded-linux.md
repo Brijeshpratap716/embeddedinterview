@@ -29,30 +29,37 @@ The kernel executes the first userspace init program. It starts necessary servic
 **Interview takeaway:** Boot is a dependency chain. Identify the last successful stage before debugging; do not assume every SoC uses SPL or the same trusted-firmware order.
 
 ### What happens inside U-Boot from reset until it boots the kernel? {M}
-**Short answer:** U-Boot starts in architecture assembly (`start.S`), sets up the CPU and a temporary stack, runs `board_init_f()` (the pre-relocation init list: clocks, serial, DRAM), relocates itself to the top of DRAM, then runs `board_init_r()` (post-relocation init: MMC, flash, environment, network, console) and finally `main_loop()`, which either waits for commands or runs `bootcmd` after the `bootdelay` countdown.
+U-Boot initializes the hardware necessary to load and start an operating system. Its startup sequence depends on architecture, build configuration and whether SPL or earlier firmware already initialized the platform.
 
-**In more detail**
+#### 1. Typical full U-Boot flow
 
-1. **`start.S` / `_start`** (e.g. `arch/arm/cpu/armv8/start.S`): exception vectors, disable interrupts, set the CPU mode/exception level, invalidate caches and TLBs, call low-level `lowlevel_init`, set up a stack in SRAM or cache.
-2. **`board_init_f()`** in `common/board_f.c`: runs the `init_sequence_f[]` list: timer, serial (so you see output early), console, CPU and board info, **DRAM init** (`dram_init()`), and calculates where to relocate. The global data structure `gd` lives in a reserved area because there is no `.data`/`.bss` yet.
-3. **Relocation** (`relocate_code`): U-Boot copies itself to the top of DRAM, fixes up addresses, clears BSS, and continues there. Now the full RAM is available.
-4. **`board_init_r()`** in `common/board_r.c`: runs `init_sequence_r[]`: malloc area, driver model (`initr_dm`), MMC/NAND/SPI flash, **environment** (`env_relocate` loads `bootcmd`, `bootargs` etc. from storage), stdio and console, network, interrupts, and finally calls `run_main_loop()`.
-5. **`main_loop()`** in `common/main.c`: prints the "Hit any key to stop autoboot" countdown. If interrupted, it gives the command prompt (`=>`); otherwise it runs `bootcmd`.
-
-**A common mix-up:** `board_init_f()` runs **before** `board_init_r()`. The `_f` part runs from flash/SRAM with very little memory (originally "flash"), and the `_r` part runs after **relocation** to RAM.
-
-**What `bootcmd` typically does**
-
-```
-load mmc 0:1 ${kernel_addr_r} Image
-load mmc 0:1 ${fdt_addr_r} board.dtb
-setenv bootargs console=ttyS0,115200 root=/dev/mmcblk0p2 rootwait
-booti ${kernel_addr_r} - ${fdt_addr_r}
+```text
+Architecture entry (start.S / CRT code)
+    -> establish early stack and required CPU state
+    -> board_init_f(): early initialization, relocation planning
+    -> relocate code/data when required
+    -> board_init_r(): full initialization
+    -> main_loop(): autoboot or interactive shell
+    -> boot command: load and start OS
 ```
 
-Modern U-Boot often uses **distro boot / bootstd** instead: it scans boot devices for an `extlinux.conf` or `boot.scr` and follows it.
+#### 2. What each stage does
 
-**SPL** is a cut-down build of U-Boot (same source, `CONFIG_SPL`) that fits in SRAM; it runs `board_init_f()` style init, brings up DRAM, and loads U-Boot proper (or the kernel directly in **Falcon mode**).
+Early code sets up a valid execution environment. board_init_f commonly initializes early devices and calculates relocation addresses; DRAM may already be ready from SPL/firmware or be initialized in the configured early path. Relocation moves U-Boot to its runtime memory area when required.
+
+board_init_r completes driver model, environment, storage, networking and other configured subsystems. The autoboot flow selects a boot configuration and executes the relevant boot command.
+
+#### 3. Typical U-Boot shell
+
+```sh
+printenv bootcmd
+printenv bootargs
+mmc list
+```
+
+Inspect actual board configuration and environment; do not assume universal load addresses or command availability.
+
+**Interview takeaway:** U-Boot is already executing on a CPU before board_init_f. Early CPU initialization refines the processor state for the next stage; it does not make a previously inactive CPU start running.
 
 ### How does U-Boot pass control to the Linux kernel, and what state must the CPU be in? {H}
 **Short answer:** The `bootm`/`bootz`/`booti` command loads and checks the images, fixes up the device tree (memory size, `bootargs` into `/chosen`, initrd location), shuts down U-Boot's drivers, disables caches and the MMU, and jumps to the kernel entry point. On ARM64 it passes the DTB physical address in `x0` (with `x1`–`x3` zero); on 32-bit ARM it passes `r0 = 0`, `r1 = machine type`, `r2 = DTB (or ATAGS) address`.
