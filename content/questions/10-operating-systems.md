@@ -467,49 +467,34 @@ Ordinary non-RT Linux spinlocks protect short non-sleeping sections. Interrupt-s
 **Interview takeaway:** Spin only when the owner can make progress quickly. Do not use a naive spinlock as a general-purpose mutex or block inside a non-sleeping critical section.
 
 ### What is a semaphore, and how does it differ from a mutex in POSIX? How are semaphores used for mutual exclusion and for synchronisation? {M}
-**Short answer:** A semaphore is an integer counter with two atomic operations: **wait** (`P`, `sem_wait`: decrement, block if it would go below zero) and **post** (`V`, `sem_post`: increment, wake a waiter). A mutex is a lock with an **owner**: only the thread that locked it may unlock it, and it can support priority inheritance and error checking. Use a mutex for mutual exclusion; use a semaphore for signalling between tasks or counting resources.
+A POSIX semaphore stores a nonnegative token count. sem_wait consumes a token or waits; sem_post adds a token and can wake a waiter. A pthread mutex provides ownership-based mutual exclusion.
 
-**Pattern 1: mutual exclusion** (semaphore initialised to **1**)
-
-```c
-sem_t s;
-sem_init(&s, 0, 1);       /* 1 = one task may enter */
-
-/* in each task */
-sem_wait(&s);
-/* critical section */
-sem_post(&s);
-```
-
-**Pattern 2: synchronisation / signalling** (initialised to **0**): task B must not continue until task A has finished step 1.
+#### 1. Mutual exclusion with a semaphore
 
 ```c
-sem_t done;
-sem_init(&done, 0, 0);    /* 0 = event has not happened yet */
+sem_t sem;
+sem_init(&sem, 0, 1);
 
-/* task A */                    /* task B */
-do_step1();                     sem_wait(&done);   /* blocks until A posts */
-sem_post(&done);                do_step2();
+// In each cooperating thread:
+if (sem_wait(&sem) == 0) {
+    update_shared_state();
+    sem_post(&sem);
+}
 ```
 
-Whatever order the scheduler runs them in (even on one CPU, even if B starts first), `do_step2()` always runs after `do_step1()`.
+Production code must handle EINTR and other errors, and destroy the semaphore after all users finish. A count of one can serialize access, but a mutex is generally clearer for ownership.
 
-**Pattern 3: counting resources** (initialised to N): a pool of N buffers or connections; `sem_wait` takes one, `sem_post` returns one.
+#### 2. Event synchronization
 
-**Mutex vs semaphore**
+Initialize the semaphore to zero. A producer posts after producing an event; a consumer waits before processing it. The signaling thread need not be the thread that waited.
 
-| | Mutex | Semaphore |
-|---|---|---|
-| Value | locked / unlocked | 0..N |
-| Ownership | yes, only the owner unlocks | no, any task may post |
-| Priority inheritance | yes (`PTHREAD_PRIO_INHERIT`) | no |
-| Recursive locking | optional (`PTHREAD_MUTEX_RECURSIVE`) | no |
-| Can post from a signal handler/ISR | no | `sem_post` is async-signal-safe |
-| Typical use | protect shared data | signal events, count resources |
+| Mutex | Semaphore |
+|---|---|
+| Lock owner releases it | No equivalent ownership requirement |
+| Protect shared state | Count resources or events |
+| May support priority protocols | Token-count semantics |
 
-**Why not use a binary semaphore as a mutex?** No owner means no priority inheritance (priority inversion risk) and no protection against another task releasing a lock it does not hold.
-
-**POSIX details:** unnamed semaphores (`sem_init`, can be shared between processes if placed in shared memory with `pshared = 1`) and named ones (`sem_open("/name")`). The Linux implementation is built on **futexes**, so an uncontended wait/post never enters the kernel.
+**Interview takeaway:** Use mutexes for ownership-based exclusion and semaphores for signaling/counting. Protect associated shared data and check API errors.
 
 ### What is a condition variable, and how do you build a thread-safe queue with one? {M}
 **Short answer:** A condition variable lets a thread sleep until some condition on shared data becomes true, without busy-waiting. It is always used together with a mutex that protects the data, and the wait is always inside a `while` loop that re-checks the condition, because wake-ups can be spurious and another thread may get there first.
