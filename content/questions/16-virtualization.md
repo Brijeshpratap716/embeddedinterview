@@ -276,22 +276,19 @@ Virtio can reduce costly traps, register emulation and copies through batching a
 **Interview takeaway:** Virtio improves efficiency through a virtualization-aware interface, but does not guarantee zero-copy or zero exits. Correct memory barriers, buffer ownership and DMA mapping remain necessary.
 
 ### How does hardware virtualization on x86 compare with ARM? {H}
-**Short answer:** Both run the guest kernel natively and trap sensitive operations, but they are structured differently. x86 (Intel VT-x, AMD-V) adds a separate "root" mode with a hardware-managed control structure (VMCS/VMCB) and special `VMLAUNCH`/`VMRESUME`/`VMEXIT` transitions that save and load most state automatically. ARM adds a privilege level (EL2) with its own registers; the hypervisor saves and restores guest state itself, which is more work per switch but gives finer control and is simpler hardware.
+Both x86 and ARM implement hardware-assisted guest execution, address-translation isolation and trap mechanisms, but use different architectural interfaces.
 
-| | Intel VT-x / AMD-V | ARMv8 virtualization |
-|---|---|---|
-| Hypervisor mode | VMX root mode (all rings exist in both root and non-root) | separate exception level EL2 |
-| Guest state | in the VMCS (Intel) / VMCB (AMD), loaded by hardware on VM entry | saved/restored by software in EL2 |
-| Enter guest | `VMLAUNCH`/`VMRESUME` (`VMRUN` on AMD) | `ERET` from EL2 |
-| Exit info | exit reason field in VMCS | `ESR_EL2`, `FAR_EL2`, `HPFAR_EL2` |
-| Second-stage paging | EPT (Intel), NPT (AMD) | stage-2 translation, `VTTBR_EL2` |
-| Interrupts | APICv / AVIC, posted interrupts | GIC virtual CPU interface, List Registers, GICv4 direct injection |
-| Host kernel in hypervisor mode | host runs in root mode ring 0 | VHE (ARMv8.1) lets the host kernel run at EL2 |
-| I/O MMU | VT-d / AMD-Vi | SMMU (stage 2) |
+| x86 | ARMv8-A |
+|---|---|
+| Intel VMX / AMD SVM | EL2 virtualization |
+| VMCS / VMCB control state | EL2 control registers |
+| EPT / NPT second-level translation | Stage-2 translation |
+| APIC virtualization | vGIC |
+| VM entry / VM exit | Guest entry via exception return and traps to EL2 |
 
-**x86 boot in QEMU, briefly:** the `pc` machine loads SeaBIOS or OVMF (UEFI) at the top of the 4 GB space; the vCPU starts in 16-bit real mode at `0xFFFFFFF0`; firmware initialises devices, then loads a bootloader from disk, which loads the kernel. ARM `virt` can boot the kernel directly or via UEFI.
+A guest OS can run its own kernel privilege level without gaining host control. On both architectures, many normal instructions execute natively and selected sensitive operations trap.
 
-**Why it matters:** if you know one architecture, interviewers often check whether you can map the concepts to the other. The common ideas are the same: trap-and-emulate for privileged operations, a second level of address translation, virtual interrupts, and paravirtual I/O.
+**Interview takeaway:** The concepts map across architectures, not the register names or exception model. KVM provides a common VM API with architecture-specific initialization.
 
 ### What is device passthrough (VFIO) and when would you use it? {H}
 **Short answer:** Passthrough gives a VM direct, exclusive access to a real hardware device (a PCIe NIC, GPU or an SoC peripheral). The host's **VFIO** framework hands the device's registers and interrupts to user space (QEMU), which maps them into the guest, and the **IOMMU/SMMU** restricts the device's DMA to that guest's memory. The guest's normal driver then talks to the hardware at near-native speed.
