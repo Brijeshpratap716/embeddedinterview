@@ -1390,31 +1390,30 @@ Use tools such as cyclictest for scheduling-latency measurements and ftrace or h
 **Interview takeaway:** PREEMPT_RT improves predictability, not automatic hard-real-time guarantees. Drivers must still obey context rules and bound their worst-case blocking and execution times.
 
 ### How do you write a user-space driver, and when is it a good idea (UIO, VFIO, spidev, libgpiod)? {M}
-**Short answer:** Some devices can be driven from user space using generic kernel interfaces: **UIO** maps device registers into a process and delivers interrupts via `read()` on `/dev/uioN`; **VFIO** does the same with IOMMU protection and full DMA support (used by DPDK, SPDK and QEMU device pass-through); **spidev**, **i2c-dev** and **libgpiod** (`/dev/gpiochipN` character device) expose buses and GPIOs. User-space drivers are easier to develop and debug and avoid GPL constraints, but they have higher latency for interrupts, cannot integrate with kernel subsystems (network stack, filesystems, input), and need care with security.
+Userspace drivers perform permitted device operations through kernel-provided interfaces. They are useful when hardware can be safely exposed without implementing a complete kernel functional driver.
 
-| Interface | Gives | Typical use |
-|---|---|---|
-| UIO (`uio_pdrv_genirq`) | mmap of registers, interrupt count via `read`, re-enable via `write` | FPGA IP cores, simple custom peripherals |
-| VFIO (`vfio-pci`, `vfio-platform`) | registers, interrupts via eventfd, IOMMU-protected DMA | DPDK/SPDK high-performance NIC/NVMe drivers, VM pass-through |
-| spidev / i2c-dev | raw SPI/I2C transfers | prototyping, simple sensors |
-| GPIO character device (libgpiod) | line requests, events with timestamps | buttons, enables, bit-banging (the old sysfs GPIO interface is deprecated) |
+| Interface | Typical purpose |
+|---|---|
+| UIO | Map selected device memory and receive interrupt notifications |
+| VFIO | Controlled userspace device access with IOMMU/isolation support where available |
+| spidev | Userspace SPI transfers for appropriately bound devices |
+| libgpiod | GPIO character-device interface |
 
-**UIO interrupt loop**
+#### 1. Example: userspace SPI
 
-```c
-int fd = open("/dev/uio0", O_RDWR);
-volatile uint32_t *regs = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-uint32_t enable = 1, count;
-for (;;) {
-    write(fd, &enable, sizeof enable);         /* (re)enable the interrupt */
-    read(fd, &count, sizeof count);            /* blocks until the next interrupt */
-    handle(regs);
-}
-```
+Open the appropriate /dev/spidevB.C node, configure mode/speed through SPI ioctls, and submit transfers using the documented SPI_IOC_MESSAGE interface. Handle partial/error returns and device-specific chip-select requirements.
 
-**When kernel drivers are the right choice:** the device must integrate with a subsystem (Ethernet, storage, display, input, audio), needs low interrupt latency, must be shared safely among processes, must work at boot before user space, or must protect the system from misbehaving software (DMA without an IOMMU).
+#### 2. When userspace works well
 
-**When user space is fine:** prototypes, low-rate devices, high-throughput polling designs (DPDK), and proprietary code that cannot be GPL.
+Prototyping, device control with moderate timing requirements and specialized userspace processing can benefit from easier debugging and process isolation.
+
+#### 3. When a kernel driver is better
+
+Use a kernel driver for tight interrupt response, standard subsystem integration, device power management, shared resources or security-sensitive access that must be mediated. A userspace process is still subject to scheduling latency.
+
+VFIO requires appropriate isolation groups and configuration; direct MMIO access can still have dangerous device side effects.
+
+**Interview takeaway:** Userspace drivers depend on safe kernel interfaces. Choose them for suitable devices, not as a shortcut around resource management and DMA isolation.
 
 ### How does the kernel boot on an ARM64 system? {M}
 **Short answer:** The boot ROM loads a first-stage loader (SPL or TF-A BL2) that initialises DRAM; Trusted Firmware-A sets up the secure world and EL3 services (PSCI), then hands over to U-Boot or UEFI at EL2; the bootloader loads the kernel `Image`, the device tree and optionally an initramfs, and jumps to the kernel with the DTB address in `x0`, MMU off, at EL2 or EL1. The kernel sets up page tables and enables the MMU, then `start_kernel()` initialises memory, interrupts, timers and the scheduler, brings up secondary CPUs through PSCI, runs driver initcalls (probing devices from the DT), mounts the root filesystem and executes `/sbin/init` as PID 1.
