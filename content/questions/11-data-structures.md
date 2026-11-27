@@ -491,50 +491,30 @@ Use a balanced tree for ordered timer deadlines, address ranges or dynamic order
 **Interview takeaway:** A BST provides ordering, not guaranteed logarithmic performance unless its height is bounded. A heap is preferable when only the minimum/maximum is needed.
 
 ### How do BFS and DFS work, and where are graphs used in embedded software? {M}
-**Short answer:** **Breadth-first search (BFS)** visits nodes level by level using a queue, and finds the shortest path in an unweighted graph. **Depth-first search (DFS)** goes as deep as possible along each branch before backtracking, using a stack or recursion, and is used for cycle detection, topological ordering and connectivity. Both are O(V + E). Embedded uses include dependency ordering (initialising drivers after their dependencies), deadlock detection (cycles in a lock or wait-for graph), routing in mesh networks, and state machines.
+Breadth-first search (BFS) explores a graph level by level using a queue. Depth-first search (DFS) follows a path deeply before backtracking using a stack or recursion.
 
-```c
-#include <stdio.h>
-#include <stdbool.h>
+#### 1. Example
 
-#define V 6
-/* adjacency matrix: small, static; use adjacency lists for sparse/large graphs */
-static const bool adj[V][V] = {
-    /* 0 */ {0,1,1,0,0,0},
-    /* 1 */ {0,0,0,1,0,0},
-    /* 2 */ {0,0,0,1,1,0},
-    /* 3 */ {0,0,0,0,0,1},
-    /* 4 */ {0,0,0,0,0,1},
-    /* 5 */ {0,0,0,0,0,0},
-};
+```text
+A connects to B and C
+B connects to D
+C connects to E
 
-void bfs(int start, int dist[V])
-{
-    int q[V], head = 0, tail = 0;
-    for (int i = 0; i < V; i++) dist[i] = -1;
-    dist[start] = 0; q[tail++] = start;
-    while (head < tail) {
-        int u = q[head++];
-        for (int v = 0; v < V; v++)
-            if (adj[u][v] && dist[v] < 0) { dist[v] = dist[u] + 1; q[tail++] = v; }
-    }
-}
-
-int main(void)
-{
-    int d[V];
-    bfs(0, d);
-    for (int i = 0; i < V; i++) printf("%d ", d[i]);   /* 0 1 1 2 2 3 */
-    printf("\n");
-    return 0;
-}
+BFS from A: A, B, C, D, E
+DFS from A: A, B, D, C, E (one valid order)
 ```
 
-**DFS notes:** use three colours (unvisited, in progress, done) to detect cycles in a directed graph: reaching an "in progress" node means a cycle. Post-order DFS gives a reverse topological order. Kahn's algorithm (repeatedly remove nodes with no incoming edges) gives a topological order without recursion — see the systems coding topic.
+#### 2. Algorithm
 
-**Weighted shortest paths:** Dijkstra's algorithm with a priority queue (non-negative weights), Bellman-Ford with negative weights; used in routing protocols (OSPF, RPL in 6LoWPAN meshes).
+BFS marks the start visited, enqueues it, then repeatedly removes one vertex and enqueues unvisited neighbors. DFS pushes or recursively visits unvisited neighbors. Mark vertices when discovered to avoid cycles and duplicate work.
 
-**Memory:** an adjacency matrix needs V² bits/bytes (fine for small V, e.g. a bitmap of 32×32); adjacency lists need O(V + E).
+With adjacency lists, both take O(V+E) time and O(V) auxiliary storage in the usual implementations.
+
+#### 3. Embedded applications
+
+BFS can find shortest paths in an unweighted network; DFS can explore dependency graphs or detect cycles with additional visitation-state tracking. Fixed-size stacks and queues can bound memory when graph size is known.
+
+**Interview takeaway:** BFS is useful for minimum-hop paths; DFS for deep exploration and dependency analysis. Bound graph storage and avoid unbounded recursion in small firmware stacks.
 
 ### Which sorting algorithm would you use on a microcontroller? {M}
 **Short answer:** It depends on n, memory and timing requirements. **Insertion sort** for small (n below ~20–30) or nearly sorted arrays: simple, in-place, stable and fastest in practice for tiny inputs. **Heap sort** when you need guaranteed O(n log n) with O(1) extra memory and no recursion. **Quicksort** is fastest on average but has an O(n²) worst case and uses recursion (stack); use median-of-three pivots and recurse on the smaller half if you use it. **Merge sort** is stable and O(n log n) but needs O(n) extra memory. **Counting or radix sort** for small integer keys (e.g. 8- or 12-bit ADC values) in O(n + k).
