@@ -497,6 +497,12 @@ void *my_calloc(size_t count, size_t size)
 
 **Complexity:** O(total) for the zeroing.
 
+#### Test the overflow boundary
+
+On a target with 32-bit size_t, SIZE_MAX is 4294967295. A request for 65536 elements of size 65536 has mathematical size 4294967296, which is unrepresentable. Reject before multiplication. A request for three four-byte elements needs 12 zeroed bytes.
+
+Zeroed bytes are not a portable promise of null pointer or floating-point zero representations on every C implementation. Initialize typed objects explicitly when those semantic values are needed.
+
 ### How do you detect a double free or an invalid free in your own allocator? {M}
 **Short answer:** Give every block a header with a **magic number** that says whether it is allocated or free. On `free`, first check that the pointer lies inside the heap, then check the magic: if it already says FREE it is a double free; if it is neither magic value the pointer is invalid or the header was overwritten. Only then mark it FREE and return it to the free list.
 
