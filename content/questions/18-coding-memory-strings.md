@@ -138,6 +138,23 @@ int my_strcmp(const char *a, const char *b)
 
 **Complexity:** O(min(len a, len b)) time, O(1) space.
 
+#### A bounded comparison
+
+```c
+int my_strncmp(const char *a, const char *b, size_t n)
+{
+    while (n--) {
+        unsigned char x = (unsigned char)*a++;
+        unsigned char y = (unsigned char)*b++;
+        if (x != y) return x < y ? -1 : 1;
+        if (x == 0) return 0;
+    }
+    return 0;
+}
+```
+
+Comparing "UART0" with "UART1" for four bytes gives equality; comparing five bytes distinguishes the ports. This is lexicographical byte ordering, not numeric ordering: "10" sorts before "2".
+
 ### Implement strcat(). {E}
 **Short answer:** Find the end of `dst` by scanning to its `'\0'`, then copy `src` (including its terminator) starting there, and return the original `dst`. The caller must guarantee that `dst` has room for both strings plus one byte.
 
