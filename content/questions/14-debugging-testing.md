@@ -9,27 +9,18 @@ desc: Debugging intermittent bugs, HardFault analysis, JTAG/SWD, GDB, breakpoint
 Interviewers often finish with "tell me about the hardest bug you fixed". These questions give you the vocabulary and the toolbox to answer well. Each answer gives the short version first, then the details and follow-ups.
 
 ### How do you debug firmware that crashes only occasionally? {M}
-**Short answer:** Make it observable, then make it reproducible, then narrow it down. Capture as much state as possible when it happens (fault handler that saves registers, the stacked PC and LR, and fault status registers to a no-init RAM area or flash; reset-cause registers; a trace buffer of recent events), increase the failure rate with stress (temperature, voltage, load, timing changes), and form hypotheses around the usual suspects: race conditions, stack overflow, memory corruption, uninitialised variables, interrupt priority mistakes, timing-dependent hardware issues and power problems. Then confirm each one with targeted experiments.
+Intermittent crashes require preserving evidence rather than repeatedly restarting the target.
 
-**Step by step**
+#### Workflow
+1. Record firmware build, board revision, workload, temperature and reset cause.
+2. Capture timestamped events in a bounded RAM ring buffer or persistent crash record.
+3. On failure save PC, LR, SP, fault registers, task identity and relevant peripheral state.
+4. Resolve addresses against the exact ELF; examine the failing instruction and call stack.
+5. Stress the suspected race, stack boundary, DMA transfer or power condition independently.
 
-1. **Collect data from every occurrence:** reset reason (watchdog, brown-out, software, pin), crash dump (fault registers, PC/LR, stack contents, current task), firmware version, uptime, and what the system was doing (an event log in RAM that survives reset).
-2. **Look for patterns:** only on some boards (hardware variation), at certain temperatures, after a long uptime (overflow of counters, leaks, fragmentation), only with a certain peripheral active (interrupt interaction), or only in release builds (optimisation exposing undefined behaviour or missing `volatile`).
-3. **Increase the failure rate:** stress tests, faster timers, injected interrupts, random delays, heat gun/freezer spray, supply voltage at the limits.
-4. **Add instrumentation that does not change timing much:** GPIO toggles, a RAM trace buffer, ITM/SWO or RTT, data watchpoints on the corrupted variable.
-5. **Check the classics:**
-   - stack high-water marks and overflow detection (MPU guard, canaries),
-   - `volatile` on hardware registers and ISR-shared flags,
-   - critical sections around read-modify-write of shared data,
-   - interrupt priorities vs the RTOS's syscall priority,
-   - buffer overruns and array indices from external data,
-   - DMA buffers and cache coherence (Cortex-M7),
-   - power supply dips (watch the rail and reset line on a scope with a trigger),
-   - errata for the MCU and peripherals.
-6. **Bisect** in time (`git bisect` between a good and a bad version) or in code (disable features until it stops).
-7. **Fix the root cause** and keep the instrumentation that helped (crash logs, assertions) for the field.
+Use hardware watchpoints for corrupted addresses and trace when halting affects timing. Enable assertions, stack guards and host-side sanitizers where possible.
 
-**Interview story structure:** symptom → impact → data you collected → hypotheses you ruled out → root cause → fix → what you changed so it cannot happen again (test, assertion, process).
+**Interview takeaway:** Distinguish the instruction that crashes from the earlier operation that caused corruption. Preserve reproducible evidence.
 
 ### How do you analyse a HardFault on a Cortex-M? {H}
 **Short answer:** On a fault, the CPU stacks R0–R3, R12, LR, PC and xPSR on the active stack. A HardFault handler written in assembly picks the correct stack pointer (MSP or PSP, from bit 2 of the EXC_RETURN value in LR) and passes it to a C function that reads the stacked **PC** (the faulting instruction, or the one after it for imprecise faults) and **LR** (the caller), together with the fault status registers: **CFSR** (UsageFault/BusFault/MemManage bits), **HFSR** (FORCED = an escalated configurable fault), **MMFAR** and **BFAR** (faulting data address when the valid bits are set). Then look up the PC in the map file or with `addr2line`.
