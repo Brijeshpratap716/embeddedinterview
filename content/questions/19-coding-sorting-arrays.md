@@ -230,6 +230,10 @@ void bubble_sort(int *a, int n)
 
 Bubble sort is stable and has an O(n) best case with the early exit, but does many more swaps. In practice insertion sort beats both; know them for the interview.
 
+#### When writes are more expensive than comparisons
+
+Selection sort always performs n(n−1)/2 key comparisons, but at most n−1 swaps. On a small fixed array where minimizing moves matters more than comparisons, that may be desirable. It is generally unstable: sorting tagged records [2A,2B,1] swaps 1 with 2A, reversing the equal keys. A stable version shifts the selected minimum into place at the expense of more writes.
+
 ### Implement quicksort. {M}
 **Short answer:** Pick a pivot, partition the array so that smaller elements are on its left and larger ones on its right, then sort the two parts the same way. Average O(n log n), in place, not stable. For embedded use, choose the pivot by median-of-three and recurse only into the smaller part (looping over the larger one) so the stack depth stays O(log n) even in bad cases.
 
