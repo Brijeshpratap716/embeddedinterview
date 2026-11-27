@@ -9,28 +9,25 @@ desc: Scheduling, task states, context switches, semaphores vs mutexes, priority
 RTOS questions check two things: whether you know the vocabulary, and whether you can reason about timing and concurrency bugs. Examples use FreeRTOS names, but the ideas apply to Zephyr, ThreadX, embOS, VxWorks and QNX. Each answer gives the one-line version first, then the explanation and the follow-ups.
 
 ### What is an RTOS and how is it different from a general-purpose OS? {E}
-**Short answer:** A Real-Time Operating System guarantees that tasks respond within a bounded, predictable time. Its goal is **determinism** (meeting deadlines every time), not maximum average throughput. Compared with Linux or Windows, an RTOS has a small priority-based pre-emptive scheduler, bounded interrupt and context-switch latency, a footprint of a few KB, and usually no MMU-based process isolation: all tasks share one address space.
+An RTOS (Real-Time Operating System) manages tasks, interrupts and resources with the goal of predictable timing. Correctness includes both the result and whether it is produced by the required deadline.
 
-| | RTOS (FreeRTOS, Zephyr) | General-purpose OS (Linux) |
-|---|---|---|
-| Scheduling | fixed priorities, highest ready task always runs | fairness (CFS/EEVDF), throughput |
-| Latency | bounded, microseconds | usually low, but unbounded worst case (PREEMPT_RT improves it) |
-| Footprint | 5–50 KB flash, a few KB RAM | MBs of RAM, storage |
-| Memory protection | none or MPU-based | MMU, full process isolation |
-| Boot time | milliseconds | seconds |
-| Drivers, networking, filesystems | small or add-on | huge ecosystem |
-| Typical hardware | Cortex-M, Cortex-R, small RISC-V | Cortex-A, x86 |
+#### 1. Example
 
-**What makes it deterministic**
+A motor controller must update its output every 1 ms. An RTOS can schedule a high-priority control task while lower-priority logging runs in the available time.
 
-- The scheduler's work is O(1) (ready lists per priority, bitmap lookup).
-- Kernel critical sections are short and bounded.
-- No paging, no swapping, usually no dynamic allocation after start-up.
-- Interrupt handling and the API have documented worst-case behaviour.
+| RTOS | General-purpose OS |
+|---|---|
+| Predictability and bounded latency emphasized | Throughput, fairness and interactive performance emphasized |
+| Often fixed-priority preemptive scheduling | Multiple scheduling policies |
+| Small, configurable kernel common | Rich process, filesystem and networking facilities common |
 
-**Examples:** FreeRTOS (and SafeRTOS for certification), Zephyr, Eclipse ThreadX (formerly Azure RTOS), embOS, RTX, Micrium µC/OS, NuttX (POSIX-like); and larger commercial ones: VxWorks, QNX (microkernel), INTEGRITY, PikeOS (with partitioning for safety).
+Linux can also support real-time scheduling and PREEMPT_RT; an RTOS label alone does not guarantee a system meets its deadlines.
 
-**Interview line:** "Real-time does not mean fast. It means correct results **on time, every time**, with a provable worst case."
+#### 2. Main services
+
+Tasks and scheduling, queues, semaphores, mutexes, timers and interrupt-safe signaling. An RTOS is often selected when a super loop can no longer manage independent deadlines conveniently.
+
+**Interview takeaway:** Real-time means meeting timing requirements, not simply being fast. Analyze worst-case execution, blocking and interrupt latency.
 
 ### What is the difference between hard, firm and soft real-time? {E}
 **Short answer:** In a **hard** real-time system, missing a deadline is a system failure (airbag deployment, engine control, pacemaker, motor commutation). In a **firm** system, a late result is worthless but occasional misses are tolerated (a dropped video frame, a missed sensor sample). In a **soft** system, late results still have some value, just less (UI responsiveness, audio buffering with retries, network throughput).
