@@ -202,6 +202,12 @@ bool uart_getc(uint8_t *c)                       /* called from the main loop or
 
 **Common bugs:** forgetting `volatile`/atomic on the indices, processing data inside the ISR (keep it minimal), and signed/unsigned mix-ups in the index arithmetic.
 
+#### RX overflow and error handling
+
+With a ring of 128 slots and one reserved slot, usable capacity is 127 bytes. If the ISR receives another byte when full, it must still service/acknowledge the hardware as specified, increment a drop counter and apply the chosen overflow policy. Hardware overrun and software queue overflow are different failures.
+
+The example models an older STM32-style SR/DR interface; newer UARTs may use ISR, RDR and ICR registers instead. On a status containing ORE without RXNE, do not enqueue a value unless the device documents valid data. The raw vector handler normally has a void(void) signature and calls an instance-specific helper. Use the atomic SPSC implementation or the platform's ISR synchronization rules rather than assuming volatile is universally sufficient.
+
 ### Write an SPI transfer function. {E}
 **Short answer:** SPI is full duplex: every byte you send clocks one byte back in. A transfer routine asserts chip select, then for each byte waits for TXE, writes the byte to the data register, waits for RXNE and reads the received byte; after the last byte it waits until the BSY flag clears before releasing chip select. To read from a device you send dummy bytes (often 0xFF or 0x00) and keep what comes back.
 
