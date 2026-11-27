@@ -1412,18 +1412,43 @@ MISRA guides source-code practices. Functional safety standards such as ISO 2626
 **Interview takeaway:** MISRA C reduces language-related risks through defined coding rules and a documented compliance process; it is not a compiler mode or a substitute for testing.
 
 ### What are a HAL and a BSP, and how do they differ? {M}
-Both are layers that keep application code independent of the hardware, but at different levels.
+A Hardware Abstraction Layer (HAL) provides interfaces for operating hardware peripherals. A Board Support Package (BSP) contains the board-specific software and configuration needed to run firmware or an operating system on a particular board.
 
-- A **HAL (hardware abstraction layer)** gives a uniform API for a *type* of peripheral (`uart_write()`, `gpio_set()`, `spi_transfer()`), hiding the registers of one chip family. Vendor examples are STM32 HAL/LL, NXP MCUXpresso SDK drivers and TI DriverLib; CMSIS-Driver standardises the API across vendors.
-- A **BSP (board support package)** adapts software to a *specific board*: which pins connect to which device, clock and memory setup, external chips (PMIC, flash, sensors), and the start-up code. In embedded Linux, the BSP is the bootloader, kernel configuration and device tree for that board.
+#### 1. HAL example
 
-| | HAL | BSP |
-|---|---|---|
-| Abstracts | A peripheral or chip family | A whole board |
-| Changes when | You switch MCU family | You change the board design |
-| Example | `uart_init(&cfg)` | "Debug UART is USART2 on PA2/PA3; sensor on I2C1 at 0x48" |
+```c
+HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+```
 
-A good layering is: application → services/middleware → BSP → HAL → registers. Interviewers often follow up with how you would port firmware to a new MCU: you rewrite or replace the HAL and update the BSP, and the application should not change.
+On STM32 targets using the relevant HAL, this invokes the GPIO abstraction instead of manually programming the output register.
+
+#### 2. BSP example
+
+```c
+void board_led_on(void)
+{
+    HAL_GPIO_WritePin(LED_PORT, LED_PIN, GPIO_PIN_SET);
+}
+```
+
+LED_PORT and LED_PIN are selected by board configuration. A different board can provide another implementation without changing the application interface.
+
+<div style="max-width:620px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 244" width="100%" role="img" aria-label="Application calls board interface, which uses HAL or drivers to access hardware">
+<rect x="20" y="5" width="300" height="44" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="22" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Application</text><text x="170" y="37" text-anchor="middle" font-size="10" fill="currentColor">board_led_on()</text><path d="M170 49 v16 m-4-5 4 5 4-5" stroke="currentColor" fill="none"/><rect x="20" y="65" width="300" height="44" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="82" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">BSP / board configuration</text><text x="170" y="97" text-anchor="middle" font-size="10" fill="currentColor">Select pin, clocks and board resources</text><path d="M170 109 v16 m-4-5 4 5 4-5" stroke="currentColor" fill="none"/><rect x="20" y="125" width="300" height="44" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="142" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">HAL / peripheral driver</text><text x="170" y="157" text-anchor="middle" font-size="10" fill="currentColor">Configure and operate GPIO</text><path d="M170 169 v16 m-4-5 4 5 4-5" stroke="currentColor" fill="none"/><rect x="20" y="185" width="300" height="44" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="202" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Hardware</text><text x="170" y="217" text-anchor="middle" font-size="10" fill="currentColor">GPIO controller and LED</text></svg></div>
+
+#### 3. Linux BSP
+
+An embedded Linux BSP may contain bootloader configuration, kernel drivers, device trees, firmware, board-specific patches and build metadata. It integrates the software stack for the target board.
+
+| HAL | BSP |
+|---|---|
+| Abstracts hardware operations | Integrates board-specific resources |
+| Often reusable across a chip family | Usually customized for a board |
+| GPIO, UART, SPI interfaces | Pin configuration, memory, boot and drivers |
+
+Terminology and layering differ between vendors; a BSP can include a HAL.
+
+**Interview takeaway:** HAL abstracts how peripherals operate; BSP describes and enables the specific board on which they operate.
 
 ### What is AUTOSAR and what are its main layers? {M}
 AUTOSAR (AUTomotive Open System ARchitecture) is a standard software architecture for automotive ECUs, so software components can be reused across suppliers and hardware. **Classic Platform** targets deeply embedded ECUs on microcontrollers with static configuration; **Adaptive Platform** targets high-performance ECUs running POSIX operating systems with service-oriented communication.
