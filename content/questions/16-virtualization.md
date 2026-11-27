@@ -669,3 +669,87 @@ Passthrough can reduce emulation overhead and provide native hardware features. 
 
 **Interview takeaway:** An IOMMU limits device DMA to authorized memory. Do not use unsafe no-IOMMU assignment as a substitute for isolation in untrusted environments.
 
+### What is an IOMMU? {M}
+
+An IOMMU translates device DMA addresses into physical addresses and enforces access permissions.
+
+
+### What is IOVA? {M}
+
+An I/O virtual address is the address a device uses for DMA, translated by an IOMMU when enabled.
+
+
+### What is DMA remapping? {M}
+
+The IOMMU maps device-visible addresses to authorized physical pages, supporting isolation and noncontiguous memory.
+
+
+### How do VFIO and IOMMU work together? {M}
+
+VFIO exposes devices to userspace with controlled DMA mappings and interrupt access; the IOMMU isolates device memory access.
+
+
+### What is PCI passthrough? {M}
+
+A physical PCI device is assigned to a guest, commonly using VFIO and an IOMMU for isolation.
+
+
+### How does a CPU communicate with a GPU? {M}
+
+The driver submits command buffers and updates device queues or MMIO doorbells; the GPU fetches commands and signals completion through interrupts or fences.
+
+
+### How does GPU memory allocation work? {M}
+
+The driver or runtime allocates backing storage in VRAM or system RAM and maps it into a GPU virtual address space.
+
+
+### What is pinned memory versus pageable memory? {M}
+
+Pinned host pages cannot be reclaimed or moved in the usual way while pinned, enabling stable DMA mappings; pageable memory may require staging or migration.
+
+
+### What is CUDA Unified Memory? {M}
+
+Managed allocations provide a common pointer accessible by CPU and GPU, with migration or remote access depending on hardware and runtime policy.
+
+
+### What is GPU zero-copy memory? {M}
+
+The GPU directly accesses mapped host memory without an explicit copy into VRAM; latency and bandwidth depend on the interconnect.
+
+
+### What is PCIe BAR memory? {M}
+
+A Base Address Register describes a device address aperture, such as MMIO registers or a window into GPU memory.
+
+
+### How does PCIe DMA work? {M}
+
+A bus-master device issues PCIe memory transactions to mapped DMA addresses without the CPU copying each byte.
+
+
+### What is a GPU page fault? {M}
+
+A GPU access encounters an absent or invalid mapping; supported hardware and drivers may resolve recoverable faults or terminate the workload.
+
+
+### What is a GPU MMU and GPU virtual memory? {M}
+
+The GPU MMU translates GPU virtual addresses through page tables to backing memory and enforces access permissions.
+
+
+### How does GPU context switching work? {M}
+
+The GPU scheduler changes execution contexts, saving or restoring required state and switching address spaces as supported by hardware.
+
+
+### Why can GPU context switching be expensive? {M}
+
+Large execution state, many active threads, cache effects and preemption granularity can increase switching cost.
+
+
+### What is GPU scheduling versus CPU scheduling? {M}
+
+CPU schedulers select runnable tasks for cores; GPU scheduling manages command queues, contexts and parallel workloads under hardware-specific policies.
+
