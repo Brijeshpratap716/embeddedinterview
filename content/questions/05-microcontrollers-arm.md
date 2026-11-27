@@ -622,30 +622,31 @@ For streaming buffers, use dma_map_single and matching sync/unmap operations rat
 **Interview takeaway:** Hardware I/O coherency is a property of the device's path and configuration, not merely the CPU architecture. Use the DMA API even on platforms believed to be coherent.
 
 ### What are memory types and shareability domains in the Arm architecture? {H}
-**Short answer:** Arm classifies memory into **Normal** memory (RAM, ROM: accesses may be cached, merged, reordered and speculated) and **Device** memory (peripherals: accesses must not be speculated or merged and keep order, with sub-types `nGnRnE`, `nGnRE`, `nGRE`, `GRE` describing what is allowed). **Shareability** describes which observers (cores, DMA masters) must see a coherent view of a Normal memory location: **Non-shareable** (one core only), **Inner Shareable** (typically all cores in the cluster/system that run the same OS), and **Outer Shareable** (also other masters such as GPUs or DMA on a coherent interconnect). Barriers and cache maintenance instructions take a shareability domain argument.
+Arm memory attributes describe how a memory region can be accessed, cached and shared among observers. Correct attributes are essential for normal RAM and MMIO.
 
-**Memory types**
+#### 1. Normal versus Device memory
 
-| Type | Caching | Reordering / merging / speculation | Use |
-|---|---|---|---|
-| Normal, write-back cacheable | yes | allowed | RAM for code and data |
-| Normal, non-cacheable | no | reordering and merging allowed | DMA buffers without coherency, frame buffers |
-| Device-nGnRnE | no | none (no Gathering, no Reordering, no Early write ack) | strongly ordered registers |
-| Device-nGnRE | no | early write acknowledgement allowed | most peripheral registers (Linux `ioremap()`) |
-| Device-GRE | no | gathering and reordering allowed | rarely: e.g. some write-combining buffers |
+| Normal memory | Device memory |
+|---|---|
+| Ordinary RAM and code | Peripheral control/status registers |
+| May be cacheable or non-cacheable | Not treated as ordinary cacheable RAM |
+| May permit speculative accesses | Stricter access and ordering rules |
 
-Attributes are set in page-table entries via `MAIR_ELx` indexes (Cortex-A) or MPU attributes (Cortex-M/R).
+In AArch64, page-table attributes select a memory type through MAIR_EL1. Device subtypes nGnRnE, nGnRE, nGRE and GRE describe whether gathering, reordering and early write acknowledgement are permitted.
 
-**Shareability domains in practice**
+#### 2. Shareability domains
 
-- On a 4-core Cortex-A53 cluster running Linux, all normal memory is mapped **Inner Shareable**, and the SCU keeps the cores' caches coherent automatically.
-- A barrier such as `DMB ISH` orders accesses as seen by all cores in the inner shareable domain; `DMB OSH` extends to the outer domain (e.g. for coherent DMA masters); `DMB SY` is the full system.
-- TLB invalidation `TLBI ...IS` broadcasts to all cores in the inner shareable domain.
-- Linux maps its `smp_mb()` to `DMB ISH`, while `mb()`/`dma_mb()` use `DMB SY`/`OSH` variants because they must also order accesses with devices.
+Non-shareable, Inner Shareable and Outer Shareable attributes describe which domain of observers is relevant for certain memory-ordering and coherency rules. The exact domain topology is platform-specific.
 
-**Why it exists:** making every operation globally coherent and ordered would be slow. Shareability lets software request coherency and ordering only as far as needed: a core-private variable needs nothing, shared data between cores needs inner shareable, and data shared with devices needs outer or full-system scope.
+#### 3. Example
 
-**Interview angle:** "Why does your DMA buffer work only with `dma_alloc_coherent`?" Because that maps it non-cacheable (or uses hardware coherency), while a normal cacheable mapping requires explicit maintenance before the device sees it.
+Linux maps a framebuffer as suitable normal memory and a display-controller register range using device MMIO attributes. The CPU can cache pixel data when the mapping and DMA protocol permit it, but register reads must follow MMIO semantics.
+
+#### 4. Barriers
+
+DMB ISH orders appropriate accesses within the inner-shareable domain; other scopes exist for different observer sets. Choose barriers through the operating system or architecture APIs instead of assuming that one instruction applies to all device communication.
+
+**Interview takeaway:** Memory type controls access behavior; shareability describes relevant observer domains. Neither automatically makes arbitrary DMA devices coherent.
 
 ### How do Arm multi-core processors support parallel programming? {M}
 **Short answer:** Arm multi-core clusters provide **hardware cache coherency** between cores (snoop control unit, coherent interconnects), **atomic and exclusive-access instructions** for locks and lock-free data structures (`LDXR`/`STXR`, and Armv8.1 LSE atomics like `LDADD`, `CAS`, `SWP`), **memory barriers** (`DMB`, `DSB`, `ISB`, and load-acquire/store-release `LDAR`/`STLR`) because the memory model is weakly ordered, **event signalling** (`WFE`/`SEV`) for power-efficient spinning, **inter-processor interrupts** via the GIC (SGIs), and SIMD (Neon/SVE) inside each core. Heterogeneous designs (big.LITTLE, DynamIQ) add cores with different performance and power.
