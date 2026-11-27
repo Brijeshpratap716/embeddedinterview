@@ -2151,35 +2151,62 @@ Checking for NULL is useful, but it does not establish that a non-null pointer i
 **Interview takeaway:** Initialize pointers, respect object lifetime and manage allocation ownership. Setting one pointer to NULL after free does not repair other aliases to the freed object.
 
 ### What is the volatile keyword? {E}
-**Short answer:** `volatile` tells the compiler that an object can change, or that accessing it has effects, outside the normal flow of the program it can see (hardware, an ISR, another core, a debugger). So every read and write written in the source must actually be performed, in program order relative to other volatile accesses, and cannot be cached in a register, merged or removed.
+The `volatile` qualifier tells the compiler that accesses through a volatile-qualified lvalue have observable significance. It must perform the required accesses according to the implementation's volatile semantics rather than assuming that the value cannot change externally.
 
-**Three classic cases where it is required**
-
-1. **Memory-mapped hardware registers:** the value changes on its own (status registers), and writes have effects (sending a byte).
-2. **Variables shared with an interrupt handler:** the main loop must re-read a flag that the ISR sets.
-3. **Variables modified by another thread or core in bare-metal code without an OS** (although proper synchronisation is still needed; see below).
+#### 1. Memory-mapped register example
 
 ```c
-static volatile bool data_ready;           /* set in the ISR */
+#include <stdint.h>
 
-void USART1_IRQHandler(void) { data_ready = true; }
+#define STATUS (*(volatile uint32_t *)0x40000000U)
+#define READY  (1U << 0)
 
-int main(void)
-{
-    while (!data_ready) { }   /* without volatile, the compiler may read once and loop forever */
-    /* ... */
+while ((STATUS & READY) == 0) {
+    // Wait for hardware.
 }
 ```
 
-**What volatile does not do**
+Assuming this is a valid status-register address and access width for the target, every evaluation of STATUS requires a volatile read. Hardware can change the value independently of the running code.
 
-- It does **not** make operations atomic: `volatile uint32_t count; count++;` is still load–add–store and can lose updates.
-- It does **not** order non-volatile accesses around it, and it does not add CPU memory barriers (on multi-core systems or with DMA you need `__DMB()`/`atomic_thread_fence()` as well).
-- It is **not** a replacement for mutexes or atomics in multi-threaded code (C11 `_Atomic` is the right tool there).
+Without volatile, the compiler may reuse an earlier read or transform the polling loop in a way that does not observe external changes.
 
-**Cost:** every access goes to memory, which prevents optimisations. Only mark what needs it.
+#### 2. Interrupt-shared flag
 
-The Embedded C topic covers `volatile` in more depth, including pointer declarations and the C++20 changes.
+```c
+static volatile unsigned int done;
+
+void Timer_IRQHandler(void)
+{
+    // Acknowledge the timer according to its specification.
+    done = 1;
+}
+
+void wait_for_timer(void)
+{
+    while (done == 0) {
+    }
+}
+```
+
+This is a simple bare-metal example for a target supporting indivisible accesses to this flag and the required interrupt semantics. More complex sharing needs synchronization. Real polling code should usually have a timeout.
+
+#### 3. What volatile does not guarantee
+
+| Property | Guaranteed by volatile? |
+|---|---|
+| Required volatile accesses | Yes, under implementation rules |
+| Atomic read-modify-write | No |
+| Thread synchronization | No |
+| CPU memory barriers | No |
+| DMA cache coherency | No |
+
+For example, `volatile int count; count++;` is not guaranteed atomic.
+
+#### 4. Linux drivers
+
+Use kernel MMIO accessors such as readl and writel for mapped registers, and use kernel synchronization APIs for shared memory instead of relying on volatile.
+
+**Interview takeaway:** Volatile is primarily about compiler-visible accesses, not concurrency. Use the correct platform MMIO, atomic, barrier or DMA API for the actual requirement.
 
 ### Can a variable be both const and volatile? What is the difference between them? {M}
 **Short answer:** Yes. `const` means **this program** must not write the object; `volatile` means **something else** may change it (or that reading it has side effects), so every access must really happen. Together they describe a read-only hardware register: you cannot write it, but you must re-read it every time.
