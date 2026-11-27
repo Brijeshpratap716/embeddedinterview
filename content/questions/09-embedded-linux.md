@@ -210,30 +210,29 @@ An SSH login uses a network service and a different session setup path, while a 
 **Interview takeaway:** A login prompt is userspace functionality. The kernel provides process, terminal and credential mechanisms; userspace authentication and session software apply the login policy.
 
 ### What is a bootloader and why does an embedded Linux system need one? {E}
-**Short answer:** A bootloader is the program that runs before the operating system. It initialises the minimum hardware the kernel needs (clocks, DRAM, storage, console), loads the kernel, device tree and optional initramfs into RAM, prepares the boot arguments and jumps to the kernel. The kernel cannot do this itself because, at power-on, nothing (not even DRAM) is ready to hold it.
+A bootloader is software that prepares a system to start an operating system or another firmware image. It bridges the platform's reset environment and the next image's entry requirements.
 
-**What only the bootloader can do**
+#### 1. Responsibilities
 
-- **DRAM bring-up:** the memory controller needs board-specific timings and training before DRAM is usable.
-- **Find and load the kernel** from eMMC, SD, NAND, SPI NOR, USB or the network.
-- **Hand over information:** the device tree, `bootargs`, the initramfs address.
-- **Choose what to boot:** A/B slot selection, recovery mode, factory mode.
-- **Verify signatures** as part of secure boot.
-- **Recovery and production:** flash an image over USB/TFTP, read hardware IDs, run memory tests.
+Initialize required hardware, select a boot image, load it into accessible memory, validate/authenticate it when configured, supply hardware description and boot parameters, then transfer control.
 
-**Multi-stage boot is normal.** The on-chip **boot ROM** loads a small first stage (**U-Boot SPL**, a vendor FSBL, or TF-A BL2) into internal SRAM. That stage initialises DRAM and loads the full bootloader. On ARM64 the chain often includes **TF-A** (BL31, the EL3 secure monitor) and optionally **OP-TEE**.
+#### 2. Example
 
-**Common bootloaders**
+```text
+Boot ROM -> early firmware -> U-Boot -> Linux
+```
 
-| Bootloader | Where |
-|---|---|
-| **U-Boot** | most ARM/RISC-V embedded boards |
-| barebox | an alternative with a cleaner driver model, used by some industrial vendors |
-| GRUB / systemd-boot | x86 and ARM servers with UEFI |
-| UEFI (EDK II) | ARM servers, some high-end SoCs |
-| Vendor (e.g. Qualcomm XBL/ABL, Android bootloaders) | phones and some SoCs |
+U-Boot may load Image and DTB from eMMC, SD, SPI flash or network storage. Its command/environment and recovery mechanisms simplify development and maintenance.
 
-**Follow-up: "Can you boot Linux without U-Boot?"** Yes: Falcon mode (SPL loads the kernel directly), EFI stub (UEFI loads the kernel as an EFI application), or the Raspberry Pi firmware loading the kernel itself. You lose U-Boot's flexibility (interactive recovery, network loading), but boot is faster.
+#### 3. Does every board need U-Boot?
+
+No. A firmware component, UEFI or a custom loader can perform the required handoff. Some small MCU applications execute directly after reset and do not need a separate application bootloader.
+
+#### 4. Recovery and updates
+
+A bootloader can select an alternate image, enter recovery, enforce secure boot or manage A/B slot metadata. These features depend on the configured design.
+
+**Interview takeaway:** A bootloader is not the OS. It establishes the next image's required environment and starts it; the implementation may be split across several firmware stages.
 
 ### What are the common U-Boot commands? {E}
 **Short answer:** Environment commands (`printenv`, `setenv`, `saveenv`), loading commands (`load`/`fatload`/`ext4load`, `tftp`, `mmc`, `sf`), boot commands (`bootm`, `bootz`, `booti`, `run bootcmd`), and hardware debug commands (`md`, `mw`, `i2c`, `gpio`).
