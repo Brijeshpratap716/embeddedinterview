@@ -222,6 +222,19 @@ MRS X0, CurrentEL // privileged code
 
 **Interview takeaway:** Exception levels provide privilege separation. Higher ELs are not stages that every instruction passes through; routing depends on configuration.
 
+#### Example: a Linux guest under an ARM hypervisor
+
+```text
+Guest application (EL0) -- SVC --> guest kernel (EL1)
+Guest kernel -- selected trap / stage-2 fault --> hypervisor (EL2)
+Hypervisor -- ERET --> guest execution
+Secure monitor (EL3), when present, handles defined secure transitions
+```
+
+The ordinary guest syscall need not exit to EL2. Hypervisor control registers determine which operations trap. The guest's stage-1 tables manage guest virtual addresses, while the hypervisor's stage-2 tables restrict access to host physical memory.
+
+A conventional non-VHE host kernel runs at EL1, but with VHE the host kernel can execute at EL2. Not every CPU implements every exception level or security extension. EL0 cannot directly modify privileged translation registers; entry through the configured exception mechanism is required. Exception level describes privilege within an execution context, whereas Secure/Non-secure state concerns security attribution.
+
 ### How does a system call work on ARM64 Linux? {M}
 **Short answer:** Userspace puts the syscall number in X8 and arguments in X0–X5, then executes SVC. The kernel handles the synchronous exception and returns a result in X0.
 
