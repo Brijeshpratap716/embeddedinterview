@@ -475,37 +475,30 @@ Do not expose C++ references, exceptions or arbitrary class layouts as a portabl
 **Interview takeaway:** extern "C" controls linkage, not automatic type conversion or exception compatibility. Design a C-compatible API and keep C++ details behind it.
 
 ### Which standard library features are safe on a microcontroller? {M}
-**Short answer:** Most of the **algorithm and type** parts of the standard library are header-only and do not allocate: `std::array`, `std::span`, `std::optional`, `std::variant`, `std::string_view`, `std::bitset`, `<algorithm>` (`std::sort`, `std::find`, `std::min/max`), `<type_traits>`, `<limits>`, `<chrono>` durations, `std::atomic` and `<cstdint>`. The parts that allocate or are large — `std::vector`, `std::string`, `std::map`, `std::function` (may allocate), `<iostream>`, `std::thread` — are avoided or used only at initialisation. Fixed-capacity alternatives come from the **ETL** (Embedded Template Library) or similar.
+Many C++ standard library features are useful in embedded systems, provided their memory, timing and runtime requirements fit the target.
 
-| Usually fine | Use with care | Usually avoided |
-|---|---|---|
-| `std::array`, `std::span`, `std::string_view` | `std::function` (small buffer may avoid heap; size varies) | `std::vector`/`std::string` after init |
-| `std::optional`, `std::variant`, `std::expected` | `std::sort` (recursion, check stack) | `std::map`, `std::unordered_map`, `std::list` |
-| `<algorithm>`, `<numeric>`, `<type_traits>` | `std::chrono` clocks (need a time source) | `<iostream>`, `<regex>`, `<locale>` |
-| `std::atomic`, `std::bitset`, `std::byte` | `<cstdio>` `printf` with floats (code size) | `std::thread`, `std::shared_ptr` |
+| Feature | Consideration |
+|---|---|
+| std::array | Fixed-size storage |
+| std::span (C++20) | Non-owning view; no allocation itself |
+| std::optional / variant | In-place value representation; inspect size |
+| std::unique_ptr | Ownership; custom deleter can avoid heap |
+| std::vector / string | May allocate dynamically |
+| std::function | May allocate depending on stored callable |
+| iostream | Potentially significant runtime/footprint |
 
-**`std::span` example (safe buffer passing)**
+#### 1. Example
 
 ```cpp
-#include <array>
-#include <cstdint>
-#include <cstdio>
-#include <span>
-
-uint32_t checksum(std::span<const uint8_t> data)    // pointer + length in one object, no copy
-{
-    uint32_t s = 0;
-    for (uint8_t b : data) s += b;
-    return s;
-}
-
-int main()
-{
-    std::array<uint8_t, 4> pkt{ 1, 2, 3, 4 };
-    uint8_t raw[3] = { 10, 20, 30 };
-    std::printf("%u %u\n", (unsigned)checksum(pkt), (unsigned)checksum(raw));   // 10 60
-    std::printf("%u\n", (unsigned)checksum(std::span(pkt).subspan(1, 2)));      // 5
-}
+std::array<unsigned char, 128> buffer{};
+std::span<unsigned char> view(buffer);
 ```
 
-**Practical setup:** compile with `-fno-exceptions -fno-rtti`, consider `-fno-threadsafe-statics` on bare metal, link with `--specs=nano.specs` (newlib-nano), and check the map file after adding any new standard library feature to see what it pulled in.
+The array owns fixed storage and span describes it without owning it. The view must not outlive the array.
+
+#### 2. Selection process
+
+Check availability in the toolchain, hidden allocation, exception/RTTI requirements, synchronization, destructor behavior and worst-case execution. Freestanding implementations may provide only a subset of library facilities.
+
+**Interview takeaway:** Evaluate each library facility's actual behavior and target support. Fixed-capacity containers and non-owning views are often valuable in MCU firmware; neither library use nor avoidance alone guarantees deterministic behavior.
+
