@@ -409,6 +409,10 @@ void sort012(int *a, size_t n)
 
 **Generalisations:** three-way partitioning in quicksort (elements less than, equal to, greater than the pivot), segregating even/odd numbers or negative/positive numbers (two-pointer version).
 
+#### Why the middle pointer must not advance after moving a 2
+
+For [2,1,0], swap the first 2 with the last unknown element, giving [0,1,2]. The new value at mid is 0 and still needs classification. Advancing mid immediately would skip it. Every iteration decreases the unknown region by one, so there are exactly n classifications. The precondition is that all values are 0,1,2; reject other values explicitly if the input is untrusted.
+
 ### Merge overlapping intervals. {M}
 **Short answer:** Sort the intervals by start time, then walk through them keeping the last merged interval: if the next interval starts at or before its end, extend the end if needed; otherwise start a new merged interval. Sorting dominates: O(n log n) time, and merging in place needs O(1) extra space.
 
