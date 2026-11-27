@@ -1271,3 +1271,34 @@ int read_n(char *buf, int n)
 **Why embedded interviewers like this question:** it is exactly how drivers sit on top of hardware that delivers fixed-size chunks: a flash device with 4- or 16-byte read granularity, a UART FIFO, a USB endpoint with 64-byte packets, or an SPI sensor with a fixed frame. The caller wants arbitrary lengths; the driver keeps a staging buffer.
 
 **Discuss:** making the static state per-instance (a struct passed in) so it is reentrant and supports several files, thread safety (a mutex if shared), and reading directly into the caller's buffer when 4 or more bytes remain, avoiding the extra copy.
+
+### How do you find the product of an array except self without division? {M}
+**Short answer:** Compute the product of elements to the left and right of each index. Multiply these products; division is unnecessary, including when the input contains zeros.
+
+```c
+#include <stddef.h>
+/* n elements; out must not overlap a. All products must fit long long. */
+void product_except(const int *a, long long *out, size_t n)
+{
+    long long p = 1;
+    for (size_t i = 0; i < n; ++i) {
+        out[i] = p;
+        p *= a[i];
+    }
+    p = 1;
+    for (size_t i = n; i > 0; --i) {
+        out[i-1] *= p;
+        p *= a[i-1];
+    }
+}
+```
+
+| Input | 1 | 2 | 3 | 4 |
+|---|---:|---:|---:|---:|
+| Prefix | 1 | 1 | 2 | 6 |
+| Suffix | 24 | 12 | 4 | 1 |
+| Result | 24 | 12 | 8 | 6 |
+
+**Complexity:** O(n) time and O(1) auxiliary space excluding output. An empty array produces no output; one element produces 1. Handle arithmetic overflow in production.
+
+**Interview takeaway:** Two directional passes replace division and handle zeros naturally.
