@@ -1232,6 +1232,19 @@ SCTLR_EL1.M controls stage-1 MMU enablement for the applicable regime. A valid t
 
 **Interview takeaway:** ASID/VMID tags improve context switching; invalidation maintains correctness when mappings or identifiers change.
 
+#### Why identifiers reduce context-switch overhead
+
+```text
+TLB entry A: VA 0x4000 + ASID 7 -> PA 0x10000
+TLB entry B: VA 0x4000 + ASID 8 -> PA 0x20000
+```
+
+With distinct valid ASIDs, a switch from process A to B need not discard every cached non-global translation. Global mappings follow their own matching rules. ASID space is finite, so the kernel manages reuse and invalidation, often with generation-based allocation.
+
+VMIDs similarly distinguish guest stage-2 contexts. When a hypervisor reuses a VMID or changes a guest mapping, it must invalidate relevant cached translations according to architectural rules. Combined stage-1/stage-2 entries may be affected.
+
+A shootdown is needed, for example, when one core unmaps a page that another core may still have cached. The OS updates translation structures, ensures descriptor writes are visible as required, invalidates the affected translations, and waits for the necessary completion before reusing physical memory. ARM shareable TLBI operations can target relevant cores without necessarily requiring a separate IPI to each one. A representative architectural pattern involves ordering table writes before TLBI, then waiting for invalidation completion and performing required context synchronization; exact instructions and scope depend on the mapping change. Use Linux's TLB flush interfaces and never free backing pages while another CPU can still access an obsolete mapping.
+
 ### What is the ARM SMMU and how does it differ from the CPU MMU? {H}
 **Short answer:** A CPU MMU translates CPU virtual addresses; an SMMU (Arm's IOMMU architecture) translates and checks device DMA transactions. It can provide device isolation and an I/O virtual address space.
 
