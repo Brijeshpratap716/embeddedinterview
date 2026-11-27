@@ -1072,6 +1072,23 @@ bool little = *(unsigned char *)&x == 1;
 
 **Interview takeaway:** Endianness changes byte layout in memory, not the numerical meaning of an integer held in a register.
 
+#### Byte order at a protocol boundary
+
+Suppose an I2C device returns bytes 0x12 and 0x34 for a 16-bit big-endian register value.
+
+```c
+uint16_t decode_be16(const uint8_t b[2])
+{
+    return (uint16_t)(((uint16_t)b[0] << 8) | b[1]);
+}
+```
+
+The result is 0x1234 regardless of the host CPU's byte order. Directly casting b to a uint16_t pointer can cause alignment, aliasing and endian problems. Explicit decoding or suitable OS helpers handles the protocol representation.
+
+REV reverses all bytes of the selected register width; REV16 swaps bytes within each 16-bit group; RBIT reverses individual bits rather than bytes. These operations are distinct from the bit transmission order of a serial protocol.
+
+A device's MMIO registers can specify their own endianness; Linux provides appropriate endian-specific accessors. Do not assume every peripheral uses the CPU's native byte order. A64 instruction encodings themselves use the architecture's fixed little-endian instruction representation, independently of supported data endianness.
+
 ### What are NZCV condition flags? {E}
 **Short answer:** N is negative, Z is zero, C is carry (or no borrow for subtraction), and V is signed overflow. Flag-setting instructions and conditional branches use them.
 
