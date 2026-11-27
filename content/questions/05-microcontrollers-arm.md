@@ -978,39 +978,35 @@ On cached systems, use DMA-accessible memory and the required cache synchronizat
 **Interview takeaway:** DMA saves CPU work for bulk transfers, but software remains responsible for setup, synchronization, ownership, error recovery and completion.
 
 ### What low-power modes do MCUs have? {M}
-**Short answer:** Names differ by vendor, but there are usually three levels. **Sleep**: the CPU clock stops (`WFI`/`WFE`), peripherals keep running, and any interrupt wakes it within a few cycles. **Stop/deep sleep**: most clocks and the PLL stop, RAM and registers are kept, wake-up comes from external interrupts, the RTC or a few low-power peripherals in microseconds, and clocks must be reconfigured afterwards. **Standby/shutdown**: almost everything is powered off, RAM is lost (except a small backup domain), wake-up is from a few pins or the RTC, and the MCU restarts through reset.
+Low-power modes reduce energy consumption by disabling or slowing parts of a microcontroller. Their exact names, retention and wake sources depend on the device.
 
-| Mode | CPU | Clocks | RAM | Wake sources | Wake time | Typical current |
-|---|---|---|---|---|---|---|
-| Run | on | all | kept | – | – | mA (e.g. 100 µA/MHz) |
-| Sleep | off | peripherals on | kept | any interrupt | ~cycles | ~half of run |
-| Stop / deep sleep | off | HF clocks off, LSE/LSI on | kept | EXTI, RTC, LPUART, LPTIM, comparators | µs | µA |
-| Standby / shutdown | off | almost all off | lost (backup regs kept) | wake-up pins, RTC, reset | ms (reboot) | < 1 µA |
+| Typical mode | Behavior |
+|---|---|
+| Sleep | CPU stops executing; selected peripherals remain active |
+| Deep sleep / Stop | More clocks and domains may stop; selected state retained |
+| Standby / shutdown | Minimal power; most runtime state may be lost |
 
-**Entering sleep on Cortex-M**
+#### 1. Entering sleep
+
+On Cortex-M, WFI is commonly used after configuring wake sources and relevant power-control registers.
 
 ```c
-SCB->SCR &= ~SCB_SCR_SLEEPDEEP_Msk;   /* light sleep */
-__DSB();
-__WFI();
-
-SCB->SCR |= SCB_SCR_SLEEPDEEP_Msk;    /* deep sleep (vendor registers select Stop vs Standby) */
+// Platform-specific: configure allowed wake sources first.
 __DSB();
 __WFI();
 ```
 
-**SLEEPONEXIT:** set `SCB_SCR_SLEEPONEXIT_Msk` in fully interrupt-driven designs: the core goes back to sleep automatically after each ISR, without returning to the main loop.
+Deep-sleep behavior may depend on the SLEEPDEEP bit and MCU power-control configuration. Follow the vendor's recommended sequence.
 
-**Getting really low current**
+#### 2. Example
 
-- Configure unused pins as analog or output low; disconnect pull resistors that conduct.
-- Disable peripheral clocks and power-hungry analogue blocks (ADC, comparators, voltage reference) when not used.
-- Lower the core voltage/frequency when awake (run modes).
-- Turn off external components (sensors, radios, LEDs) via load switches.
-- Make sure the debugger is disconnected: debug logic keeps clocks running (`DBGMCU` settings).
-- Measure with a power analyser or a current probe over a full duty cycle (Nordic PPK2, Otii, Joulescope), not a multimeter.
+A sensor node wakes periodically from an RTC alarm, powers its sensor, collects data, transmits a packet and returns to sleep. Before entering a deeper mode, it must ensure DMA and communication operations have finished.
 
-**Battery life estimate:** average current = (active current × active time + sleep current × sleep time) / period. A device that wakes for 5 ms every second at 5 mA and sleeps at 2 µA averages ~27 µA, so a 220 mAh coin cell lasts roughly 8,000 hours (about 11 months), before self-discharge and peak-current limits.
+#### 3. Trade-offs
+
+Deeper modes reduce idle power but may increase wake latency and initialization cost. Check RAM retention, oscillator startup, RTC behavior and pin leakage. An RTOS may coordinate tickless idle with platform power management.
+
+**Interview takeaway:** Select the deepest mode that still meets wake-latency, state-retention and peripheral requirements. Measure actual current, not just datasheet mode labels.
 
 ### What is the difference between WFI and WFE? {H}
 **Short answer:** `WFI` (Wait For Interrupt) puts the core to sleep until an interrupt (or debug request or reset) arrives. `WFE` (Wait For Event) sleeps until an **event**: an interrupt, an event signalled by another core with `SEV`, an external event input, or a pending event that is already latched. If the event register is already set when `WFE` executes, it clears it and continues immediately without sleeping.
