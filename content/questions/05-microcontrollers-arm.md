@@ -1191,3 +1191,37 @@ Different variables in the same cache line can cause unnecessary invalidations w
 
 **Interview takeaway:** Cache coherency does not make count++ atomic, replace memory barriers, or guarantee that every DMA device participates in the same coherence domain.
 
+### Explain the microcontroller boot sequence (ARM Cortex-M). {M}
+
+When a microcontroller powers on or resets, it executes a startup sequence before reaching the application's `main()` function.
+
+1. **Reset:** The processor enters its initial reset state.
+2. **Initialize MSP:** The CPU loads the initial Main Stack Pointer from vector table address `0x00000000`.
+3. **Load Reset Handler:** The CPU loads the reset handler address from `0x00000004` into the Program Counter (PC).
+4. **Initialize .data:** Copy initialized global and static variables from flash to RAM.
+5. **Initialize .bss:** Zero-initialize uninitialized global and static variables in RAM.
+6. **System initialization:** Configure clocks, FPU (if available) and other required hardware, typically through `SystemInit()`.
+7. **C/C++ runtime initialization:** Execute required runtime setup and global C++ constructors, if applicable.
+8. **Call main():** Transfer control to the application.
+
+```text
+Power ON / Reset
+        |
+Load MSP from 0x00000000
+        |
+Load PC from 0x00000004
+        |
+Reset_Handler()
+        |
+Copy .data and zero .bss
+        |
+System and runtime initialization
+        |
+main()
+        |
+Application / Super Loop
+```
+
+**Note:** The startup file contains the vector table and reset handler. The linker script defines the memory layout and section addresses. The addresses shown assume the reset vector table is mapped at zero. The exact initialization order depends on the MCU and toolchain; a device-specific ROM bootloader may also execute before the application startup code. Interrupt masking and enabling are startup-policy dependent. The .bss section is zeroed in RAM, not copied from flash.
+
+Further reading: [Microcontroller booting process and reset sequence](https://microcontrollerslab.com/microcontroller-booting-process-reset-sequence/).
