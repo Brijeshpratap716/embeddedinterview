@@ -1066,42 +1066,57 @@ Aliases are useful for structures, callback types and complex declarations.
 **Interview takeaway:** Prefer `typedef` for type names. It creates an alias, not a distinct new type in C. Use `#define` for preprocessing and configuration.
 
 ### What is undefined behaviour? Give examples. {M}
-**Short answer:** Undefined behaviour (UB) means the C standard places **no requirements** on what happens. The program may crash, give a wrong result, or appear to work. Worse, the optimiser assumes UB never happens and transforms code on that basis, so a bug can be invisible at `-O0` and appear at `-O2`, or remove a safety check entirely.
+Undefined behaviour (UB) occurs when a program performs an operation for which the **C standard imposes no requirements**. The program may crash, produce unexpected results or appear to work.
 
-**Common examples**
-
-| Example | Why it is UB |
-|---|---|
-| `INT_MAX + 1` | signed integer overflow (unsigned wraps and is defined) |
-| `*p` where `p` is NULL, freed, or out of scope | invalid pointer dereference |
-| `int x; return x + 1;` | reading an uninitialised automatic variable |
-| `a[10]` for `int a[10]` | out-of-bounds access |
-| `1 << 32` on a 32-bit int, `x << -1` | shift by ≥ width or negative |
-| `i = i++;` | unsequenced modifications |
-| accessing a `float` through an `int *` | strict aliasing violation |
-| modifying a string literal: `char *s = "hi"; s[0] = 'H';` | literals may be in read-only memory |
-| returning without a value from a non-void function and using the result | missing return |
-| `INT_MIN / -1`, `x / 0` | division overflow / by zero |
-
-**How the optimiser exploits UB**
+#### 1. Examples
 
 ```c
-int check(int x)
+int a[5];
+a[5] = 10;    // Out-of-bounds write
+
+int *p = NULL;
+*p = 20;      // NULL dereference
+```
+
+```c
+int n = INT_MAX;
+n++;          // Signed integer overflow
+
+int divisor = 0;
+int x = 10 / divisor; // Division by zero
+```
+
+Other common examples include reading uninitialized automatic integers, accessing freed memory, invalid shift counts and data races on ordinary shared objects.
+
+#### 2. Why optimization matters
+
+```c
+int greater(int x)
 {
-    if (x + 1 < x)          /* intended overflow check */
-        return -1;          /* compiler: signed overflow can't happen, so this is never true */
-    return x + 1;           /* the check is deleted */
+    return x + 1 > x;
 }
 ```
 
-Correct: `if (x == INT_MAX) return -1;`.
+A compiler may optimize this function to return 1 because signed overflow is undefined; it need not support a wrapping result for `INT_MAX`.
 
-**Related categories (often asked together)**
+#### 3. Safe alternatives
 
-- **Unspecified behaviour:** one of several valid outcomes, not documented: order of evaluation of function arguments (`f(a(), b())`).
-- **Implementation-defined behaviour:** the compiler must choose and document: `sizeof(int)`, right shift of negative numbers, whether `char` is signed.
+- Validate indices and pointers before accessing memory.
+- Check arithmetic bounds and use unsigned types when modular arithmetic is intended.
+- Use atomics or locks for concurrent access.
+- Use warnings, sanitizers and static analysis on supported platforms.
 
-**Finding UB:** `-Wall -Wextra`, `-fsanitize=undefined,address` on a host build of your code, static analysers (cppcheck, clang-tidy, PC-lint, Polyspace), and MISRA C rules, many of which exist precisely to avoid UB.
+#### 4. Related terms
+
+| Behaviour | Meaning |
+|---|---|
+| Undefined | No requirements imposed by the standard |
+| Unspecified | One of several permitted behaviours; documentation not required |
+| Implementation-defined | Implementation selects and documents a permitted behaviour |
+
+For example, function argument evaluation order is generally unspecified, and plain `char` signedness is implementation-defined.
+
+**Interview takeaway:** Correct behaviour on one board or at `-O0` is not proof of valid C. Fix the underlying UB instead of disabling optimization.
 
 ### What is a sequence point? {H}
 **Short answer:** A sequence point is a point in the execution where all side effects of earlier evaluations are complete and none of the later ones have started. If an object is modified twice, or modified and also read for another purpose, without a sequence point (in C11 terms, without being "sequenced before") between them, the behaviour is undefined.
