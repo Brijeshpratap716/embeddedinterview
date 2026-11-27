@@ -186,6 +186,18 @@ STR W0, [X1]
 
 **Interview takeaway:** Explicit load/store instructions move data between memory and registers, while the ALU normally operates on registers.
 
+#### Example: increment a memory-mapped value
+
+```asm
+LDR W0, [X1]       // load 32-bit value into register
+ADD W0, W0, #1    // arithmetic on register
+STR W0, [X1]       // store 32-bit result
+```
+
+The ADD does not access the addressed memory; it uses register operands. This design keeps common arithmetic separate from data-transfer instructions. Instructions such as LDP/STP transfer pairs, and atomic memory instructions are additional architectural operations rather than evidence that all arithmetic directly accesses memory.
+
+The three-instruction increment is not atomic. Two cores could load the same old value before either stores a result. For shared RAM use suitable atomics or a lock. For MMIO, an apparently simple load/add/store can be wrong if a register has read-to-clear or write-one-to-clear semantics. Use documented register operations and OS accessors.
+
 ### What are ARM exception levels EL0 to EL3? {M}
 **Short answer:** EL0 runs applications, EL1 normally runs the OS kernel, EL2 supports virtualization, and EL3 supports secure monitor functions. Availability depends on implementation.
 
