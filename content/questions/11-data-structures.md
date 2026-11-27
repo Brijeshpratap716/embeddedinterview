@@ -255,53 +255,42 @@ Use fixed arrays for bounded buffers, fast indexing and cache locality. Use list
 **Interview takeaway:** Linked-list insertion is O(1) only when the relevant position is already known. Consider memory overhead and deterministic allocation.
 
 ### What is an intrusive linked list? {M}
-**Short answer:** In an intrusive list the link pointers are **embedded inside** the data structure itself, instead of a separate list node that points to the data. A generic `container_of` macro recovers the outer structure from the address of the embedded link. No separate allocation is needed per element, an object can be on several lists at once (one embedded link per list), and the same list code works for any type. The Linux kernel's `list_head` and RTOS kernels use this design.
+An intrusive linked list embeds its linkage directly inside the containing object rather than allocating a separate wrapper node.
+
+#### 1. Linux example
 
 ```c
-#include <stddef.h>
-#include <stdio.h>
-
-struct list_head { struct list_head *next, *prev; };
-
-#define container_of(ptr, type, member) \
-    ((type *)((char *)(ptr) - offsetof(type, member)))
-
-static void list_init(struct list_head *h) { h->next = h->prev = h; }
-static void list_add_tail(struct list_head *n, struct list_head *h)
-{
-    n->prev = h->prev; n->next = h;
-    h->prev->next = n; h->prev = n;
-}
-static void list_del(struct list_head *n)
-{
-    n->prev->next = n->next; n->next->prev = n->prev;
-    n->next = n->prev = NULL;
-}
-
-struct request {
+struct device_entry {
     int id;
-    struct list_head queue_node;     /* on the pending queue */
-    struct list_head all_node;       /* on the list of all requests */
+    struct list_head link;
 };
 
-int main(void)
-{
-    struct list_head pending, all;
-    list_init(&pending); list_init(&all);
-    struct request r[3] = { { .id = 10 }, { .id = 20 }, { .id = 30 } };
-    for (int i = 0; i < 3; i++) { list_add_tail(&r[i].queue_node, &pending); list_add_tail(&r[i].all_node, &all); }
-    list_del(&r[1].queue_node);                                   /* O(1), no search */
+LIST_HEAD(devices);
 
-    for (struct list_head *p = pending.next; p != &pending; p = p->next)
-        printf("%d ", container_of(p, struct request, queue_node)->id);   /* 10 30 */
-    printf("\n");
-    return 0;
+// Given a live, initialized entry d:
+list_add_tail(&d->link, &devices);
+```
+
+Iterate using the kernel list helpers:
+
+```c
+struct device_entry *d;
+list_for_each_entry(d, &devices, link) {
+    pr_info("%d\n", d->id);
 }
 ```
 
-**Advantages:** no allocation (works with static objects and pools), O(1) removal given the object (doubly linked, circular with a sentinel head, so no special cases for empty or end), type-generic code, and better cache behaviour (link and data in the same cache line).
+The helpers recover the enclosing object from its link, conceptually using container_of.
 
-**Caveats:** an object must not be added twice to the same list via the same link; lifetime is the user's responsibility; and you must remove the object from every list before freeing it.
+#### 2. Advantages
+
+No separate list-node allocation, stable containing-object identity and O(1) insertion/removal given a node. An object can belong to several lists if it contains distinct link members.
+
+#### 3. Lifetime rules
+
+Initialize links before use, remove a node from all relevant lists before freeing it, and use required locks or RCU variants for concurrent traversal.
+
+**Interview takeaway:** Intrusive lists embed membership in the object. They reduce allocation overhead but require explicit ownership and lifetime discipline.
 
 ### How do you implement a stack and a queue with fixed arrays? {E}
 **Short answer:** A **stack** (LIFO) needs an array and a `top` index: push writes `a[top++]`, pop reads `a[--top]`, checking for full (`top == N`) and empty (`top == 0`). A **queue** (FIFO) is a ring buffer with head and tail indices. Both give O(1) operations with no dynamic allocation, which is why firmware prefers them to linked implementations.
