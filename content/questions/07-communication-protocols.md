@@ -547,23 +547,35 @@ An SoC may configure an audio codec through I2C, then transfer audio through I2S
 **Interview takeaway:** I2S streams time-synchronized audio; I2C configures addressed devices. They often coexist in the same audio design.
 
 ### How does a CAN frame look? {M}
-**Short answer:** A classic CAN (2.0A) data frame is: **SOF** (one dominant bit), the **arbitration field** (11-bit identifier + RTR bit; 29-bit identifier in 2.0B extended frames), the **control field** (IDE, reserved bit, 4-bit DLC giving 0–8 data bytes), the **data field** (0–8 bytes), a **15-bit CRC** + delimiter, the **ACK slot** + delimiter, and **EOF** (7 recessive bits), followed by a 3-bit intermission.
+A CAN (Controller Area Network) frame carries an identifier, control information, payload and integrity/acknowledgment fields. Classical CAN data frames carry up to eight payload bytes.
 
+#### 1. Simplified standard-format data frame
+
+```text
+SOF | 11-bit identifier + RTR | control / DLC
+    | data (0–8 bytes) | CRC | ACK | EOF
 ```
-| SOF | ID (11) | RTR | IDE | r0 | DLC (4) | DATA (0-64 bits) | CRC (15) | CRC del | ACK | ACK del | EOF (7) |
-```
 
-**Key points**
+Extended-format frames use a 29-bit identifier and additional arbitration/control bits. Bit stuffing, delimiters and intermission rules are part of the actual wire format.
 
-- **Dominant (0) vs recessive (1):** a dominant bit from any node overrides recessive bits.
-- **ACK slot:** the transmitter sends recessive; **any** node that received the frame correctly drives it dominant. An ACK means "someone received it", not "the intended receiver processed it".
-- **Bit stuffing:** after five identical consecutive bits, the transmitter inserts one bit of opposite value (from SOF through CRC), giving enough edges for receivers to stay synchronised; receivers remove stuff bits. Six identical bits in a row is an error (used deliberately by error frames).
-- **Frame types:** data frame, remote frame (RTR = 1, requests data; rarely used and removed in CAN FD), error frame, overload frame.
-- **Extended frames (2.0B):** 11-bit base ID + SRR + IDE = 1 + 18-bit extension = 29-bit ID.
+#### 2. Important fields
 
-**Efficiency:** a frame with 8 data bytes is about 111 bits plus stuff bits (up to ~135), so at 500 kbps a full frame takes ~0.25 ms and the payload efficiency is under 50%.
+| Field | Purpose |
+|---|---|
+| Identifier | Message identity and arbitration priority |
+| DLC | Encodes payload length |
+| Data | Application payload |
+| CRC | Detects transmission errors |
+| ACK | Receivers acknowledge a valid received frame |
+| EOF | Marks frame end |
 
-**On Linux:** SocketCAN (`candump can0`, `cansend can0 123#DEADBEEF`) and `struct can_frame`.
+A CAN acknowledgment does not establish that a specific application processed the data, only that an eligible receiver acknowledged at the protocol level.
+
+#### 3. Embedded example
+
+A controller can send a sensor reading using an agreed identifier and payload encoding. Acceptance filters select which frames are delivered to software; application protocols define signal packing and interpretation.
+
+**Interview takeaway:** CAN is message-oriented, not a direct node-addressing protocol. The identifier participates in arbitration and describes the message according to the network design.
 
 ### How does CAN arbitration work? {M}
 **Short answer:** CAN is a multi-controller bus with **non-destructive bitwise arbitration**. All nodes that want to send start at the same time and transmit their identifier bit by bit while reading the bus. A dominant bit (0) overwrites a recessive bit (1). A node that sends recessive but reads dominant knows a higher-priority frame is on the bus, stops transmitting immediately and becomes a receiver. The frame with the **lowest identifier wins** and continues without delay or corruption; losers retry automatically when the bus is free.
