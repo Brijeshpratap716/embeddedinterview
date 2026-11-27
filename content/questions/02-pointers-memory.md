@@ -491,33 +491,40 @@ A growing heap alone is not proof of a leak; an allocator may retain freed stora
 **Interview takeaway:** Every successful allocation needs a clear owner and a matching release when no longer needed. A long-running embedded system may fail after hours or days because of a small repeated leak.
 
 ### What is heap fragmentation and why does it matter in embedded systems? {M}
-**Short answer:** After many allocations and frees of different sizes, free memory is split into many small, non-adjacent holes. An allocation can then fail even though the **total** free memory is large enough, because no **single** hole is big enough. Devices that must run for years without rebooting can fail this way after days or months, which makes the bug very hard to reproduce.
+Heap fragmentation occurs when memory becomes divided into blocks that cannot efficiently satisfy allocation requests.
 
-**Example (a 10 KB heap)**
+#### 1. External fragmentation
 
-```
-allocate A 2K, B 2K, C 2K, D 2K, E 2K   -> heap full
-free B and D                            -> 4 KB free, but as two 2 KB holes
-malloc(3K)                              -> FAILS: no hole is 3 KB
-```
+Suppose a heap contains six equal 16-byte blocks. After some allocations are released, three separate 16-byte holes remain.
 
-**External vs internal fragmentation**
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 130" width="100%" role="img" aria-label="Three nonadjacent 16-byte free regions cannot satisfy a contiguous 32-byte request" font-family="system-ui,sans-serif"><text x="8" y="17" font-size="11" font-weight="600" fill="currentColor">Before freeing blocks</text><rect x="8" y="24" width="54" height="30" fill="#3b82f6" fill-opacity=".16" stroke="#3b82f6"/><text x="35" y="43" font-size="10" fill="currentColor" text-anchor="middle">A</text><rect x="62" y="24" width="54" height="30" fill="#3b82f6" fill-opacity=".16" stroke="#3b82f6"/><text x="89" y="43" font-size="10" fill="currentColor" text-anchor="middle">B</text><rect x="116" y="24" width="54" height="30" fill="#3b82f6" fill-opacity=".16" stroke="#3b82f6"/><text x="143" y="43" font-size="10" fill="currentColor" text-anchor="middle">C</text><rect x="170" y="24" width="54" height="30" fill="#3b82f6" fill-opacity=".16" stroke="#3b82f6"/><text x="197" y="43" font-size="10" fill="currentColor" text-anchor="middle">D</text><rect x="224" y="24" width="54" height="30" fill="#3b82f6" fill-opacity=".16" stroke="#3b82f6"/><text x="251" y="43" font-size="10" fill="currentColor" text-anchor="middle">E</text><rect x="278" y="24" width="54" height="30" fill="#3b82f6" fill-opacity=".16" stroke="#3b82f6"/><text x="305" y="43" font-size="10" fill="currentColor" text-anchor="middle">F</text><text x="8" y="76" font-size="11" font-weight="600" fill="currentColor">After freeing B, D and F</text><rect x="8" y="83" width="54" height="30" fill="#3b82f6" fill-opacity=".16" stroke="#3b82f6"/><text x="35" y="102" font-size="10" fill="currentColor" text-anchor="middle">A</text><rect x="62" y="83" width="54" height="30" fill="#16a34a" fill-opacity=".16" stroke="#16a34a"/><text x="89" y="102" font-size="10" fill="currentColor" text-anchor="middle">Free</text><rect x="116" y="83" width="54" height="30" fill="#3b82f6" fill-opacity=".16" stroke="#3b82f6"/><text x="143" y="102" font-size="10" fill="currentColor" text-anchor="middle">C</text><rect x="170" y="83" width="54" height="30" fill="#16a34a" fill-opacity=".16" stroke="#16a34a"/><text x="197" y="102" font-size="10" fill="currentColor" text-anchor="middle">Free</text><rect x="224" y="83" width="54" height="30" fill="#3b82f6" fill-opacity=".16" stroke="#3b82f6"/><text x="251" y="102" font-size="10" fill="currentColor" text-anchor="middle">E</text><rect x="278" y="83" width="54" height="30" fill="#16a34a" fill-opacity=".16" stroke="#16a34a"/><text x="305" y="102" font-size="10" fill="currentColor" text-anchor="middle">Free</text></svg></div>
 
-- **External:** free memory exists but is split into pieces (the example above).
-- **Internal:** memory wasted *inside* allocated blocks, e.g. a pool with 64-byte blocks used for 20-byte objects, or allocator headers and alignment padding.
+Total free space is 48 bytes, but the largest contiguous free block is only 16 bytes. A 32-byte allocation cannot fit in this simplified heap, even before metadata overhead.
 
-**Mitigations**
+#### 2. Internal fragmentation
 
-1. **Allocate everything at start-up and never free.** Simple and deterministic (FreeRTOS `heap_1`).
-2. **Fixed-size memory pools:** blocks of one size per pool, so any free block fits any request; no external fragmentation, O(1) allocate/free.
-3. **Coalescing allocators:** merge adjacent free blocks (FreeRTOS `heap_4`, TLSF); this reduces but does not eliminate fragmentation.
-4. **TLSF (Two-Level Segregated Fit):** O(1), bounded fragmentation, used in real-time systems (Zephyr offers it).
-5. **Avoid mixing lifetimes:** allocate long-lived objects first, and keep short-lived ones in a separate pool or arena.
-6. **Arena/region allocation:** allocate from a buffer for one operation and release the whole arena at once.
+An allocator may round a 20-byte request up to a 32-byte block. The unused 12 bytes inside that allocated block cannot serve another allocation.
 
-**Monitoring:** track the largest free block as well as total free memory; a shrinking largest-block size while total free memory stays constant is the signature of fragmentation.
+| Type | Wasted space |
+|---|---|
+| External | Between allocated blocks |
+| Internal | Inside allocated blocks |
 
-**Safety standards** (MISRA C, IEC 61508, ISO 26262 guidance, DO-178C practice) generally forbid dynamic allocation after initialisation because of fragmentation and non-deterministic timing.
+#### 3. How to reduce fragmentation
+
+1. Use static allocation for objects with known lifetime and size.
+2. Use fixed-size pools for messages or descriptors.
+3. Group objects with similar lifetimes.
+4. Use an allocator that coalesces adjacent free blocks.
+5. Avoid repeated variable-size allocations in timing-critical paths.
+
+Coalescing cannot merge free blocks separated by live allocations.
+
+#### 4. Embedded impact
+
+A firmware system can run out of sufficiently large contiguous heap blocks despite having considerable total free space. Variable allocation/search times can also complicate real-time guarantees.
+
+**Interview takeaway:** Monitor both total free memory and the largest available free block. Fixed-size pools eliminate external fragmentation within that pool, but may still waste space inside slots.
 
 ### What is a memory pool, and how do you implement a fixed-size block allocator? {M}
 **Short answer:** A memory pool pre-allocates a block of memory divided into equal-sized chunks and keeps the free chunks in a linked list (the "free list"), with the link stored inside each free chunk. Allocation takes the first chunk from the list and freeing pushes it back, both in O(1) with no fragmentation, which makes pools ideal for real-time and embedded systems.
