@@ -1231,6 +1231,17 @@ Answer: 3.
 
 **Brute force for comparison:** check every substring for uniqueness — O(n³) or O(n²) with a set; mention it, then give the O(n) answer.
 
+#### Sliding-window trace: "abba"
+
+| Index | Byte | Window start | Window | Best |
+|---|---|---:|---|---:|
+| 0 | a | 0 | a | 1 |
+| 1 | b | 0 | ab | 2 |
+| 2 | b | 2 | b | 2 |
+| 3 | a | 2 | ba | 2 |
+
+When a previously seen byte is already outside the current window, do not move the start backward. For very long inputs use size_t positions with a sentinel or a last-position-plus-one representation rather than int indices. This algorithm operates on bytes, not Unicode code points.
+
 ### Print all permutations of a string. {M}
 **Short answer:** Use backtracking: for position `l`, swap each character from `l` to the end into position `l`, recursively permute the rest of the string (`l + 1`), and swap back to restore the original order before trying the next character. When `l` reaches the last index, the current arrangement is one permutation. There are n! permutations, so the work is O(n · n!).
 
