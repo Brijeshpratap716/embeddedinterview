@@ -118,6 +118,10 @@ void print_duplicates_sorted(const int *a, size_t n)
 - **Find the one duplicate in 1..n with n+1 elements:** Floyd's cycle method (last question in this topic).
 - A **bitmap** (1 bit per possible value) cuts the table memory 8–32× — 512 bytes for 4096 possible IDs.
 
+#### Duplicate detection with a fixed bitmap
+
+For byte values, use two 256-bit bitmaps: seen and reported. On the first occurrence set seen; on the second, print the value and set reported; further occurrences need no output. This uses 64 bytes, avoids count overflow and preserves order of second occurrence. For [4,2,4,4,2], the output is 4,2. For unrestricted integers, use a hash table or sorting; if preserving original indices matters, retain index metadata.
+
 ### Implement insertion sort. {E}
 **Short answer:** Build a sorted prefix one element at a time: take the next element (`key`), shift every larger element of the sorted part one place to the right, and drop the key into the gap. It is stable, in place, tiny, and runs in O(n) on nearly sorted data, but O(n²) in the worst case.
 
