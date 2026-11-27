@@ -9,42 +9,22 @@ desc: The classic whiteboard programs in C: second largest, rotate, leaders, Kad
 These are the programs embedded companies ask in the first coding round, usually "write it in C on paper or in a shared editor". The interviewer checks three things: a correct loop with no out-of-bounds access, the edge cases (empty array, one element, all negative, duplicates), and the time and space complexity. Each answer gives working C code, a dry run, the common mistakes, and the follow-up questions. Write functions that take the array and its length instead of hard-coding sizes inside `main`.
 
 ### How do you find the missing number in an array containing 1 to n? {E}
-**Short answer:** An array holds `n - 1` distinct numbers from 1 to `n` with one missing. Compute the expected sum `n(n+1)/2` and subtract every element; what is left is the missing number. XOR-ing gives the same answer without any risk of overflow.
+When an array contains n−1 distinct numbers from 1 to n, XOR the expected numbers and actual elements. Equal values cancel.
 
 ```c
-#include <stddef.h>
-
-/* arr has n-1 elements, values 1..n with one missing */
-unsigned missing_sum(const unsigned *arr, unsigned n)
-{
-    unsigned long long total = (unsigned long long)n * (n + 1) / 2;
-    for (unsigned i = 0; i < n - 1; i++)
-        total -= arr[i];
-    return (unsigned)total;
-}
-
-unsigned missing_xor(const unsigned *arr, unsigned n)
+unsigned missing(const unsigned a[], size_t len)
 {
     unsigned x = 0;
-    for (unsigned i = 1; i <= n; i++) x ^= i;        /* XOR of 1..n          */
-    for (unsigned i = 0; i < n - 1; i++) x ^= arr[i]; /* cancel present ones  */
-    return x;
+    for (size_t i = 0; i < len; ++i)
+        x ^= (unsigned)(i + 1) ^ a[i];
+    return x ^ (unsigned)(len + 1);
 }
-/* {1, 2, 4, 5, 6}, n = 6 -> 3 */
 ```
+Assume len+1 fits unsigned and exactly one number is missing.
 
-**Dry run (sum method):** `n = 6`, expected sum `21`. Elements sum to `1+2+4+5+6 = 18`. `21 - 18 = 3`.
+Example: [1, 2, 4, 5] → 3. The sum formula n(n+1)/2 also works but can overflow.
 
-**Watch the length.** A common version is `findMissingNumber(arr, n)` with the loop running `i < n`. That only works if `n` is the **array length** and the range is `1..n+1`. Be explicit about which `n` you mean: "the array has n−1 elements and the numbers run from 1 to n".
-
-**Overflow:** `n * (n + 1)` overflows a 32-bit `int` once `n` passes about 46,000. Widening to 64-bit, subtracting as you go, or using XOR all avoid it. With XOR every value stays in range because XOR never grows the number.
-
-**Complexity:** O(n) time, O(1) extra space. Sorting first would be O(n log n); a "seen" array would use O(n) memory.
-
-**Follow-ups**
-
-- *Two numbers missing:* XOR gives `a ^ b`; split by any set bit (as in "two unique numbers") to separate them. Or use both the sum and the sum of squares.
-- *Array not guaranteed valid (duplicates possible):* use the cyclic-sort idea (place each value `v` at index `v-1`) or a bitmap.
+**Complexity:** O(n) time, O(1) space. XOR does not validate malformed input.
 
 ### How do you find the second largest element in an array? {E}
 **Short answer:** Scan once, keeping `largest` and `second`. When a value beats `largest`, the old largest becomes `second`; when a value is between them (and not equal to `largest`), it becomes `second`. Start both at `INT_MIN`, not 0, so negative arrays work.
