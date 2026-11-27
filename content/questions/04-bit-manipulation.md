@@ -1053,46 +1053,54 @@ A rotate-left operation can be expressed using an equivalent rotate-right count.
 **Interview takeaway:** Rotation preserves every bit in the word. Use unsigned types and ensure neither component shift equals or exceeds the word width.
 
 ### How do you find the parity of a number? {M}
-**Short answer:** Parity is whether the number of set bits is odd or even. Fold the word onto itself with XOR (`x ^= x >> 16; x ^= x >> 8; ...`) until one bit is left; that bit is 1 for odd parity. Or use `__builtin_parity(x)`.
+Bit parity indicates whether the number of set bits is even or odd. A result of zero means an even number of ones; a result of one means an odd number.
+
+#### 1. Simple implementation
 
 ```c
-#include <stdbool.h>
-#include <stdint.h>
+unsigned parity(uint32_t n)
+{
+    unsigned p = 0;
 
-bool parity_odd(uint32_t x)
+    while (n) {
+        p ^= 1U;
+        n &= n - 1U;
+    }
+    return p;
+}
+```
+
+Each iteration removes one set bit and toggles parity.
+
+#### 2. Example
+
+| Value | Number of set bits | Parity |
+|---|---:|---:|
+| 0x00 | 0 | 0 |
+| 0x07 | 3 | 1 |
+| 0x0F | 4 | 0 |
+
+#### 3. Fixed-step XOR folding
+
+```c
+unsigned parity_fast(uint32_t x)
 {
     x ^= x >> 16;
     x ^= x >> 8;
     x ^= x >> 4;
     x ^= x >> 2;
     x ^= x >> 1;
-    return x & 1u;          /* 1 = odd number of set bits */
+    return x & 1U;
 }
 ```
 
-**Why folding works:** XOR of two bits is their sum modulo 2. Each step adds the top half of the remaining bits to the bottom half (mod 2), so after five steps bit 0 holds the XOR of all 32 bits, which is the parity.
+The XOR operations fold the parity of all bits into bit zero. GCC and Clang also provide parity builtins for supported integer widths.
 
-**Simple loop version:**
+#### 4. UART parity bit
 
-```c
-bool parity_loop(uint32_t x)
-{
-    bool p = 0;
-    while (x) { p = !p; x &= x - 1; }   /* flip once per set bit */
-    return p;
-}
-```
+For even parity, the transmitted parity bit equals the parity of the data bits, making the total number of ones even. For odd parity, invert that result. Parity detects any odd number of bit errors but not all multi-bit errors.
 
-**Even vs odd parity in protocols**
-
-- **Even parity:** the transmitter sets the parity bit so the total number of 1s (data + parity) is even. The parity bit equals `parity_odd(data)`.
-- **Odd parity:** the total must be odd, so the parity bit is the inverse.
-
-A UART set to 8E1 sends 8 data bits, an even-parity bit and 1 stop bit. The receiver recomputes parity and flags a parity error if it does not match.
-
-**What parity can and cannot do:** it detects any **odd** number of flipped bits but misses every even number (two flipped bits cancel). For better detection use a CRC; for correction use Hamming or ECC codes, which are built from several overlapping parity bits.
-
-**Faster on a microcontroller:** a 16-entry nibble table, or `__builtin_parity`, which GCC lowers to an efficient sequence.
+**Interview takeaway:** Bit parity is the XOR of every bit, not merely whether the numeric value is odd or even.
 
 ### How do you swap the two nibbles of a byte? {E}
 A byte has two 4-bit nibbles. Shift the low nibble up, shift the high nibble down, and combine:
