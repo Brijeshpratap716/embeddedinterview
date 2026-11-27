@@ -793,38 +793,38 @@ Measure worst-case latency, execution time, queue backlog and deadline misses wi
 **Interview takeaway:** Elapsed time, CPU execution time and response time are distinct. Measure the correct metric and account for interrupts, frequency changes and counter wrap.
 
 ### How is memory allocated in an RTOS, and why prefer static allocation? {M}
-**Short answer:** RTOS objects (task stacks and control blocks, queues, semaphores, timers) can be allocated **dynamically** from an RTOS heap or **statically** from memory you provide. Safety-critical and long-running systems prefer static allocation (or allocation only at start-up) because it cannot fail at run time, cannot fragment, is deterministic, and makes RAM usage visible at link time.
+RTOS objects such as tasks, stacks, queues and semaphores may use statically supplied storage or dynamically allocated memory, depending on kernel configuration.
 
-**FreeRTOS heap schemes**
-
-| Scheme | Free? | Coalescing | Notes |
-|---|---|---|---|
-| `heap_1` | no | – | allocate only; simplest and deterministic; good for "create everything at start-up" |
-| `heap_2` | yes | no | legacy; fragments; avoid |
-| `heap_3` | yes | depends | wraps the C library `malloc`/`free` with scheduler suspension |
-| `heap_4` | yes | yes | first-fit with merging of adjacent blocks; most common |
-| `heap_5` | yes | yes | like heap_4 but spans several non-contiguous RAM regions |
-
-**Static allocation**
+#### 1. Dynamic task creation
 
 ```c
-static StackType_t  sensor_stack[256];
-static StaticTask_t sensor_tcb;
-TaskHandle_t h = xTaskCreateStatic(sensor_task, "sensor", 256, NULL, 3, sensor_stack, &sensor_tcb);
-
-static uint8_t       q_storage[16 * sizeof(msg_t)];
-static StaticQueue_t q_struct;
-QueueHandle_t q = xQueueCreateStatic(16, sizeof(msg_t), q_storage, &q_struct);
+BaseType_t ret = xTaskCreate(worker, "worker", 256,
+                            NULL, 2, &handle);
 ```
 
-Enable with `configSUPPORT_STATIC_ALLOCATION` (and optionally disable dynamic allocation entirely with `configSUPPORT_DYNAMIC_ALLOCATION 0`).
+Check ret for failure. The FreeRTOS stack-depth argument is in stack units, not necessarily bytes.
 
-**Guidelines**
+#### 2. Static task creation
 
-- Create all tasks and kernel objects during initialisation; never create/delete them repeatedly at run time.
-- For variable-size application data, use fixed-size **memory pools** (Zephyr `k_mem_slab`, ThreadX block pools) instead of a general heap.
-- Monitor the heap (`xPortGetMinimumEverFreeHeapSize()`) and define `vApplicationMallocFailedHook()` if any dynamic allocation remains.
-- Make sure the C library's `malloc` (used by `printf`, some drivers) is either thread-safe (newlib locks via `__malloc_lock`) or not used from multiple tasks.
+```c
+static StaticTask_t tcb;
+static StackType_t stack[256];
+
+TaskHandle_t handle = xTaskCreateStatic(
+    worker, "worker", 256, NULL, 2, stack, &tcb);
+```
+
+Enable the appropriate static-allocation configuration. The supplied objects must remain valid for the task's lifetime.
+
+| Static allocation | Dynamic allocation |
+|---|---|
+| Capacity known in advance | Flexible runtime object creation |
+| Avoids allocation failure for reserved objects | Creation may fail |
+| Easier resource accounting | Allocator timing/fragmentation matters |
+
+FreeRTOS supplies several heap implementations with different allocation, freeing and coalescing behavior. Do not assume they all support free.
+
+**Interview takeaway:** Static allocation is often preferred for fixed real-time resources. It does not guarantee stack sizing or eliminate every runtime failure, but makes memory availability easier to analyze.
 
 ### How does an RTOS work on a multi-core (SMP) processor? {H}
 **Short answer:** In **SMP** (symmetric multiprocessing) mode, one RTOS kernel schedules tasks across several cores sharing memory: on each core it runs the highest-priority ready task that is allowed to run there. This adds new concerns: kernel data structures need spinlocks instead of only disabling interrupts, tasks of different priorities can run **at the same time**, core affinity can pin tasks to cores, and caches and memory ordering must be handled. In **AMP** (asymmetric) mode, each core runs its own independent OS or bare-metal code and they communicate through shared memory and inter-core interrupts.
