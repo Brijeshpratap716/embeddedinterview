@@ -394,50 +394,22 @@ bool anagram(const char *a, const char *b)
 **Complexity:** O(n+m) time and O(256) fixed storage.
 
 ### How do you reverse a string in place? {E}
-**Short answer:** Find the length, then swap characters from both ends moving inward, stopping when the indices meet. Do not swap the `'\0'` terminator. O(n) time, O(1) space.
+Find the NUL terminator, then swap mirrored bytes without moving the terminator.
 
 ```c
-#include <string.h>
-
 void reverse_string(char *s)
 {
-    size_t len = strlen(s);
-    if (len < 2) return;
-    size_t low = 0, high = len - 1;         /* last real character, not '\0' */
-    while (low < high) {
-        char t = s[low];
-        s[low] = s[high];
-        s[high] = t;
-        low++;
-        high--;
+    size_t n = strlen(s);
+    for (size_t i = 0; i < n/2; ++i) {
+        char t = s[i];
+        s[i] = s[n-1-i];
+        s[n-1-i] = t;
     }
 }
-/* "hello world" -> "dlrow olleh" */
 ```
+Use a writable array such as char s[] = "hello"; the result is "olleh". Modifying a string literal is undefined behavior.
 
-**Do not hard-code `high = 10`.** It works only for an 11-character string. Compute it from the length.
-
-**It must be writable memory.**
-
-```c
-char a[] = "hello";   /* array copy on the stack: reversing is fine */
-char *p  = "hello";   /* points to a string literal: writing is undefined behaviour */
-```
-
-On a desktop the second one usually crashes (literals are in a read-only section). On a microcontroller the literal is in flash and the write silently does nothing or raises a fault.
-
-**Recursive version** (a common follow-up), O(n) stack depth:
-
-```c
-void reverse_rec(char *s, size_t lo, size_t hi)
-{
-    if (lo >= hi) return;
-    char t = s[lo]; s[lo] = s[hi]; s[hi] = t;
-    reverse_rec(s, lo + 1, hi - 1);
-}
-```
-
-**UTF-8 caveat:** reversing bytes breaks multi-byte characters such as "é" (two bytes). Reversing by code point requires decoding first. Mention it if the interviewer asks about real-world text.
+**Complexity:** O(n) time, O(1) space. Byte reversal does not preserve UTF-8 characters.
 
 ### How do you reverse the order of words in a string? {M}
 **Short answer:** Reverse the whole string, then reverse each word in place. "hello world" → "dlrow olleh" → "world hello". O(n) time, O(1) extra space.
