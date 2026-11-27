@@ -158,43 +158,26 @@ The process retains its identity but receives a new program image, stack and map
 **Interview takeaway:** fork creates another process; exec replaces the current process image. Copy-on-write makes fork cheaper than eagerly copying every page.
 
 ### What is a zombie process and an orphan process? {E}
-**Short answer:** A **zombie** is a process that has exited but whose parent has not yet called `wait()` to collect its exit status, so its entry stays in the process table. An **orphan** is a process whose parent has exited while it is still running; the kernel re-parents it to `init` (PID 1) or to a "subreaper", which will reap it when it exits.
+A zombie is a terminated child whose exit information has not yet been collected by its parent. An orphan is a process whose parent has exited while the process still exists.
 
-**Zombies**
+#### 1. Zombie example
 
-- After `exit()`, the kernel frees the memory and files but keeps a small record (PID, exit status, resource usage) so the parent can ask for it.
-- `ps` shows state `Z` and `<defunct>`.
-- A few short-lived zombies are normal. Many zombies mean the parent never calls `wait()`; they use PIDs and can eventually stop new processes from being created.
-- **You cannot kill a zombie**, it is already dead. Fix or kill the parent; init then adopts and reaps the zombies.
+A child exits, but its parent does not call wait or waitpid. The kernel retains minimal exit/accounting information so the parent can collect it. A zombie does not execute and normally no longer owns its ordinary address space.
 
-**Preventing zombies in the parent**
+#### 2. Reaping
 
 ```c
-#include <signal.h>
-#include <sys/wait.h>
-#include <errno.h>
-
-static void on_sigchld(int sig)
-{
-    int saved = errno;
-    while (waitpid(-1, NULL, WNOHANG) > 0)   /* reap all finished children */
-        ;
-    errno = saved;
-}
-
-/* in main(): */
-struct sigaction sa = { .sa_handler = on_sigchld, .sa_flags = SA_RESTART | SA_NOCLDSTOP };
-sigaction(SIGCHLD, &sa, NULL);
+int status;
+pid_t child = waitpid(pid, &status, 0);
 ```
 
-Or set `SIGCHLD` to `SIG_IGN`, which tells the kernel to reap children automatically (you then cannot get their exit status).
+Handle errors and interrupted waits. A parent that creates children should arrange to reap them.
 
-**Orphans**
+#### 3. Orphan
 
-- Not a problem in themselves: daemons are often deliberately orphaned (the classic double-fork) so they are adopted by init.
-- `prctl(PR_SET_CHILD_SUBREAPER)` lets a service manager (systemd, container runtimes) adopt orphans of its own children instead of PID 1.
+An orphan is reparented according to Linux namespace/subreaper rules, often to PID 1 or an eligible subreaper. It can continue running normally.
 
-**Interview follow-up:** "What happens if PID 1 does not reap?" Zombies accumulate system-wide. This is a real problem in containers where the application runs as PID 1 and was not written to reap children; `tini` or `dumb-init` solve it.
+**Interview takeaway:** Killing a zombie does not reap it; it has already exited. The parent or designated reaper must collect its exit status.
 
 ### What is virtual memory and why is it used? {E}
 **Short answer:** Virtual memory gives every process its own private address space. The program uses virtual addresses, and the MMU translates each one to a physical address through page tables set up by the OS. This provides isolation between processes, lets the OS use physical memory flexibly (scattered pages, only what is used, swapping), and makes sharing and memory-mapped files easy.
