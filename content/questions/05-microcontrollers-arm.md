@@ -493,35 +493,33 @@ M-profile uses its own security state and exception architecture. Cortex-A syste
 **Interview takeaway:** TrustZone provides hardware security attribution and controlled transitions. It is not encryption by itself and does not eliminate the need for secure firmware, validation and correct peripheral configuration.
 
 ### What is the Cortex-A53, and what are its key architectural features? {M}
-**Short answer:** The Cortex-A53 is Arm's most widely used 64-bit (Armv8-A) application core: an in-order, dual-issue, 8-stage pipeline core optimised for efficiency, used in the Raspberry Pi 3, many i.MX 8, Rockchip, Allwinner and Qualcomm SoCs, and as the LITTLE core in big.LITTLE designs. It runs both AArch64 and AArch32 code, has four exception levels (EL0–EL3) with virtualization and TrustZone, a Neon SIMD and floating-point unit, separate L1 instruction and data caches per core, a shared L2 cache, and an MMU with a two-level TLB.
+Cortex-A53 is a 64-bit-capable Arm application processor implementing Armv8-A. It is designed for power-efficient application workloads and is widely used in embedded Linux SoCs.
 
-**Execution states and privilege**
+#### 1. Key features
 
-- **AArch64** (A64 instruction set, 31 × 64-bit registers) and **AArch32** (A32/T32, compatible with Armv7-A) at each exception level, with the restriction that a lower level cannot be 64-bit if the level above is 32-bit.
-- **EL0** applications, **EL1** OS kernel, **EL2** hypervisor, **EL3** secure monitor; **Secure** and **Non-secure** states (TrustZone). In AArch32, the older processor modes (User, FIQ, IRQ, Supervisor, Abort, Undefined, System, Hyp, Monitor) map onto these levels.
+- Supports AArch64 and AArch32 execution states.
+- In-order, dual-issue-oriented microarchitecture.
+- MMU, TLB and instruction/data caches.
+- Multicore configurations with cache coherency support.
+- Architectural support for virtualization and security extensions, subject to implementation and platform configuration.
 
-**Floating point and SIMD (Neon / Advanced SIMD)**
+#### 2. Example: i.MX8 system
 
-- IEEE 754 single and double precision floating point is mandatory in AArch64.
-- Thirty-two 128-bit vector registers (`V0`–`V31`), each viewed as 16×8-bit, 8×16-bit, 4×32-bit or 2×64-bit lanes, for media, DSP and ML workloads.
-- Optional **Cryptography Extension**: AES and SHA-1/SHA-256 instructions, a big speed-up for TLS and disk encryption.
+```text
+Cortex-A53 cores
+   | L1 caches
+   | Shared cache / coherent interconnect
+   | DDR controller --> DRAM
+   | MMIO peripherals
+```
 
-**Caches and TLBs (typical configuration)**
+Linux uses the MMU for process address spaces, exception levels for privilege, and interrupt/timer facilities for scheduling. Device DMA may use a separate IOMMU depending on the SoC.
 
-| | Size / organisation |
-|---|---|
-| L1 instruction cache | 8–64 KB per core, 2-way set associative, 64-byte lines |
-| L1 data cache | 8–64 KB per core, 4-way set associative, 64-byte lines, write-back |
-| L2 cache | shared, 128 KB–2 MB, 16-way, optional |
-| L1 TLBs | micro-TLBs (10 entries each for instructions and data) |
-| Main TLB | 512 entries, 4-way, per core |
-| Page-walk cache / IPA cache | caches intermediate translation results |
+#### 3. Contrast with Cortex-M
 
-Data coherency between cores is kept by the **SCU** (snoop control unit) using a MOESI-style protocol; DMA masters can use the **ACP** (Accelerator Coherency Port) to access memory coherently through the L2.
+Cortex-A53 supports virtual memory and rich OS workloads. Cortex-M processors commonly prioritize low-cost, low-power deterministic embedded control with a different exception model.
 
-**Other features:** 1–4 cores per cluster, generic timer, GICv3/v4 CPU interface, ECC/parity options on caches, and hardware virtualization (stage-2 translation, but **no VHE**, which arrived in Armv8.1).
-
-**Interview angle:** knowing A53 details helps explain performance (in-order core: code scheduling and cache behaviour matter), Linux boot (EL2/EL3 handover), and why Neon intrinsics speed up image and audio processing on embedded Linux devices.
+**Interview takeaway:** Cortex-A53 is a particular Armv8-A core implementation, not the architecture itself. Cache sizes, memory interfaces and optional platform features depend on the actual SoC.
 
 ### What is a CPU cache, and how do you write cache-friendly code? {M}
 **Short answer:** A cache is a small, fast memory close to the CPU that keeps copies of recently used memory in fixed-size blocks called **cache lines** (32 bytes on Cortex-M7, 64 bytes on most Cortex-A). Accesses that hit in the cache take a few cycles; misses go to slower memory (tens to hundreds of cycles). Code is cache-friendly when it uses data that is close together (spatial locality) and reuses data soon (temporal locality), and when hot data structures are small and laid out in the order they are accessed.
