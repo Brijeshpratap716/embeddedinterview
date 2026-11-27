@@ -1120,20 +1120,40 @@ Choose appropriate GFP flags and allocation sizes. Large physically contiguous r
 **Interview takeaway:** kmalloc is suitable for many small kernel allocations; kzalloc also zeroes them. vmalloc assembles virtually contiguous storage and is not a drop-in DMA buffer allocator.
 
 ### What do GFP_KERNEL and GFP_ATOMIC mean? {E}
-**Short answer:** They are allocation flags that tell the allocator what it is allowed to do. `GFP_KERNEL` may sleep to reclaim memory (write back pages, swap, compact), so it may only be used in process context with no spinlocks held; it is the normal choice and rarely fails. `GFP_ATOMIC` never sleeps and may use emergency reserves, so it can be used in interrupt handlers and under spinlocks, but it fails more often and callers must handle `NULL`.
+GFP flags tell the Linux allocator which allocation and reclaim behaviors are permitted.
 
-| Flag | Sleeps | Use |
-|---|---|---|
-| `GFP_KERNEL` | yes | normal kernel allocations in process context |
-| `GFP_ATOMIC` | no | IRQ/softirq context, under spinlocks |
-| `GFP_NOWAIT` | no | like ATOMIC but without emergency reserves; fail fast |
-| `GFP_NOIO` | yes, but no I/O | inside block I/O paths (avoid recursion into the I/O you are servicing) |
-| `GFP_NOFS` | yes, but no filesystem calls | inside filesystem code |
-| `GFP_DMA` / `GFP_DMA32` | modifier | memory below 16 MB / 4 GB for devices with limited addressing (prefer the DMA API) |
-| `__GFP_ZERO` | modifier | zeroed memory (`kzalloc`) |
-| `__GFP_NOWARN`, `__GFP_RETRY_MAYFAIL`, `__GFP_NOFAIL` | modifiers | control warnings and retry behaviour |
+| GFP_KERNEL | GFP_ATOMIC |
+|---|---|
+| May sleep and perform reclaim | Suitable for supported non-sleeping contexts |
+| Ordinary process/thread context | Hard IRQ or short atomic context when permitted |
+| More allocation options | May use limited reserves; can fail |
 
-**Best practice:** avoid allocations in atomic context altogether where possible: preallocate buffers in `probe` or `open`, or use mempools; `memalloc_noio_save()`/`memalloc_nofs_save()` scopes are preferred over passing NOIO/NOFS flags everywhere.
+#### 1. Probe allocation
+
+```c
+d = kzalloc(sizeof *d, GFP_KERNEL);
+if (!d)
+    return -ENOMEM;
+```
+
+Probe normally runs in sleepable context.
+
+#### 2. Atomic-context example
+
+```c
+event = kmalloc(sizeof *event, GFP_ATOMIC);
+if (!event) {
+    // Handle dropped event or use preallocated fallback.
+}
+```
+
+Use this only if allocation is genuinely required and allowed in the current context. It is often better to allocate a pool in advance.
+
+#### 3. Why GFP_ATOMIC can fail
+
+It cannot use ordinary blocking reclaim and may have constrained memory availability. It is not a guarantee of success or constant execution time.
+
+**Interview takeaway:** Select flags according to actual context and allocation requirements. Do not use GFP_ATOMIC everywhere to hide incorrect locking or interrupt design.
 
 ### How does a driver access device registers? {M}
 **Short answer:** Map the physical register range into kernel virtual address space (`devm_platform_ioremap_resource()` or `devm_ioremap()`), which returns an `void __iomem *`, then access registers only through the I/O accessors `readl`/`writel` (and `readb/w/q`, `writeb/w/q`), never through plain pointer dereferences. The accessors use the right instruction width, include the barriers needed to order MMIO against DMA and normal memory, and handle endianness. For complex register maps, many drivers use **regmap**.
