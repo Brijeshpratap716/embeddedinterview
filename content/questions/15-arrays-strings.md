@@ -338,54 +338,21 @@ For [2, 1, 5, 1, 3, 2], k=3, sums are 8, 7, 9, 6; answer 9. Assume intermediate 
 **Complexity:** O(n) time, O(1) space.
 
 ### How do you check if a string is a palindrome? {E}
-**Short answer:** Compare characters from both ends moving inward: `s[low]` with `s[high]`. If any pair differs, it is not a palindrome. O(n) time, O(1) space.
+A palindrome reads the same forward and backward. Compare mirrored characters.
 
 ```c
-#include <stdbool.h>
-#include <string.h>
-
-bool is_palindrome(const char *s)
+bool palindrome(const char *s)
 {
-    size_t len = strlen(s);
-    if (len < 2) return true;
-    size_t low = 0, high = len - 1;
-    while (low < high) {
-        if (s[low] != s[high])
-            return false;
-        low++;
-        high--;
-    }
-    return true;
-}
-/* "ABCKCBA" -> true, "ABCA" -> false */
-```
-
-**Finding the length.** Counting with `while (str[count] != '\0') count++;` is fine and is exactly what `strlen` does. Use `high = len - 1`, not `len`: index `len` is the terminating `'\0'`.
-
-**Edge cases:** empty string and one character are palindromes. With `size_t`, guard `len < 2` before `len - 1`.
-
-**Variant: ignore case and non-letters** ("A man, a plan, a canal: Panama"):
-
-```c
-#include <ctype.h>
-
-bool is_palindrome_alnum(const char *s)
-{
-    size_t lo = 0, hi = strlen(s);
-    while (lo < hi) {
-        while (lo < hi && !isalnum((unsigned char)s[lo])) lo++;
-        while (lo < hi && !isalnum((unsigned char)s[hi - 1])) hi--;
-        if (lo < hi && tolower((unsigned char)s[lo]) != tolower((unsigned char)s[hi - 1]))
-            return false;
-        lo++; hi--;
-    }
+    size_t n = strlen(s);
+    for (size_t i = 0; i < n/2; ++i)
+        if (s[i] != s[n-1-i]) return false;
     return true;
 }
 ```
 
-The `(unsigned char)` cast matters: passing a negative `char` (bytes ≥ 0x80 on platforms where `char` is signed) to `isalnum` is undefined behaviour.
+"level" is a palindrome, "hello" is not. This is a bytewise, case-sensitive comparison of a valid NUL-terminated string. If punctuation or case must be ignored, define those rules first.
 
-**Follow-ups:** palindrome number without converting to a string (reverse half the digits), and "is a linked list a palindrome" (find the middle, reverse the second half, compare).
+**Complexity:** O(n) time, O(1) space.
 
 ### How do you check whether one string is a subsequence of another? {E}
 **Short answer:** Walk through the long string with one index and the short string with another. Each time the characters match, advance the short-string index. If you reach the end of the short string, it is a subsequence. O(n) time, O(1) space.
