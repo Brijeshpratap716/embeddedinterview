@@ -946,38 +946,36 @@ Settling time, output impedance, load, reference noise, quantization and reconst
 **Interview takeaway:** Timer-triggered DAC plus DMA provides consistent sample timing without per-sample CPU interrupts. The sample rate and table length determine the generated frequency.
 
 ### What is DMA and how is it configured? {M}
-**Short answer:** A Direct Memory Access controller transfers data between peripherals and memory (or memory and memory) without the CPU copying each word. You configure the source and destination addresses, the number of items and their width, whether each address increments, the direction, the trigger (which peripheral request starts each transfer), priority, and normal or circular mode; interrupts signal half-transfer, transfer-complete and errors.
+DMA (Direct Memory Access) allows a hardware engine to transfer data without the CPU executing a load and store for each item. The CPU configures the transfer and handles completion or errors.
 
-**Typical channel configuration (UART receive into a buffer)**
+#### 1. Transfer configuration
 
-| Setting | Value |
-|---|---|
-| Source | `&USART2->DR` (peripheral, fixed address: no increment) |
-| Destination | `rx_buf` (memory, increment after each item) |
-| Item size | 8 bits both sides |
-| Count | `sizeof rx_buf` |
-| Request/stream | USART2_RX (via the DMA request mux on newer parts) |
-| Mode | circular |
-| Interrupts | half-transfer, transfer-complete, transfer-error |
+```text
+Peripheral request --> DMA channel / request multiplexer
+                       | source address
+                       | destination address
+                       | transfer count and width
+                       v
+                System bus / interconnect
+                       |
+                 Memory or peripheral
+```
 
-Then enable the peripheral's DMA request (`USART2->CR3 |= USART_CR3_DMAR`) and the stream.
+Common settings include direction, increment/fixed addresses, width, burst size, priority, normal/circular mode and completion interrupts.
 
-**Circular mode + half/complete interrupts = double buffering:** while DMA fills the second half of the buffer, the CPU processes the first half, and vice versa. For variable-length messages over UART, combine circular DMA with the **IDLE line** interrupt and read the DMA's remaining-count register (`NDTR`) to know how many bytes arrived.
+#### 2. UART receive example
 
-**Other features**
+Configure the UART RX data-register address as a fixed source and the receive buffer as an incrementing destination. Configure the correct request line and byte width, set the transfer count, enable DMA and the UART DMA request. On completion or error, stop or rearm the transfer according to the driver design.
 
-- **Memory-to-memory** transfers (fast `memcpy` that frees the CPU).
-- **Scatter-gather / linked-list descriptors** (on more advanced controllers and on application processors): a chain of transfers to non-contiguous buffers without CPU intervention.
-- **FIFO and burst modes** to use the bus efficiently and pack bytes into words.
-- **Priority levels** when several streams compete.
+#### 3. Circular DMA
 
-**Common pitfalls**
+A circular buffer can support a continuous stream. Half-transfer and transfer-complete events identify regions that software can process. The CPU must not process a region while the device is overwriting it; handle overrun and producer/consumer tracking.
 
-- **Buffer lifetime:** never use a local (stack) buffer for a DMA transfer that outlives the function.
-- **Cache coherency** on Cortex-M7/A (clean/invalidate, alignment).
-- **Bus access restrictions:** some DMA controllers cannot reach certain memories (e.g. DTCM on STM32H7) — the transfer fails silently or with an error flag.
-- **Volatile:** the CPU reading a buffer that DMA writes must not be optimised into reading stale values; use `volatile` access or a barrier after the completion interrupt.
-- **Error handling:** check transfer-error flags (bus errors from bad addresses).
+#### 4. Cache and address considerations
+
+On cached systems, use DMA-accessible memory and the required cache synchronization. The device-visible address may differ from the CPU pointer. Some MCU RAM regions are not accessible to every DMA controller.
+
+**Interview takeaway:** DMA saves CPU work for bulk transfers, but software remains responsible for setup, synchronization, ownership, error recovery and completion.
 
 ### What low-power modes do MCUs have? {M}
 **Short answer:** Names differ by vendor, but there are usually three levels. **Sleep**: the CPU clock stops (`WFI`/`WFE`), peripherals keep running, and any interrupt wakes it within a few cycles. **Stop/deep sleep**: most clocks and the PLL stop, RAM and registers are kept, wake-up comes from external interrupts, the RTC or a few low-power peripherals in microseconds, and clocks must be reconfigured afterwards. **Standby/shutdown**: almost everything is powered off, RAM is lost (except a small backup domain), wake-up is from a few pins or the RTC, and the MCU restarts through reset.
