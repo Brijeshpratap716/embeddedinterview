@@ -752,3 +752,75 @@ void product_except(const int32_t a[],size_t n,int64_t out[])
 
 **Complexity:** O(n) time, O(1) auxiliary space excluding output.
 
+### Anagram check using a frequency array in C {E}
+The frequency counting (hashing) approach is an optimal solution for checking whether two strings are anagrams.
+
+#### How the code works
+
+**Step 1:** Increment the frequency of each character in "listen".
+
+**Step 2:** Decrement the frequency of each character in "silent".
+
+| Character | After first loop | After second loop |
+|---|---:|---:|
+| l | 1 | 0 |
+| i | 1 | 0 |
+| s | 1 | 0 |
+| t | 1 | 0 |
+| e | 1 | 0 |
+| n | 1 | 0 |
+
+**Step 3:** Check whether all 256 frequency entries are zero. If yes, both strings are anagrams.
+
+#### C program
+
+In C, char can be signed, which means some character values can be negative. Use (unsigned char) when indexing the frequency array to prevent out-of-bounds access on an 8-bit-byte system.
+
+```c
+#include <stdio.h>
+
+int main()
+{
+    char s1[] = "listen", s2[] = "silent";
+    int freq[256] = {0};
+
+    for (int i = 0; s1[i] != '\0'; i++) {
+        freq[(unsigned char)s1[i]]++;
+    }
+
+    for (int i = 0; s2[i] != '\0'; i++) {
+        freq[(unsigned char)s2[i]]--;
+    }
+
+    for (int j = 0; j < 256; j++) {
+        if (freq[j] != 0) {
+            printf("No");
+            return 0;
+        }
+    }
+
+    printf("Yes");
+    return 0;
+}
+```
+
+#### Complexity
+
+| Parameter | Complexity |
+|---|---|
+| Time complexity | O(n + m) |
+| Space complexity | O(1) |
+| Approach | Frequency counting |
+| Sorting required | No |
+
+Here, n and m are the lengths of the two strings.
+
+#### Important interview follow-ups
+
+- **Different string lengths?** The code already handles this.
+- **Only lowercase English characters?** Use freq[26] and index with s1[i] - 'a'.
+- **Case-insensitive anagrams?** Use tolower() from <ctype.h> with unsigned char inputs.
+- **Can we use XOR instead?** No. Different character combinations can produce the same XOR result.
+
+This approach is suitable for coding interviews. The example assumes character counts fit in int.
+
