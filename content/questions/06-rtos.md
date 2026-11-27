@@ -533,19 +533,32 @@ A faster tick improves nominal delay granularity but increases periodic interrup
 **Interview takeaway:** A tick is a kernel time base, not a guarantee of exact execution time. Tickless idle saves energy by suppressing unnecessary ticks, not by stopping time.
 
 ### What is the idle task and what is it used for? {E}
-**Short answer:** The idle task is created by the kernel at the lowest priority and runs whenever no other task is ready. In FreeRTOS it frees the memory of deleted tasks and calls an optional **idle hook** that applications use to enter low-power sleep, do background work, or measure CPU load. It must never block or take long, because then deleted tasks are not cleaned up and the system cannot sleep.
+The idle task runs when no other eligible task can execute. It gives the RTOS a defined lowest-priority execution context.
 
-**Uses of the idle hook (`vApplicationIdleHook`, `configUSE_IDLE_HOOK`)**
+#### 1. Common uses
 
-- **Power saving:** execute `__WFI()` so the CPU sleeps until the next interrupt (or use tickless idle for deeper sleep).
-- **CPU load measurement:** count how often the idle loop runs, or measure time spent in idle: `load = 1 − idle_time / total_time`.
-- **Low-priority background work** that must never delay real tasks (e.g. scrubbing memory, non-urgent checks). Keep it short and non-blocking.
+- Enter a platform-supported low-power state.
+- Run an optional idle hook.
+- Perform kernel-specific housekeeping.
 
-**What it must not do:** call blocking APIs (it must always be ready), or run long jobs (a task of equal priority 0 would wait; and stuck idle means memory from deleted tasks never gets freed).
+In FreeRTOS, the idle task also participates in cleanup of resources for tasks that delete themselves, depending on configuration and execution path.
 
-**Diagnostic value:** if the idle task never runs, some task is busy-waiting or the system is overloaded, so many teams monitor idle time as a health metric and alarm when it drops below a threshold (e.g. 20%).
+#### 2. Idle hook
 
-**Zephyr:** has an idle thread too; power management integrates with it automatically (`CONFIG_PM`).
+```c
+void vApplicationIdleHook(void)
+{
+    // Short, nonblocking idle work only.
+}
+```
+
+Enable the applicable FreeRTOS configuration. A real power-management implementation must coordinate wake sources and scheduler/timer state; do not blindly enter a deep sleep mode in the hook.
+
+#### 3. CPU load estimate
+
+If the idle task executes for 30% of an observation interval, non-idle task activity is approximately 70%, assuming the measurement accounts appropriately for interrupts and other untracked runtime.
+
+**Interview takeaway:** Never block the idle task or place essential deadline-sensitive work solely in an idle hook. It may receive little CPU time under heavy load.
 
 ### How do you choose task priorities? Explain rate-monotonic scheduling. {H}
 **Short answer:** For periodic tasks, **rate-monotonic scheduling (RMS)** assigns higher fixed priorities to tasks with shorter periods (higher rates). For independent periodic tasks with deadlines equal to their periods, RMS is optimal among fixed-priority policies, and a task set is guaranteed schedulable if total utilisation `U = Σ Cᵢ/Tᵢ ≤ n(2^(1/n) − 1)`, which approaches **69.3%** for large n. Above that bound a set may still be schedulable, which you check with exact **response-time analysis**.
