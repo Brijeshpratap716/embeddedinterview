@@ -23,65 +23,28 @@ Use hardware watchpoints for corrupted addresses and trace when halting affects 
 **Interview takeaway:** Distinguish the instruction that crashes from the earlier operation that caused corruption. Preserve reproducible evidence.
 
 ### How do you analyse a HardFault on a Cortex-M? {H}
-**Short answer:** On a fault, the CPU stacks R0–R3, R12, LR, PC and xPSR on the active stack. A HardFault handler written in assembly picks the correct stack pointer (MSP or PSP, from bit 2 of the EXC_RETURN value in LR) and passes it to a C function that reads the stacked **PC** (the faulting instruction, or the one after it for imprecise faults) and **LR** (the caller), together with the fault status registers: **CFSR** (UsageFault/BusFault/MemManage bits), **HFSR** (FORCED = an escalated configurable fault), **MMFAR** and **BFAR** (faulting data address when the valid bits are set). Then look up the PC in the map file or with `addr2line`.
+On Cortex-M, HardFault indicates a fault that is directly routed or escalated to the HardFault handler. On cores that implement configurable faults, inspect their status registers to identify the original exception.
 
-```c
-#include <stdint.h>
-
-typedef struct { uint32_t r0, r1, r2, r3, r12, lr, pc, xpsr; } stack_frame_t;
-
-/* kept in a .noinit section so it survives a reset; inspect after reboot */
-__attribute__((section(".noinit"))) volatile struct {
-    uint32_t magic, pc, lr, cfsr, hfsr, mmfar, bfar, sp;
-} crash;
-
-__attribute__((naked)) void HardFault_Handler(void)
-{
-    __asm volatile(
-        "tst lr, #4      \n"      /* EXC_RETURN bit 2: 0 = MSP, 1 = PSP */
-        "ite eq          \n"
-        "mrseq r0, msp   \n"
-        "mrsne r0, psp   \n"
-        "b hardfault_c   \n");
-}
-
-void hardfault_c(stack_frame_t *f)
-{
-    crash.magic = 0xDEADFA17;
-    crash.pc    = f->pc;
-    crash.lr    = f->lr;
-    crash.sp    = (uint32_t)f;
-    crash.cfsr  = *(volatile uint32_t *)0xE000ED28;   /* SCB->CFSR */
-    crash.hfsr  = *(volatile uint32_t *)0xE000ED2C;   /* SCB->HFSR */
-    crash.mmfar = *(volatile uint32_t *)0xE000ED34;   /* SCB->MMFAR */
-    crash.bfar  = *(volatile uint32_t *)0xE000ED38;   /* SCB->BFAR */
-    for (;;) { }   /* or: __BKPT(0) when debugging; NVIC_SystemReset() in production */
-}
+#### 1. Capture the exception frame
+```text
+Stacked frame: R0 R1 R2 R3 R12 LR PC xPSR
+                   ^
+      MSP or PSP selected by EXC_RETURN
 ```
 
-```sh
-arm-none-eabi-addr2line -e app.elf -f -i 0x08001a3c     # function and source line of the stacked PC
+Capture EXC_RETURN before a compiler prologue changes context. Account for extended floating-point frames and stack alignment where applicable.
+
+#### 2. Decode the cause
+Read HFSR and CFSR on supporting cores. MMFAR and BFAR are meaningful only if their corresponding valid bits are set. FORCED in HFSR indicates escalation. A precise bus fault may identify the exact instruction; an imprecise fault may not.
+
+#### 3. Debug
+```bash
+arm-none-eabi-addr2line -e firmware.elf -f -C 0x08001234
+arm-none-eabi-objdump -d firmware.elf
 ```
+Replace the address with the captured PC. Validate stack memory before dereferencing it.
 
-**Decoding CFSR (common bits)**
-
-| Bit (CFSR) | Meaning | Typical cause |
-|---|---|---|
-| IACCVIOL / DACCVIOL (MemManage) | MPU violation on instruction/data access | stack overflow into a guard region, NULL page protection |
-| PRECISERR + BFARVALID (BusFault) | bus error at the address in BFAR | access to a non-existent address, peripheral clock not enabled |
-| IMPRECISERR (BusFault) | bus error on a buffered write; PC is after the real fault | write to an invalid address; set `DISDEFWBUF` (ACTLR) while debugging to make it precise |
-| STKERR / UNSTKERR | fault while stacking/unstacking | stack overflow, corrupted SP |
-| UNDEFINSTR (UsageFault) | undefined instruction | executing data, corrupted function pointer, wrong instruction set |
-| INVSTATE | Thumb bit not set | function pointer without the low bit set, jumping to an ARM-state address |
-| INVPC | invalid EXC_RETURN | corrupted LR in an exception handler |
-| UNALIGNED / DIVBYZERO | only if trapping enabled (`CCR`) | unaligned access, integer divide by zero |
-
-**Tips**
-
-- Enable the separate MemManage, BusFault and UsageFault handlers (`SCB->SHCSR`) for more precise reporting.
-- A PC of `0xFFFFFFFx` or similar garbage usually means the stack was corrupted and a return address was overwritten.
-- If the stacked PC is in the middle of a function that "cannot" fault, check the LR and the stack contents for what called it, and suspect memory corruption.
-- Debuggers and IDEs (STM32CubeIDE fault analyser, Ozone, SEGGER's HardFault handler, Memfault) automate this decoding.
+**Interview takeaway:** A fault during exception stacking may invalidate the saved frame. Capture the evidence and use a controlled recovery policy rather than blindly returning.
 
 ### What is the difference between JTAG and SWD, and what can a debug probe do? {E}
 **Short answer:** **JTAG** (IEEE 1149.1) is a 4/5-wire debug and boundary-scan interface (TCK, TMS, TDI, TDO, optional TRST) that can daisy-chain several devices. **SWD** (Serial Wire Debug) is Arm's 2-wire alternative (SWCLK, SWDIO) that gives the same debug access to Cortex cores with fewer pins; it is the default on Cortex-M. Both connect a debug probe (J-Link, ST-LINK, CMSIS-DAP/DAPLink, Lauterbach) to the chip's debug access port, which lets the host flash memory, halt and step the CPU, read and write memory and registers while running, set hardware breakpoints and watchpoints, and receive trace.
