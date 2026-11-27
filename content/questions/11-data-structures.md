@@ -191,49 +191,47 @@ UART receive, audio sample queues and producer/consumer pipelines. Push/pop are 
 **Interview takeaway:** Define empty, full and overflow behavior explicitly. The simple implementation above is single-context only; concurrent access requires a suitable protocol.
 
 ### When is a ring buffer safe without locks? {H}
-**Short answer:** When there is exactly **one producer and one consumer**, only the producer writes `head` and only the consumer writes `tail`, each index is a word-sized variable updated with a single atomic store, and the producer writes the data **before** publishing the new head (the consumer reads the data **after** seeing the new head). On a single-core MCU, `volatile` indices plus a compiler barrier are enough; on multi-core or weakly ordered CPUs, use C11 atomics with release/acquire ordering. With several producers or consumers you need a lock, a critical section, or a CAS-based design.
+A ring buffer can avoid locks in a single-producer/single-consumer (SPSC) design if each side owns its index and publication uses the required atomic ordering.
+
+#### 1. C11 example
 
 ```c
 #include <stdatomic.h>
 #include <stdbool.h>
-#include <stdint.h>
+#define N 8
 
-#define N 256u
-typedef struct {
-    uint8_t data[N];
-    _Atomic uint32_t head;      /* written only by the producer */
-    _Atomic uint32_t tail;      /* written only by the consumer */
-} spsc_t;
+static unsigned char buf[N];
+static atomic_uint head, tail;
 
-bool spsc_put(spsc_t *q, uint8_t b)                  /* e.g. in the UART RX ISR */
+bool push(unsigned char value)
 {
-    uint32_t h = atomic_load_explicit(&q->head, memory_order_relaxed);
-    uint32_t t = atomic_load_explicit(&q->tail, memory_order_acquire);
-    if (h - t == N) return false;
-    q->data[h & (N - 1)] = b;                                     /* 1. write data */
-    atomic_store_explicit(&q->head, h + 1, memory_order_release);  /* 2. publish */
+    unsigned h = atomic_load_explicit(&head, memory_order_relaxed);
+    unsigned next = (h + 1) % N;
+    if (next == atomic_load_explicit(&tail, memory_order_acquire))
+        return false;
+    buf[h] = value;
+    atomic_store_explicit(&head, next, memory_order_release);
     return true;
 }
 
-bool spsc_get(spsc_t *q, uint8_t *b)                 /* e.g. in a task */
+bool pop(unsigned char *value)
 {
-    uint32_t t = atomic_load_explicit(&q->tail, memory_order_relaxed);
-    uint32_t h = atomic_load_explicit(&q->head, memory_order_acquire);
-    if (h == t) return false;
-    *b = q->data[t & (N - 1)];                                    /* read data after acquire */
-    atomic_store_explicit(&q->tail, t + 1, memory_order_release);  /* free the slot */
+    unsigned t = atomic_load_explicit(&tail, memory_order_relaxed);
+    if (t == atomic_load_explicit(&head, memory_order_acquire))
+        return false;
+    *value = buf[t];
+    atomic_store_explicit(&tail, (t + 1) % N, memory_order_release);
     return true;
 }
 ```
 
-**Why each rule matters**
+The producer releases head after writing the slot; the consumer acquires head before reading. The consumer similarly publishes tail after reading so the producer cannot reuse a slot prematurely.
 
-- **Single writer per index:** if two producers both read `head`, both write the same slot and both increment: one item is lost. A read-modify-write without atomic operations is a race.
-- **Ordering:** without release/acquire (or barriers), the CPU or compiler may make the new `head` visible before the data, so the consumer reads stale data. Cortex-M0/M3/M4 execute in order and the compiler barrier is the main concern; Cortex-M7, Cortex-A and multi-core systems need real barriers (`dmb`).
-- **Atomic index size:** a 32-bit index on a 32-bit MCU is written in one instruction; a 64-bit index on a 32-bit MCU would not be atomic.
-- **Cache coherency:** with DMA or another core without coherent caches, the buffer needs cache maintenance or uncached memory.
+#### 2. Limitations
 
-**Interview follow-up:** "What if two ISRs both write?" Make the producer side a critical section (mask interrupts briefly), or give each ISR its own queue.
+Exactly one producer and one consumer, initialized state, valid output pointer, no concurrent reset. Verify atomics are lock-free and appropriate for the execution context if using this from an ISR. DMA requires a separate ownership/cache protocol.
+
+**Interview takeaway:** Separate index ownership is necessary but not sufficient. Acquire/release ordering protects slot publication and reuse.
 
 ### What is the difference between an array and a linked list? {E}
 **Short answer:** An array stores elements contiguously, giving O(1) access by index and excellent cache behaviour, but inserting or deleting in the middle needs O(n) shifting and its size is fixed. A linked list stores each element in a separate node with a pointer, giving O(1) insertion and deletion once you have the node and flexible size, but O(n) access by position, pointer overhead and poor cache locality.
