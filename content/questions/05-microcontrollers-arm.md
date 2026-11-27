@@ -1251,4 +1251,4 @@ Application / Super Loop
 
 **Note:** The startup file contains the vector table and reset handler. The linker script defines the memory layout and section addresses. The addresses shown assume the reset vector table is mapped at zero. The exact initialization order depends on the MCU and toolchain; a device-specific ROM bootloader may also execute before the application startup code. Interrupt masking and enabling are startup-policy dependent. The .bss section is zeroed in RAM, not copied from flash.
 
-Further reading: [Microcontroller booting process and reset sequence](https://microcontrollerslab.com/microcontroller-booting-process-reset-sequence/).
+
