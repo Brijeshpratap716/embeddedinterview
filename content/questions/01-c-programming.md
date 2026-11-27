@@ -763,44 +763,60 @@ Parentheses ensure correct expansion when expressions are passed as arguments. T
 **Interview takeaway:** Always wrap individual macro arguments and the entire expression macro body in parentheses to prevent operator precedence problems. Prefer inline functions when arguments may have side effects.
 
 ### Why are multi-line macros wrapped in do { } while(0)? {M}
-**Short answer:** It turns several statements into one statement that needs a trailing semicolon, so the macro behaves correctly everywhere a single statement can appear, especially in an `if`/`else` without braces. The compiler removes the "loop" completely, so it costs nothing.
+A multi-statement macro is wrapped in `do { ... } while (0)` to make it behave like **one C statement**, even when used inside an unbraced `if-else`.
+
+#### 1. Problem without a wrapper
 
 ```c
-#define SWAP(a, b) do { int t_ = (a); (a) = (b); (b) = t_; } while (0)
+#define RESET(a,b) (a)=0; (b)=0
 
-if (x > y)
-    SWAP(x, y);      /* one statement: works */
+if (error)
+    RESET(x,y);
+```
+
+After expansion, only `x=0` is conditional; `y=0` executes regardless of the condition.
+
+#### 2. Why braces alone are insufficient
+
+```c
+#define RESET(a,b) { (a)=0; (b)=0; }
+
+if (error)
+    RESET(x,y);
 else
-    other();
+    recover();
 ```
 
-**What goes wrong without it**
+The semicolon after the closing brace becomes a separate empty statement, so the `else` cannot attach to the `if`.
 
-With only braces:
+#### 3. Correct implementation
 
 ```c
-#define SWAP(a, b) { int t_ = (a); (a) = (b); (b) = t_; }
+#define RESET(a,b) do { \
+    (a) = 0;           \
+    (b) = 0;           \
+} while (0)
 
-if (x > y)
-    SWAP(x, y);      /* expands to { ... };  <- the ';' ends the if statement */
-else                 /* error: 'else' without a previous 'if' */
-    other();
+if (error)
+    RESET(x,y);
+else
+    recover();
 ```
 
-With no braces at all, only the first statement would be controlled by the `if`, and the rest would always run.
+The body executes once and the caller's semicolon completes the do-while statement. There is no useful loop to execute again; optimizing compilers remove unnecessary loop overhead.
 
-**Alternatives**
-
-- A `static inline` function, which avoids the problem entirely and is type-checked; prefer it when possible.
-- GCC/Clang **statement expressions** `({ ... })` can also return a value, but they are a compiler extension, not standard C.
-- The comma operator `(a(), b())` works for simple expression-only macros.
-
-**Typical embedded uses:** logging macros that capture `__FILE__` and `__LINE__`, `ASSERT()` macros that call a fault handler, and critical-section helpers:
+#### 4. Use in firmware
 
 ```c
-#define CRITICAL(code) do { uint32_t pm_ = __get_PRIMASK(); __disable_irq(); \
-                            code; __set_PRIMASK(pm_); } while (0)
+#define LOG_ERROR(msg) do { \
+    log_message(msg);       \
+    error_count++;          \
+} while (0)
 ```
+
+This is useful for logging, assertions and grouped register operations. It does not make the operations atomic or protect against interrupts.
+
+**Interview takeaway:** Use `do { ... } while (0)` for multi-statement macros. Prefer a typed inline function when preprocessing is unnecessary. The wrapper does not fix repeated argument evaluation, and `break` or `continue` inside it affects the wrapper loop.
 
 ### What are # and ## in macros? {M}
 **Short answer:** `#` (the stringizing operator) turns a macro argument into a string literal. `##` (the token-pasting operator) joins two tokens into one. They let macros generate names and strings automatically.
