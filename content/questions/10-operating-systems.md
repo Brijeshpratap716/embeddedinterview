@@ -841,3 +841,137 @@ A compiler barrier does not emit a hardware fence. Cache maintenance and DMA own
 
 **Interview takeaway:** Coherency is not ordering, and volatile is not synchronization. Use acquire/release, locks or documented barrier APIs appropriate to the observer and memory type.
 
+### What is a Linux process? {M}
+
+A process is an executing program with an address space, resources and at least one thread.
+
+
+### What is a thread? {M}
+
+A thread is a schedulable execution context with its own registers and stack, sharing process resources with other threads.
+
+
+### What is the difference between fork() and clone()? {M}
+
+fork creates a child with a logically separate address space using copy-on-write. clone allows selective sharing of memory, files and other resources.
+
+
+### What do wait() and exit() do? {M}
+
+exit terminates a process and makes its status available; wait collects a child's termination status and reaps it.
+
+
+### What is copy-on-write? {M}
+
+Parent and child initially share read-only physical pages. A write fault causes a private copy when necessary.
+
+
+### What are Linux scheduling classes? {M}
+
+Linux uses classes including deadline, real-time, fair and idle; higher-priority eligible classes take precedence.
+
+
+### What are nice values? {M}
+
+Nice ranges from -20 to 19 and influences the CPU weight of normal fair-scheduled tasks; lower values receive greater weight.
+
+
+### What is starvation? {M}
+
+A task is repeatedly denied a needed resource or CPU time because other tasks keep winning access.
+
+
+### What is priority inversion? {M}
+
+A high-priority task waits for a lock held by a low-priority task, potentially delayed by medium-priority tasks.
+
+
+### What is priority inheritance? {M}
+
+The lock owner temporarily inherits the waiting higher-priority task's priority to reduce priority inversion.
+
+
+### What is the difference between virtual and physical addresses? {M}
+
+Virtual addresses belong to an address space; physical addresses identify locations in the system physical address map. The MMU translates between them.
+
+
+### What is a page and a page frame? {M}
+
+A page is a fixed-size virtual memory block; a page frame is a corresponding fixed-size physical memory block.
+
+
+### What is a page table entry (PTE)? {M}
+
+A PTE describes a mapping or its absence, including a physical frame number and attributes such as permissions and access status.
+
+
+### What is a page directory? {M}
+
+An upper-level page-table structure points to lower-level tables or directly maps large pages.
+
+
+### What is the difference between minor and major page faults? {M}
+
+A minor fault can be resolved without storage I/O; a major fault requires I/O. Invalid accesses may instead cause SIGSEGV or SIGBUS.
+
+
+### What is the difference between a page fault and a segmentation fault? {M}
+
+A page fault is a hardware exception that may be resolved normally. SIGSEGV is a signal typically delivered when an access violates a mapping or its permissions.
+
+
+### What is NUMA? {M}
+
+Non-uniform memory access means memory latency and bandwidth depend on the CPU and memory node involved.
+
+
+### What is NUMA versus UMA? {M}
+
+UMA offers broadly uniform memory access costs; NUMA has faster local and typically slower remote memory access.
+
+
+### What is NUMA first-touch allocation? {M}
+
+Under the default local allocation policy, a physical page is typically allocated near the CPU that first faults it in, subject to policy and availability.
+
+
+### What is NUMA-aware scheduling? {M}
+
+The scheduler tries to keep tasks near their memory and may migrate tasks or pages to reduce remote accesses.
+
+
+### What is a binary semaphore? {M}
+
+A semaphore used with a count of zero or one coordinates access or events; unlike a mutex it need not have an owner.
+
+
+### What is a reader-writer lock? {M}
+
+It permits multiple simultaneous readers or one exclusive writer.
+
+
+### What is compare-and-swap (CAS)? {M}
+
+An atomic operation updates a value only if its current value matches an expected value.
+
+
+### What is lock-free programming? {M}
+
+Algorithms use atomic operations rather than blocking locks and guarantee system-wide progress, not necessarily progress for every thread.
+
+
+### What is a compiler barrier versus a CPU memory barrier? {M}
+
+A compiler barrier restricts compiler reordering; a CPU barrier enforces specified hardware memory ordering. Neither alone necessarily provides both guarantees.
+
+
+### Why can spinlocks be inefficient in user space? {M}
+
+A spinning thread wastes CPU cycles and may wait while the lock owner is descheduled. They can still be useful for very short critical sections.
+
+
+### Which IPC mechanism is fastest? {M}
+
+Shared memory often minimizes copying for large data transfers, but synchronization and workload determine actual performance.
+
