@@ -1409,29 +1409,64 @@ The same pattern is used with embedded list_head nodes and other kernel objects.
 **Interview takeaway:** The supplied pointer must refer to the correct member of a live enclosing object. Use the kernel's container_of macro in Linux rather than recreating it. offsetof cannot be used on a bit-field.
 
 ### How do you allocate a 64-byte-aligned buffer without malloc? {M}
-**Short answer:** Use the C11 alignment specifier on a fixed-size object, or a compiler/platform alignment facility.
+Use an alignment specifier to allocate a buffer in static or automatic storage without calling malloc.
+
+#### 1. C11 implementation
 
 ```c
 #include <stdint.h>
+
+#define ALIGNMENT 64
+
+_Alignas(ALIGNMENT)
+static uint8_t buffer[256];
+```
+
+On a compiler and target supporting the requested extended alignment, buffer starts at an address divisible by 64.
+
+#### 2. GCC/Clang alternative
+
+```c
+static uint8_t buffer[256]
+    __attribute__((aligned(64)));
+```
+
+This uses a compiler-specific alignment attribute.
+
+#### 3. Verify alignment
+
+```c
 #include <stdbool.h>
-#include <stddef.h>
-_Alignas(64) static unsigned char buffer[256];
 
-bool is_aligned(const void *p, uintptr_t a)
-{
-    return a && !(a & (a - 1u)) &&
-           !((uintptr_t)p & (a - 1u));
-}
+bool aligned = ((uintptr_t)buffer & 63u) == 0;
 ```
 
-**Example:** 0x1000 is 64-byte aligned because its low six bits are zero; 0x1004 is not.
+A 64-byte-aligned address has its lowest six bits cleared on a conventional byte-addressed target.
 
-```text
-0x1000      0x1040      0x1080      0x10C0
-| 64 bytes  | 64 bytes  | 64 bytes  | 64 bytes  |
-^ buffer start
+#### 4. Manual alignment with extra storage
+
+```c
+#include <stdint.h>
+
+static unsigned char raw[256 + 64 - 1];
+
+uintptr_t addr = (uintptr_t)raw;
+uintptr_t aligned = (addr + 63u) & ~(uintptr_t)63u;
+
+unsigned char *buf = (unsigned char *)aligned;
 ```
 
-**Why:** Alignment can be needed for SIMD, cache-line isolation and DMA buffers. Extended alignment support depends on the compiler and target. DMA mapping and cache ownership are separate requirements; alignment alone does not make the buffer DMA-safe.
+This conventional flat-address technique assumes the integer address addition cannot overflow and the platform supports integer-to-pointer recovery. Reserving 63 extra bytes allows the aligned start to move forward by at most 63 bytes while leaving 256 usable bytes.
 
-**Interview takeaway:** Static aligned storage avoids heap allocation and provides the required address boundary when supported.
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 114" width="100%" role="img" aria-label="Raw buffer starting at example address 0x1003, skip 61 bytes to 0x1040 to obtain aligned 256-byte usable region">
+<text x="10" y="14" font-size="11" font-weight="600" fill="currentColor">Example: raw buffer at 0x1003</text>
+<rect x="10" y="32" width="61" height="34" fill="#94a3b8" fill-opacity=".2" stroke="#94a3b8"/><text x="40.5" y="53" font-size="10" text-anchor="middle" fill="currentColor">Skip 61 B</text>
+<rect x="71" y="32" width="256" height="34" fill="#16a34a" fill-opacity=".14" stroke="#16a34a"/><text x="199" y="53" font-size="12" text-anchor="middle" fill="currentColor">Usable 256-byte buffer</text>
+<rect x="327" y="32" width="2" height="34" fill="#94a3b8" stroke="#94a3b8"/><path d="M71 26 V77" stroke="#16a34a" stroke-dasharray="3 2"/><text x="10" y="84" font-size="10" fill="currentColor">0x1003</text><text x="71" y="100" font-size="11" font-weight="600" fill="currentColor">0x1040 (64-byte boundary)</text></svg></div>
+
+#### 5. Why embedded systems need it
+
+DMA descriptors, cache-line maintenance, SIMD operations and hardware buffers may require stronger alignment than ordinary C objects. Alignment alone does not guarantee DMA accessibility or coherency; use the required device-specific or operating-system DMA APIs.
+
+**Interview takeaway:** Prefer _Alignas(64) when supported. Manual alignment requires extra space, a power-of-two alignment and valid address arithmetic.
+
