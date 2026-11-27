@@ -587,53 +587,45 @@ CRC detects many burst and random errors efficiently. It does not authenticate t
 **Interview takeaway:** Match all CRC parameters and verify a known test vector. Hardware, table-driven and bitwise implementations must produce the same protocol-defined result.
 
 ### How do you implement a moving average filter efficiently? {M}
-**Short answer:** Keep a ring buffer of the last N samples and a running sum. For each new sample, subtract the oldest sample, add the newest, and store it in the buffer: O(1) per sample regardless of N. Use a power-of-two N so the division is a shift. When RAM is tight, an **exponential moving average** (`y += (x − y) >> k`) needs no buffer at all.
+A moving average filter computes the average of the most recent N samples. A circular buffer and running sum reduce each update from O(N) to O(1).
+
+#### 1. C implementation
 
 ```c
-#include <stdint.h>
-#include <stdio.h>
+#define N 8
 
-#define LOG2_N 3
-#define N (1u << LOG2_N)                  /* 8-sample window */
+struct average {
+    int32_t samples[N];
+    int64_t sum;
+    unsigned pos, count;
+};
 
-typedef struct { uint16_t win[N]; uint32_t sum; uint8_t i; } mavg_t;
-
-uint16_t mavg_update(mavg_t *f, uint16_t x)
+int32_t update(struct average *a, int32_t x)
 {
-    f->sum += (uint32_t)x - f->win[f->i];      /* unsigned wrap cancels out correctly */
-    f->win[f->i] = x;
-    f->i = (uint8_t)((f->i + 1) & (N - 1));
-    return (uint16_t)(f->sum >> LOG2_N);
-}
+    if (a->count == N)
+        a->sum -= a->samples[a->pos];
+    else
+        a->count++;
 
-typedef struct { int32_t y; } ema_t;           /* fixed point: y holds value << 4 */
-int32_t ema_update(ema_t *f, int32_t x, int k)  /* alpha = 1/2^k */
-{
-    f->y += ((x << 4) - f->y) >> k;
-    return f->y >> 4;
-}
+    a->samples[a->pos] = x;
+    a->sum += x;
+    a->pos = (a->pos + 1) % N;
 
-int main(void)
-{
-    mavg_t m = {0};
-    ema_t e = { 0 };
-    for (int t = 0; t < 12; t++) {
-        uint16_t x = (t < 4) ? 0 : 800;        /* step input */
-        printf("%u/%ld ", mavg_update(&m, x), (long)ema_update(&e, x, 2));
-    }
-    printf("\n");
-    return 0;
+    return (int32_t)(a->sum / a->count);
 }
 ```
 
-**Details**
+Initialize the structure to zero. The wider accumulator safely holds eight int32_t values. The startup policy averages only the available samples.
 
-- The sum must be wide enough: N × max sample (8 × 4095 fits easily in 32 bits).
-- During the first N samples the average includes the zero-initialised buffer; pre-fill with the first sample if that matters.
-- The moving average delays the signal by (N − 1)/2 samples and is a weak low-pass filter with ripples in its frequency response.
-- **EMA** has an equivalent time constant of about 2^k samples, costs one subtraction and shift, but keeps fractional precision only if you store the state with extra bits (as above).
-- **Median filter** (median of the last 3–9 samples) removes spikes that averages smear.
-- For sharper frequency responses, use FIR/IIR filters (CMSIS-DSP provides optimised versions).
+#### 2. Example (N=3)
+
+Samples 3, 6, 9 give average 6. When 12 arrives, remove 3 and add 12; the new average is (6+9+12)/3 = 9.
+
+#### 3. Trade-off
+
+A larger window smooths noise but increases delay and reduces responsiveness. Integer division truncates, which may matter for signal-processing precision.
+
+**Interview takeaway:** A running sum and circular storage provide constant-time updates. Size the accumulator for the worst-case sum and define startup behavior.
 
 ### How do you find the maximum subarray sum (Kadane's algorithm)? {M}
 **Short answer:** Scan the array once, tracking the best sum of a subarray that **ends at the current element** (either extend the previous best-ending subarray or start fresh at this element) and the best sum seen overall. O(n) time and O(1) memory. Initialising both with the first element (not 0) makes it correct for arrays where every number is negative (the answer is then the largest single element).
