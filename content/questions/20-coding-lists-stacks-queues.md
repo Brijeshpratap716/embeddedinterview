@@ -161,6 +161,10 @@ int delete_given_node(node_t *n)
 
 **What to say in an interview:** explain the trick, then mention that in real code you use a doubly linked list (O(1) removal with the node's own `prev`) or keep a pointer to the predecessor.
 
+#### Object identity limitation
+
+If A → B → C, and only B is supplied, copy C's payload into B, set B->next to C->next, then free C. The logical value of B disappears, but B's address remains and C's address becomes invalid. Therefore this trick is unsuitable if external references depend on node identity, if payloads own resources without an appropriate move operation, or if the supplied node is the tail. It assumes the successor was allocated by the matching allocator.
+
 ### Find the nth node from the end of a linked list (and remove it). {E}
 **Short answer:** Use two pointers: move the first one n nodes ahead, then move both one step at a time until the first reaches the end. The second pointer is then n nodes from the end. To remove that node, start both from a dummy node in front of the head so the second pointer stops just **before** the target. One pass, O(n) time, O(1) space.
 
