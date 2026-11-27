@@ -626,6 +626,12 @@ free(list);                  /* leak: nodes inside the list never freed */
 
 **Complexity:** O(MAX_ALLOCS) per call with the linear table (fine for debug builds).
 
+#### Handle the tracking table becoming full
+
+A debug wrapper must not silently lose allocation records. Reserve a free tracking slot first or free a newly allocated block and report allocation failure when there is no tracking space. On release, handle NULL separately and reject pointers not found in the live table before passing them to free. Protect the table and its counters with an appropriate lock in concurrent applications.
+
+A final leak report is meaningful after worker threads stop and expected long-lived allocations are accounted for. Compare allocation count and bytes against a known baseline during repeated device open/close cycles.
+
 ### Implement a slab-like allocator for fixed-size objects. {H}
 **Short answer:** A slab allocator divides one memory region into equal-sized slots for one object type and keeps the free slots in a singly linked **free list stored inside the free slots themselves**. Allocation pops the head of the list and free pushes the slot back, so both are O(1) with no fragmentation and no per-object header.
 
