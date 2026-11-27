@@ -246,27 +246,19 @@ TLBs may cache combined translations tagged by ASID and VMID. Hypervisors must i
 **Interview takeaway:** The guest believes IPA is physical memory. Stage 2 provides isolation; it does not mean every access requires two full page-table walks.
 
 ### How are interrupts and timers virtualized on ARM (vGIC and the generic timer)? {H}
-**Short answer:** The GICv2/v3 has hardware virtualization support: the hypervisor writes pending virtual interrupts into **List Registers** (`ICH_LR<n>_EL2`), and the guest acknowledges and completes them through the **virtual CPU interface** without trapping. KVM emulates the distributor and redistributors (the "vGIC") in the kernel. For time, each vCPU uses the **virtual timer** (`CNTV_*`), which counts physical time minus a per-VM offset; when it fires, KVM injects the virtual timer interrupt (PPI 27) into the guest.
+ARM virtualization provides interrupt and timer mechanisms that let guests receive virtual interrupts and measure time without direct ownership of physical hardware.
 
-**Interrupt path for an emulated device**
+#### vGIC
+A virtual GIC presents distributor/redistributor and CPU-interface behavior appropriate to the selected GIC version. The hypervisor or KVM tracks virtual pending/active interrupts and can use hardware list registers and maintenance interrupts where supported.
 
-1. A QEMU device raises its IRQ line → QEMU calls `KVM_IRQ_LINE` (or signals an **irqfd**, an eventfd the kernel waits on).
-2. The in-kernel vGIC marks the virtual interrupt pending for the target vCPU.
-3. Before entering the guest, KVM writes it into a **List Register** and kicks the vCPU if it is sleeping in `WFI`.
-4. The guest takes a normal IRQ exception at EL1, reads `ICC_IAR1_EL1` (which the hardware serves from the virtual interface), handles it, writes EOI. No exit is needed for the acknowledge and EOI.
+```text
+Emulated device -> virtual IRQ -> vGIC -> guest ISR
+```
 
-**Physical interrupts while the guest runs** are routed to EL2 (`HCR_EL2.IMO`), so the host can always regain the CPU (for its own devices and for scheduling).
+#### Generic timer
+Guests can use virtual counter/timer facilities. CNTVOFF_EL2 can offset the physical count to create a virtual time view. Timer expiration is presented as a virtual interrupt. Scheduling, migration and timer state require coordination.
 
-**Device passthrough:** with **GICv4/4.1**, MSIs from a passed-through PCIe device can be delivered directly to a running vCPU without a hypervisor exit.
-
-**Timers**
-
-- The **physical** timer (`CNTP`) is used by the host; the **virtual** timer (`CNTV`) by the guest. `CNTVOFF_EL2` lets each VM have its own time base (useful after migration or pause).
-- KVM saves and restores the guest's timer state on every world switch and uses a host hrtimer to wake a vCPU that is blocked in `WFI` when its timer is due.
-
-**Why it was moved into the kernel:** emulating the GIC in QEMU would turn every interrupt acknowledge and EOI into an exit to user space. In-kernel vGIC plus hardware List Registers makes interrupt-heavy workloads practical.
-
-**x86 equivalent:** APIC virtualization (APICv, AVIC) and posted interrupts.
+**Interview takeaway:** Interrupt injection changes the guest's virtual interrupt state; it is not necessarily a physical IRQ delivery. vGIC implementation details depend on GIC version and accelerator.
 
 ### What is virtio, and why is it faster than emulating a real device? {M}
 **Short answer:** Virtio is a standard for **paravirtual** devices: instead of emulating a real network card or disk controller register by register, the guest uses a simple driver that puts requests into shared-memory ring buffers (**virtqueues**) and notifies the host once per batch. This avoids most VM exits. Common devices are virtio-net, virtio-blk, virtio-scsi, virtio-gpu, virtio-console, virtio-rng and virtio-vsock.
