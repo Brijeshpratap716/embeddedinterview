@@ -3541,3 +3541,1008 @@ Given `ptr = 0x1010` for `node`, the macro computes `0x1010 − 16 = 0x1000`, th
 **The Linux version adds type checking:** it rejects a `ptr` whose type does not match `member`, using `static_assert` with `__same_type()` (older kernels used a GCC statement expression with `typeof`). The plain version above silently accepts a wrong pointer and returns garbage.
 
 **Follow-up:** the classic way to implement `offsetof` itself is `((size_t)&((type *)0)->member)`. Technically it is undefined behaviour, because it dereferences a null pointer, which is why compilers provide `__builtin_offsetof` and you should use the standard macro.
+
+@@@ power-of-two
+title: Check Power-of-Two Buffer Size
+difficulty: E
+category: Bit Manipulation
+order: 42
+## Problem
+Return 1 only when x is a nonzero power of two.
+Implement `int power2(uint32_t x)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+int power2(uint32_t x)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    
+    CHECK(power2(0)==0);
+    CHECK(power2(1)==1);
+    CHECK(power2(1024)==1);
+    CHECK(power2(1023)==0);
+    CHECK(power2(0x80000000u)==1);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Clear the lowest set bit.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+int power2(uint32_t x)
+{
+    return x && !(x & (x-1));
+}
+```
+## Explanation
+A power of two has exactly one set bit.
+
+@@@ rotate-register
+title: Rotate a 32-bit Register Left
+difficulty: E
+category: Bit Manipulation
+order: 43
+## Problem
+Rotate x left by n positions, wrapping bits around. Accept any unsigned n.
+Implement `uint32_t rotl(uint32_t x, unsigned n)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+uint32_t rotl(uint32_t x, unsigned n)
+{
+    return x;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    
+    CHECK(rotl(0x80000000u,1)==1);
+    CHECK(rotl(1,32)==1);
+    CHECK(rotl(1,33)==2);
+    CHECK(rotl(0x12345678u,8)==0x34567812u);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Reduce n modulo 32 and handle zero separately.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+uint32_t rotl(uint32_t x, unsigned n)
+{
+    n %= 32; return n ? (x << n) | (x >> (32-n)) : x;
+}
+```
+## Explanation
+The two shifts combine wrapped and retained bits without shifting by 32.
+
+@@@ bit-distance
+title: Count Changed Register Bits
+difficulty: E
+category: Bit Manipulation
+order: 44
+## Problem
+Return how many bit positions differ between two register snapshots.
+Implement `unsigned changed(uint32_t a, uint32_t b)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+unsigned changed(uint32_t a, uint32_t b)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    
+    CHECK(changed(0,0)==0);
+    CHECK(changed(0,UINT32_MAX)==32);
+    CHECK(changed(8,7)==4);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+XOR marks changed bits.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+unsigned changed(uint32_t a, uint32_t b)
+{
+    uint32_t x=a^b; unsigned n=0; while(x){x &= x-1; ++n;} return n;
+}
+```
+## Explanation
+Each iteration removes one differing bit.
+
+@@@ isolate-low-bit
+title: Isolate Lowest Active Interrupt Bit
+difficulty: E
+category: Bit Manipulation
+order: 45
+## Problem
+Return a mask containing only the lowest set bit, or zero.
+Implement `uint32_t lowest(uint32_t x)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+uint32_t lowest(uint32_t x)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    
+    CHECK(lowest(0)==0);
+    CHECK(lowest(12)==4);
+    CHECK(lowest(0x80000000u)==0x80000000u);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Use unsigned modular negation.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+uint32_t lowest(uint32_t x)
+{
+    return x & (0u-x);
+}
+```
+## Explanation
+Unsigned negation and AND preserve only the lowest one.
+
+@@@ clear-low-bit
+title: Clear Lowest Pending Event
+difficulty: E
+category: Bit Manipulation
+order: 46
+## Problem
+Clear the lowest set bit of a pending-event mask.
+Implement `uint32_t clear_low(uint32_t x)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+uint32_t clear_low(uint32_t x)
+{
+    return x;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    
+    CHECK(clear_low(0)==0);
+    CHECK(clear_low(12)==8);
+    CHECK(clear_low(1)==0);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Subtract one and AND.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+uint32_t clear_low(uint32_t x)
+{
+    return x & (x-1u);
+}
+```
+## Explanation
+Subtraction flips the trailing zeros and lowest one.
+
+@@@ sign-extend-adc
+title: Sign Extend a 12-bit ADC Sample
+difficulty: M
+category: Bit Manipulation
+order: 47
+## Problem
+Interpret the low 12 bits as a signed two's-complement sample; ignore upper bits.
+Implement `int32_t adc_signed(uint16_t x)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+int32_t adc_signed(uint16_t x)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    
+    CHECK(adc_signed(0)==0);
+    CHECK(adc_signed(0x7ff)==2047);
+    CHECK(adc_signed(0x800)==-2048);
+    CHECK(adc_signed(0xffff)==-1);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Subtract 4096 for values with bit 11 set.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+int32_t adc_signed(uint16_t x)
+{
+    int32_t v=x & 0xfff; return v>=2048 ? v-4096 : v;
+}
+```
+## Explanation
+The subtraction produces the signed value without implementation-defined signed shifts.
+
+@@@ round-power-two
+title: Round Capacity Up to Power of Two
+difficulty: M
+category: Bit Manipulation
+order: 48
+## Problem
+Return the smallest power of two at least x, with minimum 1. Return zero on overflow.
+Implement `uint32_t capacity(uint32_t x)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+uint32_t capacity(uint32_t x)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    
+    CHECK(capacity(0)==1);
+    CHECK(capacity(17)==32);
+    CHECK(capacity(16)==16);
+    CHECK(capacity(0x80000001u)==0);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Spread the highest set bit after subtracting one.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+uint32_t capacity(uint32_t x)
+{
+    if(x<=1)return 1; if(x>0x80000000u)return 0; --x; for(unsigned s=1;s<32;s*=2)x|=x>>s; return x+1;
+}
+```
+## Explanation
+The spread fills lower bits; adding one rounds up.
+
+@@@ reverse-string
+title: Reverse a Writable String In Place
+difficulty: E
+category: Pointers & Strings
+order: 49
+## Problem
+Reverse a valid NUL-terminated writable string without allocating memory.
+Implement `void reverse(char *s)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+void reverse(char *s)
+{
+    (void)s;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    char a[]="abc", b[]="";
+    CHECK((reverse(a),strcmp(a,"cba")==0));
+    CHECK((reverse(b),strcmp(b,"")==0));
+    CHECK((reverse(a),strcmp(a,"abc")==0));
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Swap opposite characters.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+void reverse(char *s)
+{
+    size_t n=0; while(s[n])++n; for(size_t i=0;i<n/2;++i){char t=s[i];s[i]=s[n-1-i];s[n-1-i]=t;}
+}
+```
+## Explanation
+Two indices reverse the bytes in linear time and constant space.
+
+@@@ implement-memset
+title: Fill a Memory Region with a Byte
+difficulty: E
+category: Pointers & Strings
+order: 50
+## Problem
+Implement memset semantics without calling libc. Assume n bytes are writable when n is nonzero.
+Implement `void *fill(void *p, int value, size_t n)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+void *fill(void *p, int value, size_t n)
+{
+    return p;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    unsigned char a[4]={0,0,0,9};
+    CHECK(fill(a,0x1ab,3)==a);
+    CHECK(a[0]==0xab && a[2]==0xab && a[3]==9);
+    CHECK(fill(a,0,0)==a && a[0]==0xab);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Use unsigned char for byte access.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+void *fill(void *p, int value, size_t n)
+{
+    unsigned char *b=p; for(size_t i=0;i<n;++i)b[i]=(unsigned char)value; return p;
+}
+```
+## Explanation
+Convert the value to a byte and write exactly n bytes.
+
+@@@ first-unique-byte
+title: Find First Unique Byte in a String
+difficulty: E
+category: Pointers & Strings
+order: 51
+## Problem
+Return the first byte occurring exactly once in a length-delimited buffer, or -1.
+Implement `int first_unique(const unsigned char *s, size_t n)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+int first_unique(const unsigned char *s, size_t n)
+{
+    return -1;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    unsigned char a[]={255,0,255};
+    CHECK(first_unique((const unsigned char*)"aabbcdd",7)=='c');
+    CHECK(first_unique((const unsigned char*)"aa",2)==-1);
+    CHECK(first_unique(a,3)==0);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Count byte frequencies before scanning again.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+int first_unique(const unsigned char *s, size_t n)
+{
+    size_t counts[256]={0}; for(size_t i=0;i<n;++i)++counts[s[i]]; for(size_t i=0;i<n;++i)if(counts[s[i]]==1)return s[i]; return -1;
+}
+```
+## Explanation
+A fixed frequency table avoids dynamic allocation.
+
+@@@ check-alignment
+title: Check DMA Address Alignment
+difficulty: E
+category: Pointers & Strings
+order: 52
+## Problem
+Return 1 if a is a nonzero power of two and addr is aligned to a bytes.
+Implement `int aligned(uintptr_t addr, uintptr_t a)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+int aligned(uintptr_t addr, uintptr_t a)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    
+    CHECK(aligned(0x1040,64)==1);
+    CHECK(aligned(0x1041,64)==0);
+    CHECK(aligned(0,0)==0);
+    CHECK(aligned(12,3)==0);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Mask the address with alignment minus one.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+int aligned(uintptr_t addr, uintptr_t a)
+{
+    return a && !(a & (a-1)) && !(addr & (a-1));
+}
+```
+## Explanation
+Aligned addresses have all offset bits clear.
+
+@@@ read-be32
+title: Decode an Unaligned Big-Endian Word
+difficulty: E
+category: Protocols & Parsing
+order: 53
+## Problem
+Read four available bytes as a big-endian uint32_t without casting the buffer to a word pointer.
+Implement `uint32_t read_be(const uint8_t *p)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+uint32_t read_be(const uint8_t *p)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    uint8_t a[]={0x12,0x34,0x56,0x78,0xff};
+    CHECK(read_be(a)==0x12345678u);
+    CHECK(read_be(a+1)==0x345678ffu);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Shift each byte into its destination position.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+uint32_t read_be(const uint8_t *p)
+{
+    return ((uint32_t)p[0]<<24)|((uint32_t)p[1]<<16)|((uint32_t)p[2]<<8)|p[3];
+}
+```
+## Explanation
+Byte access is alignment-independent and works on either CPU byte order.
+
+@@@ checksum8
+title: Validate an Additive Packet Checksum
+difficulty: E
+category: Protocols & Parsing
+order: 54
+## Problem
+A valid nonempty packet including its checksum sums to zero modulo 256. Return 1 for valid packets.
+Implement `int valid_sum(const uint8_t *p, size_t n)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+int valid_sum(const uint8_t *p, size_t n)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    uint8_t a[]={10,20,226};
+    CHECK(valid_sum(a,3)==1);
+    CHECK(valid_sum(a,2)==0);
+    CHECK(valid_sum(a,0)==0);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Accumulate modulo 256.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+int valid_sum(const uint8_t *p, size_t n)
+{
+    if(!n)return 0; uint8_t s=0; for(size_t i=0;i<n;++i)s=(uint8_t)(s+p[i]); return s==0;
+}
+```
+## Explanation
+An eight-bit accumulator naturally retains the low byte of the sum.
+
+@@@ tlv-validate
+title: Validate Length-Delimited Sensor Records
+difficulty: M
+category: Protocols & Parsing
+order: 55
+## Problem
+Each record has one type byte, one length byte and that many payload bytes. Return 1 if the entire buffer consists of complete records; empty is valid.
+Implement `int valid_tlv(const uint8_t *p, size_t n)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+int valid_tlv(const uint8_t *p, size_t n)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    uint8_t a[]={1,1,42,2,0};
+    CHECK(valid_tlv(a,5)==1);
+    CHECK(valid_tlv(a,4)==0);
+    CHECK(valid_tlv(a,1)==0);
+    CHECK(valid_tlv(a,0)==1);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Check remaining length before accessing or advancing.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+int valid_tlv(const uint8_t *p, size_t n)
+{
+    while(n){if(n<2)return 0; size_t len=p[1]; if(len>n-2)return 0; p+=2+len; n-=2+len;} return 1;
+}
+```
+## Explanation
+Subtracting header size only after checking avoids underflow and out-of-bounds reads.
+
+@@@ w1c-register
+title: Acknowledge Write-One-to-Clear Flags
+difficulty: E
+category: Drivers & Peripherals
+order: 56
+## Problem
+Return the value to write to a simulated write-one-to-clear status register, acknowledging only handled pending bits.
+Implement `uint32_t ack_value(uint32_t pending, uint32_t handled)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+uint32_t ack_value(uint32_t pending, uint32_t handled)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    
+    CHECK(ack_value(15,5)==5);
+    CHECK(ack_value(2,1)==0);
+    CHECK(ack_value(0,UINT32_MAX)==0);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Intersect pending and handled masks.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+uint32_t ack_value(uint32_t pending, uint32_t handled)
+{
+    return pending & handled;
+}
+```
+## Explanation
+Writing one clears that bit; do not use a read-modify-write on a W1C register.
+
+@@@ saturating-add
+title: Saturating 16-bit Sensor Addition
+difficulty: E
+category: Signal Processing
+order: 57
+## Problem
+Add two signed 16-bit samples and clamp to the representable range.
+Implement `int16_t sat_add(int16_t a, int16_t b)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+int16_t sat_add(int16_t a, int16_t b)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    
+    CHECK(sat_add(30000,10000)==32767);
+    CHECK(sat_add(-30000,-10000)==-32768);
+    CHECK(sat_add(12,-5)==7);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Widen before adding.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+int16_t sat_add(int16_t a, int16_t b)
+{
+    int32_t s=(int32_t)a+b; if(s>INT16_MAX)return INT16_MAX; if(s<INT16_MIN)return INT16_MIN; return (int16_t)s;
+}
+```
+## Explanation
+A wider intermediate avoids overflow before clamping.
+
+@@@ linked-cycle
+title: Detect a Cycle in a Linked List
+difficulty: M
+category: Data Structures
+order: 58
+## Problem
+Return 1 if a singly linked list contains a loop, otherwise zero. Use constant extra memory.
+Implement `int has_cycle(struct node *head)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+struct node { struct node *next; };
+int has_cycle(struct node *head)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    struct node b={NULL},a={&b};
+    CHECK(has_cycle(NULL)==0);
+    CHECK(has_cycle(&a)==0);
+    CHECK((b.next=&a,has_cycle(&a)==1));
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Advance one pointer twice as fast as the other.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+struct node { struct node *next; };
+int has_cycle(struct node *head)
+{
+    struct node *slow=head,*fast=head; while(fast && fast->next){slow=slow->next;fast=fast->next->next;if(slow==fast)return 1;}return 0;
+}
+```
+## Explanation
+The pointers meet inside a cycle; otherwise the fast pointer reaches the end.
+
+@@@ reverse-array
+title: Reverse a Sample Buffer In Place
+difficulty: E
+category: Arrays & Searching
+order: 59
+## Problem
+Reverse n samples in place with no extra array.
+Implement `void reverse_samples(int *a, size_t n)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+void reverse_samples(int *a, size_t n)
+{
+    (void)a;(void)n;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    int a[]={1,2,3,4};
+    CHECK((reverse_samples(a,4),a[0]==4 && a[3]==1 && a[1]==3));
+    CHECK((reverse_samples(NULL,0),1));
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Swap mirrored positions.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+void reverse_samples(int *a, size_t n)
+{
+    for(size_t i=0;i<n/2;++i){int t=a[i];a[i]=a[n-1-i];a[n-1-i]=t;}
+}
+```
+## Explanation
+Only half the array needs to be visited.
+
+@@@ rotate-array
+title: Rotate a Sample Buffer Left
+difficulty: M
+category: Arrays & Searching
+order: 60
+## Problem
+Rotate n samples left by k positions in place, accepting k greater than n.
+Implement `void rotate(int *a, size_t n, size_t k)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+static void rev(int *a,size_t n){for(size_t i=0;i<n/2;++i){int t=a[i];a[i]=a[n-1-i];a[n-1-i]=t;}}
+void rotate(int *a, size_t n, size_t k)
+{
+    (void)a;(void)n;(void)k;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    int a[]={1,2,3,4,5};
+    CHECK((rotate(a,5,2),a[0]==3 && a[4]==2 && a[3]==1));
+    CHECK((rotate(a,5,8),a[0]==1 && a[4]==5));
+    CHECK((rotate(NULL,0,9),1));
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Reverse each segment, then the entire array.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+static void rev(int *a,size_t n){for(size_t i=0;i<n/2;++i){int t=a[i];a[i]=a[n-1-i];a[n-1-i]=t;}}
+void rotate(int *a, size_t n, size_t k)
+{
+    if(!n)return; k%=n; rev(a,k); rev(a+k,n-k); rev(a,n);
+}
+```
+## Explanation
+Three reversals achieve O(n) time and O(1) space.
+
+@@@ watchdog-health
+title: Check Required Task Heartbeats
+difficulty: E
+category: Drivers & Peripherals
+order: 61
+## Problem
+A watchdog supervisor may feed the watchdog only when all required task heartbeat bits have been observed in the current window. Return 1 if healthy.
+Implement `int healthy(uint32_t observed,uint32_t required)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+int healthy(uint32_t observed,uint32_t required)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    
+    CHECK(healthy(7,5)==1);
+    CHECK(healthy(1,5)==0);
+    CHECK(healthy(0,0)==1);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Mask observed events with required events.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+int healthy(uint32_t observed,uint32_t required)
+{
+    return (observed & required)==required;
+}
+```
+## Explanation
+Extra heartbeat bits do not affect the decision. In firmware, synchronize snapshot and reset.
