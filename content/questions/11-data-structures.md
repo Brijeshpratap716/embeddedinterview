@@ -517,46 +517,39 @@ BFS can find shortest paths in an unweighted network; DFS can explore dependency
 **Interview takeaway:** BFS is useful for minimum-hop paths; DFS for deep exploration and dependency analysis. Bound graph storage and avoid unbounded recursion in small firmware stacks.
 
 ### Which sorting algorithm would you use on a microcontroller? {M}
-**Short answer:** It depends on n, memory and timing requirements. **Insertion sort** for small (n below ~20–30) or nearly sorted arrays: simple, in-place, stable and fastest in practice for tiny inputs. **Heap sort** when you need guaranteed O(n log n) with O(1) extra memory and no recursion. **Quicksort** is fastest on average but has an O(n²) worst case and uses recursion (stack); use median-of-three pivots and recurse on the smaller half if you use it. **Merge sort** is stable and O(n log n) but needs O(n) extra memory. **Counting or radix sort** for small integer keys (e.g. 8- or 12-bit ADC values) in O(n + k).
+Sorting algorithm selection on a microcontroller depends on input size, worst-case latency, memory budget and whether stability is needed.
+
+| Algorithm | Worst-case time | Extra space / property |
+|---|---|---|
+| Insertion sort | O(n²) | O(1), stable |
+| Heapsort | O(n log n) | O(1) with iterative sift |
+| Merge sort | O(n log n) | Typically O(n), stable |
+| Quicksort | O(n²) | Stack depends on implementation |
+
+#### 1. Insertion sort for small arrays
 
 ```c
-#include <stdio.h>
-#include <stddef.h>
-
-void insertion_sort(int *a, size_t n)
+void sort(int *a, size_t n)
 {
     for (size_t i = 1; i < n; i++) {
         int key = a[i];
         size_t j = i;
-        while (j > 0 && a[j - 1] > key) { a[j] = a[j - 1]; j--; }
+        while (j > 0 && a[j - 1] > key) {
+            a[j] = a[j - 1];
+            j--;
+        }
         a[j] = key;
     }
 }
-
-int main(void)
-{
-    int a[] = { 7, 3, 9, 1, 4, 1, 8 };
-    insertion_sort(a, 7);
-    for (int i = 0; i < 7; i++) printf("%d ", a[i]);   /* 1 1 3 4 7 8 9 */
-    printf("\n");
-    return 0;
-}
 ```
 
-**Typical embedded sorting problems and good answers**
+This is simple, in-place and efficient for small or nearly sorted arrays.
 
-| Problem | Good choice |
-|---|---|
-| Median filter of 5–9 samples (remove spikes) | insertion sort of a copy, or a sorting network |
-| Sort 1000 16-bit sensor readings | radix/counting sort or heap sort |
-| Keep the top-k largest values | min-heap of size k, O(n log k) |
-| Nearly sorted log entries by timestamp | insertion sort |
-| Must be stable and n is large | merge sort with a static scratch buffer |
-| Standard library available, non-critical code | `qsort` (check its stack usage and that its worst case is acceptable) |
+#### 2. Real-time choice
 
-**Hard real-time:** prefer algorithms whose worst case is acceptable and bounded (heap sort, fixed sorting networks) over ones that are fast "on average".
+For larger inputs with strict bounds, consider an iterative heapsort or another algorithm with guaranteed worst-case complexity. Avoid relying on average quicksort performance for hard deadlines without controlling its worst case.
 
-**Sorting networks:** fixed sequences of compare-and-swap operations for a known small n (for example, 19 compare-swaps give the median of 9 values); branch-free and constant time, used in DSP median filters.
+**Interview takeaway:** There is no universal best sort. A small fixed array often benefits from insertion sort; large or deadline-sensitive input requires explicit worst-case analysis.
 
 ### How do you compute a CRC and why is it used? {M}
 **Short answer:** A Cyclic Redundancy Check treats the data as a polynomial over GF(2), divides it by a fixed generator polynomial, and uses the remainder as the check value. It is very good at detecting accidental errors, including all single-bit errors, all bursts shorter than the CRC width, and most other patterns, so it is used in Ethernet, CAN, USB, storage, flash images and serial protocols. Bitwise implementations are tiny; table-driven implementations process a byte per lookup; many MCUs have a hardware CRC unit.
