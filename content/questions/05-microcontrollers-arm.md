@@ -1077,29 +1077,34 @@ Do not erase the last valid copy before committing its replacement. Use an updat
 **Interview takeaway:** Nonvolatile memory has finite endurance. Wear levelling spreads wear; transactional update design protects data integrity during resets or power loss.
 
 ### What is an RTC and how is backup domain power used? {E}
-**Short answer:** A Real-Time Clock is a low-power timer that keeps the calendar time (seconds, minutes, hours, date), usually driven by a 32.768 kHz crystal. It sits in a **backup domain** that can be powered from a separate `VBAT` pin (coin cell, supercapacitor) so it keeps running, along with a few backup registers, when the main supply is off. It also provides alarms and periodic wake-ups from low-power modes.
+An RTC (Real-Time Clock) maintains calendar time or a continuously running time counter, often from a low-frequency oscillator such as 32.768 kHz.
 
-**Why 32.768 kHz:** 32,768 = 2¹⁵, so a 15-stage binary divider produces exactly 1 Hz. The crystals are small, cheap and consume very little power (the oscillator uses well under 1 µA).
+#### 1. Backup power
 
-**Features**
+Some MCUs have a backup domain supplied by a battery or separate power input. When the main supply is removed, the RTC and selected backup registers can continue operating if configured correctly.
 
-- Calendar in BCD or a binary second counter (sub-second resolution on many parts).
-- **Alarms** that wake the MCU from stop or standby.
-- **Periodic wake-up timer** for duty-cycled devices (e.g. measure every 10 minutes).
-- **Tamper detection** inputs and timestamping (security products).
-- **Backup registers or backup SRAM:** small storage kept on VBAT, useful for boot flags, reset counters, or the last known state.
-- **Smooth calibration:** adjusts for crystal error in ppm.
+```text
+Main supply --> CPU and peripherals
+Backup supply --> RTC / retained backup registers
+                      |
+                32.768 kHz oscillator
+```
 
-**Accuracy:** a typical crystal is ±20 ppm, which is about ±1.7 seconds per day (≈ 52 s per month). Temperature changes make it worse (tuning-fork crystals drift quadratically away from 25 °C). Improve it with calibration against a reference, temperature compensation, or synchronising from GPS/NTP/cellular network time.
+The exact retained components depend on the device.
 
-**Design points**
+#### 2. Use cases
 
-- Write-protect: RTC registers are usually locked; you must unlock the backup domain (e.g. `PWR->CR1 |= PWR_CR1_DBP` on STM32) to change them.
-- The first time power is applied, detect that the RTC is not initialised (a magic value in a backup register) and set it.
-- Use UTC internally and apply time zones in the application.
-- If there is no battery, the time is lost on power loss; plan to get it from the network.
+Calendar timestamps, periodic wake from low-power modes, alarms, event logging and preserving selected state across resets.
 
-**External RTC chips** (DS3231, PCF85063, RV-3028) are used when the MCU lacks a good RTC or for very low backup current and temperature-compensated accuracy.
+#### 3. Initialization
+
+Check whether backup-domain state is already valid before reinitializing it. Configure the clock source, prescalers, calendar and alarms according to the hardware. Resetting the backup domain may erase retained information.
+
+#### 4. Accuracy
+
+Crystal tolerance, temperature, aging and calibration affect RTC accuracy. An RTC can drift over time and is not the same as a precision monotonic timer used for short execution measurements.
+
+**Interview takeaway:** RTC keeps time across selected low-power or power-off conditions only when its backup supply, oscillator and domain configuration support retention.
 
 ### What is JTAG and SWD? {E}
 **Short answer:** Both are hardware debug interfaces that let a debug probe halt the CPU, set breakpoints, read and write memory and registers, and program flash. **JTAG** (IEEE 1149.1) uses 4 or 5 pins (TCK, TMS, TDI, TDO, optional nTRST), supports chaining several chips on one interface, and also provides **boundary scan** for testing board connections. **SWD** (Serial Wire Debug) is Arm's 2-pin alternative (SWDIO, SWCLK) with the same debug access to Cortex cores, which is why it is standard on Cortex-M boards.
