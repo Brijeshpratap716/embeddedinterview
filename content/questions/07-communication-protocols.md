@@ -142,25 +142,28 @@ Verify baud, parity and stop-bit settings; inspect TX/RX waveforms; check FIFO i
 **Interview takeaway:** Framing and parity indicate receive-format problems; overrun means the receive path failed to keep up. Clear errors using the documented hardware sequence.
 
 ### What is hardware flow control? {E}
-**Short answer:** Hardware flow control uses two extra signals, **RTS** (request to send) and **CTS** (clear to send), so a receiver can tell the transmitter to pause. Each side's RTS output connects to the other side's CTS input. When the receiver's buffer is nearly full it de-asserts RTS; the transmitter checks CTS before sending each character and stops until CTS is asserted again. This prevents overruns at high baud rates.
+Hardware flow control prevents a serial transmitter from sending more data than the receiver can accept. UART implementations often use RTS and CTS signals.
 
+#### 1. Concept
+
+Each endpoint communicates receive readiness to the other endpoint. A transmitter checks its CTS input before sending more characters. On many UART peripherals, the receiver's RTS output signals readiness, but naming and polarity depend on the interface.
+
+```text
+Device A TX  ---> Device B RX
+Device A RX  <--- Device B TX
+Device A RTS ---> Device B CTS
+Device A CTS <--- Device B RTS
 ```
-MCU TX  ───────────►  RX  Module
-MCU RX  ◄───────────  TX
-MCU RTS ───────────►  CTS      (MCU says "I can receive")
-MCU CTS ◄───────────  RTS      (module says "I can receive")
-```
 
-**When it is needed:** cellular modems, Wi-Fi/BLE modules and high-speed links where the receiver can be busy (flash writes, radio events). Without it, bursts can overflow buffers and data is silently lost.
+#### 2. Why needed
 
-**Software flow control (XON/XOFF):** the receiver sends special characters (0x11 XON, 0x13 XOFF) in the data stream. It needs no extra wires but cannot be used with binary data (those byte values may appear in the payload) and reacts more slowly.
+A receiver may have limited FIFO or software-buffer capacity. Deasserting readiness before the buffer fills gives the transmitter time to stop. Bytes already in flight or in a transmission FIFO may still arrive.
 
-**Practical notes**
+#### 3. Alternatives
 
-- The transmitter usually finishes the byte in progress (and sometimes a FIFO's worth) after CTS drops, so the receiver should de-assert RTS with a few bytes of headroom.
-- Many MCU UARTs support automatic RTS/CTS in hardware; enabling it avoids firmware timing issues.
-- Naming confusion: some datasheets name pins from the device's point of view, some from the host's; check the direction carefully.
-- On Linux: `stty -F /dev/ttyS1 crtscts` or `CRTSCTS` in `termios`.
+Software flow control uses in-band control characters such as XON/XOFF, which may require escaping for binary payloads. Application-level acknowledgments or credit-based protocols can provide additional flow control.
+
+**Interview takeaway:** Flow control prevents overflow by coordinating sender and receiver, not by increasing UART speed. Configure signal polarity and account for in-flight bytes.
 
 ### How does RS-232 differ from RS-485 and TTL UART? {M}
 **Short answer:** They are different **physical layers** for the same UART framing. **TTL/CMOS UART** uses logic levels (0/3.3 V or 0/5 V) for short board-level connections. **RS-232** uses single-ended, inverted ±3 to ±15 V signals, point-to-point, up to about 15 m. **RS-485** uses a differential pair (A/B), is very noise-immune, supports multi-drop buses of 32 unit loads (more with fractional-load transceivers) over up to 1200 m, usually half duplex, and needs termination and driver-enable control.
