@@ -9,27 +9,25 @@ desc: Complexity, linked lists, ring buffers, stacks, queues, heaps and priority
 Firmware interviews ask DSA questions too, but with a twist: no heap, fixed sizes, and an eye on worst-case timing. Each answer gives the short version, then code, complexity and follow-ups. The coding-round topics have many more worked problems.
 
 ### What is Big-O notation, and why does worst case matter more in embedded systems? {E}
-**Short answer:** Big-O describes how an algorithm's time or memory grows with input size n, ignoring constant factors: O(1) constant, O(log n) logarithmic, O(n) linear, O(n log n), O(n²) quadratic. Embedded and real-time code cares most about the **worst case** (a deadline must be met every time), about **memory** (often fixed at compile time), and about **constant factors** (n is small, so a simple O(n²) loop over 16 items can beat an O(n log n) algorithm with more overhead).
+Big-O notation describes an asymptotic upper bound on how an algorithm's resource usage grows with input size. In interviews it commonly describes time or auxiliary space complexity.
 
-| Structure / algorithm | Access | Search | Insert | Delete | Notes |
-|---|---|---|---|---|---|
-| Array | O(1) | O(n) (O(log n) sorted) | O(n) | O(n) | contiguous, cache friendly |
-| Singly linked list | O(n) | O(n) | O(1) at head | O(1) given previous node | pointer per node |
-| Ring buffer | – | – | O(1) | O(1) | fixed size, FIFO |
-| Hash table | – | O(1) avg, O(n) worst | O(1) avg | O(1) avg | needs a good hash, load factor |
-| Balanced BST (red-black) | – | O(log n) | O(log n) | O(log n) | ordered traversal |
-| Binary heap | O(1) min | O(n) | O(log n) | O(log n) min | priority queues, timers |
-| Bitmap | O(1) | O(n/word) with CLZ/CTZ | O(1) | O(1) | allocation, priority sets |
+| Complexity | Example |
+|---|---|
+| O(1) | Array index |
+| O(log n) | Binary search in sorted array |
+| O(n) | Linear scan |
+| O(n log n) | Merge sort |
+| O(n²) | Nested all-pairs comparison |
 
-| Sort | Average | Worst | Extra memory | Stable |
-|---|---|---|---|---|
-| Insertion | O(n²) | O(n²) | O(1) | yes |
-| Merge | O(n log n) | O(n log n) | O(n) | yes |
-| Quick | O(n log n) | O(n²) | O(log n) stack | no |
-| Heap | O(n log n) | O(n log n) | O(1) | no |
-| Counting/radix | O(n + k) | O(n + k) | O(k) | yes |
+#### 1. Embedded example
 
-**Interview tip:** when you give a solution, state time and space complexity and the worst case unprompted, and mention whether it allocates memory or recurses.
+A linear search through 100 entries can require 100 comparisons in the worst case. Binary search requires at most about seven comparisons for 100 sorted entries, but maintaining sorted data has a cost.
+
+#### 2. Worst-case timing
+
+Average complexity does not establish a deadline. A hard real-time task needs bounds on input size, memory access, interrupt interference and actual worst-case execution time. An O(1) operation may still have a large or variable constant cost.
+
+**Interview takeaway:** Big-O describes growth, not exact milliseconds. In embedded systems consider worst-case time, stack usage, allocation and actual hardware behavior.
 
 ### How do you reverse a singly linked list? {E}
 **Short answer:** Walk the list once with three pointers (previous, current, next) and point each node's `next` back to the previous node. The old tail becomes the new head. O(n) time and O(1) extra memory.
