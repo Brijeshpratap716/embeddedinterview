@@ -9,31 +9,29 @@ desc: Processes and threads, process states, context switches, scheduling with w
 These questions come up for Linux, BSP and systems roles, and as warm-ups in RTOS interviews. University-style questions (scheduling Gantt charts, page-table sizes, TLB maths) are common in campus and early-career interviews, so worked examples are included. Each answer starts with the one-line version, then the explanation and the follow-ups. Linux details are given where they differ from the textbook view.
 
 ### What are the main jobs of an operating system kernel, and what is the difference between a monolithic kernel and a microkernel? {E}
-**Short answer:** The kernel manages and protects the hardware for programs: it schedules the CPU, manages memory, provides file systems and device access, handles interrupts, enforces isolation and permissions, and offers all of this through system calls. A **monolithic** kernel (Linux) runs all of these services, including drivers, in kernel mode in one address space. A **microkernel** (QNX, seL4, Zircon) keeps only the minimum in kernel mode (scheduling, address spaces, IPC) and runs drivers, file systems and network stacks as user-mode servers.
+An operating system kernel manages CPU scheduling, memory, interrupts, devices, filesystems and controlled access to system resources.
 
-**The core responsibilities**
+#### 1. Kernel architecture
 
-1. **Process and thread management:** create, schedule and terminate tasks; context switches.
-2. **Memory management:** virtual address spaces, page tables, allocation, protection, swapping.
-3. **I/O and device management:** drivers, interrupts, DMA, a uniform interface (files, sockets).
-4. **File systems:** names, directories, permissions, caching of persistent data.
-5. **Protection and security:** user vs kernel mode, user IDs, capabilities.
-6. **Communication:** pipes, signals, shared memory, sockets.
+```text
+Monolithic: applications -> syscall -> kernel services/drivers
+Microkernel: applications -> IPC -> user-space servers
+                            microkernel: scheduling, IPC, low-level protection
+```
 
-**Monolithic vs microkernel**
+Linux is a monolithic kernel with modular components. A microkernel such as seL4 keeps a smaller core and can place many services in separate protection domains.
 
-| | Monolithic (Linux) | Microkernel (QNX, seL4) |
-|---|---|---|
-| Drivers and file systems | in the kernel | user-space processes |
-| Communication | function calls | message passing (IPC) |
-| Performance | fast (no IPC per request) | extra context switches, though modern ones are efficient |
-| Fault isolation | a buggy driver can crash the whole system | a crashed driver can be restarted |
-| Code size in privileged mode | millions of lines | thousands (seL4 is formally verified) |
-| Typical use | general purpose, servers, Android | safety-critical and automotive (QNX), secure systems |
+| Monolithic | Microkernel |
+|---|---|
+| Many services execute in kernel space | Many services can execute outside the kernel |
+| Direct internal calls common | IPC between components common |
+| Driver faults may affect kernel | Isolation can contain some service faults |
 
-**Hybrid kernels** (Windows NT, macOS XNU) mix the two. Linux reduces the monolithic disadvantage with **loadable modules** (but they still run in kernel mode) and moves some work to user space (FUSE file systems, UIO/VFIO drivers, DPDK networking).
+#### 2. Example
 
-**Interview angle:** in automotive and medical devices, the argument for a microkernel is certification: a small trusted kernel is easier to prove correct, and a failing driver does not take down safety functions.
+A Linux read system call may proceed through VFS and a kernel driver without crossing separate user service processes. A microkernel-based design may send requests to a filesystem or device server through IPC.
+
+**Interview takeaway:** The distinction is service placement and protection boundaries, not whether the kernel supports modules. Performance and reliability depend on the actual design.
 
 ### What is the difference between a process and a thread? {E}
 **Short answer:** A **process** is a running program with its own virtual address space and resources (open files, signal handlers, credentials). A **thread** is a path of execution inside a process; all threads of a process share its memory and open files, but each has its own stack, registers (including the program counter) and scheduling state. Threads are cheaper to create and switch, but a bug in one thread can corrupt the others.
