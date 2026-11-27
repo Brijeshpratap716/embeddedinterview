@@ -526,31 +526,24 @@ bool two_sum_sorted(const int32_t a[], size_t n,
 **Complexity:** Sorted method O(n) time, O(1) space.
 
 ### How do you find the longest common prefix of a set of strings? {E}
-**Short answer:** Compare the strings column by column: take character `i` of the first string and check that every other string has the same character at `i`. Stop at the first mismatch or at the end of any string; the prefix is the first `i` characters. O(total characters) time, O(1) extra space.
+Compare each character of the first string against every other string until a mismatch or terminator.
 
 ```c
-#include <stddef.h>
-
-/* returns the length of the common prefix; strs[0..n-1] are C strings, n >= 1 */
-size_t common_prefix_len(const char *const *strs, size_t n)
+size_t common_prefix(const char *const a[], size_t n)
 {
-    size_t i = 0;
-    for (;; i++) {
-        char c = strs[0][i];
-        if (c == '\0') return i;
-        for (size_t k = 1; k < n; k++)
-            if (strs[k][i] != c)          /* also stops at a shorter string's '\0' */
-                return i;
+    if (!n) return 0;
+    size_t k=0;
+    while (a[0][k]) {
+        for (size_t i=1; i<n; ++i)
+            if (a[i][k]!=a[0][k]) return k;
+        ++k;
     }
+    return k;
 }
-/* {"flower", "flow", "flight"} -> 2 ("fl") */
 ```
+["flower","flow","flight"] gives length 2 ("fl"). The function returns a length, not an allocated string. All inputs must be valid NUL-terminated strings.
 
-**Why the `'\0'` check works for shorter strings:** if another string ends at position `i`, its character there is `'\0'`, which differs from `c` (non-zero), so the loop stops without reading past its end.
-
-**Alternatives:** horizontal scanning (prefix of the first two, then shrink against each next string), sorting and comparing only the first and last strings (they differ the most), or divide and conquer. All are O(total characters); the vertical scan stops earliest.
-
-**Embedded relevance:** matching command prefixes in a CLI parser (e.g. accept "sta" for "status" if unique), or grouping file paths/topics by common prefix in an MQTT broker.
+**Complexity:** O(nL) worst-case for n strings with inspected prefix length L, O(1) space.
 
 ### How do you check if brackets in a string are balanced (Valid Parentheses)? {E}
 **Short answer:** Use a stack. Push every opening bracket; on a closing bracket, the stack must be non-empty and its top must be the matching opener, which you pop. At the end, the stack must be empty. O(n) time, O(n) space (bounded by the string length).
