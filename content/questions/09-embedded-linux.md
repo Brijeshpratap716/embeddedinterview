@@ -152,28 +152,30 @@ This shows which init program is running on a Linux system.
 **Interview takeaway:** The kernel initializes the OS core; PID 1 initializes userspace and manages its process hierarchy. The exact service behavior depends on the init implementation.
 
 ### How does a Raspberry Pi boot, and how is it different from a typical SoC? {M}
-**Short answer:** On the Raspberry Pi the **GPU (VideoCore)** boots first, not the ARM cores. The GPU's ROM loads the boot firmware (on Pi 1–3 `bootcode.bin` and `start.elf` from the SD card's FAT partition; on Pi 4/5 a bootloader stored in an on-board SPI EEPROM), reads `config.txt`, loads the device tree, the kernel (`kernel8.img` for 64-bit) and `cmdline.txt`, and only then releases the ARM cores to run the kernel.
+Raspberry Pi boards use a platform-specific firmware boot chain rather than one universal U-Boot/SPL sequence. The exact boot components depend on the Pi generation and configured boot medium.
 
-**Raspberry Pi 3 sequence**
+#### 1. General sequence
 
-1. Power on: the ARM cores are held in reset; the VideoCore GPU runs its ROM.
-2. GPU ROM reads `bootcode.bin` from the first FAT partition of the SD card (USB/network boot is possible on later revisions) and runs it from the GPU's L2 cache.
-3. `bootcode.bin` enables SDRAM and loads `start.elf` (the main GPU firmware).
-4. `start.elf` reads **`config.txt`** (memory split between GPU and ARM, overlays, `arm_64bit`, clock settings), loads the **DTB** for the board plus any **overlays** (`dtoverlay=`), loads the kernel image and `cmdline.txt`, and puts them in RAM.
-5. It releases the ARM cores, which start executing the kernel (optionally via U-Boot if `kernel=u-boot.bin`). From here it is the normal Linux boot: `start_kernel()` → mount root (usually the second partition, ext4) → init.
+```text
+On-chip boot ROM
+   -> platform boot firmware / EEPROM bootloader where applicable
+   -> select and read boot files
+   -> configure platform and load kernel / DTB
+   -> Linux kernel
+   -> root filesystem and init
+```
 
-**Pi 4 and Pi 5:** the first-stage bootloader lives in an **SPI EEPROM** on the board, can be updated, and supports USB and network boot. `bootcode.bin` is no longer used.
+Older models use boot files and firmware arrangements that differ from newer EEPROM-bootloader-based models. Do not assume filenames or execution order are identical across Pi 3, Pi 4 and Pi 5.
 
-**Differences from a typical industrial SoC**
+#### 2. Difference from conventional embedded SoC
 
-| Raspberry Pi | Typical i.MX / AM62x / STM32MP |
-|---|---|
-| GPU boots first, closed firmware | ARM core runs the boot ROM directly |
-| Boot files on a FAT partition | boot ROM reads a fixed offset or partition (raw image) |
-| `config.txt` replaces most bootloader setup | SPL + U-Boot (+ TF-A, OP-TEE) do the setup |
-| Secure boot only on newer models (signed boot images) | Secure boot with fused keys is standard |
+Many Arm SoCs use a chain such as Boot ROM, SPL, trusted firmware and U-Boot. Raspberry Pi firmware can directly load Linux using its own supported configuration. U-Boot can also be included in selected custom boot flows.
 
-**Why it matters in an interview:** the Pi is the most common board people have used. Being able to say what is different shows you understand which parts are Pi-specific and which are general Linux.
+#### 3. Debugging
+
+Identify the board revision and bootloader generation. Check the boot medium, platform-specific boot diagnostics, configuration, kernel/DTB compatibility and root filesystem. Use the board's supported UART diagnostic setup.
+
+**Interview takeaway:** Raspberry Pi boot is a useful example of platform-specific firmware. Describe the general chain, then verify model-specific details instead of applying the same SoC boot sequence everywhere.
 
 ### What happens when a user logs in on a Linux terminal? {M}
 **Short answer:** init starts `getty` on each terminal; `getty` opens the TTY, prints the login prompt and reads the user name, then `exec`s `login`. `login` checks the password (via PAM against `/etc/shadow`), sets up the session, changes to the user's UID/GID with `setgid()`/`setuid()`, and `exec`s the user's shell from `/etc/passwd`. Over SSH, `sshd` does the same job instead of getty/login.
