@@ -728,32 +728,27 @@ For source "abcdef", read(3) returns "abc" and retains 'd'; next read(3) returns
 **Complexity:** O(n) time, O(1) persistent cache. A production API should separately report errors.
 
 ### How do you find the product of an array except self without division? {M}
-**Short answer:** Compute the product of elements to the left and right of each index. Multiply these products; division is unnecessary, including when the input contains zeros.
+Use a prefix product pass followed by a suffix product pass. The product except index i is the product of all elements before i times the product of all elements after i.
 
 ```c
-#include <stddef.h>
-/* n elements; out must not overlap a. All products must fit long long. */
-void product_except(const int *a, long long *out, size_t n)
+/* Assume all intermediate products fit int64_t.
+   Output must not overlap input. */
+void product_except(const int32_t a[],size_t n,int64_t out[])
 {
-    long long p = 1;
-    for (size_t i = 0; i < n; ++i) {
-        out[i] = p;
-        p *= a[i];
+    int64_t p=1;
+    for(size_t i=0;i<n;++i) {
+        out[i]=p;
+        if(i+1<n) p*=a[i];
     }
-    p = 1;
-    for (size_t i = n; i > 0; --i) {
-        out[i-1] *= p;
-        p *= a[i-1];
+    p=1;
+    for(size_t i=n;i>0;) {
+        --i;
+        out[i]*=p;
+        if(i) p*=a[i];
     }
 }
 ```
+[1,2,3,4] → [24,12,8,6]. Zero values need no special handling: one zero gives a nonzero result only at its position, two zeros give all zeros (assuming other products are representable). A single element returns the empty product 1.
 
-| Input | 1 | 2 | 3 | 4 |
-|---|---:|---:|---:|---:|
-| Prefix | 1 | 1 | 2 | 6 |
-| Suffix | 24 | 12 | 4 | 1 |
-| Result | 24 | 12 | 8 | 6 |
+**Complexity:** O(n) time, O(1) auxiliary space excluding output.
 
-**Complexity:** O(n) time and O(1) auxiliary space excluding output. An empty array produces no output; one element produces 1. Handle arithmetic overflow in production.
-
-**Interview takeaway:** Two directional passes replace division and handle zeros naturally.
