@@ -354,27 +354,24 @@ Ordinary AArch64 hardware translation uses architecture-defined hierarchical tra
 **Interview takeaway:** Inverted tables scale primarily with physical frames, while ordinary per-address-space tables organize mappings by virtual address.
 
 ### What is the difference between an MMU and an MPU? {E}
-**Short answer:** An **MMU** translates virtual addresses to physical addresses using page tables and enforces permissions per page, which gives each process its own address space (Cortex-A, x86, RISC-V with Sv39/Sv48). An **MPU** does no translation: it only checks permissions and memory attributes for a small number of physical address regions (typically 8 or 16), giving basic protection with predictable timing (Cortex-M, Cortex-R).
+An MMU (Memory Management Unit) translates virtual addresses and enforces memory attributes and permissions. An MPU (Memory Protection Unit) enforces access permissions and attributes for configured regions without general page-based virtual address translation.
 
-| | MMU | MPU |
-|---|---|---|
-| Address translation | yes (virtual → physical) | no (addresses are physical) |
-| Granularity | pages (4 KB, 16 KB, 64 KB, huge pages) | regions (on Armv7-M: power-of-two size ≥ 32 B, aligned; on Armv8-M: any 32-byte-aligned base and limit) |
-| Number of mappings | millions (tables in RAM) | 8–16 regions (registers) |
-| Per-process address spaces | yes | no, one shared address space |
-| Timing | TLB misses add variable latency | deterministic |
-| OS | Linux, Windows, Android | FreeRTOS-MPU, Zephyr userspace, SafeRTOS, PikeOS on Cortex-R |
+| MMU | MPU |
+|---|---|
+| Virtual-to-physical mapping | Region protection |
+| Page tables and TLB common | Configured regions common |
+| Process address-space isolation | Task/region isolation |
+| Common in Cortex-A systems | Common in Cortex-M systems |
 
-**What an MPU is used for on a microcontroller**
+#### 1. Example
 
-- Stack overflow detection: a no-access region just below each task's stack.
-- Making flash or code regions read-only/execute-only and RAM execute-never (stops many code-injection attacks).
-- Isolating unprivileged tasks so they can only touch their own data and the peripherals they need.
-- Setting memory attributes: device memory for peripheral regions, non-cacheable regions for DMA buffers (Cortex-M7).
+With an MMU, two processes can use virtual address 0x4000 mapped to different physical frames. With an MPU, a task may be permitted to access only its stack and selected peripherals at their existing addresses.
 
-**Linux without an MMU:** the kernel can be built for no-MMU targets (`!CONFIG_MMU`), but there is no `fork()` (use `vfork`/`posix_spawn`), no memory protection between processes, and memory fragmentation becomes a problem. It is rare now that small Cortex-A parts are cheap.
+#### 2. Embedded considerations
 
-**Interview follow-up:** "Cortex-R52 has two MPU stages, one for the OS and one for a hypervisor" — so even without an MMU, ARMv8-R can run a hypervisor with spatial isolation between guests.
+Linux usually uses an MMU on application processors; no-MMU Linux configurations exist on supported platforms. An MPU-aware RTOS can restrict unprivileged tasks. Device DMA requires its own protection/translation mechanisms where applicable.
+
+**Interview takeaway:** An MPU protects address regions; an MMU adds address translation and protection. Neither automatically protects every independent DMA master.
 
 ### What are the common IPC mechanisms? {E}
 **Short answer:** Processes communicate with **pipes and FIFOs** (byte streams), **message queues** (discrete messages), **shared memory** (fastest, but needs separate synchronisation), **semaphores** (synchronisation), **signals** (asynchronous notifications), and **sockets** (Unix domain locally, TCP/UDP over the network). Higher-level frameworks such as D-Bus, gRPC and Android Binder are built on top of these.
