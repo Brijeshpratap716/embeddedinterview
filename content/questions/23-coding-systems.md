@@ -428,6 +428,12 @@ void timer_tick(timer_dev_t *d)                        /* called by the emulator
 
 **Real examples:** QEMU's `MemoryRegionOps` (`.read`, `.write`, `.valid` sizes), the PL011 UART and virtio-mmio transport models, Firecracker's minimal devices; MMIO exits are slow (microseconds), which is why virtio batches requests in shared memory and uses only occasional doorbell writes.
 
+#### Simulate a complete timer transaction
+
+Write LOAD=3, then CTRL=3 (enable and IRQ enable). Three ticks decrement COUNT to zero, set STATUS bit 0 and assert the virtual interrupt. The guest reads STATUS and writes 1 to its W1C field; the callback clears the pending bit and deasserts the IRQ. COUNT reloads from LOAD according to this teaching model.
+
+Specify what happens for LOAD=0, repeated enable writes, unsupported access sizes/alignment, reset and invalid offsets. In QEMU, MemoryRegionOps describes valid access widths/endianness, a virtual clock schedules expiration, and qemu_set_irq delivers the modeled level. Serialize state updates and define migration state if the device supports live migration. The callback must reproduce guest-visible behavior, not real electrical timing.
+
 ### Parse a virtqueue descriptor chain. {H}
 **Short answer:** Start at the head descriptor index taken from the available ring and follow the `next` field while the NEXT flag is set. For each descriptor, validate the index, translate its guest physical address and length into a host buffer (checking the bounds), and sort it into device-readable buffers (request header and data to write) and device-writable buffers (data to read back and the status byte). Stop with an error if the chain is longer than the queue size (a loop) or a readable buffer follows a writable one.
 
