@@ -809,45 +809,44 @@ An RC filter and Schmitt-trigger input can reduce bouncing, provided their elect
 **Interview takeaway:** Do not insert a long blocking delay in a button ISR. Sample periodically or use a nonblocking timer and choose the debounce interval based on the switch's actual behavior.
 
 ### How do you scan a matrix keypad? {M}
-**Short answer:** A matrix keypad connects keys at the crossings of rows and columns, so a 4×4 keypad needs 8 pins instead of 16. Configure the columns as inputs with pull-ups and the rows as outputs. Drive one row low at a time, read the columns: a column reading low means the key at that row and column is pressed. Repeat for each row every few milliseconds and debounce the result.
+A matrix keypad connects switches between rows and columns so that R rows and C columns can represent R×C keys using R+C GPIO pins.
+
+#### 1. Example: 4×4 keypad
+
+<div style="max-width:600px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 211" width="100%" role="img" aria-label="Four rows and four columns, highlighted key at row two column one">
+<path d="M66 55 H300" stroke="#64748b" stroke-width="1"/><text x="56" y="59" text-anchor="end" font-size="11" fill="currentColor">R0</text><path d="M95 30 V185" stroke="#64748b" stroke-width="1"/><text x="95" y="20" text-anchor="middle" font-size="11" fill="currentColor">C0</text><path d="M66 95 H300" stroke="#64748b" stroke-width="1"/><text x="56" y="99" text-anchor="end" font-size="11" fill="currentColor">R1</text><path d="M150 30 V185" stroke="#16a34a" stroke-width="2"/><text x="150" y="20" text-anchor="middle" font-size="11" fill="currentColor">C1</text><path d="M66 135 H300" stroke="#16a34a" stroke-width="2"/><text x="56" y="139" text-anchor="end" font-size="11" fill="currentColor">R2</text><path d="M205 30 V185" stroke="#64748b" stroke-width="1"/><text x="205" y="20" text-anchor="middle" font-size="11" fill="currentColor">C2</text><path d="M66 175 H300" stroke="#64748b" stroke-width="1"/><text x="56" y="179" text-anchor="end" font-size="11" fill="currentColor">R3</text><path d="M260 30 V185" stroke="#64748b" stroke-width="1"/><text x="260" y="20" text-anchor="middle" font-size="11" fill="currentColor">C3</text>
+<circle cx="95" cy="55" r="11" fill="#94a3b8" fill-opacity=".25" stroke="currentColor" stroke-width=".5"/><circle cx="150" cy="55" r="11" fill="#94a3b8" fill-opacity=".25" stroke="currentColor" stroke-width=".5"/><circle cx="205" cy="55" r="11" fill="#94a3b8" fill-opacity=".25" stroke="currentColor" stroke-width=".5"/><circle cx="260" cy="55" r="11" fill="#94a3b8" fill-opacity=".25" stroke="currentColor" stroke-width=".5"/><circle cx="95" cy="95" r="11" fill="#94a3b8" fill-opacity=".25" stroke="currentColor" stroke-width=".5"/><circle cx="150" cy="95" r="11" fill="#94a3b8" fill-opacity=".25" stroke="currentColor" stroke-width=".5"/><circle cx="205" cy="95" r="11" fill="#94a3b8" fill-opacity=".25" stroke="currentColor" stroke-width=".5"/><circle cx="260" cy="95" r="11" fill="#94a3b8" fill-opacity=".25" stroke="currentColor" stroke-width=".5"/><circle cx="95" cy="135" r="11" fill="#94a3b8" fill-opacity=".25" stroke="currentColor" stroke-width=".5"/><circle cx="150" cy="135" r="11" fill="#16a34a" fill-opacity=".9" stroke="currentColor" stroke-width=".5"/><circle cx="205" cy="135" r="11" fill="#94a3b8" fill-opacity=".25" stroke="currentColor" stroke-width=".5"/><circle cx="260" cy="135" r="11" fill="#94a3b8" fill-opacity=".25" stroke="currentColor" stroke-width=".5"/><circle cx="95" cy="175" r="11" fill="#94a3b8" fill-opacity=".25" stroke="currentColor" stroke-width=".5"/><circle cx="150" cy="175" r="11" fill="#94a3b8" fill-opacity=".25" stroke="currentColor" stroke-width=".5"/><circle cx="205" cy="175" r="11" fill="#94a3b8" fill-opacity=".25" stroke="currentColor" stroke-width=".5"/><circle cx="260" cy="175" r="11" fill="#94a3b8" fill-opacity=".25" stroke="currentColor" stroke-width=".5"/><text x="170" y="205" text-anchor="middle" font-size="10" fill="currentColor">Selected key: row 2, column 1 (zero-based)</text></svg></div>
+
+#### 2. Scanning procedure
+
+1. Configure columns as inputs with pull-ups.
+2. Drive one selected row low, leaving other rows in a safe inactive/high-impedance state.
+3. Allow signals to settle and read columns.
+4. A low column indicates a possible pressed key on the active row.
+5. Repeat for other rows and debounce detected states.
+
+#### 3. Illustrative code
 
 ```c
-#include <stdint.h>
+for (unsigned row = 0; row < 4; row++) {
+    select_row_low(row);   // Other rows safely inactive
+    wait_gpio_settle();
 
-#define ROWS 4
-#define COLS 4
-static const char keymap[ROWS][COLS] = {
-    {'1','2','3','A'}, {'4','5','6','B'}, {'7','8','9','C'}, {'*','0','#','D'},
-};
-
-void row_drive(int r, int level);      /* board-specific GPIO helpers */
-int  col_read(int c);                  /* returns 0 when pressed (pulled up) */
-void delay_us(unsigned us);
-
-/* returns the pressed key, or 0 if none; call every 5-10 ms and debounce */
-char keypad_scan(void)
-{
-    for (int r = 0; r < ROWS; r++) {
-        for (int i = 0; i < ROWS; i++) row_drive(i, 1);   /* all rows high (inactive) */
-        row_drive(r, 0);                                   /* select one row */
-        delay_us(5);                                       /* let the lines settle */
-        for (int c = 0; c < COLS; c++)
-            if (col_read(c) == 0)
-                return keymap[r][c];
+    for (unsigned col = 0; col < 4; col++) {
+        bool pressed = !read_column(col);
+        update_key_debounce(row, col, pressed);
     }
-    return 0;
 }
+release_all_rows();
 ```
 
-**Design points to mention**
+These helpers depend on the GPIO and keypad circuitry.
 
-- **Settling time:** after changing a row, wait a few microseconds before reading; line capacitance and the pull-up resistors make the column take time to change.
-- **Inactive rows:** drive them high or switch them to inputs (high-impedance). Using open-drain outputs avoids short circuits when two keys in the same column are pressed.
-- **Debouncing:** require the same key in two or three consecutive scans.
-- **Ghosting and masking:** pressing three keys at the corners of a rectangle makes a fourth key appear pressed, because current flows through the pressed keys. Diodes in series with each key prevent this (needed for keyboards with n-key rollover).
-- **Low power:** instead of scanning continuously, drive all rows low and enable a pin-change interrupt on the columns; any key press wakes the MCU, which then scans.
+#### 4. Ghosting
 
-**Related "classic peripherals" questions:** driving a multiplexed **seven-segment display** uses the same idea in reverse: enable one digit at a time, output its segment pattern, and cycle fast enough (more than 60 Hz per digit) that persistence of vision makes all digits appear lit; the segment current must be higher to keep brightness when each digit is on only 1/N of the time.
+Multiple simultaneous presses can create unintended current paths through a diode-less matrix, causing false key detections. Diodes or restricted key combinations can address this. Avoid driving conflicting row outputs against each other.
+
+**Interview takeaway:** Matrix scanning saves GPIO pins but requires controlled row activation, settling, debouncing and a policy for simultaneous presses.
 
 ### What is polling versus interrupts versus DMA? {E}
 **Short answer:** With **polling**, the CPU repeatedly checks a status flag and handles the peripheral when it is ready: simple and predictable, but it wastes CPU time and power. With **interrupts**, the peripheral signals the CPU when something happens, so the CPU can do other work or sleep: efficient for sporadic events, but each event costs an ISR entry and exit. With **DMA**, a DMA controller moves data between the peripheral and memory without the CPU, interrupting only when a block is done: best for high-throughput streams.
