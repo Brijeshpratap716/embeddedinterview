@@ -204,26 +204,32 @@ A DMA completion ISR gives a binary semaphore using the appropriate FromISR API.
 **Interview takeaway:** Use a mutex for task-owned mutual exclusion and a semaphore or notification for signaling. Do not acquire a blocking mutex in an ISR.
 
 ### What is a counting semaphore? {E}
-**Short answer:** A semaphore whose count can go above one. Each `take` decrements the count (blocking at zero) and each `give` increments it. It is used for **resource counting** (initialise it to N for N identical resources) and for **event counting** (an ISR gives once per event, so events that arrive faster than the task handles them are not lost).
+A counting semaphore stores a count representing available resources or pending events. Taking the semaphore decrements a positive count; giving it increments the count up to a configured maximum.
 
-**Resource counting example: a pool of 4 DMA buffers**
+#### 1. Resource example
 
-```c
-SemaphoreHandle_t buf_sem = xSemaphoreCreateCounting(4, 4);   /* max 4, initially 4 free */
+A system has three identical buffer resources. Initialize the semaphore count to 3. Each task takes one token before reserving a buffer and gives it back after releasing that buffer.
 
-uint8_t *buf_get(void)
-{
-    if (xSemaphoreTake(buf_sem, pdMS_TO_TICKS(50)) != pdTRUE) return NULL;   /* none free */
-    return pool_alloc();                       /* guaranteed to succeed now */
-}
-void buf_put(uint8_t *b) { pool_free(b); xSemaphoreGive(buf_sem); }
+```text
+Initial count: 3
+Task A takes: 2
+Task B takes: 1
+Task C takes: 0
+Task D waits
+Task A gives: a waiting task can proceed
 ```
 
-**Event counting example:** a UART ISR gives the semaphore for each received line; the processing task takes it once per line. With a binary semaphore, two lines arriving before the task runs would count as one.
+A separate allocator or synchronized free list identifies the actual resource; a semaphore alone does not identify which buffer is free.
 
-**Limits:** the count has a maximum (set at creation); giving beyond it fails. The semaphore carries no data, only a count: if you need the data too, use a queue.
+#### 2. FreeRTOS API
 
-**Alternatives:** FreeRTOS task notifications can act as a lightweight counting semaphore for a single waiting task (`ulTaskNotifyTake(pdFALSE, ...)` decrements by one).
+```c
+SemaphoreHandle_t sem = xSemaphoreCreateCounting(3, 3);
+```
+
+Check creation failure. Use xSemaphoreTake and xSemaphoreGive in supported task contexts; use ISR variants where permitted.
+
+**Interview takeaway:** A binary semaphore carries at most one pending token. A counting semaphore preserves multiple tokens up to capacity, but can overflow if producers outpace consumers.
 
 ### What is priority inversion? {M}
 **Short answer:** Priority inversion happens when a high-priority task is blocked waiting for a resource (e.g. a mutex) held by a low-priority task, and a **medium-priority** task that does not need the resource pre-empts the low-priority task. The high-priority task now effectively waits for the medium-priority task, possibly for an unbounded time, which breaks the priority scheme.
