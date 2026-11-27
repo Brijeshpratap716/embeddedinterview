@@ -2209,30 +2209,53 @@ Use kernel MMIO accessors such as readl and writel for mapped registers, and use
 **Interview takeaway:** Volatile is primarily about compiler-visible accesses, not concurrency. Use the correct platform MMIO, atomic, barrier or DMA API for the actual requirement.
 
 ### Can a variable be both const and volatile? What is the difference between them? {M}
-**Short answer:** Yes. `const` means **this program** must not write the object; `volatile` means **something else** may change it (or that reading it has side effects), so every access must really happen. Together they describe a read-only hardware register: you cannot write it, but you must re-read it every time.
+Yes. The `const` and `volatile` qualifiers serve different purposes and can be combined.
+
+- **const:** Prevents modification through the qualified lvalue.
+- **volatile:** Preserves required accesses when an object can be affected by external events.
+
+#### 1. Read-only hardware register
 
 ```c
-#define USART_SR (*(const volatile uint32_t *)0x40011000u)
+#include <stdint.h>
 
-while ((USART_SR & TXE) == 0) { }   /* re-read on every iteration; USART_SR = 0 is a compile error */
+const volatile uint32_t *status =
+    (const volatile uint32_t *)0x40000000U;
+
+uint32_t value = *status;  // Allowed
+// *status = 10;           // Invalid
 ```
 
-**const vs volatile**
+Assuming the address is valid on the target, hardware can update the register, but the application cannot write through status. Every evaluation of *status requires the appropriate volatile access.
 
-| | `const` | `volatile` |
+<div style="max-width:600px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 150" width="100%" role="img" aria-label="Hardware updates a status register, software can read but not write through a const volatile pointer">
+<rect x="5" y="8" width="105" height="33" rx="5" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/><text x="57.5" y="29" font-size="11" text-anchor="middle" fill="currentColor">Hardware</text>
+<rect x="220" y="8" width="115" height="33" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="277.5" y="29" font-size="11" text-anchor="middle" fill="currentColor">Status register</text>
+<path d="M110 24 H220 m-5-4 5 4-5 4" stroke="#16a34a" fill="none"/><text x="165" y="17" font-size="10" text-anchor="middle" fill="currentColor">Updates</text>
+<rect x="5" y="104" width="105" height="33" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="57.5" y="125" font-size="11" text-anchor="middle" fill="currentColor">Software / CPU</text>
+<path d="M277 41 V68 H57 V104 m-4-5 4 5 4-5" stroke="#16a34a" fill="none"/><text x="167" y="62" font-size="10" text-anchor="middle" fill="currentColor">Read allowed</text>
+<path d="M110 120 H277 V85" stroke="#dc2626" stroke-dasharray="4 3" fill="none"/><path d="M270 78 l14 14 m0-14 l-14 14" stroke="#dc2626" stroke-width="2"/><text x="188" y="114" font-size="10" text-anchor="middle" fill="#dc2626">Write forbidden via pointer</text>
+</svg></div>
+
+#### 2. Fixed register address
+
+```c
+const volatile uint32_t *const status =
+    (const volatile uint32_t *)0x40000000U;
+```
+
+The additional const after the asterisk prevents changing the pointer itself.
+
+#### 3. Comparison
+
+| Declaration | Software write through lvalue | Required volatile reads |
 |---|---|---|
-| Promise made by | the programmer: "this code will not modify it" | the programmer: "it can change outside the program's control" |
-| Effect on the compiler | rejects writes; may place the object in flash (`.rodata`); may assume the value never changes | must perform every read/write; cannot cache, merge or remove accesses |
-| Typical use | lookup tables, configuration, function parameters that must not be modified | hardware registers, ISR-shared flags, memory written by DMA |
-| Combined | `const volatile`: read-only register, or a variable this module only reads but an ISR or hardware writes |
+| int x | Allowed | No |
+| const int x | Not allowed | No |
+| volatile int x | Allowed | Yes |
+| const volatile int x | Not allowed | Yes |
 
-**Other examples of `const volatile`**
-
-- A free-running timer counter that software only reads.
-- A shared variable that the main loop only reads and an ISR writes: in the main module it could be declared `extern const volatile uint32_t g_ticks;` so the main code cannot write it by accident.
-- A configuration word in flash that the bootloader or a debugger might rewrite.
-
-**Order of qualifiers:** `const volatile uint32_t`, `volatile const uint32_t` and `uint32_t const volatile` are all the same.
+**Interview takeaway:** Const means read-only through a particular qualified access, not necessarily that the underlying value can never change. Const volatile is commonly used for read-only MMIO status registers.
 
 ### What does the restrict keyword mean? {H}
 **Short answer:** `restrict` (C99) applies to a pointer and is a promise from the programmer that, for the lifetime of that pointer, the object it points to is accessed **only through that pointer** (or pointers derived from it). This lets the compiler assume no aliasing, keep values in registers and vectorise loops. If the promise is broken, the behaviour is undefined.
