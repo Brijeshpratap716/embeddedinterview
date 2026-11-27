@@ -190,36 +190,23 @@ An internal RC clock may be adequate for blinking an LED. An accurate RTC or a U
 **Interview takeaway:** Choose by frequency tolerance, startup time, power and jitter. A PLL does not eliminate reference frequency error.
 
 ### What is a MOSFET and how do you use one to switch a load? {M}
-**Short answer:** A MOSFET is a voltage-controlled transistor: the gate-source voltage (V_GS) controls the resistance between drain and source. To switch a load from an MCU, use an **N-channel MOSFET as a low-side switch**: load between the supply and the drain, source to ground, GPIO to the gate through a small resistor, and a pull-down from gate to source. Choose a **logic-level** MOSFET whose R_DS(on) is specified at the GPIO voltage (e.g. V_GS = 2.5 V or 3.3 V), with enough drain-source voltage and current rating. Inductive loads need a flyback diode.
+A MOSFET is a voltage-controlled transistor used to switch loads. An N-channel MOSFET is convenient as a low-side switch.
 
-```
-      +12 V
-        │
-      [Load]  ◄── flyback diode across the load (cathode to +12 V) if inductive
-        │
-        D
-GPIO ─[100 Ω]─ G   N-MOSFET (e.g. logic-level, R_DS(on) spec'd at 2.5 V)
-        │      S
-     [100 kΩ]  │
-        │      │
-       GND ────┘
+```text
+Supply --- Load --- Drain
+                     MOSFET
+MCU -- Rg -- Gate    Source --- GND
+             |
+            Rpd
+             |
+            GND
 ```
 
-**Key parameters**
+Select a logic-level device with RDS(on) specified at the actual gate voltage, adequate voltage/current ratings and thermal margin. The pull-down keeps it off during reset.
 
-| Parameter | Why it matters |
-|---|---|
-| V_GS(th) | voltage where it **starts** to conduct — not where it is fully on; use R_DS(on) at your V_GS instead |
-| R_DS(on) at your V_GS | conduction loss P = I² × R_DS(on) (2 A × 2 A × 50 mΩ = 0.2 W) |
-| V_DS(max) | must exceed the supply plus any inductive spikes |
-| I_D, thermal resistance | current and heat limits; check the derating curves |
-| Gate charge Q_g | how fast it switches; matters for PWM (a GPIO can only source a few mA, so high-frequency PWM of big MOSFETs needs a gate driver) |
+At 1 A and RDS(on) = 50 mΩ, conduction loss is 50 mW, excluding switching losses.
 
-**High-side switching:** switching the positive supply (so the load stays grounded) uses a P-channel MOSFET (gate pulled to the supply to turn off, pulled low to turn on; needs a small NPN/N-MOSFET level shifter if the supply is above the GPIO voltage) or an N-channel with a gate driver/charge pump; integrated "high-side switches" add current limiting and diagnostics (common in automotive).
-
-**Resistor roles:** the series gate resistor (10–100 Ω) limits ringing and the GPIO current spike charging the gate capacitance; the pull-down keeps the MOSFET off while the MCU is in reset with its pins floating.
-
-**BJT alternative:** an NPN transistor needs a base current (I_B ≈ I_C / 10 for saturation) through a base resistor; fine for small loads (relays, LEDs), but MOSFETs are more efficient for higher currents.
+**Interview takeaway:** Gate threshold is not the full-enhancement voltage. Inductive loads require an appropriate flyback or clamp path.
 
 ### What is a flyback diode and why is it needed? {E}
 **Short answer:** When current through an inductive load (relay coil, motor, solenoid) is switched off suddenly, the inductor's stored energy produces a large voltage spike (V = L × di/dt, often hundreds of volts) that can destroy the switching transistor or MCU pin. A **flyback (freewheeling) diode** across the load, reverse-biased in normal operation (cathode to the positive supply), gives the current a path to circulate and decay safely, clamping the spike to about one diode drop above the supply.
