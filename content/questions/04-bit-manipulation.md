@@ -256,37 +256,50 @@ GCC/Clang provide __builtin_popcount for unsigned int and width variants for lar
 **Interview takeaway:** Kernighan is particularly effective for sparse masks. For production code, a suitable population-count builtin is usually clearer and lets the compiler choose the best implementation.
 
 ### How do you swap two numbers without a temporary variable? {E}
-**Short answer:** Use three XORs: `a ^= b; b ^= a; a ^= b;`. It is a well-known trick, but in real code a temporary variable is clearer and just as fast.
+Two integer values can be swapped without an explicit temporary variable using XOR. This is an interview exercise rather than a preferred production pattern.
+
+#### 1. XOR swap
 
 ```c
-void xor_swap(int *a, int *b)
+void swap(unsigned int *a, unsigned int *b)
 {
-    if (a != b) {      /* same object would become 0 */
-        *a ^= *b;
-        *b ^= *a;
-        *a ^= *b;
-    }
+    if (a == b)
+        return;
+
+    *a ^= *b;
+    *b ^= *a;
+    *a ^= *b;
 }
 ```
 
-**Why it works:** XOR is its own inverse (`x ^ y ^ y == x`).
+Both pointers must refer to valid unsigned int objects.
+
+#### 2. Example
 
 | Step | a | b |
-|---|---|---|
-| start | A | B |
-| `a ^= b` | A^B | B |
-| `b ^= a` | A^B | B^(A^B) = **A** |
-| `a ^= b` | (A^B)^A = **B** | A |
+|---|---:|---:|
+| Initial | 5 | 3 |
+| a = a XOR b | 6 | 3 |
+| b = b XOR a | 6 | 5 |
+| a = a XOR b | 3 | 5 |
 
-**Arithmetic version:** `a = a + b; b = a - b; a = a - b;` also works but can overflow on signed types, which is undefined behaviour.
+The identity x XOR x = 0 and x XOR 0 = x makes this work. If both pointers refer to the same object, the unguarded algorithm would clear it.
 
-**Why not use it in production**
+#### 3. Why not addition and subtraction?
 
-- If `a` and `b` alias the same memory, the first XOR sets it to 0 and the value is lost. The `if (a != b)` guard fixes that.
-- The three operations depend on each other, so the CPU cannot overlap them. With a temporary, the compiler often turns the swap into register renaming and generates zero instructions.
-- It is less readable.
+The pattern a = a + b; b = a - b; a = a - b may overflow signed integers, causing undefined behavior. Unsigned modular arithmetic can be used, but the approach has similar readability and aliasing drawbacks.
 
-**Follow-up:** "Swap two nibbles in a byte": `(x >> 4) | (x << 4)` on a `uint8_t` (then cast back to `uint8_t`).
+#### 4. Preferred solution
+
+```c
+unsigned int tmp = *a;
+*a = *b;
+*b = tmp;
+```
+
+Compilers normally allocate a temporary register or optimize the swap efficiently. The XOR version introduces dependent operations and is not inherently faster.
+
+**Interview takeaway:** Know the XOR identity and same-address corner case, but use a temporary variable for clear, maintainable C.
 
 ### How do you find the position of the lowest set bit? {M}
 **Short answer:** `x & -x` isolates the lowest set bit, and its index is the number of trailing zeros: `__builtin_ctz(x)` (undefined when `x == 0`). For the highest set bit use `31 - __builtin_clz(x)`.
