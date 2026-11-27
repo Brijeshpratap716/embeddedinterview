@@ -204,36 +204,26 @@ bool max_difference(const int32_t a[], size_t n, int64_t *out)
 **Complexity:** O(n) time, O(1) space.
 
 ### How do you find the longest subarray of alternating even and odd numbers? {M}
-**Short answer:** Walk the array once with a running count. If the current element has a different parity from the previous one, extend the run (`count++`); otherwise restart it at 1. Track the maximum. O(n) time, O(1) space.
+Maintain the length of the current alternating-parity run. If two adjacent numbers share parity, restart at length one.
 
 ```c
-#include <stddef.h>
-
-size_t longest_even_odd(const int *arr, size_t n)
+size_t longest_alternating(const int a[], size_t n)
 {
-    if (n == 0) return 0;
-    size_t best = 1, count = 1;
-    for (size_t i = 1; i < n; i++) {
-        if ((arr[i] % 2 == 0) != (arr[i - 1] % 2 == 0)) {   /* parity changed */
-            count++;
-            if (count > best) best = count;
-        } else {
-            count = 1;
-        }
+    if (!n) return 0;
+    size_t cur = 1, best = 1;
+    for (size_t i = 1; i < n; ++i) {
+        bool odd1 = a[i-1] % 2 != 0;
+        bool odd2 = a[i] % 2 != 0;
+        cur = odd1 != odd2 ? cur + 1 : 1;
+        if (cur > best) best = cur;
     }
     return best;
 }
-/* {5, 10, 20, 6, 3, 8} -> 3  (6, 3, 8) */
-/* {10, 12, 8, 4}       -> 1 */
 ```
 
-**Simplifying the condition.** The long form `((a%2==0) && (b%2!=0)) || ((a%2!=0) && (b%2==0))` is "exactly one of them is even", which is a single inequality of two booleans: `(a % 2 == 0) != (b % 2 == 0)`. A bitwise version is `((a ^ b) & 1) != 0`: the lowest bits differ exactly when the parities differ, and it works for negative numbers in two's complement.
+[2, 3, 4, 7, 8, 10] → 5. Checking nonzero remainder handles negative odd values correctly.
 
-**Negative numbers:** `-3 % 2` is `-1` in C, so a test like `a % 2 == 1` treats -3 as even. Comparing with `== 0` (or using `& 1`) avoids this.
-
-**Dry run for {5, 10, 20, 6, 3, 8}:** 5→10 change (2), 10→20 same (reset 1), 20→6 same (1), 6→3 change (2), 3→8 change (3). Answer 3.
-
-**Pattern:** this is the "longest run satisfying a condition between neighbours" template. The same loop solves "longest increasing contiguous run", "max consecutive ones" and "longest run of equal values".
+**Complexity:** O(n) time, O(1) space.
 
 ### How do you count the frequency of each element in a sorted array? {E}
 **Short answer:** Equal values are adjacent in a sorted array, so walk once with a counter: increment while the value stays the same, and print the value and count when it changes. Print the final run after the loop. O(n) time, O(1) space.
