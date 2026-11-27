@@ -427,37 +427,51 @@ The expressions above are ordinary read-modify-write operations. For GPIO or int
 **Interview takeaway:** OR sets, AND with complement clears, XOR toggles and AND tests. Use unsigned masks of the proper width and follow register semantics.
 
 ### Why can a read-modify-write on a register be dangerous? {H}
-**Short answer:** `REG |= BIT;` is three separate operations: read the register, OR in the bit, write it back. If anything changes the register between the read and the write (an ISR, another core, DMA, or the hardware itself), that change is overwritten. Read-modify-write can also clear write-1-to-clear flags you did not intend to touch, and lose data on registers that change when read.
+A read-modify-write (RMW) is a sequence that reads a register, modifies a copy, then writes the result. It is dangerous if the register changes between the read and write or has special write semantics.
 
-**Three classic failures**
-
-1. **Interrupt race:**
+#### 1. Lost update
 
 ```c
-/* main loop */                    /* ISR (runs between the read and the write) */
-tmp = GPIOA->ODR;    /* reads 0x00 */
-                                   GPIOA->ODR |= LED2;   /* ODR = 0x04 */
-tmp |= LED1;
-GPIOA->ODR = tmp;    /* writes 0x01: LED2 turned off again! */
+REG |= (1U << 0);
 ```
 
-2. **Write-1-to-clear flags:** a status register has `TC` (transfer complete) and `ERR` flags, both cleared by writing 1. `SR |= TC_FLAG;` reads both as 1 and writes both back as 1, clearing an error you have not handled yet. Write `SR = TC_FLAG;`.
+Suppose REG initially contains zero.
 
-3. **Read side effects:** some registers clear or pop on read (UART data registers, some interrupt status registers, FIFO registers). A read-modify-write consumes data.
+| Step | Main code | Interrupt |
+|---|---|---|
+| 1 | Read 0 | |
+| 2 | | Set bit 1; REG becomes 2 |
+| 3 | Write old value OR 1 | |
+| Result | REG = 1 | Bit 1 update lost |
 
-4. **Hardware-updated bits:** a control register may contain a bit the hardware clears when an operation finishes (e.g. a "start conversion" bit). Reading it as 1 and writing it back restarts the operation.
+#### 2. Write-one-to-clear (W1C)
 
-**Solutions**
+If STATUS contains pending flags in bits 0 and 1, a write of 1 clears the corresponding flag. This is incorrect:
 
-| Solution | Notes |
-|---|---|
-| Hardware set/clear registers (STM32 `BSRR`/`BRR`, NXP `SET`/`CLR`/`TOGGLE` aliases, nRF `OUTSET`/`OUTCLR`) | one write, atomic, best option |
-| Bit-banding (Cortex-M3/M4 only) | atomic single-bit writes |
-| Critical section around the RMW | simple; adds latency |
-| `LDREX`/`STREX` loop | atomic for normal memory; not usable on many peripheral registers |
-| Ownership | design so only one context ever writes a given register |
+```c
+STATUS |= (1U << 0); // May clear both pending flags
+```
 
-**Interview tip:** mention that the same issue appears with shared variables, not just registers, and that it is the main reason for driver design rules such as "configure a peripheral only from one context".
+The read obtains both set flags, and the OR writes both back as ones. Correct for a documented W1C-only register:
+
+```c
+STATUS = (1U << 0);
+```
+
+#### 3. Safer hardware mechanisms
+
+Some MCUs provide separate atomic set/clear registers. For example, on an STM32 with a GPIO BSRR register:
+
+```c
+GPIOA->BSRR = 1U << 5;        // Set pin 5
+GPIOA->BSRR = 1U << (5 + 16); // Reset pin 5
+```
+
+These direct writes avoid software RMW on the output register. Confirm the peripheral's documented layout.
+
+A lock or interrupt masking can protect against cooperating software writers, but cannot stop independent hardware changes.
+
+**Interview takeaway:** Volatile does not make RMW atomic. Check hardware side effects, concurrent access and dedicated set/clear mechanisms.
 
 ### What is bit-banding on Cortex-M? {H}
 **Short answer:** On Cortex-M3 and Cortex-M4, bit-banding maps each **bit** of two 1 MB regions (the first 1 MB of SRAM at `0x20000000` and of the peripheral space at `0x40000000`) to its own 32-bit word in an **alias** region (`0x22000000` and `0x42000000`). Writing 0 or 1 to an alias word changes exactly that one bit atomically (the bus does the read-modify-write in one locked transaction); reading the alias word returns the bit's value.
