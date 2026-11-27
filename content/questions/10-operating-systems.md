@@ -776,38 +776,37 @@ Reduce active working sets or concurrency, fix memory leaks, improve memory loca
 **Interview takeaway:** Thrashing is a working-set and memory-pressure problem, not just one page fault. Identify repeated reclaim/refault behavior before tuning.
 
 ### Walk through what happens when malloc(4 KB) is called on ARM64 Linux. {M}
-**Short answer:** malloc(4096) is a user-space allocator request. The allocator may reuse existing space, or obtain virtual memory through brk or mmap. Physical pages are often allocated on demand when accessed.
+Calling malloc(4096) on ARM64 Linux returns a userspace allocation if successful. It does not necessarily cause an immediate system call or allocate a fresh 4 KiB physical page.
+
+#### 1. Allocator
+
+The C library allocator first checks existing free blocks and caches. If it needs additional virtual memory, it may use brk or mmap according to its implementation and configuration.
+
+#### 2. Virtual memory
+
+The kernel establishes a virtual memory range with suitable permissions. Physical backing may be deferred until a page is accessed.
+
+#### 3. First touch
 
 ```c
-char *ptr = malloc(4096);
-if (ptr) {
-    ptr[0] = 'A';
-    free(ptr);
+unsigned char *p = malloc(4096);
+if (p) {
+    p[0] = 42;
+    free(p);
 }
 ```
 
-**Typical flow (glibc, anonymous memory, 4 KiB base pages assumed)**
+If the accessed page is not yet backed, a write may generate a demand fault. The kernel allocates or otherwise establishes a writable physical page, updates translation state and resumes the instruction.
 
-1. malloc checks allocator-managed free chunks and arenas.
-2. If more space is needed, the allocator may call brk or mmap. On ARM64, the SVC instruction enters the kernel from EL0 (normally EL1).
-3. The kernel establishes or extends a virtual memory area (VMA). Not every page needs physical backing yet.
-4. malloc returns a virtual address; allocator bookkeeping may already have touched some pages.
-5. A subsequent store uses the MMU and TLB. On a TLB miss, hardware walks the page tables.
-6. If a valid anonymous mapping has no writable physical page, a page fault enters the kernel. Linux checks permissions, allocates and zeroes a page as necessary, and updates the page tables.
-7. The instruction is retried; the write may initially update only the CPU cache.
+#### 4. Subsequent access
 
-```asm
-MOV X0, #4096
-BL  malloc
-CBZ X0, failed
-MOV W1, #65
-STRB W1, [X0]
-failed:
-```
+The MMU/TLB translates the virtual address; the data can be served by caches or memory. Free returns the allocation to the allocator, which may retain the virtual mapping for reuse.
 
-A representative Linux fault path is do_mem_abort -> do_page_fault -> handle_mm_fault -> __handle_mm_fault -> handle_pte_fault, with anonymous-page handling such as do_anonymous_page. Exact paths depend on the kernel and mapping.
+#### 5. Caveats
 
-**Follow-ups:** malloc is not a syscall; not every allocation causes a fault; 4096 bytes need not be page-aligned and may span pages; ARM64 Linux may use other base page sizes. free does not necessarily release memory to the kernel immediately.
+A 4096-byte request does not guarantee page alignment, exactly one page, a syscall or immediate physical commitment. Allocator metadata and actual kernel page size affect the result.
+
+**Interview takeaway:** malloc manages userspace allocation, while Linux manages virtual mappings and physical backing. Do not confuse allocated virtual size with resident memory.
 
 ### What is a memory barrier, and why is it needed on ARM? {M}
 **Short answer:** A memory barrier constrains compiler and/or hardware reordering of memory operations. Cache coherency alone does not guarantee ordering between different addresses.
