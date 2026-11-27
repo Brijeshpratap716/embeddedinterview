@@ -1339,46 +1339,74 @@ A flexible array must be the last member of a structure with more than one named
 **Interview takeaway:** Flexible arrays are useful for packets, variable-length messages and Linux kernel objects. Check allocation-size overflow and track payload length explicitly.
 
 ### What are offsetof and container_of? {M}
-**Short answer:** `offsetof(type, member)` (from `<stddef.h>`) gives the byte offset of a member within a struct, as a compile-time constant. `container_of(ptr, type, member)` (a Linux kernel macro) uses it the other way round: given a pointer to a member, it computes the address of the struct that contains it. Together they let generic code (lists, queues, callbacks) work with embedded "hook" members.
+`offsetof` returns the byte offset of a structure member. `container_of` uses a member's address to recover a pointer to its enclosing structure.
+
+#### 1. offsetof example
 
 ```c
 #include <stddef.h>
-#include <stdint.h>
+#include <stdio.h>
 
-#define container_of(ptr, type, member) \
-    ((type *)((char *)(ptr) - offsetof(type, member)))
-
-struct list_node { struct list_node *next; };
-
-struct uart_msg {
-    uint8_t len;
-    uint8_t data[16];
-    struct list_node node;          /* hook used by a generic queue */
+struct Device {
+    char type;
+    int id;
 };
 
-void process(struct list_node *n)
+printf("%zu", offsetof(struct Device, id));
+```
+
+On a typical ABI with four-byte int alignment, the result is 4, not 1, because the compiler inserts padding.
+
+#### 2. How container_of works
+
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 154" width="100%" role="img" aria-label="Subtract offset four from member address 0x1004 to obtain enclosing structure address 0x1000">
+<text x="10" y="14" font-size="11" font-weight="600" fill="currentColor">Example struct Device at 0x1000</text>
+<rect x="10" y="34" width="40" height="33" fill="#16a34a" fill-opacity=".18" stroke="#16a34a"/><text x="30" y="54" font-size="10" text-anchor="middle" fill="currentColor">type</text><rect x="50" y="34" width="120" height="33" fill="#94a3b8" fill-opacity=".15" stroke="#94a3b8"/><text x="110" y="54" font-size="11" text-anchor="middle" fill="currentColor">3 padding bytes</text><rect x="170" y="34" width="160" height="33" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="250" y="54" font-size="12" text-anchor="middle" fill="currentColor">id (4 bytes)</text>
+<path d="M10 72 V95 M170 72 V95 M170 83 H10 m5-4 -5 4 5 4" stroke="currentColor" fill="none"/><text x="90" y="79" font-size="10" text-anchor="middle" fill="currentColor">Subtract 4 bytes</text><text x="10" y="108" font-size="10" fill="currentColor">0x1000</text><text x="170" y="108" font-size="10" fill="currentColor">0x1004</text><text x="170" y="137" font-size="12" text-anchor="middle" fill="currentColor">base = member address − member offset</text></svg></div>
+
+A simplified implementation for conventional flat-address environments:
+
+```c
+#define MY_CONTAINER_OF(ptr, type, member) \
+    ((type *)((char *)(ptr) - offsetof(type, member)))
+```
+
+Example:
+
+```c
+struct Device dev = {'A', 10};
+int *p = &dev.id;
+
+struct Device *owner =
+    MY_CONTAINER_OF(p, struct Device, id);
+
+printf("%d", owner->id); // 10
+```
+
+This idiom relies on the platform/compiler's support for enclosing-object pointer recovery. Do not assume the simplified macro is a fully portable replacement for a kernel implementation.
+
+#### 3. Linux kernel example
+
+```c
+struct my_device {
+    int id;
+    struct work_struct work;
+};
+
+static void my_work(struct work_struct *work)
 {
-    struct uart_msg *m = container_of(n, struct uart_msg, node);
-    /* m->len, m->data are now accessible */
+    struct my_device *dev =
+        container_of(work, struct my_device, work);
+
+    pr_info("Device %d\n", dev->id);
 }
 ```
 
-**How `offsetof` can be implemented** (the classic version, technically undefined but historically common):
+The workqueue callback receives the embedded work member. container_of retrieves the original device object, allowing access to device-specific state.
 
-```c
-#define my_offsetof(type, member) ((size_t)&(((type *)0)->member))
-```
+The same pattern is used with embedded list_head nodes and other kernel objects.
 
-Modern compilers provide `__builtin_offsetof`, which `<stddef.h>` uses; always use the standard macro.
-
-**Uses**
-
-- **Intrusive linked lists** (Linux `list_head`, Zephyr `sys_slist`, FreeRTOS list items inside the TCB): the list code only knows about the node; `container_of` gets back to the object. No separate allocation per list entry.
-- **Callbacks with embedded context:** a driver registers a `struct timer` embedded in its own state struct; the timer callback receives `struct timer *` and recovers the driver state.
-- **Checking layouts:** `_Static_assert(offsetof(struct regs, CTRL) == 0x08, "")` to verify that a register struct matches the datasheet.
-- **Serialisation** code that needs member positions.
-
-**Cautions:** `container_of` is only correct if the pointer really points to that member of that type of struct; a wrong type gives a silently wrong address. The kernel's version adds a type check using `typeof` to catch mismatches at compile time.
+**Interview takeaway:** The supplied pointer must refer to the correct member of a live enclosing object. Use the kernel's container_of macro in Linux rather than recreating it. offsetof cannot be used on a bit-field.
 
 ### How do you allocate a 64-byte-aligned buffer without malloc? {M}
 **Short answer:** Use the C11 alignment specifier on a fixed-size object, or a compiler/platform alignment facility.
