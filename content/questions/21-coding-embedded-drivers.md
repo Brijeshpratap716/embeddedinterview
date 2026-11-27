@@ -143,6 +143,12 @@ void UART_IRQHandler(void)
 
 **Design questions to discuss:** what happens when the TX buffer is full (block with timeout, drop, or return a partial count); thread safety when several tasks print (a mutex around `uart_write`, or a dedicated logging task); and the DMA approach for long or frequent transfers (configure source address and length, start, get a transfer-complete interrupt).
 
+#### TXE versus TC
+
+TXE means the transmit data register can accept another byte. TC means the final frame has completed transmission. For RS-485, keep the transceiver driver enabled until TC, not merely TXE; otherwise the last byte can be truncated. At 115200 baud with 8N1, a byte takes about 86.8 µs on the wire.
+
+The interrupt-driven example assumes one producer, a single-core target and correctly synchronized queue publication and interrupt-enable updates. Protect the producer/ISR handoff using a short appropriate critical section or a verified atomic protocol. TXE interrupt must be disabled when there is no work, then re-enabled reliably after enqueue. A loop-count timeout is not a calibrated wall-clock timeout.
+
 ### Write a UART receive interrupt handler with a ring buffer. {E}
 **Short answer:** In the RX interrupt, read the status register, read the received byte from the data register (which clears the RXNE flag), and store it in a ring buffer at the head index, dropping and counting it if the buffer is full. The application reads bytes from the tail index in the main loop or a task. With one producer (the ISR) and one consumer (the task), each index has a single writer, so no lock is needed on a single core.
 
