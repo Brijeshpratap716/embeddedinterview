@@ -945,40 +945,60 @@ Exact search order is implementation-defined and can be changed by build flags. 
 **Interview takeaway:** Use quotes for nearby project headers and angle brackets for standard or configured SDK headers. `#include` is a preprocessing operation, not a linker operation.
 
 ### What are include guards and #pragma once? {E}
-**Short answer:** Include guards stop a header from being processed twice in the same translation unit (which would cause redefinition errors for types and inline functions). The classic form uses `#ifndef`/`#define`/`#endif`; `#pragma once` does the same in one line and is supported by all major compilers, but it is not part of the C standard.
+Include guards and `#pragma once` prevent a header from being processed multiple times within the **same translation unit**.
+
+#### 1. Why are they needed?
+
+Suppose both `uart.h` and `spi.h` include `common.h`, and `main.c` includes both driver headers.
+
+```text
+          main.c
+         /      \
+      uart.h   spi.h
+         \      /
+         common.h
+```
+
+Without protection, definitions such as a structure type in `common.h` could be processed twice and cause a compilation error.
+
+#### 2. Include guards
 
 ```c
-#ifndef DRIVERS_UART_H
-#define DRIVERS_UART_H
+#ifndef COMMON_H_INCLUDED
+#define COMMON_H_INCLUDED
 
-#include <stdint.h>
+struct config {
+    int speed;
+};
 
-typedef struct { uint32_t baud; uint8_t parity; } uart_cfg_t;
-void uart_init(const uart_cfg_t *cfg);
-
-#endif /* DRIVERS_UART_H */
+#endif
 ```
+
+On the first inclusion the macro is undefined, so the contents are processed and the guard becomes defined. Later inclusions skip the guarded content.
+
+#### 3. Using #pragma once
 
 ```c
 #pragma once
-/* same effect */
+
+struct config {
+    int speed;
+};
 ```
 
-**Why a header gets included twice:** `main.c` includes `uart.h` and `board.h`, and `board.h` also includes `uart.h`. Without guards, `uart_cfg_t` is defined twice and the compiler reports a redefinition.
+This instructs supporting compilers to process the header only once.
 
-**Comparison**
+#### 4. Comparison
 
-| | `#ifndef` guards | `#pragma once` |
-|---|---|---|
-| Standard C | yes | no (but GCC, Clang, IAR, Keil, MSVC all support it) |
-| Risk | two headers accidentally using the same guard name, so one is silently skipped | the same file reached through two different paths (symlinks, copies on a network drive) may be included twice |
-| Typing | three lines and a unique name | one line |
+| Include guard | #pragma once |
+|---|---|
+| Standard C preprocessor directives | Widely supported compiler extension |
+| Requires a unique macro name | No guard macro needed |
+| Works with conforming C preprocessors | Depends on compiler and file identity handling |
 
-**Naming guards:** use the path, e.g. `PROJECT_DRIVERS_UART_H`. Do not start them with an underscore followed by a capital letter (`_UART_H`): such names are reserved for the compiler and library.
+Include guards do not prevent duplicate external object definitions across different source files. Put declarations in headers and ordinary external definitions in one source file.
 
-**MISRA C and some safety coding standards** require the standard `#ifndef` form. Otherwise either is fine; pick one and use it consistently.
-
-**Guards do not help across translation units:** if a header *defines* a global variable (`int counter = 0;`), every `.c` file that includes it gets its own definition and the linker reports "multiple definition". Headers should only declare (`extern int counter;`).
+**Interview takeaway:** Both prevent repeated header processing; include guards are the portable choice.
 
 ### What is the difference between typedef and #define for creating type names? {E}
 **Short answer:** `typedef` creates a real alias for a type that the compiler understands, with normal scope rules. `#define` only replaces text, which breaks with pointer types and can surprise you in declarations. Use `typedef` for types.
