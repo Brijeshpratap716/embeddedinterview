@@ -39,31 +39,27 @@ Linux KVM adds virtualization functionality to the host kernel. QEMU runs in use
 **Interview takeaway:** Explain the architecture rather than forcing every product into a rigid type-1/type-2 label.
 
 ### What are the ARMv8 exception levels, and how does virtualization use EL2? {M}
-**Short answer:** ARMv8-A has four exception levels: **EL0** user applications, **EL1** the OS kernel, **EL2** the hypervisor, and **EL3** the secure monitor (firmware such as TF-A that switches between Normal and Secure worlds). A guest kernel runs at EL1 and its applications at EL0, exactly as on bare metal; EL2 configures what traps to it and controls the second stage of address translation, which is how the hypervisor stays in control.
+ARMv8-A defines exception levels that represent privilege and exception-handling contexts.
 
-| Level | Runs | Examples |
-|---|---|---|
-| EL0 | applications | user processes (guest and host) |
-| EL1 | OS kernel | Linux, guest kernels |
-| EL2 | hypervisor | KVM (or its low-level part), Xen |
-| EL3 | secure monitor | TF-A BL31, handles SMC calls and PSCI |
+| Level | Typical role |
+|---|---|
+| EL0 | Applications |
+| EL1 | OS kernel |
+| EL2 | Hypervisor |
+| EL3 | Secure monitor, when implemented |
 
-Higher numbers are more privileged. Moving up happens only through an exception (interrupt, abort, or the instructions `SVC` → EL1, `HVC` → EL2, `SMC` → EL3). Moving down happens with `ERET`.
+```text
+Guest application EL0
+Guest kernel      EL1
+       | trap / exception
+Hypervisor       EL2
+       | ERET
+Guest resumes
+```
 
-**What EL2 controls**
+EL2 controls guest execution through registers such as HCR_EL2 and stage-2 translation configuration. Guest accesses or instructions configured to trap are handled by the hypervisor. The guest kernel still runs its own stage-1 translation and handles ordinary guest system calls.
 
-- **`HCR_EL2`** (Hypervisor Configuration Register): which guest operations trap to EL2 (e.g. `TWI` traps `WFI`, `TSC` traps `SMC`, `IMO`/`FMO` route physical IRQ/FIQ to EL2, `VM` enables stage-2 translation).
-- **Stage-2 translation** (`VTTBR_EL2`, `VTCR_EL2`): the guest's "physical" addresses (IPAs) are translated again to real physical addresses.
-- **Virtual interrupts**: injecting IRQs into the guest through the GIC's virtual CPU interface.
-- **Virtual timer offset** (`CNTVOFF_EL2`) so each guest sees its own time base.
-
-**How KVM uses EL2: nVHE vs VHE**
-
-- **nVHE (non-VHE, ARMv8.0):** the host kernel runs at EL1. A small piece of KVM code ("hyp" code) is installed at EL2 and does the world switch. Every switch between host and guest goes EL1 → EL2 → EL1.
-- **VHE (Virtualization Host Extensions, ARMv8.1+):** the host kernel itself runs at **EL2**, and EL1 register accesses are redirected to their EL2 versions. Entering and leaving the guest is cheaper. Cortex-A53 does **not** have VHE (it is ARMv8.0); Cortex-A55/A76 and later do.
-- **pKVM (protected KVM)**, used on Android: the host runs at EL1 and a small trusted hypervisor at EL2 protects guest memory even from the host kernel.
-
-**Interview follow-up:** "Does a guest system call (`SVC`) go to the hypervisor?" No. It goes to the guest kernel at EL1 without any hypervisor involvement. That is a big part of why virtualization is fast.
+**Interview takeaway:** Exception levels are not security states. Secure/Non-secure state and EL are separate concepts, and VHE can allow the host kernel to run at EL2.
 
 ### What happens in QEMU when you start a virtual machine? Explain the code flow. {H}
 **Short answer:** `main()` calls `qemu_init()`, which parses the command line, selects the accelerator (TCG or KVM), creates the machine object, and runs the machine's init function (e.g. `machvirt_init()` for `-M virt` on ARM, `pc_init1()`/`pc_q35_init()` on x86). That function creates the CPUs, RAM, interrupt controller and devices, generates the device tree or ACPI tables and loads the kernel/firmware. Then `qemu_main_loop()` runs the event loop while separate vCPU threads execute guest code (with TCG's `cpu_exec()` or KVM's `kvm_cpu_exec()`).
