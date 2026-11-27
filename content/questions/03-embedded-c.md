@@ -932,37 +932,55 @@ Coherent DMA allocations simplify visibility, but descriptor publication and own
 **Interview takeaway:** Cache coherency, memory ordering and buffer ownership are different problems. Use the platform DMA API and protect full cache lines on non-coherent systems.
 
 ### What is a memory barrier and why would firmware need one? {H}
-**Short answer:** A memory barrier forces an ordering between memory operations that the CPU, its write buffers or the bus would otherwise be allowed to reorder or delay. Arm has three barrier instructions: **`DMB`** (memory accesses before it are observed before those after it), **`DSB`** (waits for required completion of relevant preceding operations within the specified scope before subsequent instructions execute), and **`ISB`** (flush the pipeline so later instructions are fetched and decoded with the new context).
+A memory barrier constrains ordering or completion of memory operations. Modern processors and compilers can reorder accesses, so communication between cores or devices requires explicit synchronization.
 
-| Barrier | Guarantees | Typical use |
-|---|---|---|
-| `DMB` | ordering of memory accesses | multi-core shared data, DMA descriptor updates (descriptor written before the "go" bit), lock implementations |
-| `DSB` | completion of memory accesses before continuing | before `WFI` (enter sleep), after clearing an interrupt flag at the end of an ISR, before an operation that depends on a write having reached a peripheral, after cache maintenance |
-| `ISB` | pipeline refetch | after writing `CONTROL` (switching stack or privilege), after changing `VTOR`, MPU, or enabling the FPU, after self-modifying code (with cache maintenance) |
+#### 1. Without ordering
 
-**Embedded examples**
-
-```c
-/* end of an ISR on a core with write buffers (Cortex-M7, or bus-bridged peripherals) */
-TIM2->SR = ~TIM_SR_UIF;    /* clear the update flag */
-__DSB();                   /* make sure the write reached the timer before returning,
-                              otherwise the still-pending interrupt re-triggers the ISR */
-
-/* changing privilege/stack */
-__set_CONTROL(__get_CONTROL() | CONTROL_SPSEL_Msk);
-__ISB();
-
-/* MPU reconfiguration */
-MPU->CTRL = MPU_CTRL_ENABLE_Msk | MPU_CTRL_PRIVDEFENA_Msk;
-__DSB();
-__ISB();
+```text
+Core 0                  Core 1
+data = 100              if (flag == 1)
+flag = 1                    read data
 ```
 
-**Single-core Cortex-M:** most cores (M0/M3/M4) do not reorder memory accesses much, so barriers are rarely needed for plain data. Arm still recommends them in the architectural cases above (CONTROL, MPU, VTOR, before sleep), and they matter on Cortex-M7 (write buffers, caches) and for accesses to peripherals behind bus bridges.
+On a weakly ordered architecture, the consumer may observe the flag before the data. Ordinary racing C variables are also undefined in threaded C; this is a conceptual hardware example.
 
-**Multi-core and Cortex-A:** reordering is common. Use C11 atomics with acquire/release ordering (`atomic_store_explicit(&ready, 1, memory_order_release)`), which emit the right barriers, or the kernel's `smp_mb()`, `smp_wmb()`, `dma_wmb()`.
+#### 2. Linux publication example
 
-**Compiler vs CPU barriers:** `volatile` and `__asm volatile("" ::: "memory")` only constrain the **compiler**; they emit no instruction. CMSIS `__DMB()`/`__DSB()`/`__ISB()` include a compiler barrier **and** the hardware instruction.
+```c
+// Producer (one-time publication)
+WRITE_ONCE(data, 100);
+smp_wmb();
+WRITE_ONCE(flag, 1);
+
+// Consumer
+if (READ_ONCE(flag) == 1) {
+    smp_rmb();
+    value = READ_ONCE(data);
+}
+```
+
+The paired barriers enforce required ordering when the consumer observes the published flag. A release store and acquire load are often clearer for this pattern.
+
+#### 3. ARM barrier types
+
+| Barrier | Purpose |
+|---|---|
+| DMB | Orders specified memory accesses within its scope |
+| DSB | Waits for required completion of specified operations |
+| ISB | Synchronizes later instruction execution with context changes |
+
+For example, updating certain system registers may require an ISB after the architecture-specified sequence. DMA and MMIO may need barriers with a different scope than SMP shared memory.
+
+#### 4. Compiler barrier vs CPU barrier
+
+```c
+__asm__ volatile("" ::: "memory"); // Compiler barrier
+__DMB();                          // CMSIS CPU barrier
+```
+
+The empty assembly does not emit a CPU ordering instruction. Follow the compiler/architecture interface for the required semantics.
+
+**Interview takeaway:** A barrier does not automatically make an operation atomic, clean caches or provide a complete synchronization protocol. In portable C threads use C11 atomic acquire/release operations or locks.
 
 ### What is the Arm calling convention (AAPCS), and why does it matter in embedded work? {M}
 **Short answer:** The AAPCS (Procedure Call Standard for the Arm Architecture) defines how functions pass arguments and return values and which registers they must preserve. On 32-bit Arm: the first four arguments go in `r0`–`r3`, the rest on the stack; results come back in `r0` (and `r1` for 64-bit values); `r0`–`r3` and `r12` are caller-saved (scratch); `r4`–`r11` are callee-saved; `r13` is SP, `r14` is LR (return address), `r15` is PC; and the stack must be 8-byte aligned at public function boundaries.
