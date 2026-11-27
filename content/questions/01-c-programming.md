@@ -2040,50 +2040,55 @@ The linker script determines addresses for sections such as .text, .data and .bs
 **Interview takeaway:** The preprocessor expands source, compiler generates assembly, assembler generates objects and linker resolves symbols. Actual toolchains may combine stages or use link-time optimization.
 
 ### What is the difference between a .bss and a .data section? {E}
-**Short answer:** `.data` holds global and static variables with **non-zero initial values**; the values are stored in flash and copied into RAM by the start-up code. `.bss` holds global and static variables that are **zero or uninitialised**; only its size is stored, and the start-up code fills that RAM with zeros. `.rodata` holds constants (in flash), and `.text` holds code.
+Both sections typically store writable objects with static storage duration. The **.data** section contains initialized values, while **.bss** represents objects that must start at zero.
+
+#### 1. Example
 
 ```c
-int counter;                  /* .bss  (zero)                         */
-int baud = 115200;            /* .data (initial value in flash, copy in RAM) */
-static uint8_t buf[512];      /* .bss                                 */
-const uint8_t lut[256] = {1}; /* .rodata (flash only)                 */
-void f(void) { }              /* .text                                */
-int x = 0;                    /* .bss: explicitly zero still goes in .bss with GCC */
+int global_count = 10; // Usually .data
+int global_flag;       // Usually .bss
+static int state = 0;  // Usually .bss
 ```
 
-**Memory cost of each section on an MCU**
+These objects exist throughout program execution. Automatic local variables normally use registers or stack instead.
 
-| Section | Flash | RAM |
+#### 2. How startup works on a microcontroller
+
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 154" width="100%" role="img" aria-label="Startup copies initial data from flash to RAM and zeroes BSS">
+<text x="68" y="18" font-size="12" font-weight="600" fill="currentColor" text-anchor="middle">Flash</text><text x="268" y="18" font-size="12" font-weight="600" fill="currentColor" text-anchor="middle">RAM</text>
+<rect x="10" y="30" width="116" height="42" rx="5" fill="#3b82f6" fill-opacity=".15" stroke="#3b82f6"/><text x="68" y="55" font-size="11" fill="currentColor" text-anchor="middle">Initial count = 10</text>
+<rect x="206" y="30" width="124" height="42" rx="5" fill="#16a34a" fill-opacity=".15" stroke="#16a34a"/><text x="268" y="55" font-size="11" fill="currentColor" text-anchor="middle">.data: count = 10</text>
+<path d="M126 51 H206 m-6 -5 l6 5 -6 5" stroke="currentColor" fill="none"/><text x="166" y="43" font-size="10" fill="currentColor" text-anchor="middle">Copy</text>
+<rect x="10" y="92" width="116" height="42" rx="5" stroke="currentColor" stroke-opacity=".4" fill="none"/><text x="68" y="117" font-size="11" fill="currentColor" text-anchor="middle">Startup code</text>
+<rect x="206" y="92" width="124" height="42" rx="5" fill="#eab308" fill-opacity=".15" stroke="#ca8a04"/><text x="268" y="117" font-size="11" fill="currentColor" text-anchor="middle">.bss: flag = 0</text>
+<path d="M126 113 H206 m-6 -5 l6 5 -6 5" stroke="currentColor" fill="none"/><text x="166" y="105" font-size="10" fill="currentColor" text-anchor="middle">Clear</text>
+</svg></div>
+
+1. Startup code copies the initial .data image from flash into RAM.
+2. It clears the .bss region in RAM.
+3. It calls the C runtime and main according to the platform startup sequence.
+
+On Linux, the executable loader establishes mappings and zero-initialized storage instead.
+
+#### 3. Difference
+
+| Feature | .data | .bss |
 |---|---|---|
-| `.text` | yes | no |
-| `.rodata` | yes | no |
-| `.data` | yes (initial values) | yes (the variables) |
-| `.bss` | no | yes |
-| stack, heap | no | yes |
+| Initial values | Typically nonzero | Zero |
+| Runtime storage | RAM | RAM |
+| Initial image | Stores initial bytes | Normally needs only size information |
+| MCU startup | Copy from load address | Clear to zero |
 
-**Start-up code (simplified):**
+#### 4. Inspect the executable
 
-```c
-extern uint32_t _sidata, _sdata, _edata, _sbss, _ebss;   /* from the linker script */
-
-void Reset_Handler(void)
-{
-    uint32_t *src = &_sidata, *dst = &_sdata;
-    while (dst < &_edata) *dst++ = *src++;      /* copy .data from flash to RAM */
-    for (dst = &_sbss; dst < &_ebss; ) *dst++ = 0;  /* zero .bss */
-    SystemInit();
-    main();
-    for (;;) { }
-}
+```sh
+size firmware.elf
+readelf -S firmware.elf
 ```
 
-**Practical consequences**
+These commands help inspect section sizes and placement.
 
-- Making a large table `const` moves it from `.data` (flash **and** RAM) to `.rodata` (flash only). On a 20 KB RAM part this can be the difference between fitting and not fitting.
-- A big `.bss` makes boot slightly slower (zeroing) but costs no flash.
-- Variables that must survive a reset (e.g. a crash counter or a bootloader flag) go in a separate `.noinit` section that the start-up code does not touch.
-
-**Check sizes:** `arm-none-eabi-size firmware.elf` prints `text data bss`. Flash used = text + data; RAM used = data + bss (plus stack and heap).
+**Interview takeaway:** .bss saves initial image space because it does not normally store every zero byte. Both sections consume RAM at runtime; exact placement depends on the linker script and toolchain.
 
 ### What is a dangling pointer, a wild pointer and a NULL pointer? {E}
 **Short answer:** A **NULL pointer** deliberately points to nothing; dereferencing it is undefined behaviour. A **wild pointer** is an uninitialised pointer containing a random address. A **dangling pointer** still holds the address of an object that no longer exists: memory that was freed, or a local variable whose function has returned.
