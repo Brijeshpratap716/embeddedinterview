@@ -177,49 +177,25 @@ For a file occupying logical blocks 0–7, an extent might map 0–3 to physical
 **Interview takeaway:** Filesystem fragmentation affects metadata and access patterns. SSDs reduce seek latency but do not eliminate allocation, write-amplification or metadata concerns.
 
 ### What is mmap, and what is mprotect used for? {M}
-**Short answer:** `mmap()` maps a file or anonymous memory into the process's address space, so the program can access it with normal pointers instead of `read()`/`write()`. Pages are loaded on demand by page faults, and with `MAP_SHARED` changes go back to the file (or are visible to other processes mapping it). `mprotect()` changes the access permissions (read, write, execute) of pages that are already mapped.
+mmap maps a file, device or anonymous memory into a process's virtual address space. mprotect changes access permissions on mapped pages.
 
 ```c
-#include <fcntl.h>
-#include <stdio.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <unistd.h>
-
-int main(void)
-{
-    int fd = open("data.bin", O_RDONLY);
-    struct stat st;
-    fstat(fd, &st);
-    const unsigned char *p = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-    if (p == MAP_FAILED) { perror("mmap"); return 1; }
-    close(fd);                         /* the mapping stays valid */
-    printf("first byte: %02x\n", p[0]);
-    munmap((void *)p, st.st_size);
-    return 0;
+size_t len=4096;
+void *p=mmap(NULL,len,PROT_READ|PROT_WRITE,
+             MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+if(p==MAP_FAILED) return -1;
+memset(p,0,len);
+if(mprotect(p,len,PROT_READ)<0) {
+    munmap(p,len);
+    return -1;
 }
+/* Writes are now prohibited. */
+munmap(p,len);
 ```
 
-**Uses of mmap**
+MAP_SHARED permits shared visibility and file-backed updates; MAP_PRIVATE uses private copy-on-write behavior. mprotect requires a page-aligned starting address; mmap supplies an aligned address.
 
-| Use | Flags |
-|---|---|
-| Read a large file randomly without copying it into a buffer | `MAP_PRIVATE`, `PROT_READ` |
-| Share memory between processes | `MAP_SHARED` on a `shm_open()` fd or a file |
-| Allocate large memory (glibc `malloc` does this above 128 KB) | `MAP_PRIVATE | MAP_ANONYMOUS` |
-| Access device memory / frame buffers / DMA buffers from user space | `MAP_SHARED` on a `/dev` node (driver implements `mmap`) |
-| Load executables and shared libraries | used by the kernel's ELF loader and `ld.so` |
-
-**mprotect scenarios**
-
-1. **Read-only after initialisation:** build a configuration table or lookup table at start-up, then `mprotect(p, len, PROT_READ)`. Any later accidental write causes an immediate `SIGSEGV` instead of silent corruption, and the table cannot be modified by an attacker exploiting a memory bug.
-2. **JIT compilers (W^X):** write generated machine code into a `PROT_READ | PROT_WRITE` page, then switch it to `PROT_READ | PROT_EXEC` before running it. A page should never be writable and executable at the same time.
-3. **Guard pages:** `PROT_NONE` pages around buffers or thread stacks catch overflows.
-4. **Garbage collectors and checkpointing:** write-protect pages to detect which ones change (the fault handler records the page and re-enables writing).
-
-**Rules:** addresses and lengths are page-aligned (`sysconf(_SC_PAGESIZE)`); `mprotect` works on whole pages; and accessing beyond the end of a mapped file (in the last partial page and beyond) gives `SIGBUS`.
-
-**mmap vs read:** `mmap` avoids a copy and is great for random access to large files. For sequential reads, `read()` with a big buffer is often just as fast and handles errors (an I/O error becomes a `SIGBUS` with mmap, which is harder to handle).
+**Interview takeaway:** A mapping may allocate physical pages lazily. Device-driver mmap requires explicit mapping support and appropriate permissions/cache attributes. Never assume a virtual address is a physical address.
 
 ### What is the page cache, and how do you write a file safely so it survives a power loss? {M}
 **Short answer:** Linux keeps recently used file data in RAM in the **page cache**. `read()` is served from it when possible, and `write()` only copies data into it and marks the pages dirty; the kernel writes them to storage later (by default within about 30 seconds). To make data durable you must call `fsync()` (or `fdatasync()`). To replace a file atomically, write a temporary file, `fsync()` it, `rename()` it over the old one, and `fsync()` the directory.
