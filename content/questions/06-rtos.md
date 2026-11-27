@@ -690,37 +690,44 @@ Hardware timers are preferable for precise signal generation, capture or timing 
 **Interview takeaway:** Software timers simplify application timeouts but their callback latency depends on scheduler and timer-service load.
 
 ### What is the difference between vTaskDelay and vTaskDelayUntil? {M}
-**Short answer:** `vTaskDelay(n)` blocks the task for `n` ticks counted **from the moment it is called**, so if the task's own work takes variable time, its period drifts. `vTaskDelayUntil(&last_wake, period)` (or `xTaskDelayUntil`) blocks until an **absolute** time `last_wake + period` and then updates `last_wake`, giving a fixed-frequency loop with no drift.
+`vTaskDelay` blocks for a relative number of ticks. `vTaskDelayUntil` (and the status-returning xTaskDelayUntil API) supports periodic execution relative to a maintained previous wake time.
+
+#### 1. Relative delay
 
 ```c
-/* drifts: period = 10 ms + execution time (variable) */
 for (;;) {
-    control_step();
-    vTaskDelay(pdMS_TO_TICKS(10));
+    process();
+    vTaskDelay(pdMS_TO_TICKS(100));
 }
+```
 
-/* fixed 10 ms period, independent of execution time */
+If processing takes 20 ms, the interval between starts is approximately 120 ms plus timing variations. Execution time contributes to drift.
+
+#### 2. Periodic scheduling
+
+```c
 TickType_t last = xTaskGetTickCount();
+
 for (;;) {
-    vTaskDelayUntil(&last, pdMS_TO_TICKS(10));
-    control_step();
+    process();
+    vTaskDelayUntil(&last, pdMS_TO_TICKS(100));
 }
 ```
 
-**Timeline (control step takes 2–4 ms)**
+The wake schedule is advanced by the requested period, rather than measuring each delay from the end of processing. This is useful for sampling and control.
 
+```text
+Relative: work 20 | wait 100 | work 20 | wait 100
+Periodic: work 20 | wait 80  | work 20 | wait 80
 ```
-vTaskDelay:       run(3) wait(10) run(2) wait(10) run(4) wait(10)  → wake times 13, 25, 39 ...
-vTaskDelayUntil:  wake at 10, 20, 30, 40 ... regardless of run time
-```
 
-**Details**
+The diagram assumes an ideal tick phase and no interference.
 
-- If the task overruns (work takes longer than the period), `vTaskDelayUntil` returns immediately and the task runs late; `xTaskDelayUntil` returns `pdFALSE` in that case, so you can detect overruns.
-- Neither gives better than ±1 tick precision, and higher-priority tasks or interrupts can delay the actual start (jitter). For tight timing (e.g. a 1 kHz control loop with low jitter), trigger the task from a hardware timer interrupt with a notification.
-- `vTaskDelay(0)` just yields.
+#### 3. Deadline miss
 
-**Zephyr equivalents:** `k_sleep()` / `k_msleep()` (relative) and `k_sleep(K_TIMEOUT_ABS_MS(...))` or periodic `k_timer` + `k_timer_status_sync()` for absolute timing.
+If processing exceeds the period, the delay-until operation may return without blocking. Detect overruns and choose whether to skip missed releases, resynchronize or report an error.
+
+**Interview takeaway:** Delay is relative; delay-until maintains a periodic release schedule. Neither guarantees the task actually executes exactly at the wake tick.
 
 ### How do you protect a shared resource between a task and an ISR? {M}
 **Short answer:** A mutex cannot be used, because an ISR cannot block or own a mutex. Instead: protect the task's short access with a **critical section** that masks the interrupt (`taskENTER_CRITICAL()` / `taskEXIT_CRITICAL()`, which raises `BASEPRI` on Cortex-M3+); design the data flow so each variable has a **single writer** (lock-free ring buffer); or pass data through an RTOS **queue/stream buffer** and let only the task own the resource.
