@@ -228,38 +228,54 @@ Call with `insert_front(&head, 10)` after initializing head to NULL. The functio
 **Interview takeaway:** Use a double pointer when the object to modify is itself a pointer. It is common in linked lists, allocation output parameters and APIs returning handles.
 
 ### What is the difference between char *s = "hello" and char s[] = "hello"? {M}
-**Short answer:** `char *s = "hello";` makes `s` a **pointer** to a string literal, which usually lives in read-only memory (`.rodata`, often flash on an MCU); modifying it is undefined behaviour. `char s[] = "hello";` creates a writable **array** of 6 chars (including `'\0'`) initialised with a copy of the literal.
+The first declaration creates a pointer to a string literal, while the second creates an array containing a copy of the literal.
+
+#### 1. Pointer to a string literal
 
 ```c
-char *p = "hello";       /* pointer (4 or 8 bytes) to a literal in .rodata */
-char  a[] = "hello";     /* 6-byte array (on the stack if local, .data if global) */
+char *s = "hello";
 
-a[0] = 'H';              /* fine */
-p[0] = 'H';              /* undefined: may crash (Linux: SIGSEGV), or be ignored (flash) */
-
-sizeof p;                /* 4 or 8 */
-sizeof a;                /* 6 */
-strlen(a);               /* 5 */
-
-p = "world";             /* fine: point somewhere else */
-a = "world";             /* error: arrays cannot be assigned */
+// s[0] = 'H';  // Undefined behaviour
+s = "world";    // Allowed
 ```
 
-**Best practice:** declare pointers to literals as `const char *p = "hello";` so the compiler rejects writes. GCC's `-Wwrite-strings` makes string literals `const char[]` to catch this. In C++, a literal already has type `const char[N]`.
+In C, string literals are arrays of char with static storage duration, but modifying them is undefined. They may be placed in read-only memory such as .rodata or flash.
 
-**Memory layout consequences on a microcontroller**
+Prefer:
 
-| Declaration | Flash | RAM |
+```c
+const char *s = "hello";
+```
+
+#### 2. Character array
+
+```c
+char s[] = "hello";
+
+s[0] = 'H';
+printf("%s", s);  // Hello
+```
+
+The array has six elements, including the terminating null character. Its elements can be modified.
+
+#### 3. Memory representation
+
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 148" width="100%" role="img" aria-label="String pointer refers to literal storage, while character array has its own writable copy">
+<text x="8" y="13" font-size="11" font-weight="600" fill="currentColor">const char *s = "hello"</text><rect x="8" y="23" width="70" height="30" rx="4" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="43" y="42" font-size="11" text-anchor="middle" fill="currentColor">s</text><path d="M78 38 H126 m-5-4 5 4-5 4" stroke="currentColor" fill="none"/>
+<rect x="126" y="23" width="34" height="30" fill="#94a3b8" fill-opacity=".15" stroke="#94a3b8"/><text x="143" y="42" font-size="12" text-anchor="middle" fill="currentColor">h</text><rect x="160" y="23" width="34" height="30" fill="#94a3b8" fill-opacity=".15" stroke="#94a3b8"/><text x="177" y="42" font-size="12" text-anchor="middle" fill="currentColor">e</text><rect x="194" y="23" width="34" height="30" fill="#94a3b8" fill-opacity=".15" stroke="#94a3b8"/><text x="211" y="42" font-size="12" text-anchor="middle" fill="currentColor">l</text><rect x="228" y="23" width="34" height="30" fill="#94a3b8" fill-opacity=".15" stroke="#94a3b8"/><text x="245" y="42" font-size="12" text-anchor="middle" fill="currentColor">l</text><rect x="262" y="23" width="34" height="30" fill="#94a3b8" fill-opacity=".15" stroke="#94a3b8"/><text x="279" y="42" font-size="12" text-anchor="middle" fill="currentColor">o</text><rect x="296" y="23" width="34" height="30" fill="#94a3b8" fill-opacity=".15" stroke="#94a3b8"/><text x="313" y="42" font-size="12" text-anchor="middle" fill="currentColor">\0</text><text x="228" y="66" font-size="10" text-anchor="middle" fill="currentColor">Literal: do not modify</text>
+<text x="8" y="91" font-size="11" font-weight="600" fill="currentColor">char s[] = "hello"; s[0] = 'H';</text>
+<rect x="68" y="101" width="34" height="30" fill="#16a34a" fill-opacity=".15" stroke="#16a34a"/><text x="85" y="120" font-size="12" text-anchor="middle" fill="currentColor">H</text><rect x="102" y="101" width="34" height="30" fill="#16a34a" fill-opacity=".15" stroke="#16a34a"/><text x="119" y="120" font-size="12" text-anchor="middle" fill="currentColor">e</text><rect x="136" y="101" width="34" height="30" fill="#16a34a" fill-opacity=".15" stroke="#16a34a"/><text x="153" y="120" font-size="12" text-anchor="middle" fill="currentColor">l</text><rect x="170" y="101" width="34" height="30" fill="#16a34a" fill-opacity=".15" stroke="#16a34a"/><text x="187" y="120" font-size="12" text-anchor="middle" fill="currentColor">l</text><rect x="204" y="101" width="34" height="30" fill="#16a34a" fill-opacity=".15" stroke="#16a34a"/><text x="221" y="120" font-size="12" text-anchor="middle" fill="currentColor">o</text><rect x="238" y="101" width="34" height="30" fill="#16a34a" fill-opacity=".15" stroke="#16a34a"/><text x="255" y="120" font-size="12" text-anchor="middle" fill="currentColor">\0</text></svg></div>
+
+#### 4. Comparison
+
+| Feature | char *s | char s[] |
 |---|---|---|
-| `const char *msg = "hello";` (global) | 6 bytes (literal) | 4 bytes (the pointer, in `.data`) |
-| `const char *const msg = "hello";` (global) | 6 + 4 bytes | 0 |
-| `char msg[] = "hello";` (global) | 6 bytes (initial value) | 6 bytes (`.data`) |
-| `static const char msg[] = "hello";` | 6 bytes | 0 |
-| `char msg[] = "hello";` (local) | 6 bytes (initial value) + copy code | 6 bytes of stack each call |
+| Storage | Pointer plus referenced literal | Own character array |
+| Modify characters in this example | Undefined behaviour | Allowed |
+| Assign another address to s | Allowed | Not allowed |
+| sizeof(s) | Pointer size | 6 bytes |
 
-For constant strings in firmware, `static const char msg[] = "..."` uses no RAM at all.
-
-**Identical literals may share storage:** `"hello" == "hello"` may be true or false; the compiler is allowed to merge them. Compare strings with `strcmp`, never with `==`.
+**Interview takeaway:** Use const char * for read-only strings and char arrays for writable string buffers. Array lifetime and location depend on its declaration; a local automatic array is commonly stored on the stack.
 
 ### What does int (*p)[10] mean versus int *p[10]? {M}
 **Short answer:** `int *p[10]` is an **array of 10 pointers** to int, because `[]` binds more tightly than `*`. `int (*p)[10]` is a **single pointer to an array** of 10 ints; the parentheses make `p` a pointer first. Incrementing it moves by the size of the whole array (40 bytes with 4-byte ints).
