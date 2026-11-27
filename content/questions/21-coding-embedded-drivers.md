@@ -63,6 +63,10 @@ void delay_ms(uint32_t ms) { uint32_t s = g_ms; while ((uint32_t)(g_ms - s) < ms
 
 **Interview follow-up:** "How would you make a 10 µs delay accurate even with interrupts?" Briefly disable interrupts around it (if the system tolerates the latency) or use a hardware timer in one-pulse mode to generate the timing in hardware.
 
+#### Worked example: counter wrap
+
+At 80 MHz, a 10 µs delay corresponds to 800 cycles. If the initial 32-bit counter is 0xFFFFFFF0, after 800 cycles it is 0x00000310. Unsigned subtraction still gives 800 modulo 2^32. The counter must actually be running, the interval must be representable and the loop must observe it before a full wrap is missed. Clock changes, debug halt, sleep and interrupt preemption affect wall-clock accuracy. On unsupported DWT implementations, use a peripheral timer with a documented clock rate.
+
 ### Write a UART transmit routine (polled and interrupt-driven). {M}
 **Short answer:** In the **polled** version, for each byte wait until the transmit data register is empty (`TXE`), then write the byte; at the end wait for transmission complete (`TC`) if the caller needs the line idle. In the **interrupt-driven** version, the caller copies data into a ring buffer and enables the TXE interrupt; the ISR moves one byte from the buffer to the data register each time TXE fires and disables the interrupt when the buffer is empty, so the CPU is free while bytes go out.
 
