@@ -406,40 +406,110 @@ const int timeout_ms = 100;
 **Interview takeaway:** Prefer `const` for type safety and read-only objects. Use `#define` for preprocessing, conditional compilation and compile-time constants. In C, a `const int` is not generally an integer constant expression.
 
 ### What does const int *p, int *const p and const int *const p mean? {M}
-**Short answer:** Read the declaration from the variable name outward (right to left). `const int *p` is a pointer to a constant int: you can move `p`, but not change `*p`. `int *const p` is a constant pointer to int: you can change `*p`, but `p` always points to the same place. `const int *const p` allows neither.
+The position of the `const` keyword determines whether the **data, pointer, or both** can be modified.
 
-| Declaration | Can change `p`? | Can change `*p`? | Read as |
-|---|---|---|---|
-| `const int *p` / `int const *p` | yes | no | p is a pointer to const int |
-| `int *const p = &x;` | no | yes | p is a const pointer to int |
-| `const int *const p = &x;` | no | no | p is a const pointer to const int |
+#### 1. `const int *p` — Pointer to constant data
+
+The pointer can point to another variable, but the data cannot be modified through the pointer.
 
 ```c
-int x = 1, y = 2;
+int a = 10, b = 20;
+const int *p = &a;
 
-const int *a = &x;  a = &y;   /* OK */      /* *a = 5;  error */
-int *const b = &x;  *b = 5;   /* OK */      /* b = &y;  error */
-const int *const c = &x;                     /* neither */
+*p = 30;  // Error
+p = &b;   // Allowed
 ```
 
-**Where const is placed relative to `*` is what matters:** `const` before the `*` applies to the pointed-to data; after the `*` applies to the pointer itself.
+<div style="max-width:680px;margin:16px 0">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 112" width="100%" role="img" aria-label="Modifiable pointer to read-only data">
+  <rect x="10" y="20" width="90" height="44" rx="5" fill="#16a34a" fill-opacity=".13" stroke="#16a34a"/>
+  <text x="55" y="38" font-size="13" text-anchor="middle" fill="currentColor" font-weight="600">Pointer p</text>
+  <text x="55" y="53" font-size="10" text-anchor="middle" fill="currentColor">Modifiable</text>
+  <rect x="235" y="8" width="95" height="38" rx="5" fill="#ef4444" fill-opacity=".12" stroke="#ef4444"/>
+  <text x="282" y="31" font-size="13" text-anchor="middle" fill="currentColor">a = 10</text>
+  <rect x="235" y="65" width="95" height="38" rx="5" fill="#ef4444" fill-opacity=".12" stroke="#ef4444"/>
+  <text x="282" y="88" font-size="13" text-anchor="middle" fill="currentColor">b = 20</text>
+  <path d="M100 38 L235 27 m-6 -4 6 4-6 4" stroke="#16a34a" fill="none" stroke-width="1.5"/>
+  <path d="M100 48 L235 84 m-5 -6 5 6-7 2" stroke="#16a34a" stroke-dasharray="4 3" fill="none" stroke-width="1.5"/>
+  <text x="166" y="106" font-size="10" text-anchor="middle" fill="#16a34a">Can change address</text>
+</svg>
+</div>
 
-**Embedded examples**
+**Note:** The original variable `a` can still be modified directly.
+
+#### 2. `int *const p` — Constant pointer
+
+The pointer cannot point to another variable, but the data can be modified through it.
 
 ```c
-/* fixed address, changing contents: const pointer to volatile data */
-volatile uint32_t *const UART_DR = (volatile uint32_t *)0x40011004u;
+int a = 10, b = 20;
+int *const p = &a;
 
-/* function promises not to modify the caller's buffer */
-size_t crc16(const uint8_t *data, size_t len);
-
-/* table of strings, all in flash: const pointers to const chars */
-static const char *const state_names[] = { "IDLE", "RUN", "ERROR" };
+*p = 30;  // Allowed
+p = &b;   // Error
 ```
 
-In the last example, without the second `const`, the array of pointers is writable and so goes into RAM (`.data`), even though the strings are in flash.
+<div style="max-width:680px;margin:16px 0">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 100" width="100%" role="img" aria-label="Constant pointer to modifiable data">
+  <rect x="10" y="15" width="105" height="48" rx="5" fill="#ef4444" fill-opacity=".12" stroke="#ef4444"/>
+  <text x="62" y="34" font-size="13" font-weight="600" text-anchor="middle" fill="currentColor">Pointer p</text>
+  <text x="62" y="50" font-size="11" text-anchor="middle" fill="currentColor">Fixed address</text>
+  <path d="M115 39 H225 m-6 -5 6 5-6 5" stroke="currentColor" fill="none" stroke-width="1.5"/>
+  <rect x="225" y="15" width="105" height="48" rx="5" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/>
+  <text x="277" y="34" font-size="13" font-weight="600" text-anchor="middle" fill="currentColor">a = 30</text>
+  <text x="277" y="50" font-size="11" text-anchor="middle" fill="currentColor">Modifiable data</text>
+  <text x="170" y="85" font-size="11" text-anchor="middle" fill="currentColor">Address fixed, data can change</text>
+</svg>
+</div>
 
-**Follow-up:** "Can you remove const with a cast?" You can cast `const int *` to `int *`, but writing through it is undefined behaviour if the object was originally defined `const` (it may be in flash, where the write is ignored or faults).
+#### 3. `const int *const p` — Constant pointer to constant data
+
+Neither the pointer nor the data can be modified through the pointer.
+
+```c
+int a = 10, b = 20;
+const int *const p = &a;
+
+*p = 30;  // Error
+p = &b;   // Error
+```
+
+<div style="max-width:680px;margin:16px 0">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 100" width="100%" role="img" aria-label="Constant pointer to read-only data">
+  <rect x="10" y="15" width="105" height="48" rx="5" fill="#ef4444" fill-opacity=".12" stroke="#ef4444"/>
+  <text x="62" y="34" font-size="13" font-weight="600" text-anchor="middle" fill="currentColor">Pointer p</text>
+  <text x="62" y="50" font-size="11" text-anchor="middle" fill="currentColor">Fixed address</text>
+  <path d="M115 39 H225 m-6 -5 6 5-6 5" stroke="currentColor" fill="none" stroke-width="1.5"/>
+  <rect x="225" y="15" width="105" height="48" rx="5" fill="#ef4444" fill-opacity=".12" stroke="#ef4444"/>
+  <text x="277" y="34" font-size="13" font-weight="600" text-anchor="middle" fill="currentColor">a = 10</text>
+  <text x="277" y="50" font-size="11" text-anchor="middle" fill="currentColor">Read-only via p</text>
+  <text x="170" y="85" font-size="11" text-anchor="middle" fill="currentColor">Neither operation is allowed through p</text>
+</svg>
+</div>
+
+#### 4. Comparison table
+
+| Declaration | Change data (`*p`)? | Change address (`p`)? |
+|---|---|---|
+| `int *p` | Yes | Yes |
+| `const int *p` | No | Yes |
+| `int *const p` | Yes | No |
+| `const int *const p` | No | No |
+
+#### 5. Use in embedded systems
+
+A pointer to a read-only hardware status register at a fixed address:
+
+```c
+const volatile uint32_t *const status =
+    (const volatile uint32_t *)0x40000000U;
+```
+
+- First `const`: Software cannot modify the register through this pointer.
+- `volatile`: Hardware may change the register value.
+- Second `const`: The pointer cannot change its address.
+
+**Interview takeaway:** If `const` appears before `*`, the pointed-to data is read-only through the pointer. If `const` appears after `*`, the pointer itself is constant. If it appears on both sides, both restrictions apply.
 
 ### What is the difference between a macro and an inline function? {M}
 **Short answer:** A macro is text substitution by the preprocessor: no type checking, arguments may be evaluated several times, and it is hard to debug. A `static inline` function is a real function that the compiler may expand in place: arguments are type-checked and evaluated exactly once, and it can be stepped through in a debugger. Prefer `static inline`; use macros only for what functions cannot do.
