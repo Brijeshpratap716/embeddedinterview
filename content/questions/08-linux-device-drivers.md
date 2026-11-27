@@ -202,89 +202,127 @@ Use alloc_chrdev_region, cdev_init/cdev_add and the appropriate class/device API
 **Interview takeaway:** File operations are callbacks, not direct userspace calls. Validate user requests, manage device lifetime and handle concurrency before adding real hardware access.
 
 ### How do you implement ioctl in a character driver, with a complete example? {H}
-**Short answer:** Define command numbers in a header shared with user space using `_IO`, `_IOR`, `_IOW` and `_IOWR` (they encode direction, a magic type, a number and the argument size), implement `.unlocked_ioctl` with a `switch` on the command, copy arguments with `copy_from_user`/`copy_to_user`, return `-ENOTTY` for unknown commands, and add `.compat_ioctl = compat_ptr_ioctl` so 32-bit programs work on a 64-bit kernel (use fixed-size types so layouts match).
+ioctl provides device-specific control commands that do not fit ordinary read/write semantics. The userspace and kernel sides share a command definition and a stable data layout.
 
-**Shared header (`mydev_ioctl.h`)**
+#### 1. Shared UAPI header (demo_ioctl.h)
 
 ```c
+#ifndef DEMO_IOCTL_H
+#define DEMO_IOCTL_H
 #include <linux/ioctl.h>
 #include <linux/types.h>
 
-struct mydev_cfg {
-    __u32 sample_rate;      /* fixed-size types: same layout for 32- and 64-bit user space */
-    __u32 gain;
-    __u64 reserved;         /* room for future fields; must be zero */
-};
-
-#define MYDEV_MAGIC   'M'
-#define MYDEV_RESET   _IO(MYDEV_MAGIC, 0)
-#define MYDEV_GET_CFG _IOR(MYDEV_MAGIC, 1, struct mydev_cfg)
-#define MYDEV_SET_CFG _IOW(MYDEV_MAGIC, 2, struct mydev_cfg)
-#define MYDEV_GET_CNT _IOR(MYDEV_MAGIC, 3, __u32)
+#define DEMO_GET _IOR('D', 0, __u32)
+#define DEMO_SET _IOW('D', 1, __u32)
+#endif
 ```
 
-**Driver side**
+Direction is defined from the userspace perspective. Fixed-width UAPI fields avoid dependence on native long or pointer size.
+
+#### 2. Kernel misc-device implementation
 
 ```c
-static long mydev_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
+#include <linux/module.h>
+#include <linux/fs.h>
+#include <linux/miscdevice.h>
+#include <linux/uaccess.h>
+#include <linux/compat.h>
+#include <linux/mutex.h>
+#include "demo_ioctl.h"
+
+static DEFINE_MUTEX(value_lock);
+static __u32 value;
+
+static long demo_ioctl(struct file *file, unsigned int cmd,
+                       unsigned long arg)
 {
-    struct mydev *d = f->private_data;
-    void __user *uarg = (void __user *)arg;
-    struct mydev_cfg cfg;
-    long ret = 0;
+    __u32 tmp;
+    void __user *p = (void __user *)arg;
 
-    if (_IOC_TYPE(cmd) != MYDEV_MAGIC) return -ENOTTY;
-
-    mutex_lock(&d->lock);
     switch (cmd) {
-    case MYDEV_RESET:
-        mydev_hw_reset(d);
-        break;
-    case MYDEV_GET_CFG:
-        if (copy_to_user(uarg, &d->cfg, sizeof d->cfg)) ret = -EFAULT;
-        break;
-    case MYDEV_SET_CFG:
-        if (copy_from_user(&cfg, uarg, sizeof cfg)) { ret = -EFAULT; break; }
-        if (cfg.reserved || cfg.sample_rate == 0 || cfg.sample_rate > 100000 || cfg.gain > 7) {
-            ret = -EINVAL; break;                   /* validate everything from user space */
-        }
-        d->cfg = cfg;
-        mydev_hw_apply(d);
-        break;
-    case MYDEV_GET_CNT:
-        ret = put_user(d->irq_count, (__u32 __user *)uarg);
-        break;
+    case DEMO_GET:
+        mutex_lock(&value_lock);
+        tmp = value;
+        mutex_unlock(&value_lock);
+        return copy_to_user(p, &tmp, sizeof tmp) ?
+               -EFAULT : 0;
+
+    case DEMO_SET:
+        if (copy_from_user(&tmp, p, sizeof tmp))
+            return -EFAULT;
+        if (tmp > 1000)
+            return -EINVAL;
+        mutex_lock(&value_lock);
+        value = tmp;
+        mutex_unlock(&value_lock);
+        return 0;
+
     default:
-        ret = -ENOTTY;                              /* conventional "unknown ioctl" */
+        return -ENOTTY;
     }
-    mutex_unlock(&d->lock);
-    return ret;
 }
 
-static const struct file_operations mydev_fops = {
-    .owner          = THIS_MODULE,
-    .open           = mydev_open,
-    .release        = mydev_release,
-    .unlocked_ioctl = mydev_ioctl,
-    .compat_ioctl   = compat_ptr_ioctl,            /* fine because the structs are layout-identical */
+static const struct file_operations fops = {
+    .owner = THIS_MODULE,
+    .unlocked_ioctl = demo_ioctl,
+#ifdef CONFIG_COMPAT
+    .compat_ioctl = compat_ptr_ioctl,
+#endif
 };
+
+static struct miscdevice dev = {
+    .minor = MISC_DYNAMIC_MINOR,
+    .name = "demo_ioctl",
+    .fops = &fops,
+};
+
+static int __init demo_init(void)
+{
+    return misc_register(&dev);
+}
+
+static void __exit demo_exit(void)
+{
+    misc_deregister(&dev);
+}
+
+module_init(demo_init);
+module_exit(demo_exit);
+MODULE_LICENSE("GPL");
 ```
 
-**User space**
+The compat helper is suitable here because both commands use pointers to the same fixed-size layout on native and compat ABIs. Kernel API availability depends on the target version.
+
+#### 3. Userspace program
 
 ```c
-int fd = open("/dev/mydev0", O_RDWR);
-struct mydev_cfg c = { .sample_rate = 1000, .gain = 2 };
-if (ioctl(fd, MYDEV_SET_CFG, &c) < 0) perror("SET_CFG");
+#include <fcntl.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include "demo_ioctl.h"
+
+int main(void)
+{
+    int fd = open("/dev/demo_ioctl", O_RDWR);
+    __u32 v = 42;
+    if (fd < 0)
+        return 1;
+    if (ioctl(fd, DEMO_SET, &v) < 0 ||
+        ioctl(fd, DEMO_GET, &v) < 0) {
+        perror("ioctl");
+        close(fd);
+        return 1;
+    }
+    printf("%u\n", (unsigned)v);
+    close(fd);
+    return 0;
+}
 ```
 
-**Interview points**
+Expected output: 42 after successful operations.
 
-- `unlocked_ioctl` means no Big Kernel Lock: you provide your own locking.
-- Never trust user input: check ranges, reserved fields and sizes, and never pass a user pointer to hardware.
-- `_IOR` means user space **reads** (kernel writes to user memory).
-- Check `capable(CAP_SYS_ADMIN)` for privileged operations.
-- Alternatives for new interfaces: sysfs attributes (single values), configfs, netlink, or a subsystem's standard API, which reviewers often prefer over custom ioctls.
+**Interview takeaway:** ioctl is a UAPI contract. Validate command, data and permissions, use uaccess helpers and maintain compatible layouts; never trust a userspace pointer.
 
 ### What are major and minor numbers? {E}
 **Short answer:** Every device node has a device number (`dev_t`) made of a **major** number, which identifies the driver, and a **minor** number, which the driver uses to identify the device instance. `ls -l /dev/ttyS0` shows `4, 64` (major 4, minor 64). Use `MAJOR()`, `MINOR()` and `MKDEV()` to work with them, and allocate numbers dynamically with `alloc_chrdev_region` rather than hard-coding a major.
