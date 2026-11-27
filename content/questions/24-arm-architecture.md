@@ -746,6 +746,25 @@ dma_addr_t a = dma_map_single(dev, buf, len, DMA_TO_DEVICE);
 
 **Interview takeaway:** The DMA API abstracts cache maintenance and address mapping, including IOMMUs.
 
+#### Walk through both DMA directions
+
+CPU-to-device example: the CPU fills a transmit buffer with new data, but a non-coherent device might otherwise see old RAM contents because dirty cache lines have not been written back. The DMA mapping or sync-for-device operation establishes the required visibility before the driver hands ownership to hardware.
+
+Device-to-CPU example: hardware receives a packet into memory. Before the CPU reads it, the driver waits for completion and uses the DMA API to return ownership to the CPU. This handles stale cache lines and any platform-required maintenance.
+
+```c
+dma_addr_t dma = dma_map_single(dev, buf, len, DMA_FROM_DEVICE);
+if (dma_mapping_error(dev, dma))
+    return -EIO;
+
+/* Submit DMA and wait for completion or quiesce on error. */
+
+dma_unmap_single(dev, dma, len, DMA_FROM_DEVICE);
+/* Now CPU may consume the received data. */
+```
+
+For persistent streaming mappings, dma_sync_single_for_cpu and dma_sync_single_for_device bracket ownership changes instead of unmapping each time. Do not let independent objects share cache lines inappropriately with DMA buffers on a non-coherent target. For coherent descriptors, publish fields before the device ownership flag with an appropriate barrier; coherence does not itself guarantee ordering or safe simultaneous modification.
+
 ### What is ARM GIC? {M}
 **Short answer:** The Generic Interrupt Controller routes and prioritizes interrupts. GICv3 uses a distributor, redistributors and CPU interfaces; an interrupt handler acknowledges and completes interrupts.
 
