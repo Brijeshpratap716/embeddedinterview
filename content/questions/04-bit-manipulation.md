@@ -595,26 +595,41 @@ Testing a*b < 0 can overflow signed integers and gives different zero semantics.
 **Interview takeaway:** Compare sign conditions directly. Do not multiply values just to determine their signs.
 
 ### How do you check if a number is even or odd using bitwise operators? {E}
-**Short answer:** Test the lowest bit: `(n & 1) == 0` means even and `(n & 1) == 1` means odd. Every odd number has bit 0 set, because all other bits contribute even values.
+The least significant bit of a binary integer indicates whether its value is even or odd.
+
+#### 1. C implementation
 
 ```c
-#include <stdbool.h>
-
-bool is_even(unsigned n) { return (n & 1u) == 0; }
-bool is_odd(unsigned n)  { return (n & 1u) != 0; }
+bool is_odd(unsigned int n)
+{
+    return (n & 1U) != 0;
+}
 ```
 
-**Why:** a binary number is `b0·1 + b1·2 + b2·4 + ...`. Everything except `b0` is a multiple of 2, so `b0` alone decides odd or even.
+The mask 1 preserves only bit 0.
 
-**Negative numbers:** in two's complement (all modern CPUs, and required by C23), `-3` is `...11101`, so `-3 & 1 == 1` and the test still works. Compare with `%`: `-3 % 2 == -1` in C, so `n % 2 == 1` is **false** for negative odd numbers. That is a real bug. Write `n % 2 != 0` if you use `%`.
+#### 2. Example
 
-**Speed:** compilers turn `n % 2 == 0` into a single AND, so there is no performance reason to prefer the bitwise form. Use whichever reads better.
+```text
+6 = 0110;  0110 & 0001 = 0 (even)
+7 = 0111;  0111 & 0001 = 1 (odd)
+```
 
-**Related one-liners**
+For signed values, casting to unsigned before testing the lowest bit gives the same mathematical parity, including negative numbers:
 
-- Multiple of 4: `(n & 3) == 0`.
-- Multiple of 2ᵏ: `(n & ((1u << k) - 1)) == 0`.
-- Round down to even: `n & ~1u`.
+```c
+bool odd = ((unsigned int)value & 1U) != 0;
+```
+
+#### 3. Modulo comparison
+
+```c
+bool odd = (value % 2) != 0;
+```
+
+This also works with negative values. A compiler normally optimizes a parity test without needing manual division.
+
+**Interview takeaway:** Test bit zero for parity. Use unsigned operands for bit operations and do not confuse odd/even parity with the parity of the number of set bits.
 
 ### How do you find the absolute value without branching? {M}
 **Short answer:** Make a mask that is all ones for negative numbers and zero otherwise (`mask = x >> 31`), then compute `(x + mask) ^ mask`. It relies on an arithmetic right shift and fails for `INT32_MIN`.
