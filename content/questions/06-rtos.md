@@ -30,24 +30,30 @@ Tasks and scheduling, queues, semaphores, mutexes, timers and interrupt-safe sig
 **Interview takeaway:** Real-time means meeting timing requirements, not simply being fast. Analyze worst-case execution, blocking and interrupt latency.
 
 ### What is the difference between hard, firm and soft real-time? {E}
-**Short answer:** In a **hard** real-time system, missing a deadline is a system failure (airbag deployment, engine control, pacemaker, motor commutation). In a **firm** system, a late result is worthless but occasional misses are tolerated (a dropped video frame, a missed sensor sample). In a **soft** system, late results still have some value, just less (UI responsiveness, audio buffering with retries, network throughput).
+Real-time systems are classified by the consequence of missing a deadline.
 
-| | Hard | Firm | Soft |
-|---|---|---|---|
-| Missed deadline | failure / hazard | result discarded | degraded quality |
-| Analysis | worst-case execution time (WCET), schedulability proof | statistical + worst case | average performance |
-| Examples | ABS brakes, flight control, motor current loop | video decode, telemetry sampling | UI, logging, streaming with buffers |
-| Typical platform | MCU/RTOS, Cortex-R, lock-step cores | RTOS or Linux with PREEMPT_RT | Linux, Android |
+| Category | Missed deadline | Example |
+|---|---|---|
+| Hard | Violates a required timing guarantee; may be unacceptable | Safety-critical control action |
+| Firm | Late result loses its value | A stale sensor frame discarded by a processing pipeline |
+| Soft | Late result still has some value, but quality suffers | Interactive audio/video |
 
-**Real systems mix them:** a drone has a hard-real-time attitude control loop (e.g. 1 kHz), firm-real-time sensor fusion, and soft-real-time telemetry and video. Good designs isolate the hard parts: highest priorities, dedicated cores, or a separate MCU.
+#### 1. Example timeline
 
-**Key terms**
+```text
+Release -------- required deadline -------- late completion
+Hard:  timing requirement violated
+Firm:  discard result
+Soft:  use result if appropriate, reduced quality
+```
 
-- **Deadline:** latest time by which a result must be produced.
-- **Jitter:** variation in timing (e.g. start times of a periodic task); control loops often care more about jitter than about the absolute delay.
-- **WCET:** worst-case execution time of a piece of code, measured or computed by static analysis tools (aiT, RapiTime), affected by caches, branch predictors and interrupts.
+The classification belongs to the application requirement, not automatically to a device or RTOS.
 
-**Interview follow-up:** "Is Linux real-time?" Standard Linux is soft real-time; with PREEMPT_RT, worst-case latencies of tens of µs are achievable, which suits many firm and some hard requirements, but safety-critical hard real-time still usually runs on an RTOS or a separate core.
+#### 2. Engineering implications
+
+Hard real-time requires defensible worst-case timing analysis and controlled resources. Firm systems may drop expired jobs. Soft systems may use buffering and quality adaptation.
+
+**Interview takeaway:** Classify the consequence of lateness before choosing scheduling policy, priority and recovery behavior.
 
 ### What are the states of a task? {E}
 **Short answer:** In FreeRTOS a task is **Running** (executing on the CPU), **Ready** (able to run, waiting for the CPU), **Blocked** (waiting for an event or a delay, usually with a timeout), or **Suspended** (removed from scheduling until explicitly resumed). A deleted task's memory is freed later by the idle task.
