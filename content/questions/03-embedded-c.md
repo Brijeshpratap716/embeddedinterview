@@ -551,6 +551,83 @@ Check the vector table, initial stack address, reset PC, flash/RAM placement, cl
 
 **Interview takeaway:** main is not the processor's reset entry. Hardware and startup code establish the conditions required for valid C execution.
 
+### What is a microcontroller startup file and what does it contain (ARM Cortex-M4)? {M}
+A startup file (e.g. `startup_stm32f407xx.s` or `startup_device.c`) defines the processor's initial exception vectors and the code that prepares the firmware runtime after reset. It is device- and toolchain-specific.
+
+#### 1. Main components
+
+| Component | Purpose |
+|---|---|
+| Stack definition | Reserves stack space or refers to a linker-defined stack top |
+| Heap definition | Optional storage for dynamic allocation |
+| Vector table | Initial MSP, reset handler, core exception handlers and device IRQ handlers |
+| Reset_Handler | Performs or invokes early initialization and enters the C/C++ runtime |
+| Default_Handler | Fallback for unimplemented interrupts and exceptions |
+| Weak handlers | Allow application handlers to override defaults at link time |
+
+#### 2. Example ARM assembler directives (Keil/armasm)
+
+```asm
+Stack_Size EQU 0x200
+        AREA STACK, NOINIT, READWRITE, ALIGN=3
+Stack_Mem SPACE Stack_Size
+__initial_sp
+        PRESERVE8
+        THUMB
+```
+
+- EQU defines a constant; SPACE reserves bytes (0x200 = 512 bytes).
+- AREA declares a section. NOINIT indicates that it is not initialized by the normal runtime initialization process.
+- ALIGN=3 specifies 2^3 = 8-byte alignment in this assembler. PRESERVE8 declares that the code preserves 8-byte stack alignment; it does not initialize the stack.
+- THUMB selects Thumb instructions, as required by Cortex-M.
+
+#### 3. Vector table and reset handler
+
+At reset, hardware loads MSP from vector entry 0 and the reset PC from entry 1. The startup file supplies these entries; the linker places the table at the required address. External IRQ n uses entry 16+n; unused device slots are reserved.
+
+A typical CMSIS startup handler is conceptually:
+
+```c
+void Reset_Handler(void)
+{
+    SystemInit();       // early system configuration
+    __PROGRAM_START();  // toolchain runtime entry; does not return
+}
+```
+
+The CMSIS runtime entry is toolchain-specific (for example, Keil uses __main). It initializes memory and the language runtime as required, then invokes main(). Some other implementations perform .data copying and .bss clearing explicitly in Reset_Handler.
+
+```text
+Reset -> Hardware loads MSP and PC
+      -> Reset_Handler
+      -> Early hardware setup
+      -> Copy .data / clear .bss
+      -> Runtime and C++ constructors, if applicable
+      -> main()
+```
+
+The order can vary. If SystemInit runs before RAM initialization, it must not depend on initialized writable global variables.
+
+#### 4. Weak interrupt handlers
+
+```c
+void Default_Handler(void)
+{
+    for (;;) {}
+}
+
+void UART_IRQHandler(void)
+    __attribute__((weak, alias("Default_Handler")));
+```
+
+A strong definition of UART_IRQHandler at file scope in another source file overrides the weak default (GNU compiler example; use the exact device-specific handler name). For C++ handlers, use the required C linkage when the vector references a C symbol.
+
+**Important corrections:** .bss is cleared in RAM, not copied from flash. Cortex-M hardware initializes MSP at reset; startup does not necessarily load it again. Startup need not explicitly disable and re-enable every interrupt. NMI cannot be masked using PRIMASK. A vector table may contain reserved slots, so the highest IRQ number is not the count of implemented interrupts.
+
+**Startup file vs linker script:** Startup code defines the initialization behavior; the linker script defines where sections and symbols are placed. Both must agree on the memory layout.
+
+References: [Startup file tutorial](https://microcontrollerslab.com/microcontrollers-startup-file-arm-cortex-m4-mcu/) and [Arm CMSIS startup file documentation](https://arm-software.github.io/CMSIS_6/latest/Core/startup_c_pg.html).
+
 ### What is a linker script and what does it contain? {M}
 A linker script describes how object-file sections are combined and placed in the target's memory. It also defines symbols used by startup code and reserves memory for special purposes.
 
