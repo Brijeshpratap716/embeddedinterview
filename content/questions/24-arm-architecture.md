@@ -391,6 +391,20 @@ LDR X2, [X1] // X1 = virtual address
 
 **Interview takeaway:** Not every load reaches DRAM. Registers, translation, caches, coherency fabric and memory controller all participate as needed.
 
+#### Complete journey: user-process load to physical DRAM
+
+Assume a process executes LDR X2,[X1], where X1=0x40001234. Assume a valid mapping to physical page 0x80000000 and 4 KiB pages.
+
+1. The instruction is fetched through the instruction-side translation/cache path and decoded into the implementation's internal operations.
+2. The load/store unit generates virtual address 0x40001234. The data TLB looks up the translation for the virtual page and current address-space context.
+3. On a miss, the MMU performs the required table walk using the configured translation registers. If the mapping is valid, the physical address is 0x80000234; otherwise the access can fault before delivering data.
+4. The processor checks its data cache hierarchy using the applicable translation and memory attributes. If an L1 hit supplies the requested bytes, no external memory request is required.
+5. On a cache miss, a coherent interconnect may source the cache line from a shared cache or another core's cache. If no cache supplies the line, the request reaches the memory controller.
+6. The memory controller maps the physical address to its configured DRAM channel/rank/bank/row/column, schedules the necessary DRAM operations and retrieves data. It may exploit an already open row.
+7. Returned data fills the relevant cache or buffer according to the cache policy. The load extracts the requested eight bytes, applies the architectural byte order, and writes the result into X2.
+
+In an out-of-order CPU, independent instructions can execute while the load is outstanding, with architectural completion governed by the implementation and memory model. A fault can instead enter the kernel and retry the instruction after demand allocation. Stores may enter a store buffer and update a write-back cache; a dirty line can reach DRAM much later. The exact cache and controller topology is SoC-specific. Device-memory MMIO accesses take a peripheral route rather than necessarily reaching DRAM.
+
 ### What happens when malloc(4 KB) is called on ARM64 Linux? {M}
 **Short answer:** The allocator may reuse a free chunk or obtain virtual memory via brk/mmap. A first write to an unbacked anonymous page can fault, causing Linux to allocate a physical page and update the mapping. Allocation is not necessarily page-aligned.
 
