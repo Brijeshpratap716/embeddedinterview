@@ -176,24 +176,18 @@ Higher PWM frequency and a lower filter cutoff reduce ripple, but the filter slo
 **Interview takeaway:** Unfiltered PWM is a digital pulse train, not a true analog voltage. A dedicated DAC may offer lower ripple and better settling behavior.
 
 ### What is the difference between a crystal and an RC oscillator? {E}
-**Short answer:** A **quartz crystal** (or crystal oscillator module) gives an accurate and stable frequency, typically ±10–50 ppm, needed for UART at high baud rates, USB, CAN, Ethernet, radio and real-time clocks. An internal **RC oscillator** costs nothing, starts quickly and saves pins and board space, but its accuracy is typically ±1–3% over temperature and voltage (factory-trimmed parts can be much better at room temperature), which is too inaccurate for USB, CAN or Ethernet and risky for fast UARTs.
+An RC oscillator derives frequency from resistance and capacitance; a crystal oscillator uses quartz mechanical resonance.
 
-| | Crystal (HSE, LSE) | Internal RC (HSI, MSI, LSI) |
-|---|---|---|
-| Accuracy | ±10–50 ppm | ±0.5–3% (worse over temperature) |
-| Start-up | ms (32 kHz crystals: up to seconds) | µs |
-| Cost/pins | crystal + 2 load caps, 2 pins | none |
-| Uses | USB, CAN, Ethernet, radios, RTC timekeeping | general CPU clock, low-power wake-up, watchdogs (LSI) |
+| RC | Crystal |
+|---|---|
+| Inexpensive, often internal | Generally higher accuracy |
+| Fast startup possible | Usually longer startup |
+| More temperature and voltage drift | Requires correct load network |
 
-**Error examples:** 1% error on a clock means 14 minutes per day for an RTC, while a 20 ppm crystal drifts about 1.7 s per day. For a UART, 1% error per side is acceptable for 8N1; 3% may not be.
+#### Example
+An internal RC clock may be adequate for blinking an LED. An accurate RTC or a UART with a tight clock-error budget may require a calibrated oscillator or crystal.
 
-**Board design points**
-
-- Load capacitors: `C_load = (C1 × C2)/(C1 + C2) + C_stray`; for a crystal rated C_L = 12 pF with ~3 pF stray, C1 = C2 ≈ 18 pF. Wrong values shift the frequency.
-- Keep the crystal close to the MCU, with a ground guard and no signals routed underneath.
-- Check the oscillator's drive level and the MCU's recommended crystal ESR; low-power 32.768 kHz crystals are sensitive to leakage (flux residue) and layout.
-
-**Firmware:** enable clock security system (CSS) to fall back to the internal oscillator if the crystal fails; trim the RC oscillator against the crystal or USB SOF (clock recovery system) where available; add timeouts when waiting for the crystal to start.
+**Interview takeaway:** Choose by frequency tolerance, startup time, power and jitter. A PLL does not eliminate reference frequency error.
 
 ### What is a MOSFET and how do you use one to switch a load? {M}
 **Short answer:** A MOSFET is a voltage-controlled transistor: the gate-source voltage (V_GS) controls the resistance between drain and source. To switch a load from an MCU, use an **N-channel MOSFET as a low-side switch**: load between the supply and the drain, source to ground, GPIO to the gate through a small resistor, and a pull-down from gate to source. Choose a **logic-level** MOSFET whose R_DS(on) is specified at the GPIO voltage (e.g. V_GS = 2.5 V or 3.3 V), with enough drain-source voltage and current rating. Inductive loads need a flyback diode.
