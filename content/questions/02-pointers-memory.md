@@ -278,40 +278,46 @@ The array has six elements, including the terminating null character. Its elemen
 **Interview takeaway:** Use const char * for read-only strings and char arrays for writable string buffers. Array lifetime and location depend on its declaration; a local automatic array is commonly stored on the stack.
 
 ### What does int (*p)[10] mean versus int *p[10]? {M}
-**Short answer:** `int *p[10]` is an **array of 10 pointers** to int, because `[]` binds more tightly than `*`. `int (*p)[10]` is a **single pointer to an array** of 10 ints; the parentheses make `p` a pointer first. Incrementing it moves by the size of the whole array (40 bytes with 4-byte ints).
+The parentheses determine whether the declaration describes a pointer to an array or an array containing pointers.
+
+#### 1. Pointer to an array
 
 ```c
-int *a[10];          /* 10 pointers: sizeof a == 10 * sizeof(int *) */
-int (*b)[10];        /* 1 pointer:   sizeof b == sizeof(void *) */
+int a[2][10] = {{0}};
+int (*p)[10] = a;
 
-int m[3][10];
-b = m;               /* m decays to &m[0], type int (*)[10] */
-b + 1;               /* address of m[1]: 40 bytes further */
-(*b)[2] = 7;         /* m[0][2] = 7 */
-b[1][2] = 8;         /* m[1][2] = 8 */
+p[1][3] = 50;
 ```
 
-**How to read any C declaration (the "spiral" or "right-left" rule):** start at the name, read right (arrays `[]`, functions `()`) until a closing parenthesis, then left (`*`, qualifiers), and repeat outward.
+p points to a row containing ten ints. Adding one to p moves to the next row. On a target with four-byte ints, this is a 40-byte step.
 
-| Declaration | Meaning |
-|---|---|
-| `int *p[10]` | p is an array of 10 pointers to int |
-| `int (*p)[10]` | p is a pointer to an array of 10 ints |
-| `int *f(int)` | f is a function taking int, returning pointer to int |
-| `int (*f)(int)` | f is a pointer to a function taking int, returning int |
-| `int (*f[4])(int)` | f is an array of 4 pointers to functions taking int, returning int |
-| `void (*signal(int, void (*)(int)))(int)` | signal is a function taking (int, pointer to function) and returning a pointer to a function taking int |
-
-**Use `typedef`s** for anything beyond two levels:
+#### 2. Array of pointers
 
 ```c
-typedef void (*handler_t)(int);
-handler_t signal(int sig, handler_t h);   /* much clearer than the line above */
-typedef int row_t[10];
-row_t *b;                                 /* same as int (*b)[10] */
+int x = 10, y = 20;
+int *p[10] = {&x, &y};
+
+printf("%d", *p[1]); // 20
 ```
 
-**Where pointer-to-array appears:** passing 2-D arrays to functions (`void f(int m[][10], size_t rows)` is `int (*m)[10]`), and walking a buffer of fixed-size records.
+p is an array of ten int pointers. Each pointer can refer to a different object; the remaining initialized elements are null pointers.
+
+#### 3. Memory representation
+
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 180" width="100%" role="img" aria-label="Pointer to contiguous array row compared with array of pointers to independent integer objects">
+<text x="8" y="13" font-size="12" font-weight="600" fill="currentColor">int (*p)[10]</text><rect x="8" y="25" width="50" height="32" rx="4" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="33" y="45" text-anchor="middle" font-size="12" fill="currentColor">p</text><path d="M58 41 H85 m-5-4 5 4-5 4" stroke="currentColor" fill="none"/><rect x="85" y="25" width="24" height="32" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/><text x="97" y="45" text-anchor="middle" font-size="10" fill="currentColor">0</text><rect x="109" y="25" width="24" height="32" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/><text x="121" y="45" text-anchor="middle" font-size="10" fill="currentColor">1</text><rect x="133" y="25" width="24" height="32" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/><text x="145" y="45" text-anchor="middle" font-size="10" fill="currentColor">2</text><rect x="157" y="25" width="24" height="32" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/><text x="169" y="45" text-anchor="middle" font-size="10" fill="currentColor">3</text><rect x="181" y="25" width="24" height="32" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/><text x="193" y="45" text-anchor="middle" font-size="10" fill="currentColor">4</text><rect x="205" y="25" width="24" height="32" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/><text x="217" y="45" text-anchor="middle" font-size="10" fill="currentColor">5</text><rect x="229" y="25" width="24" height="32" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/><text x="241" y="45" text-anchor="middle" font-size="10" fill="currentColor">6</text><rect x="253" y="25" width="24" height="32" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/><text x="265" y="45" text-anchor="middle" font-size="10" fill="currentColor">7</text><rect x="277" y="25" width="24" height="32" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/><text x="289" y="45" text-anchor="middle" font-size="10" fill="currentColor">8</text><rect x="301" y="25" width="24" height="32" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/><text x="313" y="45" text-anchor="middle" font-size="10" fill="currentColor">9</text><text x="205" y="71" text-anchor="middle" font-size="10" fill="currentColor">One contiguous row of 10 ints</text>
+<text x="8" y="96" font-size="12" font-weight="600" fill="currentColor">int *p[10]</text><rect x="8" y="108" width="76" height="26" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="46" y="125" text-anchor="middle" font-size="11" fill="currentColor">p[0]</text><rect x="84" y="108" width="76" height="26" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="122" y="125" text-anchor="middle" font-size="11" fill="currentColor">p[1]</text><rect x="160" y="108" width="172" height="26" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="246" y="125" text-anchor="middle" font-size="11" fill="currentColor">... p[9]</text><path d="M46 134 V149 M122 134 V149" stroke="currentColor"/><rect x="8" y="149" width="76" height="24" rx="3" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/><text x="46" y="165" text-anchor="middle" font-size="11" fill="currentColor">x = 10</text><rect x="84" y="149" width="76" height="24" rx="3" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/><text x="122" y="165" text-anchor="middle" font-size="11" fill="currentColor">y = 20</text></svg></div>
+
+#### 4. Comparison
+
+| Declaration | Meaning | sizeof(p) |
+|---|---|---|
+| int (*p)[10] | One pointer to a ten-int array | Pointer size |
+| int *p[10] | Array of ten int pointers | Ten times pointer size |
+
+A pointer to an array is useful for multidimensional image buffers and matrices. An array of pointers is useful for independently allocated rows, lookup tables and lists of strings.
+
+**Interview takeaway:** Array brackets bind more tightly than the pointer declarator unless parentheses change the grouping.
 
 ### What is the memory layout of a C program? {E}
 **Short answer:** From low to high addresses, a typical program has **text** (code), **rodata** (constants), **data** (initialised globals/statics), **bss** (zero-initialised globals/statics), the **heap** (growing up) and the **stack** (growing down). On a microcontroller, text and rodata stay in flash, data is copied from flash to RAM at start-up, and bss, heap and stack share RAM.
