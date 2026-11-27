@@ -1400,3 +1400,169 @@ In Linux, dma_map_sg may map a scatter-gather list and return the number of DMA 
 
 An SMMU fault can indicate an unmapped IOVA, incorrect stream configuration, insufficient access permission or a DMA access after unmapping. Check the driver's mapping lifetime, device descriptors, DMA mask, IOMMU configuration and fault logs. Translation and isolation do not guarantee cache coherency; those are separate properties of the device's hardware path and software protocol.
 
+### Explain complete interrupt flow in very brief for ARM. {M}
+
+#### ARM Interrupt Flow (ARM Cortex-A)
+
+An interrupt is a hardware or software event that temporarily stops normal CPU execution and transfers control to an Interrupt Service Routine (ISR).
+
+In ARM Cortex-A processors, the **GIC (Generic Interrupt Controller)** manages hardware interrupts.
+
+#### 1. Complete interrupt flow
+
+```text
+Peripheral (UART / GPIO / Timer)
+Generates an interrupt
+        ↓
+GIC Distributor
+Checks enable status, priority and CPU routing
+        ↓
+GIC CPU Interface
+Signals an IRQ or FIQ to the CPU
+        ↓
+ARM CPU
+Accepts interrupt and saves exception return state
+        ↓
+Exception Vector Table
+Branches to IRQ exception handler
+        ↓
+Interrupt Handler
+Saves registers and reads interrupt ID from GIC
+        ↓
+Device ISR
+Services peripheral and clears interrupt source
+        ↓
+End of Interrupt (EOI)
+Notifies GIC that interrupt handling is complete
+        ↓
+ERET
+Restores execution of interrupted program
+```
+
+#### 2. Explanation of each step
+
+**Step 1: Peripheral generates interrupt**
+
+For example, UART receives data and sets an interrupt status bit. It asserts an interrupt signal to the GIC.
+
+**Step 2: GIC processes interrupt**
+
+The GIC checks:
+
+- Whether the interrupt is enabled.
+- Interrupt priority.
+- Target CPU core.
+- Priority masking and interrupt routing.
+
+If eligible, it signals the CPU.
+
+**Step 3: CPU saves execution state**
+
+Assuming an ARM64 interrupt targeting EL1, the CPU automatically:
+
+- Saves the return address in `ELR_EL1`.
+- Saves processor state in `SPSR_EL1`.
+- Masks further IRQ interrupts.
+- Transfers execution to the exception vector.
+
+General-purpose registers are saved by the software exception handler, not automatically by the CPU.
+
+**Step 4: Exception vector table**
+
+`VBAR_EL1` contains the base address of the exception vector table.
+
+The CPU jumps to the appropriate IRQ vector based on the current exception level and execution state.
+
+**Step 5: Identify interrupt**
+
+The interrupt handler reads the GIC Interrupt Acknowledge Register.
+
+```c
+irq_id = read_sysreg(ICC_IAR1_EL1);
+```
+
+For GICv3, this returns the interrupt ID and acknowledges the interrupt.
+
+**Step 6: Execute ISR**
+
+The corresponding device ISR is executed.
+
+```c
+void uart_isr(void)
+{
+    data = UART_RX_REG;
+    UART_INT_CLEAR = RX_INTERRUPT;
+}
+```
+
+The ISR processes received data and clears the peripheral interrupt condition as required by the hardware.
+
+**Step 7: End of interrupt**
+
+The handler informs the GIC that interrupt processing is complete.
+
+```c
+write_sysreg(irq_id, ICC_EOIR1_EL1);
+```
+
+Depending on the GIC configuration, a separate deactivation operation may also be required.
+
+**Step 8: Return from interrupt**
+
+The software restores general-purpose registers and executes:
+
+```asm
+ERET
+```
+
+The CPU restores the processor state from `SPSR_EL1` and resumes execution using `ELR_EL1`.
+
+#### 3. ARM Linux kernel interrupt flow
+
+In a typical ARM64 Linux system with GICv3:
+
+```text
+Hardware interrupt
+        ↓
+GIC
+        ↓
+ARM64 exception vector
+        ↓
+el1h_64_irq_handler()  (example: interrupted EL1)
+        ↓
+gic_handle_irq()
+        ↓
+generic_handle_domain_irq()
+        ↓
+Linux IRQ flow handler
+        ↓
+Registered device ISR
+        ↓
+EOI / interrupt deactivation
+        ↓
+Restore context
+        ↓
+ERET
+```
+
+A Linux device driver registers its ISR using:
+
+```c
+request_irq(irq, uart_isr, 0, "uart", dev);
+```
+
+Exact internal function names and EOI placement depend on the kernel version and GIC configuration.
+
+#### 4. Types of interrupts in ARM GIC
+
+| Type | Full form | Example |
+|---|---|---|
+| SGI | Software Generated Interrupt | Inter-processor communication |
+| PPI | Private Peripheral Interrupt | Per-core timer |
+| SPI | Shared Peripheral Interrupt | UART, GPIO, I2C |
+| LPI | Locality-specific Peripheral Interrupt | PCIe MSI |
+
+**Interview summary:** Peripheral generates an interrupt → GIC routes it to the CPU → CPU saves exception state → exception vector handler identifies the interrupt → ISR executes → peripheral interrupt condition is cleared → GIC interrupt handling completes → CPU restores context and resumes execution.
+
+Note: ARM Cortex-M uses an NVIC instead of a GIC and has a different hardware context-saving mechanism.
+
