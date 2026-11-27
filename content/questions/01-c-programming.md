@@ -1274,33 +1274,49 @@ Use unsigned char for object representations or `uint8_t` for exactly eight bits
 **Interview takeaway:** Use plain char for text and explicitly signed or unsigned types when numeric interpretation matters. Cast to unsigned char before passing a potentially negative char to character classification functions such as `isalpha()`.
 
 ### What is integer promotion? {M}
-**Short answer:** Before most arithmetic, any integer type smaller than `int` (`char`, `short`, `uint8_t`, `uint16_t`, bit-fields) is converted to `int` (or to `unsigned int` if `int` cannot hold all its values). The operation is done in `int`, and the result is only narrowed again if you store it into a smaller type. This leads to surprising results with `~`, shifts and comparisons.
+Integer promotion converts integer types with sufficiently low rank, such as `char` and `short`, to `int` if it can represent all their values, otherwise to `unsigned int`. This happens before many arithmetic and bitwise operations.
+
+#### 1. Arithmetic example
 
 ```c
-uint8_t a = 0xFF;
-if (~a == 0x00) { }          /* never true: ~a is int ~255 = 0xFFFFFF00 (-256) */
-if ((uint8_t)~a == 0x00) { } /* true */
+uint8_t a = 200;
+uint8_t b = 100;
 
-uint8_t x = 200, y = 100;
-uint8_t z = x + y;           /* computed as int 300, stored as 300 % 256 = 44 */
-int     w = x + y;           /* 300: no overflow, because the math was done in int */
-
-uint16_t u = 0xFFFF;
-uint32_t r = u * u;          /* u promoted to *signed* int on 32-bit targets:
-                                65535 * 65535 overflows int -> undefined behaviour! */
-uint32_t ok = (uint32_t)u * u;
+int result = a + b;       // 300
+uint8_t small = a + b;    // 44
 ```
 
-**Usual arithmetic conversions** (what happens after promotion when the two operands differ): the operand with the "lower" type is converted to the other's type; if one is unsigned and has the same or greater rank, the signed one becomes unsigned.
+On a typical 32-bit-int target:
 
-**Where it bites in embedded code**
+1. Both operands are promoted to int.
+2. Addition produces 300.
+3. Assignment to uint8_t converts 300 modulo 256, giving 44.
 
-- **Inverting a byte mask:** `reg8 &= ~MASK8;` is fine (the result is truncated back), but comparisons with `~byte` are not.
-- **Shifts:** `uint8_t b = 0x80; uint32_t v = b << 24;` promotes `b` to signed `int`, and `0x80 << 24` overflows into the sign bit: undefined behaviour. Write `(uint32_t)b << 24`.
-- **Checksums** accumulated in a `uint8_t` behave correctly only because the result is truncated on every assignment.
-- On 16-bit MCUs (`int` = 16 bits), `uint16_t` promotes to `unsigned int`, so the same code behaves differently than on a 32-bit Arm.
+The addition itself does not occur in an eight-bit type.
 
-**MISRA C** has the "essential type" rules exactly to catch these issues; compiler warnings such as `-Wconversion` and `-Wsign-conversion` help too.
+#### 2. Bitwise complement example
+
+```c
+uint8_t mask = 0x0F;
+
+int x = ~mask;
+uint8_t y = (uint8_t)~mask;
+```
+
+On a typical 32-bit two's-complement target, `x` has the bit pattern 0xFFFFFFF0, while `y` is 0xF0.
+
+The complement acts on the promoted type, not just the original eight bits.
+
+#### 3. Embedded example: constructing a register value
+
+```c
+uint8_t byte = 0xAB;
+uint32_t reg = (uint32_t)byte << 24;
+```
+
+Casting before shifting ensures unsigned 32-bit arithmetic. On a common 32-bit-int system, shifting the promoted signed value directly by 24 would overflow the representable signed range.
+
+**Interview takeaway:** Small integer operands may be promoted before arithmetic. Watch the type of intermediate expressions, especially when manipulating registers, shifts and masks.
 
 ### What happens when you compare signed and unsigned integers? {M}
 **Short answer:** If the two operands have the same rank (e.g. `int` and `unsigned int`), the usual arithmetic conversions convert the **signed** one to **unsigned**. A negative number becomes a very large positive one, so comparisons give the "wrong" answer.
