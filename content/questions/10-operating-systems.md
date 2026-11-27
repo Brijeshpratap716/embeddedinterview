@@ -130,49 +130,32 @@ A switch between threads sharing the same address space may avoid changing the m
 **Interview takeaway:** Context-switch cost depends on architecture, working set, CPU migration and memory context. Measure it under representative load rather than assuming one fixed cost.
 
 ### What happens during fork() and exec()? {M}
-**Short answer:** `fork()` creates a new child process that is a copy of the parent. It returns **twice**: the child's PID in the parent and **0** in the child (or -1 on error). Linux makes this cheap with **copy-on-write**: parent and child share the same physical pages, marked read-only, and a page is copied only when one of them writes to it. `exec()` (`execve()`) replaces the current program with a new one in the same process: new code, data, heap and stack, same PID. A shell runs a command with `fork()` + `exec()` + `wait()`.
+`fork()` creates a child process with a separate logical address space; `execve()` replaces the calling process's executable image.
+
+#### 1. Example
 
 ```c
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/wait.h>
-#include <unistd.h>
-
-int main(void)
-{
-    pid_t pid = fork();
-    if (pid < 0) {                  /* error */
-        perror("fork");
-        return 1;
-    }
-    if (pid == 0) {                 /* child */
-        execlp("ls", "ls", "-l", (char *)NULL);
-        perror("execlp");           /* only reached if exec failed */
-        _exit(127);
-    }
-    int status;                     /* parent */
-    waitpid(pid, &status, 0);
-    if (WIFEXITED(status))
-        printf("child exited with %d\n", WEXITSTATUS(status));
-    return 0;
+pid_t pid = fork();
+if (pid == 0) {
+    char *argv[] = {"/bin/echo", "hello", NULL};
+    execv(argv[0], argv);
+    _exit(127);
+} else if (pid > 0) {
+    waitpid(pid, NULL, 0);
 }
 ```
 
-**Immediately after fork, what differs between parent and child?** The **return value of `fork()`** is the only difference the program can see at that point. Both continue from the same instruction with the same stack contents. (The PIDs differ too, of course, and some things are not inherited: pending signals, timers, file locks, and other threads, since only the calling thread is copied.)
+Check fork failure in production. Successful exec does not return.
 
-**What exec keeps and replaces**
+#### 2. Copy-on-write
 
-| Kept | Replaced |
-|---|---|
-| PID, parent PID | code, data, heap, stack (the whole address space) |
-| open file descriptors (unless `O_CLOEXEC`) | signal handlers (reset to default; ignored signals stay ignored) |
-| current directory, umask, UID/GID (except setuid programs) | memory mappings, threads |
+After fork, parent and child may share physical pages read-only until one writes. The kernel handles a write fault and creates a private copy when necessary. File descriptors refer to shared underlying open file descriptions as specified.
 
-**Why fork + exec is split:** between the two calls the child can set up its environment: redirect file descriptors (`dup2()` for `ls > out.txt`), change directory, drop privileges, set resource limits. That is how shells implement redirection and pipes.
+#### 3. exec behavior
 
-**Alternatives:** `vfork()` (child borrows the parent's memory until exec; historical), `posix_spawn()` (one call; preferred on systems without an MMU, where fork is not possible, and often faster), `clone()` for fine control.
+The process retains its identity but receives a new program image, stack and mappings. Some resources survive, while close-on-exec descriptors are closed.
 
-**A classic puzzle:** how many processes does `fork(); fork(); fork();` create? Each fork doubles the number, so 2³ = 8 processes in total (7 new).
+**Interview takeaway:** fork creates another process; exec replaces the current process image. Copy-on-write makes fork cheaper than eagerly copying every page.
 
 ### What is a zombie process and an orphan process? {E}
 **Short answer:** A **zombie** is a process that has exited but whose parent has not yet called `wait()` to collect its exit status, so its entry stays in the process table. An **orphan** is a process whose parent has exited while it is still running; the kernel re-parents it to `init` (PID 1) or to a "subreaper", which will reap it when it exits.
