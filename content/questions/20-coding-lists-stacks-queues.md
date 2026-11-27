@@ -486,232 +486,191 @@ For Microsoft, Arm, Cisco and other embedded software interviews, prioritize the
 **Note for subsequent questions:** The remaining examples in this topic use a separate type, `typedef struct node { int val; struct node *next; } node_t;`, rather than `struct Node` used above.
 
 ### Delete a node with a given value from a singly linked list. {E}
-**Short answer:** Walk the list with a pointer to the link that points at the current node (`node_t **pp`). When `(*pp)->val` matches, make the link skip the node (`*pp = node->next`) and free the node. Using the pointer-to-pointer means deleting the head needs no special case. O(n) time, O(1) space.
+Use the same `struct Node`, global `head` and `createNode()` from Question 1. These examples are separate interview snippets unless stated otherwise.
+
+**Approach:** Find the first matching node while tracking its predecessor. Update the previous node's `next`, or update `head` if deleting the first node. Then free the removed node.
 
 ```c
-int delete_value(node_t **head, int v)
+void deleteValue(int data)
 {
-    for (node_t **pp = head; *pp; pp = &(*pp)->next) {
-        if ((*pp)->val == v) {
-            node_t *dead = *pp;
-            *pp = dead->next;                     /* unlink: works for head and inner nodes */
-            free(dead);
-            return 0;
-        }
+    struct Node *temp = head;
+    struct Node *prev = NULL;
+
+    while (temp && temp->data != data) {
+        prev = temp;
+        temp = temp->next;
     }
-    return -1;                                    /* not found */
+
+    if (temp == NULL)
+        return;
+
+    if (prev == NULL)
+        head = temp->next;
+    else
+        prev->next = temp->next;
+
+    free(temp);
 }
 ```
 
-**Points:** the double-pointer technique avoids tracking `prev` and special-casing the head; free the node after unlinking; return a status if not found. To delete all matches, do not advance `pp` after a deletion.
+**Example:** 10 → 20 → 30 → NULL. After `deleteValue(20)`: 10 → 30 → NULL.
 
-**Dry run: delete 3 from [1] → [3] → [5]**
-
-1. `pp = &head`, `*pp` is node 1 → no match → `pp = &node1->next`.
-2. `*pp` is node 3 → match → `node1->next = node3->next` (node 5), free node 3.
-3. Result: [1] → [5].
-
-**Deleting the head:** `pp` is `&head`, so `*pp = head->next` updates the caller's head directly.
-
-**Version with a `prev` pointer (what many people write first)**
-
-```c
-node_t *cur = *head, *prev = NULL;
-while (cur && cur->val != key) { prev = cur; cur = cur->next; }
-if (!cur) return -1;                 /* not found */
-if (prev) prev->next = cur->next;    /* middle or end */
-else      *head = cur->next;         /* head node: special case */
-free(cur);
-```
-
-**Edge cases to state:** empty list, key not found, key at head, key at tail, deleting all occurrences (continue the loop without advancing `pp` after a deletion), and saving `next` before calling `free`.
-
-**Doubly linked lists** delete in O(1) given the node, because the node knows its predecessor.
-
-#### Pointer-to-pointer trace
-
-For head → 10 → 20 → 30, pp first points to head. After advancing, pp points to the next member of node 10. Deleting 20 changes that member directly to point to 30. If deleting 10, pp instead points to head, so the same assignment updates the caller's head. Save the old node, unlink, then free. To delete every match rather than the first, continue from the same pp after deletion.
+**Time:** O(n) | **Space:** O(1). Handles an empty list, missing value and deletion at the head.
 
 ### Delete a node when you are given only a pointer to that node (no head). {M}
-**Short answer:** You cannot reach the previous node, so instead of removing this node you copy the **next** node's value (and next pointer) into it and free the next node. The list then looks as if the given node was deleted. This trick fails for the last node, which has no next node to copy from.
+Use the same `struct Node`, global `head` and `createNode()` from Question 1. These examples are separate interview snippets unless stated otherwise.
+
+**Approach:** If only a pointer to the node is given, copy the next node's data into it, bypass the next node and free that next node.
 
 ```c
-/* copies the next node into this one and frees the next node */
-int delete_given_node(node_t *n)
+int deleteGivenNode(struct Node *node)
 {
-    if (n == NULL || n->next == NULL) return -1;  /* cannot delete the last node this way */
-    node_t *next = n->next;
-    n->val = next->val;
-    n->next = next->next;
-    free(next);
-    return 0;
+    if (node == NULL || node->next == NULL)
+        return 0;
+
+    struct Node *temp = node->next;
+
+    node->data = temp->data;
+    node->next = temp->next;
+    free(temp);
+
+    return 1;
 }
 ```
 
-**Points:** you cannot find the previous node, so copy the successor's data into this node and remove the successor instead. It does not work for the tail, and it breaks if other code holds pointers to the successor node (its identity changes), which is why it is a trick, not a general technique.
+**Example:** Given the node containing 20 in 10 → 20 → 30, copy 30 into it and free the original 30 node. The list becomes 10 → 30.
 
-**Dry run:** list [4] → [5] → [1] → [9], given pointer to 5.
-- Copy node 1 into node 5: node holds value 1, next = node 9.
-- Free the old node 1.
-- List is now [4] → [1] → [9].
-
-**Why it is a trick, not a real deletion**
-
-- The **identity** of the node changes: any other pointer that referred to the original "1" node is now dangling, and anything pointing at the "5" node now sees value 1. In systems with external references (e.g. intrusive lists, handles) this is dangerous.
-- It copies the payload, which can be expensive for big nodes.
-- It cannot delete the tail (common follow-up: mark it as a sentinel/dummy, or say the problem guarantees it is not the tail).
-
-**What to say in an interview:** explain the trick, then mention that in real code you use a doubly linked list (O(1) removal with the node's own `prev`) or keep a pointer to the predecessor.
-
-#### Object identity limitation
-
-If A → B → C, and only B is supplied, copy C's payload into B, set B->next to C->next, then free C. The logical value of B disappears, but B's address remains and C's address becomes invalid. Therefore this trick is unsuitable if external references depend on node identity, if payloads own resources without an appropriate move operation, or if the supplied node is the tail. It assumes the successor was allocated by the matching allocator.
+**Time:** O(1) | **Space:** O(1). Cannot delete the last node this way. The physical node identity changes logically, and external references to the freed successor become invalid.
 
 ### Find the nth node from the end of a linked list (and remove it). {E}
-**Short answer:** Use two pointers: move the first one n nodes ahead, then move both one step at a time until the first reaches the end. The second pointer is then n nodes from the end. To remove that node, start both from a dummy node in front of the head so the second pointer stops just **before** the target. One pass, O(n) time, O(1) space.
+Use the same `struct Node`, global `head` and `createNode()` from Question 1. These examples are separate interview snippets unless stated otherwise.
+
+**Approach:** Move `fast` n nodes ahead, then move `fast` and `slow` together. When `fast` reaches NULL, `slow` points to the nth node from the end (n=1 means last node).
 
 ```c
-/* returns the nth node from the end (n = 1 is the last), or NULL */
-node_t *nth_from_end(node_t *head, unsigned n)
+struct Node *nthFromEnd(int n)
 {
-    if (n == 0) return NULL;
-    node_t *lead = head, *trail = head;
-    for (unsigned i = 0; i < n; i++) {
-        if (!lead) return NULL;                   /* list shorter than n */
-        lead = lead->next;
-    }
-    while (lead) { lead = lead->next; trail = trail->next; }
-    return trail;
-}
+    struct Node *fast = head;
+    struct Node *slow = head;
 
-void remove_nth_from_end(node_t **head, unsigned n)
-{
-    if (n == 0) return;
-    node_t **pp = head, *lead = *head;
-    for (unsigned i = 0; i < n; i++) { if (!lead) return; lead = lead->next; }
-    while (lead) { lead = lead->next; pp = &(*pp)->next; }
-    node_t *dead = *pp;
-    *pp = dead->next;
-    free(dead);
+    if (n <= 0)
+        return NULL;
+
+    while (n--) {
+        if (!fast)
+            return NULL;
+
+        fast = fast->next;
+    }
+
+    while (fast) {
+        slow = slow->next;
+        fast = fast->next;
+    }
+
+    return slow;
 }
 ```
 
-**Points:** two pointers `n` apart: when the leader falls off the end, the trailer is at the answer. One pass, O(1) space. Handle n larger than the list and n == length (removing the head).
+#### Remove the Nth node from the end
 
-**Dry run: remove the 2nd from the end of [1] → [2] → [3] → [4] → [5]**
-
-1. `dummy → 1 → 2 → 3 → 4 → 5`; `fast` and `slow` start at dummy.
-2. Move `fast` n + 1 = 3 steps: fast at node 3.
-3. Move both until `fast` is NULL: fast 3→4→5→NULL; slow dummy→1→2→3.
-4. `slow` (node 3) is just before the target (node 4): `slow->next = slow->next->next`.
-5. Result: 1 → 2 → 3 → 5.
-
-**Why the dummy node:** if n equals the list length, the head itself is removed; with a dummy in front, the "previous node" always exists, so no special case.
-
-**Validation:** if n is larger than the length, `fast` becomes NULL during the first loop — return an error instead of dereferencing NULL.
-
-**Two-pass alternative:** count the length L, then walk to node L − n. Equally O(n), but it reads the list twice; interviewers usually want the one-pass version.
-
-**Related problems using the same "gap" idea:** find the middle (fast moves 2, slow moves 1), rotate a list right by k (find the k-th from the end, cut and reconnect), and check if a list has at least k nodes.
-
-#### Maintain a fixed gap
-
-For 10 → 20 → 30 → 40 → 50 and n=2, advance lead twice to node 30. Move both pointers together until lead becomes NULL; trail points to node 40. To remove it, maintain a pointer to the link that refers to trail so the head case needs no special handling. Require n>=1; n=0 is invalid. Test n=1, n=list length, n>length, and empty input.
-
-### Merge two sorted linked lists. {E}
-**Short answer:** Use a dummy node and a tail pointer. Repeatedly compare the heads of the two lists, link the smaller node after the tail and advance in that list; when one list runs out, link the rest of the other list. No new nodes are allocated — the existing nodes are relinked. O(n + m) time, O(1) space.
+Use the same two-pointer approach, tracking the previous node so we can unlink the exact target even when values repeat.
 
 ```c
-node_t *merge_sorted(node_t *a, node_t *b)
+void removeNthFromEnd(int n)
 {
-    node_t dummy = { 0, NULL }, *tail = &dummy;
-    while (a && b) {
-        if (a->val <= b->val) { tail->next = a; a = a->next; }   /* <= keeps it stable */
-        else                  { tail->next = b; b = b->next; }
-        tail = tail->next;
+    struct Node *fast = head;
+    struct Node *slow = head;
+    struct Node *prev = NULL;
+
+    if (n <= 0)
+        return;
+
+    while (n--) {
+        if (!fast)
+            return;
+
+        fast = fast->next;
     }
-    tail->next = a ? a : b;                       /* append the remainder */
+
+    while (fast) {
+        prev = slow;
+        slow = slow->next;
+        fast = fast->next;
+    }
+
+    if (prev == NULL)
+        head = slow->next;
+    else
+        prev->next = slow->next;
+
+    free(slow);
+}
+```
+
+**Example:** 10 → 20 → 30 → 40 → 50, n=2. The target is 40. After removal: 10 → 20 → 30 → 50.
+
+**Time:** O(n) | **Space:** O(1). Handles n equal to the length, invalid n and empty lists.
+
+### Merge two sorted linked lists. {E}
+Use the same `struct Node`, global `head` and `createNode()` from Question 1. These examples are separate interview snippets unless stated otherwise.
+
+**Approach:** Compare the first nodes of both sorted lists and attach the smaller node to the result. Use a temporary dummy node to simplify the first insertion.
+
+```c
+struct Node *mergeSorted(struct Node *a, struct Node *b)
+{
+    struct Node dummy = {0, NULL};
+    struct Node *temp = &dummy;
+
+    while (a && b) {
+        if (a->data <= b->data) {
+            temp->next = a;
+            a = a->next;
+        }
+        else {
+            temp->next = b;
+            b = b->next;
+        }
+
+        temp = temp->next;
+    }
+
+    temp->next = a ? a : b;
+
     return dummy.next;
 }
 ```
 
-**Points:** a dummy head node removes special cases; reuses the existing nodes (no allocation), O(n + m) time, O(1) space; this is the merge step of merge sort on lists.
+**Example:** 1 → 3 → 5 and 2 → 4 → 6 become 1 → 2 → 3 → 4 → 5 → 6.
 
-**Dry run: [1 → 3 → 5] and [2 → 4 → 6]**
-
-| compare | take | merged so far |
-|---|---|---|
-| 1 vs 2 | 1 | 1 |
-| 3 vs 2 | 2 | 1 2 |
-| 3 vs 4 | 3 | 1 2 3 |
-| 5 vs 4 | 4 | 1 2 3 4 |
-| 5 vs 6 | 5 | 1 2 3 4 5 |
-| a empty | rest of b | 1 2 3 4 5 6 |
-
-**Stability:** taking from the first list when values are equal (`<=`) keeps equal elements in their original relative order.
-
-**Recursive version (short but uses O(n + m) stack)**
-
-```c
-node_t *merge_rec(node_t *a, node_t *b)
-{
-    if (!a) return b;
-    if (!b) return a;
-    if (a->val <= b->val) { a->next = merge_rec(a->next, b); return a; }
-    b->next = merge_rec(a, b->next); return b;
-}
-```
-
-Mention that the iterative version is preferred on embedded targets because of stack limits.
-
-**Follow-ups:** merge k sorted lists (min-heap of the k heads: O(N log k), or pairwise merging), merge sort for linked lists (split with slow/fast, sort halves, merge), and merging two sorted arrays from the back into the larger array (O(1) extra space).
-
-#### Ownership after merging
-
-For A=1→4→7 and B=2→3→8, select nodes in order 1,2,3,4,7, then attach 8. The dummy is a temporary local node; only dummy.next is returned, so no pointer to the dummy survives. Both original lists are consumed by relinking, not copied. They must be disjoint acyclic lists; shared suffixes can cause cycles. If independent input lists must survive, allocate/copy new nodes instead.
+**Time:** O(n+m) | **Space:** O(1). No allocation; existing nodes are relinked. Input lists must be disjoint and acyclic. The original lists are consumed by the merge.
 
 ### Remove duplicates from a sorted linked list. {E}
-**Short answer:** In a sorted list, equal values are next to each other. Walk the list and, whenever the next node has the same value as the current one, unlink and free the next node; otherwise move forward. One pass, O(n) time, O(1) space.
+Use the same `struct Node`, global `head` and `createNode()` from Question 1. These examples are separate interview snippets unless stated otherwise.
+
+**Approach:** In a sorted list, duplicates are adjacent. If two consecutive nodes have equal data, unlink and free the second node. Otherwise move forward.
 
 ```c
-void remove_dups_sorted(node_t *head)
+void removeDuplicates()
 {
-    node_t *cur = head;
-    while (cur && cur->next) {
-        if (cur->val == cur->next->val) {
-            node_t *dup = cur->next;
-            cur->next = dup->next;
-            free(dup);                            /* do not advance: next may also be a duplicate */
-        } else {
-            cur = cur->next;
+    struct Node *temp = head;
+
+    while (temp && temp->next) {
+        if (temp->data == temp->next->data) {
+            struct Node *del = temp->next;
+            temp->next = del->next;
+            free(del);
         }
+        else
+            temp = temp->next;
     }
 }
 ```
 
-**Points:** in a sorted list duplicates are adjacent: one pass, O(1) space. For an unsorted list, use a hash set or bitmap of seen values (O(n)) or nested loops (O(n²) without extra memory).
+**Example:** 10 → 10 → 20 → 30 → 30 becomes 10 → 20 → 30.
 
-**Dry run: [1 → 1 → 2 → 3 → 3]**
-
-| current | next | action |
-|---|---|---|
-| 1 | 1 | remove next → 1 → 2 → 3 → 3 |
-| 1 | 2 | advance |
-| 2 | 3 | advance |
-| 3 | 3 | remove next → 1 → 2 → 3 |
-| 3 | NULL | stop |
-
-**Important detail:** after removing a duplicate, do **not** advance — the new next node may also be a duplicate (e.g. 1 → 1 → 1).
-
-**Variants**
-
-- **Remove all nodes that have duplicates** (keep only distinct values: 1 → 2 → 3 → 3 → 4 becomes 1 → 2 → 4): use a dummy head and skip whole runs.
-- **Unsorted list:** use a hash set / bitmap of values already seen (O(n) time, O(n) memory), or for each node scan the rest of the list (O(n²) time, O(1) memory), or sort first (merge sort, O(n log n)).
-- **Arrays:** the same two-pointer idea compacts a sorted array in place and returns the new length.
-
-#### Remove duplicates without skipping a run
-
-Input 1→1→1→2: keep the first 1 and unlink its successor. The current pointer remains at the first 1, allowing the third 1 to be removed too. Advance only when the following value differs. For unsorted lists, use a hash set or O(n²) comparisons. If the requirement instead removes every value that occurs more than once, the output for this example is only 2, so a different algorithm is needed.
+**Time:** O(n) | **Space:** O(1). Do not advance after deleting a duplicate, because the next node may also contain the same value. For unsorted lists, use a hash set or nested loops.
 
 ### Reverse a linked list in groups of k. {H}
 **Short answer:** Process the list one block of k nodes at a time: first check that k nodes remain (otherwise leave the tail as it is), reverse the links inside the block, then connect the node before the block to the block's new first node and the block's new last node to the next block. A dummy node in front of the head removes the special case for the first block. O(n) time, O(1) space.
@@ -776,50 +735,28 @@ k=3:   C -> B -> A -> D -> E
 Find the kth node before reversing; if absent, preserve the final partial group. Set prev to the node after the group, so the original first node automatically links to the remaining list when reversed. Require k>=1; k=1 is a no-op. The code must reject zero or negative k before attempting traversal.
 
 ### Find the intersection point of two linked lists. {M}
-**Short answer:** Walk two pointers, one per list; when a pointer reaches the end of its list, restart it at the head of the **other** list. Both pointers then travel the same total distance (length A + length B), so they arrive at the intersection node at the same moment — or both reach NULL together if the lists do not intersect. O(n + m) time, O(1) space.
+Use the same `struct Node`, global `head` and `createNode()` from Question 1. These examples are separate interview snippets unless stated otherwise.
+
+**Approach:** Use two pointers. When either pointer reaches NULL, move it to the other list's head. Both pointers then travel the same total distance and meet at the intersection or at NULL.
 
 ```c
-node_t *intersection(node_t *a, node_t *b)
+struct Node *intersection(struct Node *a, struct Node *b)
 {
-    node_t *p = a, *q = b;
+    struct Node *p = a;
+    struct Node *q = b;
+
     while (p != q) {
-        p = p ? p->next : b;                      /* switch lists at the end */
+        p = p ? p->next : b;
         q = q ? q->next : a;
     }
-    return p;                                     /* meeting node, or NULL if they never meet */
+
+    return p;
 }
 ```
 
-**Points:** after switching heads, both pointers travel `len(a) + len(b)` steps, so they line up at the intersection (or both become NULL at the same time). O(n + m), O(1) space. Alternative: compute both lengths, advance the longer list by the difference, then walk together. Compare **node addresses**, not values.
+**Example:** A: 10 → 20 → 30 → 40; B: 5 → 30 → 40, where nodes 30 and 40 are physically shared. Returns the pointer to node 30.
 
-**Picture**
-
-```
-A: a1 → a2 ↘
-             c1 → c2 → c3
-B: b1 → b2 → b3 ↗
-```
-
-Lengths: A has 2 unique + 3 shared = 5, B has 3 unique + 3 shared = 6.
-- Pointer p walks a1 a2 c1 c2 c3, then b1 b2 b3 → reaches c1 after 2 + 3 + 3 = 8 steps.
-- Pointer q walks b1 b2 b3 c1 c2 c3, then a1 a2 → reaches c1 after 3 + 3 + 2 = 8 steps.
-- They meet at c1.
-
-**"Intersection" means the same node in memory**, not equal values: after the intersection the lists share every node, which is why we compare pointers.
-
-**Length-difference method (easy to explain)**
-
-1. Compute lengths `la` and `lb`.
-2. Advance the longer list's pointer by `|la − lb|`.
-3. Move both together until they are equal.
-
-**Other approaches:** store all nodes of A in a hash set and look up B's nodes (O(n) memory); temporarily connect A's tail to B's head and use Floyd's loop detection to find the cycle start (modifies the lists, so restore them).
-
-**Embedded relevance:** detecting shared buffers or descriptor chains, and debugging corrupted free lists where two chains merge unexpectedly.
-
-#### Why switching heads works
-
-Let unique prefixes have lengths a and b, and the shared suffix length c. Pointer p traverses A then B; pointer q traverses B then A. After switching, each has covered the same combined prefix distance a+b before arriving at the shared node. If no intersection exists both reach NULL after traversing both lists. Equality is pointer identity, not equal data values. This proof assumes both lists are acyclic and not modified during traversal.
+**Time:** O(n+m) | **Space:** O(1). Compare node addresses, not data. Assumes acyclic lists.
 
 ### Check whether a linked list is a palindrome. {M}
 **Short answer:** Find the middle with slow/fast pointers, reverse the second half in place, compare the first half with the reversed second half node by node, then reverse the second half back to restore the list. O(n) time and O(1) extra space.
@@ -873,49 +810,68 @@ bool is_palindrome_list(node_t *head)
 For 1→2→3→2→1, reverse from the middle 3; the second traversal is 1→2→3, matching the first three values of the original prefix. For 1→2→2→1, compare two values. Restoration must execute regardless of mismatch; an early return inside the comparison would leave the list altered. Require exclusive access during reversal because other readers may see temporarily broken links.
 
 ### Detect and remove a loop in a linked list. {M}
-**Short answer:** Detect the loop with Floyd's tortoise and hare (slow moves 1, fast moves 2; they meet only if there is a loop). Then move one pointer back to the head and advance both one step at a time: they meet at the first node of the loop. Stop one step earlier — when their `next` pointers are equal — so the pointer inside the loop is at the loop's last node, and set its `next` to NULL. O(n) time, O(1) space.
+Use the same `struct Node`, global `head` and `createNode()` from Question 1. These examples are separate interview snippets unless stated otherwise.
+
+#### Detect a loop (Floyd's algorithm)
+
+Slow moves one node at a time and fast moves two. If they meet, there is a loop.
 
 ```c
-void remove_loop(node_t *head)
+int detectLoop()
 {
-    node_t *slow = head, *fast = head;
+    struct Node *slow = head;
+    struct Node *fast = head;
+
     while (fast && fast->next) {
         slow = slow->next;
         fast = fast->next->next;
-        if (slow == fast) break;
-    }
-    if (!fast || !fast->next) return;             /* no loop */
 
-    slow = head;
-    if (slow == fast) {                           /* loop starts at the head */
-        while (fast->next != slow) fast = fast->next;
-    } else {
-        while (slow->next != fast->next) { slow = slow->next; fast = fast->next; }
+        if (slow == fast)
+            return 1;
     }
-    fast->next = NULL;                            /* fast is the last node in the loop */
+
+    return 0;
 }
 ```
 
-**Points:** Floyd's algorithm finds a meeting point; moving one pointer back to the head and advancing both one step at a time makes them meet at the loop's start (here we stop one node earlier so we can cut the link). Handle the case where the loop starts at the head. O(n), O(1) space.
+#### Find the starting point and remove the loop
 
-**Dry run: 1 → 2 → 3 → 4 → 5 → (back to 3)**
+After the pointers meet, reset slow to head and move both one step at a time. Their next meeting point is the loop entry. Walk around the loop to locate its last node and set its next pointer to NULL.
 
-1. Floyd: slow 1,2,3,4,5,3… fast 1,3,5,4,3,5… → they meet at node 4 (for example).
-2. Reset slow to the head (1). Advance both until `slow->next == fast->next`:
-   - slow 1, fast 4: next are 2 and 5 → continue
-   - slow 2, fast 5: next are 3 and 3 → stop.
-3. `fast` (node 5) is the last node of the loop → `fast->next = NULL`.
-4. List: 1 → 2 → 3 → 4 → 5 → NULL.
+```c
+void removeLoop()
+{
+    struct Node *slow = head;
+    struct Node *fast = head;
 
-**Why the special case for a loop starting at the head:** if the loop begins at node 1, slow (reset to the head) and fast meet immediately at the head, and the `next`-comparison trick does not find the predecessor; walk `fast` around the loop until `fast->next == head` instead.
+    while (fast && fast->next) {
+        slow = slow->next;
+        fast = fast->next->next;
 
-**Simpler-to-explain alternative:** after detecting the meeting point, count the loop length λ (walk until back at the meeting node), then start two pointers at the head with one λ nodes ahead; when the leading pointer's `next` equals the trailing pointer, cut there.
+        if (slow == fast)
+            break;
+    }
 
-**Other methods:** a hash set of visited nodes (O(n) memory; the first repeated node is the loop start), or marking nodes with a visited flag (needs a spare field).
+    if (!fast || !fast->next)
+        return;
 
-#### Alternative cycle removal
+    slow = head;
 
-After Floyd's meeting, move slow to head and advance both pointers one node at a time until equal. This finds the cycle entry. Starting at that entry, walk until a node's next points back to the entry, then set that next to NULL. This handles a self-loop, a cycle beginning at head, and a cycle beginning midway. No node should be freed by cycle removal: all distinct nodes remain reachable from head.
+    while (slow != fast) {
+        slow = slow->next;
+        fast = fast->next;
+    }
+
+    while (fast->next != slow)
+        fast = fast->next;
+
+    fast->next = NULL;
+}
+```
+
+**Example:** 10 → 20 → 30 → 40, with 40 pointing back to 20. The loop entry is 20. Set 40's next pointer to NULL.
+
+**Time:** O(n) | **Space:** O(1). Handles a loop starting at head and a single node pointing to itself.
 
 ### Implement a doubly linked list with insert and delete. {E}
 **Short answer:** Each node has `prev` and `next` pointers, so you can walk in both directions and delete a node in O(1) when you have a pointer to it. Insertion and deletion must update up to four pointers (the node's own two and the neighbours' links), and must update the head (and tail) when the node is at an end.
