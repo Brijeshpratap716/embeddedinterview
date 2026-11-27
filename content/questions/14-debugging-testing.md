@@ -206,38 +206,21 @@ Configure the analyzer with the actual target defines, include paths and compila
 **Interview takeaway:** Static analysis complements tests and review. It cannot generally prove the absence of all runtime, concurrency or hardware faults.
 
 ### What is the difference between Make and CMake? {E}
-**Short answer:** **Make** is a build tool that executes rules from a Makefile: targets, their dependencies and the commands to build them, rebuilding only what changed. **CMake** is a build-system **generator**: you describe targets, sources, include paths and options in `CMakeLists.txt`, and CMake generates Makefiles or Ninja files (or IDE projects) for the chosen toolchain. CMake handles cross-platform details, dependencies and configuration better, so most modern embedded projects (Zephyr, Pico SDK, ESP-IDF, STM32 CMake projects) use it, often with Ninja for speed.
-
-**Minimal cross-compilation setup**
+Make executes build rules describing targets and dependencies. CMake generates build-system files for tools such as Make or Ninja.
 
 ```cmake
-# arm-gcc-toolchain.cmake
-set(CMAKE_SYSTEM_NAME Generic)
-set(CMAKE_SYSTEM_PROCESSOR arm)
-set(CMAKE_C_COMPILER arm-none-eabi-gcc)
-set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
-
-# CMakeLists.txt
-cmake_minimum_required(VERSION 3.20)
-project(blinky C ASM)
-add_executable(blinky.elf src/main.c src/startup_stm32f4.s)
-target_compile_options(blinky.elf PRIVATE -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16
-                       -Os -ffunction-sections -fdata-sections -Wall -Wextra)
-target_link_options(blinky.elf PRIVATE -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16
-                    -T${CMAKE_SOURCE_DIR}/stm32f4.ld -Wl,--gc-sections -Wl,-Map=blinky.map --specs=nano.specs)
-add_custom_command(TARGET blinky.elf POST_BUILD
-                   COMMAND arm-none-eabi-objcopy -O binary blinky.elf blinky.bin
-                   COMMAND arm-none-eabi-size blinky.elf)
+cmake_minimum_required(VERSION 3.16)
+project(firmware C)
+add_executable(firmware main.c driver.c)
 ```
-
-```sh
-cmake -B build -G Ninja -DCMAKE_TOOLCHAIN_FILE=arm-gcc-toolchain.cmake
+```bash
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=arm-toolchain.cmake
 cmake --build build
 ```
 
-**Make basics interviewers ask:** targets, prerequisites, recipes (tab-indented), automatic variables (`$@` target, `$<` first prerequisite, `$^` all prerequisites), pattern rules (`%.o: %.c`), `.PHONY`, and dependency generation with `-MMD -MP` so header changes trigger rebuilds.
+For cross-compilation, the toolchain file selects target compilers and relevant platform settings. Linker script, startup objects and CPU flags must still be supplied appropriately.
 
-**Other build systems:** Meson, Bazel, SCons; Kbuild/Kconfig for the Linux kernel; Yocto/BitBake and Buildroot for whole Linux distributions; vendor IDE projects (convertible to CMake for CI).
+**Interview takeaway:** CMake is not a compiler; it describes and generates the build. Make can be used directly or as a generated backend.
 
 ### What does a map file tell you? {M}
 **Short answer:** The linker map file (`-Wl,-Map=app.map`) shows where everything ended up in memory: the memory regions and how full they are, the address and size of every section (`.text`, `.rodata`, `.data`, `.bss`, stacks, heap), which object files and library members contributed to each section, the address of every symbol, which sections were discarded by `--gc-sections`, and why library objects were pulled in. It is the primary tool for understanding and reducing flash and RAM usage and for mapping crash addresses to functions.
