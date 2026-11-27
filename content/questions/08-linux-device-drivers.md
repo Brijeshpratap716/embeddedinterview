@@ -113,18 +113,26 @@ Check dmesg, modinfo and the running kernel release. A module may fail due to un
 **Interview takeaway:** insmod is a low-level direct insertion tool; modprobe is the normal dependency-aware module management interface.
 
 ### What are the types of device drivers in Linux? {E}
-**Short answer:** The classic three are **character drivers** (byte-stream access through `/dev` nodes with `open`, `read`, `write`, `ioctl`, `mmap`), **block drivers** (random-access, fixed-size blocks through the block layer: eMMC, NVMe, SD) and **network drivers** (packet interfaces such as `eth0` registered as `net_device`, with no `/dev` node). In practice most drivers plug into a **subsystem framework** (input, IIO, ALSA, V4L2, DRM, GPIO, regulator, power supply, hwmon, PWM, watchdog...) that provides the user-space interface for them.
+Linux drivers are organized into device classes and specialized kernel subsystems. Traditional categories include character, block and network drivers, but modern drivers often expose subsystem-specific interfaces.
 
-| Type | Interface | Examples |
+| Category | Examples | Interface |
 |---|---|---|
-| Character | `/dev/xxx`, file operations | serial ports (`tty`), `/dev/mem`, custom FPGA interfaces |
-| Block | `/dev/mmcblk0`, `/dev/nvme0n1`, via filesystems | eMMC, SD, NVMe, virtio-blk |
-| Network | sockets, `ip link` | Ethernet MACs, Wi-Fi, CAN (SocketCAN) |
-| Subsystem-based | the subsystem's standard API | input (`/dev/input/event*`), IIO sensors (`/sys/bus/iio`), ALSA, V4L2 (`/dev/video*`), DRM (`/dev/dri/*`) |
+| Character | Serial, misc device | File operations |
+| Block | eMMC, NVMe, storage | Block I/O requests |
+| Network | Ethernet, Wi-Fi | net_device and network stack |
+| Display | DRM/KMS | DRM objects, ioctls |
+| Input | Touch, keyboard | Input subsystem events |
+| Bus/other | I2C, SPI, GPIO, IIO | Subsystem APIs |
 
-**Why use subsystems:** user-space tools work unchanged (a touchscreen driver using input works with every GUI; an IIO sensor works with `iio_readdev`), and the subsystem handles buffering, locking, sysfs and power management.
+#### 1. Example
 
-**Another classification:** by bus (platform, I2C, SPI, PCI, USB) — the bus decides how the driver is matched and how it talks to the device; the subsystem decides what interface it offers. An I2C temperature sensor is "an I2C client driver registered with hwmon or IIO".
+A touch controller connected through I2C is an I2C client driver, but it reports touch events through the input subsystem rather than inventing a custom character-device interface. Similarly, a display controller commonly registers DRM/KMS objects.
+
+#### 2. Driver selection
+
+Identify the hardware bus, then choose the subsystem matching the device's function. The bus manages discovery/binding and communication; the functional subsystem defines user/kernel interfaces and common behavior.
+
+**Interview takeaway:** Do not build a custom char driver for every peripheral. Use the established Linux subsystem to obtain standard APIs, resource management and userspace compatibility.
 
 ### How do you write a character driver? {M}
 **Short answer:** Allocate a device number (`alloc_chrdev_region`), set up a `struct cdev` with your `file_operations` and add it (`cdev_init`, `cdev_add`), create a class and device so udev creates the `/dev` node (`class_create`, `device_create`), implement the operations (`open`, `release`, `read`, `write`, `unlocked_ioctl`, `poll`, `mmap`), and undo everything in reverse order on exit and on error paths. For a single simple device, `misc_register()` does the number, cdev and node creation in one call.
