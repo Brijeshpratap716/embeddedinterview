@@ -101,25 +101,18 @@ A processor switching many outputs simultaneously can cause supply droop. Local 
 **Interview takeaway:** Capacitance, ESR, ESL and layout all matter. A large capacitor far from the chip cannot replace proper local decoupling.
 
 ### What is the difference between a linear regulator (LDO) and a switching regulator? {M}
-**Short answer:** A **linear regulator (LDO)** drops the excess voltage across a pass transistor, so it is simple, cheap, small and has very low output noise, but its efficiency is roughly V_out / V_in and the difference is wasted as heat: P_loss = (V_in − V_out) × I. A **switching regulator** (buck to step down, boost to step up, buck-boost both) rapidly switches a transistor and stores energy in an inductor, reaching 85–95% efficiency at the cost of switching noise (ripple and EMI), more components and layout care.
+An LDO regulates voltage by dissipating excess energy in a series pass device. A switching regulator transfers energy using switched inductors/capacitors and can be more efficient.
 
-| | LDO | Switching (buck) |
-|---|---|---|
-| Efficiency | ≈ V_out / V_in (3.3/5 V = 66%; 3.3/12 V = 27%) | 85–95% typical |
-| Heat | (V_in − V_out) × I | low |
-| Noise | very low (good PSRR) | ripple at switching frequency, EMI |
-| Components | regulator + 2 capacitors | regulator, inductor, capacitors, sometimes diode |
-| Can step up | no | yes (boost, buck-boost) |
-| Quiescent current | from < 1 µA (low-Iq parts) | low-Iq parts exist; light-load modes (PFM) |
-| Best for | small voltage drops, low current, noise-sensitive (ADC, RF, PLL) | large drops, high current, battery efficiency |
+| LDO | Switching regulator |
+|---|---|
+| Low noise, simpler circuit | Higher efficiency at large voltage differences |
+| Output below input | Buck, boost or buck-boost |
+| Heat proportional to voltage drop | Switching ripple and layout concerns |
 
-**Worked example:** 12 V → 3.3 V at 300 mA with an LDO wastes (12 − 3.3) × 0.3 = **2.6 W** — far too hot for a small SOT-23 package. A buck converter at 90% efficiency loses only about 0.11 W.
+#### Example
+Converting 5 V to 3.3 V at 200 mA with an idealized LDO dissipates (5 − 3.3) × 0.2 = 0.34 W. Efficiency ignoring quiescent current is 66%. A buck at 90% efficiency dissipates about 73 mW for the same output power.
 
-**Common architecture:** buck from the battery or input rail to an intermediate voltage, then an LDO for noise-sensitive analog or RF supplies ("buck + LDO post-regulation").
-
-**LDO dropout:** the minimum V_in − V_out at which it still regulates (e.g. 200 mV). A 3.3 V LDO from a Li-ion cell (4.2 V → 3.0 V) stops regulating when the cell falls below ~3.5 V — the system must handle brown-out (BOR thresholds, low-battery shutdown).
-
-**Firmware interaction:** some MCUs have both an internal LDO and SMPS (e.g. STM32L4+/U5/WB): software selects the SMPS for lower power at high load; switching regulators may have a power-save mode controlled by a GPIO (trade ripple for efficiency).
+**Interview takeaway:** Select using input range, load, noise, thermal budget, quiescent current and transient response—not efficiency alone.
 
 ### How does an ADC work, and what are resolution, reference and sampling time? {M}
 **Short answer:** An ADC converts an analog voltage into a number: `code = V_in / V_ref × (2^N − 1)` for an N-bit converter (often written × 2^N). **Resolution** is the number of bits (a 12-bit ADC with a 3.3 V reference has an LSB of 3.3 / 4096 ≈ 0.8 mV). The **reference voltage** sets full scale, so its accuracy and noise directly limit the measurement. MCU ADCs are mostly **SAR** (successive approximation) converters that first charge an internal **sampling capacitor** during the sampling time; if the source impedance is high, the capacitor does not charge fully and the reading is wrong.
