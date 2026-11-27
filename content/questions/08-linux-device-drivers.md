@@ -1291,47 +1291,44 @@ Never map arbitrary kernel memory or adjacent resources. Validate offsets/length
 **Interview takeaway:** mmap changes the data-access interface, not the ownership problem. Choose the mapping helper for the allocation type and preserve lifetime until all mappings are gone.
 
 ### What are kernel timers, hrtimers and delays? {M}
-**Short answer:** **Timers** (`timer_list`, `mod_timer`) run a callback in softirq context after a delay measured in **jiffies** (resolution 1/HZ, e.g. 4 ms with HZ=250), suitable for timeouts that do not need precision. **High-resolution timers** (`hrtimer`) have nanosecond-based expiry using the hardware clock event device, for precise timing. For **delays**, use `udelay`/`ndelay` (busy-wait, for microseconds, allowed in atomic context), `usleep_range` (sleep, 10 µs–20 ms), and `msleep`/`fsleep` (sleep, longer).
+Linux provides timers and delay APIs for different timing and execution-context requirements.
 
-**Timer example (watchdog-style timeout)**
+| API / mechanism | Purpose |
+|---|---|
+| timer_list | Schedule a callback using kernel tick-based timing |
+| hrtimer | Higher-resolution timer expiration |
+| msleep / usleep_range | Sleep in an appropriate context |
+| udelay / ndelay | Short busy-wait delays |
 
-```c
-static void mydev_timeout(struct timer_list *t)
-{
-    struct mydev *d = from_timer(d, t, timer);      /* timer_container_of() on newest kernels */
-    dev_warn(d->dev, "no response, resetting\n");
-    schedule_work(&d->reset_work);                  /* softirq context: defer anything that sleeps */
-}
-
-timer_setup(&d->timer, mydev_timeout, 0);           /* in probe */
-mod_timer(&d->timer, jiffies + msecs_to_jiffies(500));   /* (re)arm */
-timer_delete_sync(&d->timer);                       /* in remove (del_timer_sync on older kernels) */
-```
-
-**hrtimer example (periodic 1 ms)**
+#### 1. Timer example
 
 ```c
-static enum hrtimer_restart tick(struct hrtimer *t)
+static void demo_timeout(struct timer_list *timer)
 {
-    struct mydev *d = container_of(t, struct mydev, hrt);
-    sample(d);
-    hrtimer_forward_now(t, ms_to_ktime(1));
-    return HRTIMER_RESTART;
+    struct demo *d = from_timer(d, timer, timeout);
+    schedule_work(&d->work);
 }
-hrtimer_setup(&d->hrt, tick, CLOCK_MONOTONIC, HRTIMER_MODE_REL);  /* hrtimer_init on older kernels */
-hrtimer_start(&d->hrt, ms_to_ktime(1), HRTIMER_MODE_REL);
+
+timer_setup(&d->timeout, demo_timeout, 0);
+mod_timer(&d->timeout, jiffies + msecs_to_jiffies(100));
 ```
 
-**Choosing a delay**
+Ordinary timer callbacks cannot sleep on non-RT kernels. Schedule work for sleepable operations. Synchronize timer shutdown and work cancellation before freeing d.
 
-| Duration | Context | Use |
-|---|---|---|
-| < 10 µs | any | `udelay`, `ndelay` |
-| 10 µs – 20 ms | process | `usleep_range(min, max)` (gives the scheduler slack to batch wake-ups) |
-| > 10 ms | process | `msleep`, `msleep_interruptible` |
-| unsure | process | `fsleep(us)` picks the right function |
+#### 2. Device initialization delay
 
-**Pitfalls:** `msleep(1)` can sleep much longer (rounded up to jiffies, at least 1–2 jiffies); compare jiffies with `time_after()` (handles wrap-around); always cancel timers synchronously before freeing their data.
+```c
+writel(RESET_RELEASE, base + CTRL);
+usleep_range(1000, 1500);
+```
+
+This assumes sleepable context and a hardware-specified minimum delay. A delay range allows the scheduler some flexibility.
+
+#### 3. Busy waiting
+
+Use udelay for very short hardware-required waits where sleeping is not permitted or not practical. Prefer bounded polling helpers for register readiness and handle timeout.
+
+**Interview takeaway:** Match timing API to required resolution and context. A timer schedules work; it does not guarantee a callback runs at the exact expiration instant.
 
 ### How does power management work for drivers (system suspend and runtime PM)? {H}
 **Short answer:** Drivers implement two kinds of power management through `dev_pm_ops`. **System sleep** callbacks (`suspend`/`resume`, plus `_late`/`_noirq` variants) save state and power the device down when the whole system suspends (to RAM or disk), then restore it. **Runtime PM** (`runtime_suspend`/`runtime_resume`) powers an individual device down whenever it is idle while the system runs: the driver calls `pm_runtime_resume_and_get()` before using the hardware and `pm_runtime_put_autosuspend()` when done, and the core suspends it after an autosuspend delay when the usage count reaches zero.
