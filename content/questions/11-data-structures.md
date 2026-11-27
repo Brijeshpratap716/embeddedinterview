@@ -667,3 +667,318 @@ Time O(n); extra space O(1).
 
 **Interview takeaway:** Track the best sum ending at the current index and the best sum overall. Do not initialize the answer to zero unless empty subarrays are allowed.
 
+### Implement BFS and DFS graph traversal in C. {M}
+**Short answer:** BFS uses a queue; DFS uses recursion or a stack. Mark each vertex when discovered so cycles do not cause repeated visits.
+
+```c
+#include <stdio.h>
+#include <stdbool.h>
+#define N 8
+
+/* Adjacency matrix, vertices 0 to N-1 */
+void bfs(const bool g[N][N], int start)
+{
+    bool seen[N] = {0};
+    int q[N], head = 0, tail = 0;
+    seen[start] = true;
+    q[tail++] = start;
+    while (head < tail) {
+        int u = q[head++];
+        printf("%d ", u);
+        for (int v = 0; v < N; v++)
+            if (g[u][v] && !seen[v]) {
+                seen[v] = true;
+                q[tail++] = v;
+            }
+    }
+}
+
+void dfs(const bool g[N][N], int u, bool seen[N])
+{
+    seen[u] = true;
+    printf("%d ", u);
+    for (int v = 0; v < N; v++)
+        if (g[u][v] && !seen[v])
+            dfs(g, v, seen);
+}
+```
+
+Pass a valid start index and an initially zeroed seen array to DFS. Both visit the reachable vertices; scan unvisited vertices to cover a disconnected graph. Time O(N²) with a matrix, O(V+E) with adjacency lists. Space O(N) for queue or recursion. For large embedded graphs prefer an explicit bounded stack.
+
+### Parse an edge list into a graph in C. {M}
+**Short answer:** Read each pair of vertex IDs, validate it, and set the corresponding adjacency-matrix entry. This example accepts an already-tokenized list of directed edges.
+
+```c
+#include <stdbool.h>
+#include <stddef.h>
+#include <string.h>
+#define N 8
+struct edge { int from, to; };
+
+bool parse_graph(bool g[N][N], const struct edge *e,
+                 size_t count)
+{
+    for (size_t i = 0; i < count; i++)
+        if (e[i].from < 0 || e[i].from >= N ||
+            e[i].to < 0 || e[i].to >= N)
+            return false;
+
+    memset(g, 0, N * sizeof g[0]);
+    for (size_t i = 0; i < count; i++)
+        g[e[i].from][e[i].to] = true;
+    return true;
+}
+```
+
+Example edges {0,1}, {0,2}, {2,3} describe 0→1, 0→2 and 2→3. For undirected edges set the reverse entry too. If parsing text, use checked integer conversion and reject malformed or out-of-range tokens before calling this function. Time O(N²+E); adjacency lists are more memory-efficient for sparse topologies.
+
+### Find the shortest path in an unweighted graph using BFS. {M}
+**Short answer:** BFS discovers vertices in increasing hop distance. Save the distance and parent on first discovery.
+
+```c
+#include <stdbool.h>
+#define N 8
+
+void shortest(const bool g[N][N], int start,
+              int dist[N], int parent[N])
+{
+    int q[N], h = 0, t = 0;
+    for (int i = 0; i < N; i++)
+        dist[i] = parent[i] = -1;
+
+    dist[start] = 0;
+    q[t++] = start;
+    while (h < t) {
+        int u = q[h++];
+        for (int v = 0; v < N; v++)
+            if (g[u][v] && dist[v] == -1) {
+                dist[v] = dist[u] + 1;
+                parent[v] = u;
+                q[t++] = v;
+            }
+    }
+}
+```
+
+With edges 0→1→3 and 0→3, distance from 0 to 3 is 1. Follow parent links backward and reverse them to reconstruct the path; -1 means unreachable (except the source's parent). Assume a valid source. Time O(N²), space O(N).
+
+### Implement Dijkstra's shortest-path algorithm in C. {M}
+**Short answer:** Repeatedly select the unvisited vertex with the smallest known distance, then relax its outgoing edges. Requires nonnegative weights.
+
+```c
+#include <stdbool.h>
+#include <stdint.h>
+#define N 8
+
+/* -1 = no edge; other weights must be nonnegative. */
+void dijkstra(const int32_t g[N][N], int src,
+              int64_t d[N])
+{
+    bool done[N] = {0};
+    for (int i = 0; i < N; i++) d[i] = INT64_MAX;
+    d[src] = 0;
+
+    for (int k = 0; k < N; k++) {
+        int u = -1;
+        for (int i = 0; i < N; i++)
+            if (!done[i] && (u < 0 || d[i] < d[u]))
+                u = i;
+        if (u < 0 || d[u] == INT64_MAX) break;
+        done[u] = true;
+
+        for (int v = 0; v < N; v++)
+            if (!done[v] && g[u][v] >= 0 &&
+                d[u] + g[u][v] < d[v])
+                d[v] = d[u] + g[u][v];
+    }
+}
+```
+
+If 0→1 costs 2, 1→2 costs 3 and 0→2 costs 9, the best cost to 2 is 5. INT64_MAX represents unreachable vertices. With this fixed N and int32_t weights, distance additions fit in int64_t. Time O(N²), space O(N); a min-heap improves performance on sparse graphs.
+
+### Find connected components in an undirected graph. {M}
+**Short answer:** Run DFS from each unvisited vertex. Every traversal marks exactly one connected component.
+
+```c
+#include <stdbool.h>
+#define N 8
+
+static void mark(const bool g[N][N], int u, int id,
+                 int component[N])
+{
+    component[u] = id;
+    for (int v = 0; v < N; v++)
+        if (g[u][v] && component[v] == -1)
+            mark(g, v, id, component);
+}
+
+int components(const bool g[N][N], int component[N])
+{
+    int count = 0;
+    for (int i = 0; i < N; i++) component[i] = -1;
+    for (int i = 0; i < N; i++)
+        if (component[i] == -1)
+            mark(g, i, count++, component);
+    return count;
+}
+```
+
+Example: edges 0–1 and 2–3 form separate components; isolated vertices each form one component. The matrix must be symmetric. Time O(N²), space O(N). Directed graphs require a different algorithm for strongly connected components.
+
+### Clone a graph in C without sharing the original nodes. {H}
+**Short answer:** Create one new node for each original node, then reconnect edges using a mapping from original node ID to its clone. This preserves cycles and shared neighbors.
+
+```c
+#include <stdbool.h>
+#include <stddef.h>
+#define N 8
+
+struct node {
+    int value;
+    unsigned degree;
+    struct node *next[N];
+};
+
+/* Source edges must point into src[0..N-1]. Arrays disjoint. */
+bool clone(const struct node src[N], struct node dst[N])
+{
+    for (unsigned i = 0; i < N; i++) {
+        if (src[i].degree > N) return false;
+        for (unsigned j = 0; j < src[i].degree; j++) {
+            unsigned k = 0;
+            while (k < N && src[i].next[j] != &src[k]) k++;
+            if (k == N) return false;
+        }
+    }
+    for (unsigned i = 0; i < N; i++) {
+        dst[i] = (struct node){.value = src[i].value,
+                               .degree = src[i].degree};
+        for (unsigned j = 0; j < src[i].degree; j++) {
+            unsigned k = 0;
+            while (src[i].next[j] != &src[k]) k++;
+            dst[i].next[j] = &dst[k];
+        }
+    }
+    return true;
+}
+```
+
+If A→B and B→A, the clones point to one another, not the originals. The caller owns the destination storage. The linear pointer lookup costs O(V+EV); stable vertex IDs or a hash map reduce it to O(V+E). This fixed-size approach avoids heap allocation.
+
+### Validate whether a binary tree is a binary search tree. {M}
+**Short answer:** Check every node against the allowed range inherited from its ancestors, not just its immediate children. This example rejects duplicates.
+
+```c
+#include <stdint.h>
+#include <stdbool.h>
+struct tree {
+    int32_t key;
+    struct tree *left, *right;
+};
+
+bool valid_bst(const struct tree *r, int64_t low, int64_t high)
+{
+    if (!r) return true;
+    if (r->key <= low || r->key >= high) return false;
+    return valid_bst(r->left, low, r->key) &&
+           valid_bst(r->right, r->key, high);
+}
+
+/* Call valid_bst(root, INT64_MIN, INT64_MAX). */
+```
+
+A value of 12 anywhere in the left subtree of root 10 is invalid, even if its immediate parent permits it. Time O(n), recursion space O(h). Use a wider bound type so INT32_MIN and INT32_MAX remain valid keys.
+
+### Find the lowest common ancestor of two nodes in a binary tree. {M}
+**Short answer:** Search both subtrees. If one target appears on each side, the current node is their lowest common ancestor.
+
+```c
+struct tree {
+    int key;
+    struct tree *left, *right;
+};
+
+struct tree *lca(struct tree *r, struct tree *a,
+                 struct tree *b)
+{
+    if (!r || r == a || r == b) return r;
+    struct tree *l = lca(r->left, a, b);
+    struct tree *t = lca(r->right, a, b);
+    if (l && t) return r;
+    return l ? l : t;
+}
+```
+
+Assume both target nodes exist in the tree; otherwise verify membership first. For root 8 with children 3 and 12, their LCA is 8. Time O(n), space O(h). In a BST with unique keys, compare both keys to the current key and descend only when both are on the same side, taking O(h) time.
+
+### Serialize and deserialize a binary tree in C. {H}
+**Short answer:** Store a preorder sequence with explicit null markers so both tree structure and values are preserved. Use a fixed node pool while rebuilding.
+
+```c
+#include <stdbool.h>
+#include <stddef.h>
+struct tree {
+    int key;
+    struct tree *left, *right;
+};
+struct token { bool present; int key; };
+
+bool encode(const struct tree *r, struct token *a,
+            size_t cap, size_t *i)
+{
+    if (*i >= cap) return false;
+    a[(*i)++] = (struct token){r != NULL, r ? r->key : 0};
+    return !r || (encode(r->left, a, cap, i) &&
+                  encode(r->right, a, cap, i));
+}
+
+bool decode(const struct token *a, size_t n, size_t *i,
+            struct tree *pool, size_t cap, size_t *used,
+            struct tree **out)
+{
+    if (*i >= n) return false;
+    struct token t = a[(*i)++];
+    *out = NULL;
+    if (!t.present) return true;
+    if (*used >= cap) return false;
+    struct tree *r = &pool[(*used)++];
+    r->key = t.key;
+    if (!decode(a,n,i,pool,cap,used,&r->left) ||
+        !decode(a,n,i,pool,cap,used,&r->right)) return false;
+    *out = r;
+    return true;
+}
+```
+
+A root 7 with left child 3 encodes as 7,3,NULL,NULL,NULL. Start all counters at zero and accept decoded output only on success with all tokens consumed; discard partial output on failure. Time O(n), recursion O(h). Bound depth for untrusted input. The token array is an in-memory representation, not a portable byte format.
+
+### Detect a deadlock using a wait-for graph. {M}
+**Short answer:** Create an edge A→B if thread A waits for a resource exclusively held by thread B. A directed cycle indicates deadlock in the single-instance blocking resource model.
+
+```c
+#include <stdbool.h>
+#define N 8
+
+static bool visit(const bool g[N][N], int u, int state[N])
+{
+    state[u] = 1; /* visiting */
+    for (int v = 0; v < N; v++) {
+        if (!g[u][v]) continue;
+        if (state[v] == 1) return true;
+        if (state[v] == 0 && visit(g, v, state)) return true;
+    }
+    state[u] = 2; /* completed */
+    return false;
+}
+
+bool deadlock(const bool wait[N][N])
+{
+    int state[N] = {0};
+    for (int i = 0; i < N; i++)
+        if (state[i] == 0 && visit(wait, i, state))
+            return true;
+    return false;
+}
+```
+
+If T0 waits for T1 and T1 waits for T0, a cycle exists. Take a consistent graph snapshot; timeouts, multiple interchangeable resource instances and alternative acquisition conditions require more analysis. Time O(N²) with a matrix, O(V+E) with adjacency lists.
