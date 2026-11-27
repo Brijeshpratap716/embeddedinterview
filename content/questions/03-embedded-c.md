@@ -849,25 +849,50 @@ Multiple simultaneous presses can create unintended current paths through a diod
 **Interview takeaway:** Matrix scanning saves GPIO pins but requires controlled row activation, settling, debouncing and a policy for simultaneous presses.
 
 ### What is polling versus interrupts versus DMA? {E}
-**Short answer:** With **polling**, the CPU repeatedly checks a status flag and handles the peripheral when it is ready: simple and predictable, but it wastes CPU time and power. With **interrupts**, the peripheral signals the CPU when something happens, so the CPU can do other work or sleep: efficient for sporadic events, but each event costs an ISR entry and exit. With **DMA**, a DMA controller moves data between the peripheral and memory without the CPU, interrupting only when a block is done: best for high-throughput streams.
+Polling, interrupts and DMA are three ways of coordinating data transfer between the processor and peripherals.
 
-| | Polling | Interrupts | DMA |
+#### 1. Polling
+
+```c
+while (!uart_tx_ready()) {
+    // Wait (normally with a timeout).
+}
+uart_write_byte(data);
+```
+
+The CPU repeatedly checks device status. It is simple but can waste CPU cycles while waiting.
+
+#### 2. Interrupt-driven operation
+
+```c
+void UART_IRQHandler(void)
+{
+    if (uart_rx_ready())
+        queue_rx_byte(uart_read_byte());
+}
+```
+
+The device notifies the CPU when service is required. The CPU can perform other work between interrupts.
+
+#### 3. DMA transfer
+
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 158" width="100%" role="img" aria-label="CPU configures DMA; DMA moves peripheral data into RAM and interrupts CPU on completion">
+<rect x="120" y="8" width="100" height="32" rx="5" fill="#3b82f6" fill-opacity=".13" stroke="#3b82f6"/><text x="170" y="28" text-anchor="middle" font-size="12" fill="currentColor">CPU</text>
+<rect x="120" y="76" width="100" height="38" rx="5" fill="#eab308" fill-opacity=".15" stroke="#ca8a04"/><text x="170" y="99" text-anchor="middle" font-size="12" fill="currentColor">DMA engine</text>
+<rect x="5" y="76" width="90" height="38" rx="5" fill="#16a34a" fill-opacity=".13" stroke="#16a34a"/><text x="50" y="99" text-anchor="middle" font-size="11" fill="currentColor">Peripheral</text>
+<rect x="245" y="76" width="90" height="38" rx="5" fill="#16a34a" fill-opacity=".13" stroke="#16a34a"/><text x="290" y="99" text-anchor="middle" font-size="12" fill="currentColor">RAM</text>
+<path d="M95 95 H120 m-5-4 5 4-5 4 M220 95 H245 m-5-4 5 4-5 4 M150 40 V76 m-4-5 4 5 4-5 M190 76 V40 m-4 5 4-5 4 5" stroke="currentColor" fill="none"/>
+<text x="140" y="58" text-anchor="end" font-size="10" fill="currentColor">Configure</text><text x="199" y="58" font-size="10" fill="currentColor">Completion IRQ</text><text x="170" y="139" text-anchor="middle" font-size="10" fill="currentColor">Hardware transfers data over the system interconnect.</text></svg></div>
+
+The CPU prepares a buffer and configures source, destination, length and direction. DMA moves the data and signals completion. The CPU handles setup, errors and ownership/cache synchronization.
+
+| Feature | Polling | Interrupt | DMA |
 |---|---|---|---|
-| CPU load | high (busy waiting) | per event/byte | per block |
-| Latency | lowest if the CPU is already polling | interrupt latency + ISR | hardware speed after set-up |
-| Power | poor (cannot sleep) | good | best |
-| Complexity | lowest | moderate (shared data, priorities) | highest (descriptors, buffers, cache) |
-| Good for | very short waits, simple boot code, very fast devices | buttons, low-rate UART, timers, events | ADC streaming, audio (I2S), SPI displays, UART at high baud, memory copies |
+| CPU involvement | Repeated status checks | Per event | Setup and completion |
+| Good for | Short waits, boot | Sporadic events | Large/continuous transfers |
+| Complexity | Low | Medium | Higher |
 
-**Example: receiving UART data at 1 Mbaud**
-
-- Polling: the CPU can do nothing else.
-- Interrupt per byte: 100,000 interrupts per second; at ~50 cycles each, a large fraction of a slow MCU's time.
-- DMA into a circular buffer with "half complete", "complete" and **UART idle line** interrupts: a few interrupts per message.
-
-**Combining them is normal:** DMA for the data, an interrupt at the end of each block, and polling for very short waits (e.g. waiting a few cycles for a flag after starting a conversion).
-
-**DMA traps:** cache coherency on Cortex-M7 and Cortex-A (next question), buffers that must stay valid until the transfer finishes (never a local variable of a function that returns), bus matrix restrictions (some DMA controllers cannot access certain RAM banks or TCM), and handling errors and overruns.
+**Interview takeaway:** Use polling for simple bounded waits, interrupts for asynchronous events and DMA for bulk transfers. DMA is not automatically faster for very small transfers.
 
 ### What are the cache coherency problems with DMA? {H}
 **Short answer:** On CPUs with a data cache (Cortex-M7, Cortex-A, some Cortex-M55/M85 systems), the CPU reads and writes through its cache, but most DMA controllers on MCUs access main memory directly. The two can see different data: DMA may transmit stale data still waiting in the cache, and the CPU may read stale cached data after the DMA has written new data to memory. You must **clean** dirty cache lines before DMA reads memory. For DMA writes, prepare dedicated cache-line-aligned buffers before handing them to the device and invalidate stale lines after completion, following the platform's DMA and cache rules.
