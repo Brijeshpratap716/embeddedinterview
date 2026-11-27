@@ -1451,19 +1451,35 @@ Terminology and layering differ between vendors; a BSP can include a HAL.
 **Interview takeaway:** HAL abstracts how peripherals operate; BSP describes and enables the specific board on which they operate.
 
 ### What is AUTOSAR and what are its main layers? {M}
-AUTOSAR (AUTomotive Open System ARchitecture) is a standard software architecture for automotive ECUs, so software components can be reused across suppliers and hardware. **Classic Platform** targets deeply embedded ECUs on microcontrollers with static configuration; **Adaptive Platform** targets high-performance ECUs running POSIX operating systems with service-oriented communication.
+AUTOSAR (AUTomotive Open System ARchitecture) defines standardized automotive software architecture and interfaces. It helps separate application functionality from ECU hardware and software infrastructure.
 
-The Classic Platform layers, from top to bottom:
+#### 1. Classic AUTOSAR
 
-1. **Application layer:** software components (SWCs) containing the vehicle functions, with ports for data and services.
-2. **RTE (Runtime Environment):** generated middleware that connects SWCs to each other and to the basic software, so components never call hardware directly.
-3. **BSW (Basic Software):**
-   - **Services layer:** OS (OSEK-based AUTOSAR OS), communication stack (COM, PduR, CanIf), diagnostics (DCM, DEM), memory services (NvM), watchdog manager.
-   - **ECU abstraction layer:** makes on-board devices accessible regardless of how they connect to the MCU.
-   - **MCAL (Microcontroller Abstraction Layer):** drivers for on-chip peripherals: CAN, ADC, DIO, PWM, SPI, flash, GPT.
-   - **Complex device drivers:** an escape path for timing-critical hardware access that doesn't fit the layers.
+<div style="max-width:620px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 242" width="100%" role="img" aria-label="Simplified Classic AUTOSAR layers: application software components, RTE, basic software including MCAL, and MCU">
+<rect x="20" y="5" width="300" height="44" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="22" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Application SWCs</text><text x="170" y="37" text-anchor="middle" font-size="10" fill="currentColor">Control and application functions</text><path d="M170 49 v16 m-4-5 4 5 4-5" stroke="currentColor" fill="none"/><rect x="20" y="65" width="300" height="44" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="82" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">RTE</text><text x="170" y="97" text-anchor="middle" font-size="10" fill="currentColor">Runtime Environment: communication interfaces</text><path d="M170 109 v16 m-4-5 4 5 4-5" stroke="currentColor" fill="none"/><rect x="20" y="125" width="300" height="44" rx="5" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/><text x="170" y="142" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Basic Software (BSW)</text><text x="170" y="157" text-anchor="middle" font-size="10" fill="currentColor">Services, ECU abstraction and MCAL</text><path d="M170 169 v16 m-4-5 4 5 4-5" stroke="currentColor" fill="none"/><rect x="20" y="185" width="300" height="44" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="202" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Microcontroller</text><text x="170" y="217" text-anchor="middle" font-size="10" fill="currentColor">CPU, CAN, ADC, GPIO and peripherals</text></svg></div>
 
-Everything is configured with tools (ARXML files) and code is largely generated. Interview follow-ups usually cover how a CAN signal travels from the bus to an application SWC (CAN driver → CanIf → PduR → COM → RTE → SWC) and how diagnostics (UDS over DCM) work.
+- Application software components implement vehicle functions.
+- The RTE connects software components and basic software through configured interfaces.
+- BSW provides OS, communication, diagnostics, memory services and hardware abstraction.
+- MCAL contains standardized low-level microcontroller drivers.
+
+Complex drivers may use specialized interfaces where ordinary abstraction is insufficient.
+
+#### 2. Example
+
+A sensor-processing application receives a value through an RTE interface. The underlying basic software and configured driver access the ADC or communication bus. The application need not directly program hardware registers.
+
+#### 3. Classic vs Adaptive
+
+| Classic | Adaptive |
+|---|---|
+| Typically resource-constrained MCUs | Higher-performance computing platforms |
+| Statically configured components | Service-oriented applications |
+| Real-time control ECUs | Complex computing and connected functions |
+
+Adaptive uses its own architecture and is not simply the Classic RTE/MCAL stack on a faster processor.
+
+**Interview takeaway:** AUTOSAR standardizes interfaces to make automotive software integration and reuse easier. Classic focuses on traditional ECU control; Adaptive targets more complex computing workloads.
 
 ### What does a typical SoC look like inside? {M}
 A system-on-chip puts a complete computer on one die. A typical application-processor SoC (phone, automotive, IoT gateway) contains:
