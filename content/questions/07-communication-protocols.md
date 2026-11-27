@@ -953,28 +953,25 @@ Tune advertising and connection intervals, MTU, data length and power use. Use a
 **Interview takeaway:** GAP manages finding and connecting devices; GATT describes and exchanges application attributes. Security and power depend on configuration.
 
 ### How do you choose a wireless technology for an IoT device? {M}
-**Short answer:** Match range, data rate, power budget, network topology, infrastructure and cost. **BLE** for short range, very low power and phone connectivity; **Wi-Fi** for high data rates and direct internet access with mains or large batteries; **Thread/Zigbee** (802.15.4) for low-power mesh networks in buildings (Thread with Matter for smart homes); **LoRaWAN** for kilometres of range with tiny data and multi-year battery life; **NB-IoT/LTE-M** (cellular) for wide-area coverage without your own gateways.
+Selecting IoT wireless technology requires balancing range, data rate, power, latency, deployment environment and infrastructure.
 
-| | BLE | Wi-Fi | Thread / Zigbee | LoRaWAN | NB-IoT / LTE-M |
-|---|---|---|---|---|---|
-| Range | 10–100 m | 30–100 m | 10–100 m per hop, mesh | 2–15 km | km (cellular) |
-| Data rate | 1–2 Mbps PHY, ~100s kbps app | 10–1000+ Mbps | 250 kbps | 0.3–50 kbps | ~60 kbps / ~1 Mbps |
-| Power | very low | high | low (routers mains-powered) | very low | low–medium (PSM, eDRX) |
-| Topology | star (mesh possible) | star (AP) | mesh | star of stars (gateways) | star (base stations) |
-| Infrastructure | phone or gateway | access point | border router | gateways + network server | operator network, SIM |
-| IP-native | no (yes over IPv6 in some profiles) | yes | Thread: IPv6; Zigbee: no | no | yes |
-| Typical use | wearables, sensors, provisioning | cameras, appliances | lighting, smart home (Matter) | agriculture, metering, asset tracking | trackers, meters, remote equipment |
+| Technology | Typical strength | Typical use |
+|---|---|---|
+| BLE | Low-power short-range connectivity | Wearable/sensor to phone |
+| Wi-Fi | Higher throughput and IP connectivity | Powered devices |
+| Thread / Zigbee | Low-power local mesh | Building sensors |
+| LoRaWAN | Long-range small intermittent payloads | Remote sensing |
+| Cellular IoT | Wide-area operator infrastructure | Distributed field devices |
 
-**Questions to ask in a design discussion**
+#### 1. Example selection
 
-1. How much data, how often, and with what latency?
-2. Battery or mains power, and what lifetime is required?
-3. Indoor/outdoor range, and is there existing infrastructure (Wi-Fi, phones, cellular coverage)?
-4. Cost per unit (module, certification, subscription fees for cellular).
-5. Security and provisioning (how a device joins the network securely).
-6. Regulatory regions (sub-GHz frequencies differ by region).
+A battery sensor sending a few bytes to a nearby phone can use BLE. A remote sensor far from local infrastructure may need LoRaWAN coverage or a cellular IoT service. A camera with high sustained throughput has very different requirements.
 
-**Common combinations:** BLE for setup (phone app provisions Wi-Fi credentials) plus Wi-Fi for data; Thread devices exposed through Matter; LoRaWAN or cellular sensors with BLE for local maintenance.
+#### 2. Engineering evaluation
+
+Measure actual coverage and energy per useful message, including connection/retry overhead. Consider antenna design, radio coexistence, local regulatory restrictions, provisioning, security and ongoing network costs.
+
+**Interview takeaway:** Do not choose solely by advertised range or bit rate. Evaluate the end-to-end link budget, duty cycle, application payload, availability and lifecycle requirements.
 
 ### How would you design a protocol gateway, for example Modbus RTU to MQTT? {H}
 **Short answer:** Split it into layers connected by queues: a **southbound** driver (RS-485 Modbus RTU client polling devices on a schedule), a **data model** that maps device registers to named, scaled values with timestamps and quality flags, and a **northbound** client (MQTT over TLS publishing values and receiving commands), plus configuration, buffering for offline periods, diagnostics and secure updates. Each side runs independently so a slow cloud connection never stalls field-bus polling.
