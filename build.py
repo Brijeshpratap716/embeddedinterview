@@ -158,7 +158,7 @@ def page(path, title, body, desc="", active="", schema=None):
     <div><h4>Practice</h4><a href="{root}{url('problems/')}">Coding problems</a><a href="{root}{url('quiz/')}">MCQ quiz</a><a href="{root}{url('articles/')}">Articles</a><a href="{root}{url('companies/')}">Company guides</a><a href="{root}{url('forum/')}">Forum</a></div>
     <div><h4>Site</h4><a href="{root}{url('about/')}">About</a><a href="{root}{url('contact/')}">Contact</a><a href="{root}{url('privacy/')}">Privacy</a><a href="{root}{url('terms/')}">Terms</a></div>
   </div>
-  <div class="wrap copy">© {datetime.date.today().year} EmbeddedInterview.com · Made for engineers who work close to the metal.</div>
+  <div class="wrap copy">© {datetime.date.today().year} EmbeddedInterview.com. All rights reserved.<p>Unauthorized reproduction, redistribution, commercial reuse, or bulk scraping of original website content and source code is prohibited, except as permitted by law.</p></div>
 </footer>
 <script src="{root}static/app.js?v={ASSET_V}"></script>
 <script data-goatcounter="https://embeddedinterview.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>

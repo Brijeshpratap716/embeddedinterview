@@ -75,6 +75,10 @@ Then run `python3 build.py` (or just push, if you use the GitHub workflow).
 4. **Analytics (optional):** add a privacy-friendly script (Plausible, Cloudflare Web Analytics) in the `<head>` in `build.py`, and update `content/pages/privacy.md` to mention it.
 5. **AdSense (optional):** once the site has traffic, apply, then add the ad script in `build.py` and update the privacy policy.
 
-## Content licence
+## Copyright and permitted use
 
-All questions, answers, articles and code were written for this site. Keep it that way: copying another site's question bank would breach their copyright and can get pages removed from search results.
+© 2026 EmbeddedInterview.com. All rights reserved.
+
+Unauthorized reproduction, redistribution, commercial reuse, or bulk scraping of original website content and source code is prohibited, except as permitted by law.
+
+No general open-source license is granted by this repository. Previously granted licenses remain subject to their original terms. Third-party materials remain subject to their respective rights and licenses. See [Terms of Use](https://embeddedinterview.com/terms/).
