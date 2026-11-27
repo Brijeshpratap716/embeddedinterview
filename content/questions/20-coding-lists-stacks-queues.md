@@ -466,6 +466,10 @@ bool is_palindrome_list(node_t *head)
 
 **Point interviewers like:** restoring the list (functions that only "check" something should not leave the data modified), and being careful in multithreaded code — the list is temporarily broken while it is reversed, so hold a lock.
 
+#### Restore even when comparison fails
+
+For 1→2→3→2→1, reverse from the middle 3; the second traversal is 1→2→3, matching the first three values of the original prefix. For 1→2→2→1, compare two values. Restoration must execute regardless of mismatch; an early return inside the comparison would leave the list altered. Require exclusive access during reversal because other readers may see temporarily broken links.
+
 ### Detect and remove a loop in a linked list. {M}
 **Short answer:** Detect the loop with Floyd's tortoise and hare (slow moves 1, fast moves 2; they meet only if there is a loop). Then move one pointer back to the head and advance both one step at a time: they meet at the first node of the loop. Stop one step earlier — when their `next` pointers are equal — so the pointer inside the loop is at the loop's last node, and set its `next` to NULL. O(n) time, O(1) space.
 
