@@ -819,42 +819,72 @@ This is useful for logging, assertions and grouped register operations. It does 
 **Interview takeaway:** Use `do { ... } while (0)` for multi-statement macros. Prefer a typed inline function when preprocessing is unnecessary. The wrapper does not fix repeated argument evaluation, and `break` or `continue` inside it affects the wrapper loop.
 
 ### What are # and ## in macros? {M}
-**Short answer:** `#` (the stringizing operator) turns a macro argument into a string literal. `##` (the token-pasting operator) joins two tokens into one. They let macros generate names and strings automatically.
+The C preprocessor provides two operators for manipulating macro arguments: **`#` (stringification)** and **`##` (token pasting)**.
+
+#### 1. Stringification operator (#)
+
+It converts a macro argument's spelling into a string literal.
 
 ```c
-#define STR(x)     #x
-#define XSTR(x)    STR(x)          /* two-level trick: expand x first */
-#define REG(port)  GPIO##port##_ODR
+#define STR(x) #x
 
-STR(UART1)                         /* "UART1" */
-REG(A)                             /* GPIOA_ODR */
+printf("%s", STR(hello));
+```
 
+Expansion: `printf("%s", "hello");`
+
+**Output:** `hello`
+
+It does not evaluate the argument. For example, `STR(2+3)` produces the string `"2+3"`, not `"5"`.
+
+#### 2. Token pasting operator (##)
+
+It combines two preprocessing tokens into a single token.
+
+```c
+#define JOIN(a,b) a##b
+
+int JOIN(reg,1) = 100;
+printf("%d", reg1);
+```
+
+Expansion: `int reg1 = 100;`
+
+**Output:** `100`
+
+The combined token must be valid.
+
+#### 3. Expanding a macro before stringification
+
+```c
 #define VERSION 3
-STR(VERSION)                       /* "VERSION"  - argument not expanded */
-XSTR(VERSION)                      /* "3"        - expanded first, then stringized */
+#define STR_RAW(x) #x
+#define STR_EXPAND(x) STR_RAW(x)
+
+STR_RAW(VERSION)     // "VERSION"
+STR_EXPAND(VERSION)  // "3"
 ```
 
-**Why the two-level trick is needed:** an argument used with `#` or `##` is **not** macro-expanded first. Passing it through another macro (`XSTR`) expands it before it reaches `#`.
+Arguments immediately used with `#` or `##` are not macro-expanded first. An extra macro layer allows expansion before stringification or pasting.
 
-**Practical uses**
-
-- **Assert and log messages** that show the failed expression: `#define ASSERT(e) do { if (!(e)) fail(#e, __FILE__, __LINE__); } while (0)`.
-- **X-macros** that keep an enum and its string names in sync:
+#### 4. Embedded debugging example
 
 ```c
-#define STATES(X) X(IDLE) X(RUN) X(ERROR)
-#define AS_ENUM(n)   ST_##n,
-#define AS_STRING(n) #n,
+#define CHECK(x) do {                 \
+    if (!(x)) log_error(#x);          \
+} while (0)
 
-enum state { STATES(AS_ENUM) ST_COUNT };
-static const char *const state_name[] = { STATES(AS_STRING) };
-/* ST_IDLE, ST_RUN, ST_ERROR and "IDLE", "RUN", "ERROR" from one list */
+CHECK(buffer != NULL);
 ```
 
-- **Generating register or handler names:** `#define IRQ_HANDLER(n) void n##_IRQHandler(void)`.
-- Embedding the firmware version string: `const char fw_version[] = XSTR(MAJOR) "." XSTR(MINOR);`
+On failure the logger receives the expression's spelling.
 
-**Rules:** the result of `##` must be a valid single token (pasting `+` and `/` is undefined), and `#` escapes quotes and backslashes in the argument.
+| Operator | Operation | Example |
+|---|---|---|
+| `#` | Stringify | `STR(ready)` becomes `"ready"` |
+| `##` | Paste tokens | `JOIN(uart,2)` becomes `uart2` |
+
+**Interview takeaway:** These operators operate on preprocessing tokens, not runtime strings or values.
 
 ### What is the difference between #include <file> and #include "file"? {E}
 **Short answer:** `#include <file>` searches only the system include directories and those given with `-I`. `#include "file"` first looks in the directory of the file that contains the `#include`, then falls back to the same paths as `<file>`. Use quotes for your project's own headers and angle brackets for the standard library and third-party SDK headers.
