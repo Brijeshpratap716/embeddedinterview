@@ -604,3 +604,18 @@ store ready (release) ---> if ready == 1: read data
 **Limitation:** This is one-time publication. Reusing the buffer concurrently requires a separate ownership protocol or lock. Volatile alone is not sufficient.
 
 **Interview takeaway:** Acquire/release creates a synchronization relationship without requiring sequential consistency for every operation.
+
+#### One-time publication versus repeated communication
+
+```text
+Producer: data = 100
+          release-store ready=1
+                     |
+              synchronizes-with
+                     v
+Consumer: acquire-load ready reads 1
+          read data -> 100
+```
+
+This example assumes a single publisher, immutable data after publication and no concurrent reset. If the producer writes data again while a consumer is reading, the atomic flag alone does not prevent a C data race. For repeated messages, use a queue, mutex, or an ownership handshake with acknowledgment before reusing the payload. A relaxed flag does not establish the required happens-before relationship. On ARM64, acquire/release accesses commonly compile to LDAR/STLR or equivalent sequences.
+
