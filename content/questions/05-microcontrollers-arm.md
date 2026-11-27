@@ -776,33 +776,28 @@ Configure pin multiplexing, direction, output type, pulls and electrical setting
 **Interview takeaway:** GPIO configuration involves both logical function and electrical characteristics. Choose settings based on circuit load, timing and signal integrity rather than always maximizing drive strength.
 
 ### What is the difference between open-drain and push-pull outputs? {E}
-**Short answer:** A **push-pull** output has two transistors (one to the supply, one to ground) and actively drives the line both high and low, giving strong, fast edges. An **open-drain** (open-collector for bipolar transistors) output has only the transistor to ground: it can pull the line low or release it; a pull-up resistor makes the line high when released. Open-drain lets several devices share one line safely and lets the line be pulled up to a different voltage.
+Push-pull outputs actively drive both high and low levels. Open-drain outputs actively pull the line low and release it for the high state, normally using a pull-up resistor.
 
-```
-Push-pull                     Open-drain
-  VDD                           VDD (or another voltage)
-   |                             |
-  [P-MOS]                       [R pull-up]
-   |---- output                  |---- line
-  [N-MOS]                       [N-MOS]
-   |                             |
-  GND                           GND
-```
+#### 1. Electrical behavior
 
-| | Push-pull | Open-drain |
-|---|---|---|
-| Drives high | actively | via pull-up resistor (passive) |
-| Rise time | fast | depends on R × C of the line |
-| Several outputs on one line | short circuit if one drives high and another low | safe: any device can pull low ("wired-AND") |
-| High level voltage | the chip's supply | whatever the pull-up connects to (within the pin's tolerance) |
-| Power | no static current | current flows through the pull-up while low |
-| Typical uses | LEDs, SPI, UART TX, chip select | I2C SDA/SCL, shared interrupt/reset lines, 1-Wire, level shifting |
+<div style="max-width:650px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 190" width="100%" role="img" aria-label="Push-pull actively connects output to supply or ground; open-drain releases high through pull-up">
+<text x="85" y="15" font-size="12" font-weight="600" text-anchor="middle" fill="currentColor">Push-pull</text><text x="255" y="15" font-size="12" font-weight="600" text-anchor="middle" fill="currentColor">Open-drain</text>
+<g stroke="currentColor" stroke-width="1.5" fill="none"><path d="M85 29 V47 M85 75 V97 M85 97 H145 M85 97 V119 M85 147 V166 M65 166 H105 M72 172 H98 M79 178 H91"/><path d="M255 29 V40 l-6 5 12 6-12 6 12 6-6 5 V97 H325 M255 97 V119 M255 147 V166 M235 166 H275 M242 172 H268 M249 178 H261"/></g>
+<rect x="58" y="47" width="54" height="28" rx="3" fill="#3b82f6" fill-opacity=".14" stroke="#3b82f6"/><text x="85" y="64" text-anchor="middle" font-size="10" fill="currentColor">High driver</text><rect x="58" y="119" width="54" height="28" rx="3" fill="#3b82f6" fill-opacity=".14" stroke="#3b82f6"/><text x="85" y="136" text-anchor="middle" font-size="10" fill="currentColor">Low driver</text><rect x="228" y="119" width="54" height="28" rx="3" fill="#16a34a" fill-opacity=".14" stroke="#16a34a"/><text x="255" y="136" text-anchor="middle" font-size="10" fill="currentColor">Low driver</text><g fill="currentColor" font-size="10"><text x="85" y="27" text-anchor="middle">VDD</text><text x="255" y="27" text-anchor="middle">VDD</text><text x="268" y="53">Pull-up</text><text x="145" y="91" text-anchor="end">OUT</text><text x="325" y="91" text-anchor="end">OUT</text></g></svg></div>
 
-**Why I2C needs open-drain:** several devices (controller and targets) drive SDA, and clock stretching and arbitration require that any device can hold the line low while others release it. With push-pull outputs, two devices driving opposite levels would short the supply.
+#### 2. Comparison
 
-**Choosing the pull-up value:** a smaller resistor gives faster rising edges but more current when the line is low. For I2C, typical values are 2.2–10 kΩ, calculated from the bus capacitance and speed (see the Communication Protocols topic).
+| Push-pull | Open-drain |
+|---|---|
+| Active high and low | Active low, released high |
+| Typically fast edges | Rising edge depends on pull-up and capacitance |
+| Cannot safely tie conflicting outputs | Multiple compatible outputs can share a line |
 
-**Level shifting trick:** a 3.3 V MCU can drive an open-drain line pulled up to 5 V **only if the pin is 5 V tolerant** (marked "FT" on STM32). Otherwise use a level shifter.
+#### 3. I2C example
+
+SDA and SCL use open-drain/open-collector-style signaling in conventional I2C. Any device can pull a line low, while the pull-up returns it high when all devices release it. This supports arbitration and clock stretching.
+
+**Interview takeaway:** Open-drain makes shared low-dominant signaling possible. Choose pull-ups according to voltage, bus capacitance, sink current and rise-time requirements.
 
 ### How do timers generate PWM? {M}
 **Short answer:** A timer counts from 0 up to an auto-reload value (ARR) and then restarts, which sets the PWM period. In PWM mode, each channel compares the counter with a compare register (CCR): the output is active while the counter is below CCR and inactive after it, which sets the duty cycle. Changing CCR changes the duty cycle; changing ARR (or the prescaler) changes the frequency.
