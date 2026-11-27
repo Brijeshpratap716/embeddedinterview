@@ -508,6 +508,7 @@ void init_cv(void)
     pthread_condattr_init(&a);
     pthread_condattr_setclock(&a, CLOCK_MONOTONIC);     /* immune to wall-clock changes */
     pthread_cond_init(&cv, &a);
+    pthread_condattr_destroy(&a);
 }
 
 /* returns true if data became ready, false on timeout */
@@ -521,7 +522,7 @@ bool wait_ready(unsigned timeout_ms)
 
     pthread_mutex_lock(&m);
     int rc = 0;
-    while (!data_ready && rc != ETIMEDOUT)
+    while (!data_ready && rc == 0)
         rc = pthread_cond_timedwait(&cv, &m, &deadline);   /* absolute deadline: loop-safe */
     bool ok = data_ready;
     pthread_mutex_unlock(&m);
@@ -564,6 +565,12 @@ The condition variable must be created with `pthread_condattr_setclock(&attr, CL
 | Bare metal | poll the flag and a hardware counter with a wrap-safe deadline check |
 
 **Design rule:** every wait for hardware or another component should have a timeout and a defined recovery action, so one failure cannot hang the whole system.
+
+#### Absolute timeout rather than a fresh relative timeout
+
+Suppose the timeout is 100 ms and a spurious wake occurs after 60 ms. Reusing the original absolute deadline leaves approximately 40 ms; recalculating a new 100 ms deadline would accidentally extend the total wait. Use the same clock for computing the deadline and configuring the condition variable. CLOCK_MONOTONIC avoids wall-clock adjustments.
+
+The producer locks m, updates data_ready, signals or broadcasts cv, then unlocks. The consumer checks the predicate again under m even on timeout, because readiness can race with expiry. Check clock and pthread return codes; distinguish timeout from other errors in an API that needs diagnostics. The elapsed wait can exceed the nominal deadline because the thread must reacquire the mutex and be scheduled.
 
 ### How do you publish data safely between two threads using C11 atomics? {M}
 **Short answer:** Publish a ready flag with release semantics after writing data. A reader that observes the publication using an acquire load can then safely access the published data.
