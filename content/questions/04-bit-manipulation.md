@@ -524,45 +524,34 @@ These operate on ordinary unsigned values. Hardware registers may prohibit read-
 **Interview takeaway:** Validate bit indices and avoid a shift by the full width. This mask formula handles the complete range 0–31 without evaluating 1U << 32.
 
 ### How do you extract or insert a bit field? {E}
-**Short answer:** To read a field, shift it down and mask: `(reg >> shift) & ((1u << width) - 1)`. To write it, clear the field with the inverted mask and OR in the new value shifted into place.
+A bit field is a group of adjacent bits that represents a numeric value, such as a peripheral's mode selection. Extract it by shifting and masking; insert it by clearing the old field and combining the new field.
+
+#### 1. Example: bits 6:4
 
 ```c
-#define FIELD_GET(reg, shift, width)  (((reg) >> (shift)) & ((1u << (width)) - 1u))
+#define MODE_SHIFT 4U
+#define MODE_MASK  (UINT32_C(7) << MODE_SHIFT)
 
-static inline uint32_t field_set(uint32_t reg, unsigned shift, unsigned width, uint32_t val)
-{
-    uint32_t mask = ((1u << width) - 1u) << shift;   /* width < 32 */
-    return (reg & ~mask) | ((val << shift) & mask);
-}
+uint32_t mode = (reg & MODE_MASK) >> MODE_SHIFT;
+
+reg = (reg & ~MODE_MASK) |
+      ((UINT32_C(5) << MODE_SHIFT) & MODE_MASK);
 ```
 
-**Example:** a clock prescaler in bits 6..4 of a register.
+The extraction produces a value from 0 to 7. The insertion sets the field to 5 and preserves other bits.
 
-```c
-uint32_t cfg = 0x1234;
-unsigned psc = FIELD_GET(cfg, 4, 3);     /* (0x1234 >> 4) & 0x7 = 0x123 & 7 = 3 */
-cfg = field_set(cfg, 4, 3, 5);           /* clears bits 6..4, writes 101 -> 0x1254 */
-```
+<div style="max-width:620px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 111" width="100%" role="img" aria-label="Eight-bit register with bits 6 through 4 selected as a three-bit mode field">
+<text x="30" y="16" font-size="10" text-anchor="middle" fill="currentColor">7</text><rect x="10" y="24" width="40" height="35" fill="#94a3b8" fill-opacity=".17" stroke="#94a3b8"/><text x="30" y="46" font-size="13" text-anchor="middle" fill="currentColor">0</text><text x="70" y="16" font-size="10" text-anchor="middle" fill="currentColor">6</text><rect x="50" y="24" width="40" height="35" fill="#16a34a" fill-opacity=".17" stroke="#16a34a"/><text x="70" y="46" font-size="13" text-anchor="middle" fill="currentColor">1</text><text x="110" y="16" font-size="10" text-anchor="middle" fill="currentColor">5</text><rect x="90" y="24" width="40" height="35" fill="#16a34a" fill-opacity=".17" stroke="#16a34a"/><text x="110" y="46" font-size="13" text-anchor="middle" fill="currentColor">0</text><text x="150" y="16" font-size="10" text-anchor="middle" fill="currentColor">4</text><rect x="130" y="24" width="40" height="35" fill="#16a34a" fill-opacity=".17" stroke="#16a34a"/><text x="150" y="46" font-size="13" text-anchor="middle" fill="currentColor">1</text><text x="190" y="16" font-size="10" text-anchor="middle" fill="currentColor">3</text><rect x="170" y="24" width="40" height="35" fill="#94a3b8" fill-opacity=".17" stroke="#94a3b8"/><text x="190" y="46" font-size="13" text-anchor="middle" fill="currentColor">0</text><text x="230" y="16" font-size="10" text-anchor="middle" fill="currentColor">2</text><rect x="210" y="24" width="40" height="35" fill="#94a3b8" fill-opacity=".17" stroke="#94a3b8"/><text x="230" y="46" font-size="13" text-anchor="middle" fill="currentColor">0</text><text x="270" y="16" font-size="10" text-anchor="middle" fill="currentColor">1</text><rect x="250" y="24" width="40" height="35" fill="#94a3b8" fill-opacity=".17" stroke="#94a3b8"/><text x="270" y="46" font-size="13" text-anchor="middle" fill="currentColor">0</text><text x="310" y="16" font-size="10" text-anchor="middle" fill="currentColor">0</text><rect x="290" y="24" width="40" height="35" fill="#94a3b8" fill-opacity=".17" stroke="#94a3b8"/><text x="310" y="46" font-size="13" text-anchor="middle" fill="currentColor">0</text><path d="M50 65 V72 H170 V65" stroke="#16a34a" fill="none"/><text x="110" y="86" font-size="11" text-anchor="middle" fill="currentColor">Mode = 101 (5)</text><text x="170" y="104" font-size="10" text-anchor="middle" fill="currentColor">Shift right by 4 after masking.</text></svg></div>
 
-**Why mask the new value too:** `& mask` after shifting stops a too-large `val` from spilling into neighbouring fields. Writing 9 into a 3-bit field without it would corrupt bit 7.
+#### 2. Validate the field value
 
-**Real registers: read-modify-write.** On a peripheral register:
+If the caller provides a value, reject values larger than the field can represent when truncation would be incorrect. A mask silently discards excess bits.
 
-```c
-uint32_t v = PERIPH->CR;          /* read once */
-v &= ~PSC_Msk;
-v |= (psc << PSC_Pos) & PSC_Msk;
-PERIPH->CR = v;                   /* write once */
-```
+#### 3. Linux driver helpers
 
-Reading into a local and writing once avoids two separate bus writes that would put a half-updated value into the hardware in between.
+Linux provides FIELD_GET and FIELD_PREP for suitably defined contiguous masks, and GENMASK for constructing a range. Register writes still need the appropriate MMIO API and hardware semantics.
 
-**Traps**
-
-- `width == 32`: `1u << 32` is undefined; use `GENMASK`-style macros.
-- Do not use C bit-fields (`struct { unsigned psc:3; }`) for hardware registers: the bit order, padding and access width are implementation-defined, and the compiler may use byte accesses on a register that only accepts 32-bit accesses.
-
-**Linux:** `FIELD_GET(MASK, reg)` and `FIELD_PREP(MASK, val)` from `<linux/bitfield.h>`, with `GENMASK(h, l)` for the mask. CMSIS headers give `_Pos` and `_Msk` macros for each field.
+**Interview takeaway:** Extract with mask then shift; insert with clear then OR. Do not alter reserved bits or blindly use RMW on special registers.
 
 ### How do you check if two integers have opposite signs? {E}
 **Short answer:** `(a ^ b) < 0`. XOR of two numbers has its sign bit set only when the two sign bits differ, so the result is negative exactly when the signs are opposite.
