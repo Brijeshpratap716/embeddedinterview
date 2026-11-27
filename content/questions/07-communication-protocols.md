@@ -634,24 +634,28 @@ Bus-off recovery follows the controller, protocol and application policy. Automa
 **Interview takeaway:** CAN combines error detection, retransmission and error confinement. A valid CAN ACK is not an application-level acknowledgment.
 
 ### What is the difference between CAN and CAN FD? {M}
-**Short answer:** CAN FD (Flexible Data-rate) keeps classic CAN's arbitration (at the nominal bit rate, so priorities and robustness stay the same) but allows up to **64 data bytes** per frame instead of 8, switches to a **faster bit rate for the data phase** (commonly 2–5 Mbps, versus ≤ 1 Mbps for arbitration), uses stronger CRCs (17 or 21 bits plus a stuff-bit counter), and drops remote frames.
+CAN FD (Flexible Data-rate) extends Classical CAN by supporting longer payloads and optionally switching to a faster bit rate during part of a frame.
 
-| | Classic CAN | CAN FD | CAN XL |
-|---|---|---|---|
-| Max payload | 8 bytes | 64 bytes | 2048 bytes |
-| Data-phase bit rate | ≤ 1 Mbps | typically 2–5 Mbps (up to 8) | up to ~20 Mbps |
-| CRC | 15-bit | 17-bit (≤ 16 bytes) / 21-bit | 13-bit header CRC + 32-bit frame CRC |
-| DLC | 0–8 | 0–8, 12, 16, 20, 24, 32, 48, 64 | 1–2048 |
-| Remote frames | yes | no | no |
+| Feature | Classical CAN | CAN FD |
+|---|---|---|
+| Maximum payload | 8 bytes | 64 bytes |
+| Bit rate | One nominal rate | Nominal arbitration rate; optional faster data rate |
+| CRC | Classical frame CRC | Updated CRC/error-detection scheme |
+| DLC | Direct lengths through 8 | Encoded lengths above 8 |
 
-**New control bits:** **FDF** (marks an FD frame), **BRS** (bit-rate switch on/off), **ESI** (error state indicator of the transmitter).
+#### 1. Example
 
-**Practical points**
+A 32-byte sensor message requires at least four Classical CAN frames if every frame carries eight data bytes. CAN FD can carry the 32 bytes in one frame, subject to its DLC encoding and application protocol.
 
-- A classic CAN controller that sees an FD frame flags errors, so mixed networks need FD-tolerant controllers or gateways ("partial networking" transceivers can ignore FD traffic).
-- Data-phase timing is more demanding: transceiver delay compensation (TDC) and accurate sample points are needed at higher rates.
-- Linux SocketCAN supports FD (`struct canfd_frame`, `ip link set can0 type can bitrate 500000 dbitrate 2000000 fd on`).
-- Larger payloads mean fewer frames for the same data: essential for security (room for MACs, AUTOSAR SecOC) and for flashing ECUs faster.
+#### 2. Bit-rate switching
+
+Arbitration remains at the nominal bit rate so participating controllers can resolve priority. If BRS is enabled, the appropriate data-phase fields use the configured data bit rate before the frame returns to nominal timing.
+
+#### 3. Compatibility
+
+Classical-only CAN nodes generally cannot participate transparently in a bus carrying FD frames unless the network provides suitable compatibility mechanisms. Controller, transceiver, wiring and timing must support the chosen FD configuration.
+
+**Interview takeaway:** CAN FD improves payload efficiency and potential throughput. It is not simply Classical CAN with a larger buffer; frame format, CRC and timing differ.
 
 ### Why does a CAN bus need 120 Ω termination? {E}
 **Short answer:** A CAN bus is a differential transmission line (twisted pair) with a characteristic impedance of about 120 Ω. A 120 Ω resistor at **each end** matches that impedance so signals are absorbed instead of reflecting back and corrupting bits. The two resistors in parallel (60 Ω) also provide the load that pulls the bus back to the recessive state quickly when no node drives it dominant.
