@@ -1170,26 +1170,24 @@ W0 names the low 32 bits of X0. Writing W0 clears the upper 32 bits of X0. LDR W
 **Interview takeaway:** Registers can hold integers, addresses, masks or other bit patterns. The instruction and software convention determine interpretation.
 
 ### What is cache coherency in a multicore ARM system? {M}
-**Short answer:** Cache coherency ensures that cores accessing the same coherent memory location do not continue using stale cached copies after a write becomes visible.
+Cache coherency ensures that participating CPU cores observe consistent values for a shared memory location according to the hardware coherency protocol.
 
-Suppose Core 0 and Core 1 both cache a shared variable a = 10. Core 0 writes a = 20. Without coherency, Core 1 might still read 10.
+#### 1. Example
 
-In a typical write-invalidate protocol:
+Two cores initially cache the same line containing x = 10. Core 0 obtains permission to write and changes x to 20. The protocol may invalidate Core 1's stale copy. After the required software synchronization, Core 1's next read obtains the updated value from the appropriate cache or memory.
 
-1. Core 0 requests exclusive ownership of the cache line.
-2. The coherent interconnect invalidates other cached copies.
-3. Core 0 modifies the line.
-4. A subsequent coherent read by Core 1 obtains the latest value, potentially from another cache rather than DRAM.
+<div style="max-width:650px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 171" width="100%" role="img" aria-label="Core zero writes a coherent cache line, coherence fabric invalidates the stale copy at core one">
+<rect x="8" y="8" width="140" height="55" rx="5" fill="#16a34a" fill-opacity=".12" stroke="#16a34a"/><text x="78" y="27" font-size="12" font-weight="600" text-anchor="middle" fill="currentColor">Core 0</text><text x="78" y="45" font-size="10" text-anchor="middle" fill="currentColor">Cache line: x = 20</text><rect x="192" y="8" width="140" height="55" rx="5" fill="#dc2626" fill-opacity=".12" stroke="#dc2626"/><text x="262" y="27" font-size="12" font-weight="600" text-anchor="middle" fill="currentColor">Core 1</text><text x="262" y="45" font-size="10" text-anchor="middle" fill="currentColor">Old x = 10 invalidated</text><path d="M78 63 V85 M262 63 V85" stroke="currentColor" fill="none"/><rect x="8" y="85" width="324" height="35" rx="5" fill="#3b82f6" fill-opacity=".12" stroke="#3b82f6"/><text x="170" y="107" font-size="12" text-anchor="middle" fill="currentColor">Coherent interconnect / cache hierarchy</text><path d="M170 120 V133" stroke="currentColor"/><rect x="105" y="133" width="130" height="30" rx="4" fill="#94a3b8" fill-opacity=".12" stroke="#94a3b8"/><text x="170" y="152" font-size="11" text-anchor="middle" fill="currentColor">DRAM / memory</text></svg></div>
 
-| MESI state | Meaning |
-|---|---|
-| Modified | Dirty line held exclusively; backing memory may be stale. |
-| Exclusive | Clean line held exclusively. |
-| Shared | Clean line may be held in multiple caches. |
-| Invalid | Line cannot be used. |
+A modified cache line need not have reached DRAM for another coherent core to obtain its current value.
 
-MESI is an illustrative protocol; implementations may use other state machines. Arm coherent systems may use CCI or CMN interconnects and ACE or CHI protocols.
+#### 2. Coherency vs consistency
 
-**CPU and DMA:** On a non-coherent DMA system, CPU-written dirty data may need cleaning before the device reads it, and stale CPU cache lines may need invalidating before the CPU reads device-written data. Linux drivers should use the DMA API (dma_map_single, dma_sync_single_for_cpu, dma_sync_single_for_device, dma_unmap_single, or dma_alloc_coherent as appropriate) rather than assuming direct physical addresses or manually managing caches.
+Coherency concerns the ordering and visibility of accesses to the same memory location. The memory consistency model governs allowed ordering relationships across locations. A flag/data publication pattern still requires appropriate acquire/release or other synchronization.
 
-**Interview trap:** Coherency operates on cache lines and does not guarantee ordering between different locations or make a++ atomic. Use proper synchronization and memory barriers.
+#### 3. False sharing
+
+Different variables in the same cache line can cause unnecessary invalidations when different cores modify them. Data layout and per-core storage can reduce this contention.
+
+**Interview takeaway:** Cache coherency does not make count++ atomic, replace memory barriers, or guarantee that every DMA device participates in the same coherence domain.
+
