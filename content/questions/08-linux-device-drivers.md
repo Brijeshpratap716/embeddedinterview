@@ -905,59 +905,40 @@ On PREEMPT_RT, spinlock_t and its IRQ variants have changed semantics. A true ha
 **Interview takeaway:** Local IRQ masking prevents same-core interrupt reentry; the spinlock handles cooperating CPUs. Restoring flags is safer than blindly enabling interrupts.
 
 ### What are atomic_t, RCU and seqlocks? {H}
-**Short answer:** **`atomic_t`/`atomic64_t`** provide lock-free integer operations (`atomic_inc`, `atomic_dec_and_test`, `atomic_cmpxchg`), and **`refcount_t`** is the safe type for reference counts (it saturates and warns instead of wrapping). **RCU (read-copy-update)** lets readers access shared data with almost no overhead and no locks: writers publish a new version with `rcu_assign_pointer` and free the old version only after a **grace period**, when all pre-existing readers have finished. **Seqlocks** let readers proceed without locks and retry if a writer changed the data during the read; they suit small, frequently read, rarely written data like timekeeping.
+Linux provides different synchronization mechanisms for different access patterns: atomic_t for individual atomic operations, RCU for read-mostly shared objects, and sequence counters/seqlocks for retryable consistent snapshots.
 
-**RCU example: read-mostly configuration**
+#### 1. Atomic counter
 
 ```c
-struct cfg { int rate; int gain; struct rcu_head rcu; };
-static struct cfg __rcu *cur_cfg;
-static DEFINE_MUTEX(cfg_lock);
-
-int read_rate(void)                               /* readers: fast, never block */
-{
-    int r;
-    rcu_read_lock();
-    r = rcu_dereference(cur_cfg)->rate;
-    rcu_read_unlock();
-    return r;
-}
-
-int update_cfg(int rate, int gain)                /* writers: copy, publish, free later */
-{
-    struct cfg *new = kmalloc(sizeof(*new), GFP_KERNEL), *old;
-    if (!new) return -ENOMEM;
-    new->rate = rate; new->gain = gain;
-    mutex_lock(&cfg_lock);
-    old = rcu_dereference_protected(cur_cfg, lockdep_is_held(&cfg_lock));
-    rcu_assign_pointer(cur_cfg, new);
-    mutex_unlock(&cfg_lock);
-    if (old) kfree_rcu(old, rcu);                 /* freed after all current readers finish */
-    return 0;
-}
+atomic_t count = ATOMIC_INIT(0);
+atomic_inc(&count);
 ```
 
-**Seqlock pattern**
+An atomic increment prevents lost updates to that object. Ordering varies by API; atomic_t does not automatically protect a group of variables.
+
+#### 2. RCU
+
+Readers access a published object inside the appropriate RCU read-side critical section using rcu_dereference. Writers publish a replacement with rcu_assign_pointer and defer reclamation until a grace period, for example using synchronize_rcu or call_rcu. Writers still need serialization when required.
+
+```text
+Publish new object --> old readers finish --> free old object
+```
+
+#### 3. Seqlock
+
+A writer updates a sequence counter around a protected update. A reader captures the sequence, copies data and retries if a writer intervened.
 
 ```c
-unsigned int seq;
 do {
-    seq = read_seqbegin(&tk_lock);
-    t = timekeeper_time;                          /* copy the data */
-} while (read_seqretry(&tk_lock, seq));           /* writer was active: retry */
+    seq = read_seqbegin(&d->seqlock);
+    a = d->a;
+    b = d->b;
+} while (read_seqretry(&d->seqlock, seq));
 ```
 
-**Comparison**
+Readers must tolerate retries. Plain sequence counters alone do not protect pointer lifetime, and writer preemption/context constraints matter.
 
-| | Readers | Writers | Good for |
-|---|---|---|---|
-| spinlock / mutex | take the lock | take the lock | general use |
-| rwlock | shared lock (still cache-line bouncing) | exclusive | rarely the best choice today |
-| RCU | nearly free, never block | copy + publish + deferred free | read-mostly lists, tables, configs (routing, module lists) |
-| seqlock | lock-free, may retry | exclusive, never wait for readers | small data, frequent reads, readers can retry (no pointers to chase) |
-| atomics | – | – | counters, flags, refcounts |
-
-**Memory ordering:** `atomic_inc` alone has no ordering guarantees; use `smp_mb__after_atomic()` or ordered variants (`atomic_inc_return`, `_acquire`/`_release`) when ordering matters.
+**Interview takeaway:** Choose by access pattern and lifetime needs. Atomics are not multi-object locks; RCU protects publication/lifetime, and seqlocks provide retryable snapshots.
 
 ### What are wait queues and completions? {M}
 **Short answer:** A **wait queue** lets a task sleep until a condition becomes true: the sleeper calls `wait_event_interruptible(wq, condition)`, and the code that changes the condition (often an interrupt handler) calls `wake_up_interruptible(&wq)`; the condition is re-checked after every wake-up, so spurious wake-ups are harmless. A **completion** is a simpler wrapper for the common case "wait until this one thing has finished" (`wait_for_completion_timeout()` and `complete()`), e.g. waiting for a DMA transfer or a firmware response.
