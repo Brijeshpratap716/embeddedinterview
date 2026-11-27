@@ -368,32 +368,63 @@ Use a linker map file to locate individual symbols. On Linux, /proc/PID/maps sho
 **Interview takeaway:** Static storage duration is a language property; stack, heap and section placement are implementation details. Do not assume every local variable occupies a stack slot or every constant lives in flash.
 
 ### What is the difference between stack and heap? {E}
-**Short answer:** The **stack** holds function-local data automatically: space is reserved on function entry by moving the stack pointer and released on return, so it is fast and deterministic but small and limited to the function's lifetime. The **heap** holds memory you request explicitly with `malloc` and release with `free`; it lives until freed and can be large, but allocation is slower, can fail, and can fragment.
+The stack typically stores function-call state and automatic local variables. The heap provides dynamically allocated storage whose lifetime is controlled by the program.
 
-| | Stack | Heap |
+#### 1. Stack example
+
+```c
+void fun(void)
+{
+    int a = 10;
+    int buffer[16];
+}
+```
+
+These automatic objects normally cease to exist when the function returns. The compiler may keep some values in registers instead of reserving stack space.
+
+#### 2. Heap example
+
+```c
+int *create(void)
+{
+    int *p = malloc(sizeof *p);
+    if (p)
+        *p = 100;
+    return p;
+}
+
+// Caller:
+int *p = create();
+if (p) {
+    printf("%d", *p);
+    free(p);
+}
+```
+
+The allocation survives the return from create. The caller must release it when finished.
+
+#### 3. Memory representation
+
+<div style="max-width:680px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 165" width="100%" role="img" aria-label="Automatic pointer in a stack frame refers to dynamically allocated object on heap">
+<text x="76" y="15" font-size="12" font-weight="600" text-anchor="middle" fill="currentColor">Stack</text><text x="264" y="15" font-size="12" font-weight="600" text-anchor="middle" fill="currentColor">Heap</text>
+<rect x="8" y="25" width="136" height="115" rx="5" fill="#3b82f6" fill-opacity=".08" stroke="#3b82f6"/><rect x="196" y="25" width="136" height="115" rx="5" fill="#16a34a" fill-opacity=".08" stroke="#16a34a"/>
+<rect x="18" y="38" width="116" height="34" rx="3" fill="#3b82f6" fill-opacity=".18" stroke="#3b82f6"/><text x="76" y="59" font-size="12" text-anchor="middle" fill="currentColor">local pointer p</text>
+<rect x="206" y="38" width="116" height="34" rx="3" fill="#16a34a" fill-opacity=".18" stroke="#16a34a"/><text x="264" y="59" font-size="12" text-anchor="middle" fill="currentColor">allocated int: 100</text>
+<path d="M134 55 H206 m-5-4 5 4-5 4" fill="none" stroke="currentColor"/><text x="76" y="96" font-size="11" text-anchor="middle" fill="currentColor">Function frame</text><text x="76" y="111" font-size="10" text-anchor="middle" fill="currentColor">Ends on return</text><text x="264" y="96" font-size="11" text-anchor="middle" fill="currentColor">Allocation</text><text x="264" y="111" font-size="10" text-anchor="middle" fill="currentColor">Ends on free</text>
+<text x="170" y="155" font-size="10" text-anchor="middle" fill="currentColor">Typical placement, not guaranteed by C.</text></svg></div>
+
+| Feature | Stack | Heap |
 |---|---|---|
-| Allocation | automatic (function entry) | explicit (`malloc`/`free`, `new`/`delete`) |
-| Speed | one instruction (adjust SP) | allocator search; varies |
-| Lifetime | until the function returns | until `free` |
-| Size | small, fixed per thread/task (KB on MCUs, 8 MB default on Linux) | as much RAM as is available |
-| Fragmentation | none | yes, over time |
-| Failure mode | overflow: silent corruption or a fault | `malloc` returns NULL |
-| Thread safety | each thread has its own | shared; allocator needs locking |
-| Determinism | yes | generally no |
+| Lifetime | Normally automatic | Until released |
+| Allocation | Usually frame adjustment | Allocator-managed |
+| Failure risk | Stack overflow | Allocation failure, fragmentation |
+| Timing | Usually predictable | Depends on allocator |
 
-**What is on the stack:** local variables, function arguments that do not fit in registers, return addresses (LR saved by the callee), saved registers, and on Cortex-M the exception frame pushed automatically on interrupt entry (8 words, more with the FPU).
+#### 4. Embedded considerations
 
-**Common bugs**
+RTOS tasks commonly have separate bounded stacks. Large local buffers or deep call chains may overflow them. Heap allocation can introduce variable timing and fragmentation; static allocation or fixed-size pools are often preferred in hard real-time paths.
 
-- **Returning a pointer to a local** (the stack frame is gone after return).
-- **Large local arrays** (`char buf[4096];` in a task with a 2 KB stack).
-- **Heap:** leaks, double free, use after free, writing past the allocated size (corrupts the allocator's metadata, crashing much later in an unrelated `malloc`).
-
-**Embedded guidance**
-
-- Prefer static allocation and stack allocation with known bounds; measure the worst-case stack per task (high-water marks, static analysis).
-- If you need dynamic memory, allocate at start-up only, or use fixed-size **memory pools**.
-- With FreeRTOS, choose the heap scheme deliberately: `heap_1` (no free), `heap_4` (coalescing first-fit), `heap_5` (multiple regions), or fully static allocation (`configSUPPORT_STATIC_ALLOCATION`).
+**Interview takeaway:** Never return the address of an automatic local variable. Heap objects may outlive a function, but ownership and cleanup must be explicit.
 
 ### What is a memory leak? {E}
 **Short answer:** A memory leak is memory that has been allocated but can no longer be freed because the program has lost every pointer to it (or never frees memory it no longer needs). Each leak permanently reduces available memory; in a device that runs for months, even a few bytes per event eventually exhausts the heap and causes allocation failures or a crash.
