@@ -258,6 +258,21 @@ pid_t pid = getpid();
 
 **Interview takeaway:** A syscall is a controlled privilege transition, not an ordinary function call into kernel memory.
 
+#### Complete example: write(fd, buf, len)
+
+For a raw AArch64 Linux write syscall (number 64 in the standard arm64 ABI):
+
+```asm
+// X0 = fd, X1 = user buffer address, X2 = byte count
+MOV X8, #64
+SVC #0
+// X0 = bytes written or raw negative errno
+```
+
+At a typical EL0-to-EL1 entry, the CPU selects the lower-EL AArch64 synchronous exception vector. Linux entry code saves the userspace register state, checks the syscall number and invokes the relevant implementation. For write, the VFS resolves the file descriptor to a file and dispatches through the appropriate file operations. The kernel validates user-provided ranges and uses appropriate user-access helpers when copying data. A syscall can block and the scheduler may run another task before it returns. It can return fewer bytes than requested, so userspace handles partial writes.
+
+A raw negative errno is not the same as the libc return convention. The C library generally returns -1 and sets thread-local errno for this interface. Exact Linux function names and entry paths vary by kernel release.
+
 ### What happens when an ARM64 exception occurs? {M}
 **Short answer:** Hardware saves the return address and prior PSTATE in ELR_ELx and SPSR_ELx, selects a vector using VBAR_ELx, and transfers control. Software saves needed general registers; ERET restores the saved execution state.
 
