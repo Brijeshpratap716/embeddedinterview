@@ -330,6 +330,59 @@ def section_body(body):
     return secs
 
 
+def cpp_compatible(code, slug):
+    """Keep embedded C function signatures, adapting language differences."""
+    replacements = {
+        "implement-memmove": [("unsigned char *d = dst;", "auto *d = static_cast<unsigned char *>(dst);"),
+                             ("const unsigned char *s = src;", "auto *s = static_cast<const unsigned char *>(src);")],
+        "implement-memcpy": [("unsigned char *d = dst;", "auto *d = static_cast<unsigned char *>(dst);"),
+                            ("const unsigned char *s = src;", "auto *s = static_cast<const unsigned char *>(src);"),
+                            ("/* void * converts implicitly in C */", "/* explicit conversion in C++ */")],
+        "implement-memset": [("unsigned char *b=p;", "auto *b=static_cast<unsigned char *>(p);")],
+        "memory-pool": [("block_t *b = p;", "auto *b = static_cast<block_t *>(p);")],
+        "aligned-malloc": [("uint8_t *p = aligned_alloc_x(aligns[i], 100);",
+                            "auto *p = static_cast<uint8_t *>(aligned_alloc_x(aligns[i], 100));")],
+        "remove-duplicates-hash": [("slot_t *tab = calloc(cap, sizeof *tab);",
+                                    "auto *tab = static_cast<slot_t *>(calloc(cap, sizeof(slot_t)));")],
+        "sorted-array-frequencies": [("(struct frequency){a[i],j-i}", "frequency{a[i],j-i}")],
+    }
+    for old, new in replacements.get(slug, []):
+        code = code.replace(old, new)
+    if slug == "ring-buffer":
+        code = code.replace("#include <stdbool.h>", "#include <atomic>")
+        code = code.replace("volatile uint32_t head;", "std::atomic<uint32_t> head;")
+        code = code.replace("volatile uint32_t tail;", "std::atomic<uint32_t> tail;")
+        code = code.replace('#define COMPILER_BARRIER() __asm__ volatile("" ::: "memory")\n\n', "")
+        code = code.replace("r->head = r->tail = 0;", "r->head.store(0); r->tail.store(0);")
+        code = code.replace("return r->head - r->tail;", "return r->head.load() - r->tail.load();")
+        code = code.replace("uint32_t h = r->head;", "uint32_t h = r->head.load(std::memory_order_relaxed);")
+        code = code.replace("h - r->tail == RB_SIZE", "h - r->tail.load(std::memory_order_acquire) == RB_SIZE")
+        code = code.replace("uint32_t t = r->tail;", "uint32_t t = r->tail.load(std::memory_order_relaxed);")
+        code = code.replace("r->head == t", "r->head.load(std::memory_order_acquire) == t")
+        code = re.sub(r"^ *COMPILER_BARRIER\(\);[^\n]*\n", "", code, flags=re.M)
+        code = code.replace("r->head = h + 1u;", "r->head.store(h + 1u, std::memory_order_release);")
+        code = code.replace("r->tail = t + 1u;", "r->tail.store(t + 1u, std::memory_order_release);")
+        code = code.replace("r.head = r.tail = 0xFFFFFFFEu;", "r.head.store(0xFFFFFFFEu); r.tail.store(0xFFFFFFFEu);")
+    return code
+
+
+def problem_sources(p):
+    """Return editable starter, test harness and reference solution for each language."""
+    s = section_body(p["body"])
+    def fenced(section, lang):
+        fence = chr(96) * 3
+        m = re.search(r"^" + re.escape(fence + lang) + r"\n(.*?)" + fence, s.get(section, ""), re.S | re.M)
+        return m.group(1) if m else ""
+    def split(starter, sol):
+        ti = starter.find(TEST_MARK)
+        return ((starter[:ti] if ti >= 0 else starter).rstrip() + "\n",
+                starter[ti:] if ti >= 0 else "", sol.rstrip() + "\n")
+    starter, sol = fenced("starter code", "c"), fenced("solution", "c")
+    cpp_starter = fenced("starter code c++", "cpp") or cpp_compatible(starter, p["slug"])
+    cpp_sol = fenced("solution c++", "cpp") or cpp_compatible(sol, p["slug"])
+    return {"c": split(starter, sol), "cpp": split(cpp_starter, cpp_sol)}
+
+
 def build_problems(problems):
     rows = []
     cats = sorted({p["category"] for p in problems})
@@ -338,29 +391,26 @@ def build_problems(problems):
                     f'<td><a href="{url(p["slug"] + "/")}">{html.escape(p["title"])}</a></td><td class="tt">{html.escape(p["category"])}</td><td>{badge(p["difficulty"])}</td></tr>')
     opts = "".join(f'<option value="{slugify(c)}">{html.escape(c)}</option>' for c in cats)
     body = f"""
-<section class="wrap pagehead"><h1>Coding Practice</h1><p class="lead">{len(problems)} hands-on embedded C problems: bit manipulation, registers, drivers, buffers, RTOS patterns and parsers. Write your code in the browser, press Run, and hidden tests tell you instantly whether it works. Each problem has a hint, a reference solution and an explanation.</p>
+<section class="wrap pagehead"><h1>Coding Practice</h1><p class="lead">{len(problems)} hands-on embedded C and C++ problems: bit manipulation, registers, drivers, buffers, RTOS patterns and parsers. Choose C or C++, write your code in the browser, press Run, and the test harness checks your solution. Each problem has a hint, a reference solution and an explanation.</p>
 <div class="filters bank"><input id="bankQ" type="search" placeholder="Filter problems…"><select id="bankT"><option value="">All categories</option>{opts}</select>
 <select id="bankD"><option value="">All levels</option><option value="E">Easy</option><option value="M">Medium</option><option value="H">Hard</option></select>
 <label class="chk"><input type="checkbox" id="bankTodo"> Hide solved</label><span class="count" id="bankCount"></span></div></section>
 <section class="wrap"><table class="tbl" id="bank"><thead><tr><th></th><th>#</th><th>Problem</th><th>Category</th><th>Level</th></tr></thead><tbody>{''.join(rows)}</tbody></table></section>"""
-    write("problems/index.html", page("problems/index.html", "Embedded C Coding Problems", body,
-          "Embedded C coding practice problems with hints and solutions: bit manipulation, ring buffers, drivers, RTOS.", "problems/"))
+    write("problems/index.html", page("problems/index.html", "Embedded C and C++ Coding Problems", body,
+          "Embedded C and C++ coding practice problems with hints and solutions: bit manipulation, ring buffers, drivers, RTOS.", "problems/"))
 
     for i, p in enumerate(problems):
         s = section_body(p["body"])
-        starter = re.search(r"```c\n(.*?)```", s.get("starter code", ""), re.S)
-        sol = re.search(r"```c\n(.*?)```", s.get("solution", ""), re.S)
-        starter_code = starter.group(1) if starter else ""
-        sol_code = sol.group(1) if sol else ""
+        sources = problem_sources(p)
+        user_code, tests, sol_user = sources["c"]
+        cpp_user, cpp_tests, cpp_sol = sources["cpp"]
+        cpp_solution_html = md(chr(96)*3 + "cpp\n" + cpp_sol + chr(96)*3)
+        cpp_note = ("<p>In C++, atomic indices use acquire/release ordering to publish data safely between producer and consumer.</p>"
+                    if p["slug"] == "ring-buffer" else "")
         nxt = problems[i + 1] if i + 1 < len(problems) else None
         prv = problems[i - 1] if i > 0 else None
         pn = '<div class="pn">' + (f'<a href="../{url(prv["slug"] + "/")}">← {html.escape(prv["title"])}</a>' if prv else "<span></span>") + \
              (f'<a class="r" href="../{url(nxt["slug"] + "/")}">{html.escape(nxt["title"])} →</a>' if nxt else "<span></span>") + "</div>"
-        # split starter into the part the user edits and the hidden test harness
-        ti = starter_code.find(TEST_MARK)
-        user_code = (starter_code[:ti] if ti >= 0 else starter_code).rstrip() + "\n"
-        tests = starter_code[ti:] if ti >= 0 else ""
-        sol_user = sol_code.rstrip() + "\n"
         body = f"""
 <div class="ide">
 <section class="ide-left">
@@ -371,19 +421,20 @@ def build_problems(problems):
 <button class="tab on" data-tab="t-problem">Problem</button><button class="tab" data-tab="t-hint">Hint</button><button class="tab" data-tab="t-sol">Solution</button><button class="tab" data-tab="t-exp">Explanation</button>
 </div>
 <div class="tabpane prose on" id="t-problem">{md(s.get('problem',''))}
-<p class="howto">Write your code on the right and press <b>Run</b> (or Ctrl + Enter). Hidden tests check your functions and print the result below the editor.</p></div>
+<p class="howto">Choose C or C++ and write your code on the right and press <b>Run</b> (or Ctrl + Enter). Hidden tests check your functions and print the result below the editor.</p></div>
 <div class="tabpane prose" id="t-hint">{md(s.get('hint','Think about the constraints first.'))}</div>
-<div class="tabpane prose" id="t-sol">{md(s.get('solution',''))}<p><button class="btn" id="loadSol">Load solution into editor</button></p></div>
+<div class="tabpane prose" id="t-sol"><div id="solution-c">{md(s.get('solution',''))}</div><div id="solution-cpp" hidden>{cpp_note}{cpp_solution_html}</div><p><button class="btn" id="loadSol">Load solution into editor</button></p></div>
 <div class="tabpane prose" id="t-exp">{md(s.get('explanation',''))}</div>
 {pn}
 </section>
 <section class="ide-right">
-<div class="edtop"><span class="file">solution.c</span>
+<div class="edtop"><select id="codeLang" aria-label="Programming language" title="Select programming language"><option value="c">C (GCC)</option><option value="cpp">C++ (G++)</option></select><span class="file" id="codeFile">solution.c</span>
 <span class="sp"></span><button class="ghost sm" id="resetCode" title="Restore the starter code">Reset</button><button class="ghost sm" id="copyCode">Copy</button><button class="btn run" id="runCode">▶ Run</button></div>
 <div class="edwrap"><pre class="gutter" id="gutter" aria-hidden="true">1</pre><textarea id="code" spellcheck="false" autocapitalize="off" autocomplete="off">{html.escape(user_code)}</textarea></div>
 <div class="out" id="out"><div class="outhead"><span>Output</span><span class="muted" id="outStatus">Press Run to compile and test your code.</span></div><pre id="outText"></pre></div>
-<details class="tests"><summary>Show the hidden tests</summary><pre>{html.escape(tests)}</pre></details>
+<details class="tests"><summary>Show the hidden tests</summary><pre id="testPreview">{html.escape(tests)}</pre></details>
 <textarea id="starter" hidden>{html.escape(user_code)}</textarea><textarea id="tests" hidden>{html.escape(tests)}</textarea><textarea id="solsrc" hidden>{html.escape(sol_user)}</textarea>
+<textarea id="starter-cpp" hidden>{html.escape(cpp_user)}</textarea><textarea id="tests-cpp" hidden>{html.escape(cpp_tests)}</textarea><textarea id="solsrc-cpp" hidden>{html.escape(cpp_sol)}</textarea>
 </section>
 </div>"""
         write(f"problems/{p['slug']}/index.html", page(f"problems/{p['slug']}/index.html", p["title"], body,

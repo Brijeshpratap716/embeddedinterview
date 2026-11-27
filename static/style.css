@@ -331,3 +331,9 @@ html.dark .qa summary:hover .qt{color:var(--accent)}
 .fdone{text-align:center;padding:20px 0}
 .reply-form{padding:18px 20px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);margin:20px 0}
 .reply-form h3{margin:0}
+
+/* Language selection in the coding editor */
+.edtop{flex-wrap:wrap}
+.edtop #codeLang{background:#202b39;color:#e6edf3;border:1px solid #425166;border-radius:6px;padding:5px 7px;font:12px var(--mono);max-width:100%}
+.edtop #codeLang:focus-visible{outline:2px solid #73b7ff;outline-offset:2px}
+#solution-c[hidden],#solution-cpp[hidden]{display:none}

@@ -134,18 +134,40 @@
   /* ---------- problem editor ---------- */
   var code = $("#code");
   if (code) {
-    var key = "ei-code2:" + location.pathname;
+    var baseKey = "ei-code2:" + location.pathname;
     var gutter = $("#gutter"), outText = $("#outText"), outStatus = $("#outStatus"), out = $("#out");
-    var saved = store.get(key, null);
-    if (saved) code.value = saved;
+    var langSelect = $("#codeLang"), language = "c";
+    var configs = {
+      c: { compiler: "cg132", lang: "c", standard: "gnu11", file: "solution.c", command: "gcc", suffix: "" },
+      cpp: { compiler: "g132", lang: "c++", standard: "gnu++17", file: "solution.cpp", command: "g++", suffix: "-cpp" }
+    };
+    function key() { return baseKey + (language === "cpp" ? ":cpp" : ""); }
+    function source(id) { return $("#" + id + configs[language].suffix).value; }
+    function restoreLanguage(next) {
+      language = next === "cpp" && $("#starter-cpp") ? "cpp" : "c";
+      if (langSelect) langSelect.value = language;
+      var saved = store.get(key(), null);
+      code.value = saved !== null ? saved : source("starter");
+      if ($("#codeFile")) $("#codeFile").textContent = configs[language].file;
+      if ($("#solution-c")) $("#solution-c").hidden = language !== "c";
+      if ($("#solution-cpp")) $("#solution-cpp").hidden = language !== "cpp";
+      if ($("#testPreview")) $("#testPreview").textContent = source("tests");
+      lines();
+      show("", "Press Run to compile and test your code.", "");
+    }
 
     function lines() {
       var n = code.value.split("\n").length, s = "";
       for (var i = 1; i <= n; i++) s += i + "\n";
       gutter.textContent = s;
     }
-    function save() { store.set(key, code.value); lines(); }
-    lines();
+    function save() { store.set(key(), code.value); lines(); }
+    restoreLanguage(store.get("ei-code-language", "c"));
+    if (langSelect) langSelect.addEventListener("change", function () {
+      if (running) { langSelect.value = language; return; }
+      restoreLanguage(langSelect.value);
+      store.set("ei-code-language", language);
+    });
     code.addEventListener("input", save);
     code.addEventListener("scroll", function () { gutter.scrollTop = code.scrollTop; });
     code.addEventListener("keydown", function (e) {
@@ -167,7 +189,7 @@
 
     $("#resetCode").addEventListener("click", function () {
       if (!confirm("Replace your code with the starter code?")) return;
-      code.value = $("#starter").value; store.set(key, null); lines();
+      code.value = source("starter"); store.set(key(), null); lines();
     });
     $("#copyCode").addEventListener("click", function () {
       var b = this; (navigator.clipboard ? navigator.clipboard.writeText(code.value) : Promise.reject()).then(function () { b.textContent = "Copied"; setTimeout(function () { b.textContent = "Copy"; }, 1200); }, function () { code.select(); });
@@ -175,7 +197,7 @@
     var ls = $("#loadSol");
     if (ls) ls.addEventListener("click", function () {
       if (!confirm("Replace your code with the reference solution?")) return;
-      code.value = $("#solsrc").value; save(); run();
+      code.value = source("solsrc"); save(); run();
     });
 
     /* tabs */
@@ -198,16 +220,18 @@
     function run() {
       if (running) return;
       running = true;
-      var src = code.value + "\n" + $("#tests").value;
+      var cfg = configs[language];
+      var src = code.value + "\n" + source("tests");
       show("busy", "Compiling and running…", "");
       $("#runCode").disabled = true;
-      fetch("https://godbolt.org/api/compiler/cg132/compile", {
+      if (langSelect) langSelect.disabled = true;
+      fetch("https://godbolt.org/api/compiler/" + cfg.compiler + "/compile", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Accept": "application/json" },
         body: JSON.stringify({
-          source: src, lang: "c", allowStoreCodeDebug: false,
+          source: src, lang: cfg.lang, allowStoreCodeDebug: false,
           options: {
-            userArguments: "-O1 -std=gnu11 -Wall -fdiagnostics-color=never",
+            userArguments: "-O1 -std=" + cfg.standard + " -Wall -fdiagnostics-color=never",
             executeParameters: { args: [], stdin: "" },
             compilerOptions: { executorRequest: true },
             filters: { execute: true }, tools: [], libraries: []
@@ -219,13 +243,13 @@
       }).then(function (r) {
         var b = r.buildResult || {};
         if (b.code && b.code !== 0) {
-          show("bad", "Compile error", texts(b.stderr).replace(/<source>/g, "solution.c"));
+          show("bad", "Compile error", texts(b.stderr).replace(/<source>/g, cfg.file));
           return;
         }
         var stdout = texts(r.stdout), stderr = texts(r.stderr);
         var txt = stdout + (stderr ? "\n" + stderr : "");
         var warn = texts(b.stderr);
-        if (warn) txt += "\n\nCompiler warnings:\n" + warn.replace(/<source>/g, "solution.c");
+        if (warn) txt += "\n\nCompiler warnings:\n" + warn.replace(/<source>/g, cfg.file);
         if (r.code === 0 && /All tests passed/.test(stdout)) {
           show("good", "✓ All tests passed", txt);
           var id = "p/" + location.pathname.replace(/\/$/, "").split("/").pop();
@@ -236,8 +260,8 @@
           show("bad", "✗ Some tests failed (exit code " + r.code + ")", txt);
         }
       }).catch(function () {
-        show("bad", "Could not reach the online compiler.", "Check your internet connection and try again.\nYou can also copy your code and run it with: gcc -Wall solution.c && ./a.out");
-      }).then(function () { running = false; $("#runCode").disabled = false; });
+        show("bad", "Could not reach the online compiler.", "Check your internet connection and try again.\nYou can also run your code with the test harness locally: " + cfg.command + " -std=" + cfg.standard + " -Wall " + cfg.file + " && ./a.out");
+      }).then(function () { running = false; $("#runCode").disabled = false; if (langSelect) langSelect.disabled = false; });
     }
     $("#runCode").addEventListener("click", run);
   }
