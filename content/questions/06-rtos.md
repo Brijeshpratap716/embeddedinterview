@@ -472,23 +472,36 @@ A notification targets a specific receiving task and is not a general multi-rece
 **Interview takeaway:** Task notifications are efficient for direct task signaling. Use a queue when independent messages and payload ordering must be preserved.
 
 ### Why must you use the FromISR API variants in an interrupt? {M}
-**Short answer:** Normal RTOS API functions may block (wait for space or data), and an ISR must never block because it is not a task and cannot be suspended. The `...FromISR` variants never block, use interrupt-safe critical sections, and instead of switching context immediately, they report through a `pxHigherPriorityTaskWoken` flag that a higher-priority task became ready; the ISR then requests a context switch at its exit with `portYIELD_FROM_ISR()`.
+FreeRTOS provides FromISR API variants because interrupt context cannot block and must use synchronization and scheduling rules appropriate to an ISR.
+
+#### 1. Correct queue signaling
 
 ```c
 void UART_IRQHandler(void)
 {
     BaseType_t woken = pdFALSE;
-    uint8_t b = (uint8_t)UART->DR;
-    xQueueSendFromISR(rx_queue, &b, &woken);   /* never blocks: fails if the queue is full */
-    portYIELD_FROM_ISR(woken);                 /* pend PendSV if a higher-priority task was woken */
+    uint8_t byte = uart_read_byte();
+
+    if (xQueueSendFromISR(rx_queue, &byte, &woken)
+        != pdPASS) {
+        // Record dropped data using ISR-safe logic.
+    }
+
+    portYIELD_FROM_ISR(woken);
 }
 ```
 
-**Why the deferred switch:** the ISR may be nested inside other ISRs, and it may wake several tasks; requesting a switch once at the end (via PendSV, which runs after all ISRs) is safe and efficient. If you forget `portYIELD_FROM_ISR`, the woken task only runs at the next tick or scheduling point, adding up to one tick of latency.
+The handler acknowledges the interrupt as required by the UART. If the queue wakes a higher-priority task, the port-specific yield mechanism can request scheduling at interrupt exit.
 
-**Interrupt priority rule (Cortex-M):** only interrupts with a priority **numerically greater than or equal to** `configMAX_SYSCALL_INTERRUPT_PRIORITY` (i.e. less urgent) may call FreeRTOS APIs. The kernel masks interrupts up to that level in its critical sections; a more urgent ISR could interrupt the kernel mid-update, so it must not call the API. Getting this wrong causes rare, random corruption; enable `configASSERT()`, which checks it in `vPortValidateInterruptPriority()`.
+#### 2. Why ordinary APIs are unsuitable
 
-**Other systems:** Zephyr uses the same functions from ISRs but requires `K_NO_WAIT` timeouts (calls with waiting fail in ISRs); CMSIS-RTOS2 functions check `__get_IPSR()` and behave accordingly; ThreadX allows certain services from ISRs with `TX_NO_WAIT`.
+Task APIs may wait for a resource, manipulate scheduler state using task-context assumptions or acquire locks that are forbidden in interrupt context. FromISR variants are designed not to block.
+
+#### 3. Priority constraints
+
+On Cortex-M FreeRTOS ports, only interrupts within the permitted syscall-priority range may call RTOS APIs. Higher-urgency interrupts must use another handoff mechanism. Configure priority bits and grouping correctly.
+
+**Interview takeaway:** Use only APIs documented as ISR-safe, check failure returns, and request the correct reschedule operation when a higher-priority task is woken.
 
 ### What is the tick and what is a tickless idle mode? {M}
 **Short answer:** The tick is a periodic timer interrupt (commonly SysTick at 1 kHz, i.e. every 1 ms) that the kernel uses to keep time, wake delayed tasks, handle timeouts, and time-slice equal-priority tasks. In **tickless idle** mode, when only the idle task is ready, the kernel stops the periodic tick, programs a timer to wake the CPU at the next scheduled event (or on any interrupt), enters a low-power mode, and corrects its tick count on wake-up. This saves a lot of power in battery devices.
