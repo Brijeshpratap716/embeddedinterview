@@ -392,24 +392,42 @@ Capture the fault registers and stack-frame information into a dedicated diagnos
 **Interview takeaway:** Do not simply clear HardFault and resume. Inspect the architectural fault evidence, the saved context and memory map; available registers differ across Cortex-M profiles.
 
 ### What are SVC and PendSV used for? {H}
-**Short answer:** **SVC** (Supervisor Call) is a synchronous exception triggered by the `SVC #n` instruction; unprivileged code uses it to request privileged services, and RTOSes use it to start the first task. **PendSV** (Pendable Service) is an asynchronous exception triggered by software setting a bit in `SCB->ICSR`; it is given the **lowest** priority, so it runs only after all other interrupts have finished, which makes it the right place for an RTOS to perform context switches.
+SVC (Supervisor Call) and PendSV (Pendable Service Call) are Cortex-M exceptions commonly used by operating systems.
 
-**SVC**
+#### 1. SVC
 
-- Executes immediately (synchronously) at the `SVC` instruction; it cannot be pended.
-- The handler can read the SVC number from the instruction (`((uint8_t *)frame[6])[-2]`) and arguments from the stacked `R0`–`R3`, and return a result in the stacked `R0`.
-- Uses: system calls from unprivileged tasks (with the MPU), starting the scheduler (FreeRTOS `vPortSVCHandler` restores the first task), secure/non-secure gateways in some designs.
-- Calling SVC from a handler with equal or higher priority (or with interrupts masked) causes a HardFault, because a synchronous exception cannot wait.
+```asm
+SVC #0
+```
 
-**PendSV**
+SVC requests a synchronous exception. An RTOS can use it to enter a privileged service or start the first task. The handler interprets the request according to the RTOS's ABI and validates any untrusted arguments.
 
-- Set pending with `SCB->ICSR = SCB_ICSR_PENDSVSET_Msk;`.
-- Configured to the lowest priority: if an ISR wakes a higher-priority task, it pends PendSV; the switch happens only when all ISRs (including nested ones) have completed, so the switch never interrupts an ISR and needs to save only task context.
-- The handler saves `R4`–`R11` (and `S16`–`S31` if the task used the FPU) onto the current task's stack (PSP), stores PSP in the task's TCB, picks the next task, restores its registers and PSP, and returns with `EXC_RETURN` = thread mode/PSP.
+#### 2. PendSV
 
-**SysTick** provides the RTOS tick: its handler updates time, wakes delayed tasks, and pends PendSV if a higher-priority task became ready or a time slice ended.
+PendSV is a software-pended exception. An RTOS commonly gives it the lowest configurable urgency so that a requested context switch occurs after higher-urgency interrupt work.
 
-**Why not switch context directly in SysTick or in the ISR?** If an ISR pre-empted another ISR, switching tasks there would return to a different task while the first ISR is still unfinished, corrupting the stack. Deferring to the lowest-priority PendSV avoids this and also coalesces several switch requests into one.
+```c
+SCB->ICSR = SCB_ICSR_PENDSVSET_Msk;
+```
+
+Use the architecture-appropriate register and barriers through the RTOS port.
+
+#### 3. Typical context switch
+
+```text
+SysTick / ISR / task requests reschedule
+                 |
+              PendSV
+                 |
+Save remaining outgoing task registers
+Save PSP; select next task; restore PSP
+                 |
+Restore incoming context and exception return
+```
+
+Hardware already saves the basic exception frame. The port handles other registers, floating-point state and security requirements when applicable.
+
+**Interview takeaway:** SVC is synchronous service entry; PendSV is deferred exception processing commonly used for task switching. SysTick may trigger scheduling but need not perform the entire switch itself.
 
 ### What is the MPU and how is it used? {M}
 **Short answer:** The Memory Protection Unit lets software define a small number of memory regions (typically 8 or 16) with access permissions (privileged/unprivileged read, write, execute-never) and memory attributes (cacheable, bufferable, shareable, device). An access that violates the rules raises a MemManage fault instead of silently corrupting memory. It does not translate addresses (no virtual memory).
