@@ -312,43 +312,39 @@ Do not call blocking functions, run long loops or perform slow I/O while interru
 **Interview takeaway:** Save and restore interrupt state rather than blindly enabling interrupts. Interrupt masking is not a universal multicore lock or DMA protection.
 
 ### What is a reentrant function? {M}
-**Short answer:** A function is reentrant if it can be interrupted partway through and safely called again (from an ISR, a signal handler or recursion) before the first call has finished, with both calls producing correct results. That requires using only its arguments and local variables, or protecting any shared state, and calling only other reentrant functions.
+A reentrant function can be invoked again before an earlier invocation completes without corrupting the earlier invocation or shared state.
 
-**Requirements**
-
-- No modification of static or global data without protection.
-- No returning pointers to static internal buffers.
-- No calls to non-reentrant functions (`malloc`, `printf`, `strtok`, `rand`, `asctime`, most stdio).
-- No self-modifying code, and hardware accessed in a way that tolerates interleaving.
-
-**Non-reentrant vs reentrant**
+#### 1. Non-reentrant example
 
 ```c
-/* NOT reentrant: shared static buffer */
-char *to_hex(uint8_t v)
+char *format_value(int x)
 {
-    static char buf[3];
-    buf[0] = "0123456789ABCDEF"[v >> 4];
-    buf[1] = "0123456789ABCDEF"[v & 0xF];
-    buf[2] = '\0';
-    return buf;                 /* a second call (from an ISR) overwrites the first result */
-}
-
-/* reentrant: the caller provides the storage */
-char *to_hex_r(uint8_t v, char out[3])
-{
-    out[0] = "0123456789ABCDEF"[v >> 4];
-    out[1] = "0123456789ABCDEF"[v & 0xF];
-    out[2] = '\0';
-    return out;
+    static char buffer[32];
+    snprintf(buffer, sizeof buffer, "%d", x);
+    return buffer;
 }
 ```
 
-**Standard library examples:** `strtok` → `strtok_r`, `rand` → `rand_r`, `localtime` → `localtime_r`, `gmtime` → `gmtime_r`. In newlib, reentrancy is handled with a per-thread `struct _reent`; RTOSes like FreeRTOS can switch it per task (`configUSE_NEWLIB_REENTRANT`).
+Two overlapping calls use the same buffer. A nested or concurrent call can overwrite the result of the first call.
 
-**Why it matters in embedded systems:** any function called from both an ISR and the main loop (a logging function, a CRC routine, a driver helper) must be reentrant, otherwise the ISR can corrupt the main loop's work in progress, causing rare, timing-dependent bugs.
+#### 2. Reentrant alternative
 
-**Note:** reentrant is not the same as thread-safe (next question).
+```c
+int format_value(char *buffer, size_t size, int x)
+{
+    return snprintf(buffer, size, "%d", x);
+}
+```
+
+Each invocation receives separate caller-owned storage. This avoids the shared buffer problem, provided the supplied buffers do not overlap and the library implementation is safe in the intended execution context.
+
+#### 3. Rules
+
+Use local or caller-owned state, avoid mutable shared scratch storage, avoid returning shared temporary buffers, and ensure functions called internally meet the relevant reentrancy requirements.
+
+Being reentrant does not automatically mean a function is safe to call in a hard ISR; its operations must also be allowed and bounded in that context.
+
+**Interview takeaway:** Reentrancy is about overlapping invocations. Separate per-call state is often the simplest solution.
 
 ### What is the difference between reentrant and thread-safe? {H}
 **Short answer:** A **thread-safe** function works correctly when called from several threads at the same time; it may achieve that with locks. A **reentrant** function works correctly when a call is interrupted and the **same** function is called again on the same execution context (ISR, signal handler, recursion) before the first call finishes. A function that uses a mutex is thread-safe but **not** reentrant: if an ISR interrupts it while it holds the lock and calls it again, the ISR waits forever for a lock that can only be released by the code it interrupted.
