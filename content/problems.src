@@ -4546,3 +4546,1086 @@ int healthy(uint32_t observed,uint32_t required)
 ```
 ## Explanation
 Extra heartbeat bits do not affect the decision. In firmware, synchronize snapshot and reset.
+
+@@@ set-bits-range
+title: Set All Bits in a Given Range
+difficulty: E
+category: Bit Manipulation
+order: 62
+## Problem
+Set every bit from l to r inclusive, using 1-based positions (1 is the least significant bit). Preserve all other bits. For invalid ranges return x unchanged.
+Implement `uint32_t set_range(uint32_t x, unsigned l, unsigned r)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+uint32_t set_range(uint32_t x, unsigned l, unsigned r)
+{
+    return x;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    
+    CHECK(set_range(0,4,5)==24);
+    CHECK(set_range(1,4,5)==25);
+    CHECK(set_range(0,1,32)==UINT32_MAX);
+    CHECK(set_range(0,32,32)==0x80000000u);
+    CHECK(set_range(7,0,5)==7);
+    CHECK(set_range(7,5,4)==7);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Create a mask of r-l+1 ones and shift it by l-1.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+uint32_t set_range(uint32_t x, unsigned l, unsigned r)
+{
+    if(l<1 || r>32 || l>r)return x;
+    uint32_t mask=(UINT32_MAX >> (32-(r-l+1))) << (l-1);
+    return x | mask;
+}
+```
+## Explanation
+OR sets the entire range. Using an all-ones unsigned mask avoids shifting by 32.
+
+@@@ check-even-odd
+title: Check Whether an Integer Is Even or Odd Using Bits
+difficulty: E
+category: Bit Manipulation
+order: 63
+## Problem
+Return 1 if n is even and 0 if it is odd, without division or modulo.
+Implement `int is_even(int32_t n)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+int is_even(int32_t n)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    
+    CHECK(is_even(0)==1);
+    CHECK(is_even(7)==0);
+    CHECK(is_even(-8)==1);
+    CHECK(is_even(-3)==0);
+    CHECK(is_even(INT32_MIN)==1);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Inspect bit zero.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+int is_even(int32_t n)
+{
+    return ((uint32_t)n & 1u)==0;
+}
+```
+## Explanation
+Even values have a zero least significant bit, including negative even values after unsigned conversion.
+
+@@@ opposite-signs
+title: Check Whether Two Integers Have Opposite Signs
+difficulty: E
+category: Bit Manipulation
+order: 64
+## Problem
+Return 1 when exactly one of x and y is negative. Treat zero as nonnegative. Use bitwise operations.
+Implement `int opposite_signs(int32_t x, int32_t y)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+int opposite_signs(int32_t x, int32_t y)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    
+    CHECK(opposite_signs(-1,1)==1);
+    CHECK(opposite_signs(1,2)==0);
+    CHECK(opposite_signs(-1,-2)==0);
+    CHECK(opposite_signs(0,-1)==1);
+    CHECK(opposite_signs(INT32_MIN,INT32_MAX)==1);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+XOR the sign bits.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+int opposite_signs(int32_t x, int32_t y)
+{
+    return (((uint32_t)x ^ (uint32_t)y) >> 31)!=0;
+}
+```
+## Explanation
+XOR sets the top bit when the signs differ. Unsigned conversion and shifting avoid signed shift issues.
+
+@@@ missing-number
+title: Find the Missing Number from 0 to N
+difficulty: E
+category: Arrays & Searching
+order: 65
+## Problem
+An array of n distinct values from 0 through n has exactly one missing value. Return it in O(n) time and O(1) extra space.
+Implement `uint32_t missing(const uint32_t *a, uint32_t n)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+uint32_t missing(const uint32_t *a, uint32_t n)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    uint32_t a[]={0,4,1,3}, b[]={1,2,3}, c[]={2,0,1};
+    CHECK(missing(a,4)==2);
+    CHECK(missing(b,3)==0);
+    CHECK(missing(c,3)==3);
+    CHECK(missing(NULL,0)==0);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+XOR the expected and actual values.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+uint32_t missing(const uint32_t *a, uint32_t n)
+{
+    uint32_t x=n;
+    for(uint32_t i=0;i<n;++i)x ^= i ^ a[i];
+    return x;
+}
+```
+## Explanation
+Matching values cancel, leaving the missing value. This avoids overflow possible with the arithmetic-sum approach in the original exercise.
+
+@@@ second-largest
+title: Find the Second Largest Distinct Element
+difficulty: E
+category: Arrays & Searching
+order: 66
+## Problem
+Find the second largest distinct integer in one pass. Return 1 and write it to out if it exists, otherwise return 0. Assume out is valid.
+Implement `int second_largest(const int *a, size_t n, int *out)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+int second_largest(const int *a, size_t n, int *out)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    int a[]={96,54,4,69,4,6,3,4,0}, b[]={-5,-2,-8,-2}, c[]={4,4}, d[]={0,INT_MIN}, out=0;
+    CHECK(second_largest(a,9,&out)==1 && out==69);
+    CHECK(second_largest(b,4,&out)==1 && out==-5);
+    CHECK(second_largest(c,2,&out)==0);
+    CHECK(second_largest(NULL,0,&out)==0);
+    CHECK(second_largest(d,2,&out)==1 && out==INT_MIN);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Track the largest and second largest separately.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+int second_largest(const int *a, size_t n, int *out)
+{
+    if(!n)return 0;
+    int max=a[0], second=0, found=0;
+    for(size_t i=1;i<n;++i){
+        if(a[i]>max){second=max;max=a[i];found=1;}
+        else if(a[i]<max && (!found || a[i]>second)){second=a[i];found=1;}
+    }
+    if(found)*out=second;
+    return found;
+}
+```
+## Explanation
+When a new maximum arrives, the old maximum becomes second largest. A flag handles all-negative values and arrays with no second distinct value.
+
+@@@ check-sorted-array
+title: Check Whether an Array Is Sorted
+difficulty: E
+category: Arrays & Searching
+order: 67
+## Problem
+Return 1 if the array is sorted in nondecreasing order. Duplicates, empty arrays and single elements are allowed.
+Implement `int is_sorted(const int *a, size_t n)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+int is_sorted(const int *a, size_t n)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    int a[]={-1,2,2,9}, b[]={1,3,2};
+    CHECK(is_sorted(a,4)==1);
+    CHECK(is_sorted(b,3)==0);
+    CHECK(is_sorted(NULL,0)==1);
+    CHECK(is_sorted(b,1)==1);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Compare each element with its predecessor, starting at index 1.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+int is_sorted(const int *a, size_t n)
+{
+    for(size_t i=1;i<n;++i)if(a[i]<a[i-1])return 0;
+    return 1;
+}
+```
+## Explanation
+A descending adjacent pair proves the array is not sorted. Starting at index 1 avoids reading a[-1].
+
+@@@ move-zeroes
+title: Move All Zeroes to the End of an Array
+difficulty: E
+category: Arrays & Searching
+order: 68
+## Problem
+Move every zero to the end in place while keeping the relative order of nonzero elements. Use O(1) extra space.
+Implement `void move_zeroes(int *a, size_t n)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+void move_zeroes(int *a, size_t n)
+{
+    (void)a; (void)n;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    int a[]={0,1,0,3,12}, expected[]={1,3,12,0,0}, b[]={0,0}, c[]={1,-2};
+    CHECK((move_zeroes(a,5),memcmp(a,expected,sizeof a)==0));
+    CHECK((move_zeroes(b,2),b[0]==0 && b[1]==0));
+    CHECK((move_zeroes(c,2),c[0]==1 && c[1]==-2));
+    CHECK((move_zeroes(NULL,0),1));
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Compact nonzero elements, then fill the rest with zero.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+void move_zeroes(int *a, size_t n)
+{
+    size_t j=0;
+    for(size_t i=0;i<n;++i)if(a[i]!=0)a[j++]=a[i];
+    while(j<n)a[j++]=0;
+}
+```
+## Explanation
+A write index never exceeds the read index, so the forward compaction cannot overwrite unread elements.
+
+@@@ array-leaders
+title: Find Leaders in an Array
+difficulty: E
+category: Arrays & Searching
+order: 69
+## Problem
+A leader is strictly greater than every element to its right; the last element is always a leader. Write leaders in right-to-left discovery order to a separate output array with capacity n. Return the count.
+Implement `size_t leaders(const int *a, size_t n, int *out)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+size_t leaders(const int *a, size_t n, int *out)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    int a[]={7,10,4,3,6,5,2}, b[]={-3,-1,-1}, c[]={3,2,1}, out[7];
+    CHECK(leaders(a,7,out)==4 && out[0]==2 && out[1]==5 && out[2]==6 && out[3]==10);
+    CHECK(leaders(b,3,out)==1 && out[0]==-1);
+    CHECK(leaders(c,3,out)==3 && out[2]==3);
+    CHECK(leaders(NULL,0,NULL)==0);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Scan from the right while tracking the largest value seen.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+size_t leaders(const int *a, size_t n, int *out)
+{
+    if(!n)return 0;
+    int max=a[n-1]; size_t k=0;
+    out[k++]=max;
+    for(size_t i=n-1;i>0;){--i;if(a[i]>max){max=a[i];out[k++]=max;}}
+    return k;
+}
+```
+## Explanation
+Each new strict maximum is a leader. This matches the right-to-left order of the supplied exercise.
+
+@@@ max-array-difference
+title: Maximum Difference Between Two Ordered Array Elements
+difficulty: M
+category: Arrays & Searching
+order: 70
+## Problem
+Return the maximum a[j]-a[i] for i<j. A decreasing array may produce a negative result; return 0 if n<2.
+Implement `int64_t max_difference(const int32_t *a, size_t n)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+int64_t max_difference(const int32_t *a, size_t n)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    int32_t a[]={2,3,10,6,4,8,1}, b[]={5,3,2}, c[]={INT32_MIN,INT32_MAX};
+    CHECK(max_difference(a,7)==8);
+    CHECK(max_difference(b,3)==-1);
+    CHECK(max_difference(c,2)==4294967295LL);
+    CHECK(max_difference(NULL,0)==0);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Track the minimum value strictly before the current element.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+int64_t max_difference(const int32_t *a, size_t n)
+{
+    if(n<2)return 0;
+    int32_t min=a[0]; int64_t best=(int64_t)a[1]-a[0];
+    for(size_t i=1;i<n;++i){
+        int64_t d=(int64_t)a[i]-min;
+        if(d>best)best=d;
+        if(a[i]<min)min=a[i];
+    }
+    return best;
+}
+```
+## Explanation
+Compare before updating the minimum to enforce i<j. Widen subtraction to avoid overflow for 32-bit inputs.
+
+@@@ alternating-parity-subarray
+title: Longest Alternating Even-Odd Subarray
+difficulty: E
+category: Arrays & Searching
+order: 71
+## Problem
+Return the length of the longest contiguous subarray whose adjacent elements alternate between even and odd. Return zero for an empty array.
+Implement `size_t longest_alternating(const int *a, size_t n)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+size_t longest_alternating(const int *a, size_t n)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    int a[]={10,12,8,4}, b[]={2,4,3,2,1,8}, c[]={-1,-2,-3};
+    CHECK(longest_alternating(a,4)==1);
+    CHECK(longest_alternating(b,6)==5);
+    CHECK(longest_alternating(c,3)==3);
+    CHECK(longest_alternating(NULL,0)==0);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Compare the parity of adjacent values.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+size_t longest_alternating(const int *a, size_t n)
+{
+    if(!n)return 0;
+    size_t run=1,best=1;
+    for(size_t i=1;i<n;++i){
+        run=(((unsigned)a[i] ^ (unsigned)a[i-1]) & 1u) ? run+1 : 1;
+        if(run>best)best=run;
+    }
+    return best;
+}
+```
+## Explanation
+Extend the current run when parity changes; otherwise reset it to one.
+
+@@@ sorted-array-frequencies
+title: Count Occurrences of Each Element in a Sorted Array
+difficulty: E
+category: Arrays & Searching
+order: 72
+## Problem
+Given a sorted array, write one value/count record per distinct element to a separate output array of capacity n. Return the number of records.
+Implement `size_t frequencies(const int *a, size_t n, struct frequency *out)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+struct frequency { int value; size_t count; };
+size_t frequencies(const int *a, size_t n, struct frequency *out)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    int a[]={10,10,10,10,30,30}, b[]={-1,3,9}; struct frequency out[6];
+    CHECK(frequencies(a,6,out)==2 && out[0].value==10 && out[0].count==4 && out[1].value==30 && out[1].count==2);
+    CHECK(frequencies(b,3,out)==3 && out[2].value==9 && out[2].count==1);
+    CHECK(frequencies(NULL,0,NULL)==0);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Equal elements form consecutive runs.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+struct frequency { int value; size_t count; };
+size_t frequencies(const int *a, size_t n, struct frequency *out)
+{
+    size_t k=0;
+    for(size_t i=0;i<n;){
+        size_t j=i+1;
+        while(j<n && a[j]==a[i])++j;
+        out[k++]=(struct frequency){a[i],j-i}; i=j;
+    }
+    return k;
+}
+```
+## Explanation
+Scan each run once, recording its value and length. Time O(n), excluding the caller's output storage, extra space O(1).
+
+@@@ stock-profit-multiple
+title: Stock Buy and Sell for Maximum Profit (Multiple Transactions)
+difficulty: E
+category: Arrays & Searching
+order: 73
+## Problem
+Given nonnegative daily prices, find the maximum profit with unlimited transactions, at most one share held at a time, and no fees. Assume the answer fits int64_t.
+Implement `int64_t max_profit(const int32_t *prices, size_t n)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+int64_t max_profit(const int32_t *prices, size_t n)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    int32_t a[]={1,5,3,1,2,8}, b[]={5,3,1}, c[]={1,3,5};
+    CHECK(max_profit(a,6)==11);
+    CHECK(max_profit(b,3)==0);
+    CHECK(max_profit(c,3)==4);
+    CHECK(max_profit(NULL,0)==0);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Add every positive increase between consecutive days.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+int64_t max_profit(const int32_t *prices, size_t n)
+{
+    int64_t profit=0;
+    for(size_t i=1;i<n;++i)if(prices[i]>prices[i-1])profit+=(int64_t)prices[i]-prices[i-1];
+    return profit;
+}
+```
+## Explanation
+Consecutive rises can be combined into a single buy/sell transaction. Declines contribute no profit.
+
+@@@ trapping-rain-water
+title: Trapping Rain Water
+difficulty: M
+category: Arrays & Searching
+order: 74
+## Problem
+Given nonnegative bar heights of unit width, return the total water trapped after rainfall. Assume the answer fits uint64_t.
+Implement `uint64_t trapped_water(const uint32_t *a, size_t n)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+uint64_t trapped_water(const uint32_t *a, size_t n)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    uint32_t a[]={3,0,6,2,5}, b[]={2,0,2}, c[]={1,2,3,4}, d[]={4,2,0,3,2,5};
+    CHECK(trapped_water(a,5)==6);
+    CHECK(trapped_water(b,3)==2);
+    CHECK(trapped_water(c,4)==0);
+    CHECK(trapped_water(NULL,0)==0);
+    CHECK(trapped_water(d,6)==9);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Track the highest wall from each side and process the lower boundary.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+uint64_t trapped_water(const uint32_t *a, size_t n)
+{
+    if(n<3)return 0;
+    size_t l=0,r=n-1; uint32_t lm=0,rm=0; uint64_t total=0;
+    while(l<r){
+        if(a[l]<=a[r]){if(a[l]>lm)lm=a[l];total+=lm-a[l];++l;}
+        else{if(a[r]>rm)rm=a[r];total+=rm-a[r];--r;}
+    }
+    return total;
+}
+```
+## Explanation
+The lower side determines a safe water level. Two pointers avoid the two temporary maximum arrays in the supplied approach, using O(n) time and O(1) space.
+
+@@@ max-consecutive-ones
+title: Maximum Consecutive Ones in a Binary Array
+difficulty: E
+category: Arrays & Searching
+order: 75
+## Problem
+Given an array containing only 0 and 1, return the length of its longest contiguous run of ones.
+Implement `size_t max_ones(const int *a, size_t n)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+size_t max_ones(const int *a, size_t n)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    int a[]={1,1,0,1,1,1,0}, b[]={0,0,0}, c[]={1,1};
+    CHECK(max_ones(a,7)==3);
+    CHECK(max_ones(b,3)==0);
+    CHECK(max_ones(c,2)==2);
+    CHECK(max_ones(NULL,0)==0);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Reset the running count at every zero.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+size_t max_ones(const int *a, size_t n)
+{
+    size_t run=0,best=0;
+    for(size_t i=0;i<n;++i){run=a[i]==1 ? run+1 : 0;if(run>best)best=run;}
+    return best;
+}
+```
+## Explanation
+Keep the largest run observed so far. Time O(n), extra space O(1).
+
+@@@ string-palindrome
+title: Check Whether a String Is a Palindrome
+difficulty: E
+category: Pointers & Strings
+order: 76
+## Problem
+Return 1 if a NUL-terminated string reads identically forward and backward, otherwise 0. Compare bytes exactly, including case and spaces.
+Implement `int is_palindrome(const char *s)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+int is_palindrome(const char *s)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    
+    CHECK(is_palindrome("ABCKCBA")==1);
+    CHECK(is_palindrome("abba")==1);
+    CHECK(is_palindrome("abc")==0);
+    CHECK(is_palindrome("")==1);
+    CHECK(is_palindrome("Aa")==0);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Compare the two ends and move inward.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+int is_palindrome(const char *s)
+{
+    size_t n=strlen(s);
+    for(size_t i=0;i<n/2;++i)if(s[i]!=s[n-1-i])return 0;
+    return 1;
+}
+```
+## Explanation
+Only half of the string needs comparison. Empty and one-character strings are palindromes.
+
+@@@ string-subsequence
+title: Check Whether One String Is a Subsequence of Another
+difficulty: E
+category: Pointers & Strings
+order: 77
+## Problem
+Return 1 if sub can be formed by deleting zero or more characters from text without changing the order of remaining characters. Empty sub always matches.
+Implement `int is_subsequence(const char *text, const char *sub)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+int is_subsequence(const char *text, const char *sub)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    
+    CHECK(is_subsequence("ABCD","AC")==1);
+    CHECK(is_subsequence("ABCD","CA")==0);
+    CHECK(is_subsequence("ABCD","")==1);
+    CHECK(is_subsequence("","A")==0);
+    CHECK(is_subsequence("abc","abcd")==0);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Advance the subsequence pointer only on a matching character.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+int is_subsequence(const char *text, const char *sub)
+{
+    while(*text && *sub){if(*text==*sub)++sub;++text;}
+    return *sub=='\0';
+}
+```
+## Explanation
+Stop once all subsequence characters have matched. Matching need not be contiguous.
+
+@@@ string-anagram
+title: Check Whether Two Strings Are Anagrams
+difficulty: E
+category: Pointers & Strings
+order: 78
+## Problem
+Return 1 if the strings contain the same multiset of bytes, ignoring order but not case or spaces. Assume 8-bit bytes.
+Implement `int is_anagram(const char *a, const char *b)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+int is_anagram(const char *a, const char *b)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    char a[]={(char)0xff,'a',0}, b[]={'a',(char)0xff,0};
+    CHECK(is_anagram("listen","silent")==1);
+    CHECK(is_anagram("abc","abb")==0);
+    CHECK(is_anagram("ab","a")==0);
+    CHECK(is_anagram("","")==1);
+    CHECK(is_anagram(a,b)==1);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Count all byte values using a 256-entry frequency table.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+int is_anagram(const char *a, const char *b)
+{
+    size_t count[256]={0};
+    for(;*a;++a)++count[(unsigned char)*a];
+    for(;*b;++b){unsigned char c=(unsigned char)*b;if(!count[c])return 0;--count[c];}
+    for(size_t i=0;i<256;++i)if(count[i])return 0;
+    return 1;
+}
+```
+## Explanation
+Increment for the first string and decrement for the second, rejecting unmatched bytes. Unsigned char indexing avoids negative array indices.
+
+@@@ reverse-words
+title: Reverse the Order of Words in a String In Place
+difficulty: M
+category: Pointers & Strings
+order: 79
+## Problem
+Reverse the order of words in a writable NUL-terminated string without allocating another string. Words are separated by spaces. Preserve the spaces as produced by reversing the complete string, including repeated spaces.
+Implement `void reverse_words(char *s)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+static void rev_chars(char *s,size_t n){for(size_t i=0;i<n/2;++i){char t=s[i];s[i]=s[n-1-i];s[n-1-i]=t;}}
+void reverse_words(char *s)
+{
+    (void)s;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    char a[]="hello world", b[]="a b  c", c[]="", d[]="one";
+    CHECK((reverse_words(a),strcmp(a,"world hello")==0));
+    CHECK((reverse_words(b),strcmp(b,"c  b a")==0));
+    CHECK((reverse_words(c),strcmp(c,"")==0));
+    CHECK((reverse_words(d),strcmp(d,"one")==0));
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Reverse the entire string, then reverse each individual word.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+static void rev_chars(char *s,size_t n){for(size_t i=0;i<n/2;++i){char t=s[i];s[i]=s[n-1-i];s[n-1-i]=t;}}
+void reverse_words(char *s)
+{
+    size_t n=strlen(s);
+    rev_chars(s,n);
+    for(size_t i=0;i<n;){
+        if(s[i]==' '){++i;continue;}
+        size_t j=i;while(j<n && s[j]!=' ')++j;
+        rev_chars(s+i,j-i);i=j;
+    }
+}
+```
+## Explanation
+The first reversal changes word order; the second restores the letters within each word. O(n) time and O(1) space.
+
+@@@ naive-pattern-search
+title: Find All Occurrences of a Pattern in a String
+difficulty: M
+category: Pointers & Strings
+order: 80
+## Problem
+Find every starting index where a nonempty pattern occurs in text, including overlapping matches. Store at most cap indices in out and return the total match count. Empty patterns return zero.
+Implement `size_t find_pattern(const char *text, const char *pattern, size_t *out, size_t cap)`.
+## Starter code
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+size_t find_pattern(const char *text, const char *pattern, size_t *out, size_t cap)
+{
+    return 0;
+}
+
+/* ---- tests ---- */
+static int fails;
+#define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
+int main(void)
+{
+    size_t out[4];
+    CHECK(find_pattern("sensor-sensor","sensor",out,4)==2 && out[0]==0 && out[1]==7);
+    CHECK(find_pattern("aaaa","aa",out,4)==3 && out[0]==0 && out[1]==1 && out[2]==2);
+    CHECK(find_pattern("aaaa","aa",out,1)==3 && out[0]==0);
+    CHECK(find_pattern("abc","abcd",out,4)==0);
+    CHECK(find_pattern("abc","",out,4)==0);
+    CHECK(find_pattern("aaaa","aa",NULL,0)==3);
+    puts(fails ? "Some tests failed" : "All tests passed");
+    return fails != 0;
+}
+```
+## Hint
+Slide the pattern across the text, comparing characters at each offset.
+## Solution
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <limits.h>
+
+size_t find_pattern(const char *text, const char *pattern, size_t *out, size_t cap)
+{
+    size_t n=strlen(text),m=strlen(pattern),k=0;
+    if(!m || m>n)return 0;
+    for(size_t i=0;i<=n-m;++i){
+        size_t j=0;while(j<m && text[i+j]==pattern[j])++j;
+        if(j==m){if(k<cap)out[k]=i;++k;}
+    }
+    return k;
+}
+```
+## Explanation
+The naive search checks every possible start, so overlapping matches are found. Check m<=n before subtracting lengths. Worst-case O(n*m).
