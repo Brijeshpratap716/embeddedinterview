@@ -1175,35 +1175,51 @@ printf("%d %d", a, b);
 **Interview takeaway:** Avoid unsequenced modifications to the same scalar, or an unsequenced modification and read of its value. Operator precedence determines expression grouping, not evaluation order.
 
 ### What is the size of an int, and what are fixed-width types? {E}
-**Short answer:** The C standard only fixes minimum ranges: `char` at least 8 bits, `short` and `int` at least 16, `long` at least 32, `long long` at least 64. The actual sizes depend on the compiler and target: `int` is 16 bits on 8-bit AVR and MSP430, and 32 bits on ARM Cortex-M, ARM64 and x86. For hardware registers and data formats use the fixed-width types from `<stdint.h>`.
+The size of `int` is **implementation-defined**. C guarantees a minimum range of -32767 to 32767, but does not require `int` to be 32 bits.
 
-**Typical data models**
+#### 1. Check the actual size
 
-| Type | AVR (8-bit) | Cortex-M (ILP32) | ARM64 / x86-64 Linux (LP64) | 64-bit Windows (LLP64) |
-|---|---|---|---|---|
-| `char` | 8 | 8 | 8 | 8 |
-| `short` | 16 | 16 | 16 | 16 |
-| `int` | 16 | 32 | 32 | 32 |
-| `long` | 32 | 32 | 64 | 32 |
-| pointer | 16 | 32 | 64 | 64 |
+```c
+#include <stdio.h>
+#include <limits.h>
 
-**`<stdint.h>` types**
+int main(void)
+{
+    printf("%zu bytes\n", sizeof(int));
+    printf("%zu bits\n", sizeof(int) * CHAR_BIT);
+}
+```
 
-- **Exact width:** `int8_t`, `uint16_t`, `uint32_t`, `int64_t` — for registers, protocol fields, file formats.
-- **Least:** `uint_least16_t` — at least 16 bits (portable even to unusual DSPs without 8-bit types).
-- **Fast:** `uint_fast16_t` — the fastest type with at least 16 bits (often 32 bits on Arm, avoiding extra masking instructions).
-- `intptr_t`/`uintptr_t` — an integer that can hold a pointer.
-- `size_t` (sizes and indexes, unsigned), `ptrdiff_t` (pointer differences, signed).
+Typical ARM Linux output is 4 bytes and 32 bits. Some microcontrollers use a 16-bit `int`.
 
-**printf formats:** use `<inttypes.h>` macros, e.g. `printf("%" PRIu32 "\n", x);`, because `uint32_t` is `unsigned long` on some toolchains and `unsigned int` on others.
+#### 2. Fixed-width integers
 
-**Common bugs from assuming sizes**
+The `<stdint.h>` header defines exact-width types where the implementation supports them.
 
-- Storing a pointer in an `int` (breaks on 64-bit).
-- `long` timestamps that overflow on ILP32 but not on the PC where tests run.
-- A loop `for (uint8_t i = 0; i < 300; i++)` never ends: `i` wraps at 255.
+| Signed type | Unsigned type | Width |
+|---|---|---|
+| `int8_t` | `uint8_t` | 8 bits |
+| `int16_t` | `uint16_t` | 16 bits |
+| `int32_t` | `uint32_t` | 32 bits |
+| `int64_t` | `uint64_t` | 64 bits |
 
-**Check sizes at compile time:** `_Static_assert(sizeof(struct header) == 16, "header must be 16 bytes");`.
+#### 3. Why embedded software uses them
+
+```c
+#include <stdint.h>
+
+uint8_t command = 0xA5;
+uint16_t sensor_value = 1024;
+uint32_t reg_mask = 0x80000000u;
+```
+
+These types express the intended register, protocol or data width independently of the size of `int`. Use explicit byte-order conversion for serialized data.
+
+#### 4. Other useful types
+
+`size_t` represents object sizes, `uintptr_t` (if provided) can hold converted object pointer values, and `uint_fast32_t` provides an unsigned type of at least 32 bits selected for speed.
+
+**Interview takeaway:** Never assume `sizeof(int)` is 4 or that a C byte is always 8 bits. Use fixed-width types for hardware and protocol fields when available, and `<inttypes.h>` format macros when printing them.
 
 ### Is char signed or unsigned, and why does it matter? {M}
 **Short answer:** It is implementation-defined. Plain `char` is a distinct type from both `signed char` and `unsigned char`, and it behaves like one of them depending on the platform: **signed on x86** (and on Arm for Windows/macOS), **unsigned on most Arm Linux and Arm bare-metal toolchains** (AAPCS), PowerPC and RISC-V. Code that stores byte values above 127 in a plain `char` can behave differently on different targets.
