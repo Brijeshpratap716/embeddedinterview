@@ -711,3 +711,10 @@ Order: clock, gpio, i2c, sensor, pmic, display.
 - **Linux:** device tree phandles create device links (fw_devlink); drivers that probe too early return `-EPROBE_DEFER` and are retried later; initcall levels give a coarse static order.
 - **Zephyr:** init levels (PRE_KERNEL_1, POST_KERNEL, APPLICATION) plus priorities within each level, checked at build time from devicetree dependencies.
 - **systemd:** `After=`/`Requires=` units are ordered with the same graph algorithms; ordering cycles are reported and broken.
+
+#### Device dependency example
+
+Edges: clock→I2C, regulator→display, I2C→panel and panel→display. Initially clock and regulator have indegree zero. Initialize those available prerequisites, decrement their dependents' indegrees, then process newly ready devices. One valid result is clock, regulator, I2C, panel, display. Independent devices may appear in either order.
+
+If fewer than n devices are removed from the queue, the remaining subgraph contains a cycle or unresolved dependency. In an actual initialization system, successful topological ordering does not guarantee successful hardware initialization: if a supplier fails, skip or defer its consumers and unwind completed resources according to dependency order. Linux uses device-model supplier links and deferred probe rather than a universal manually constructed list.
+
