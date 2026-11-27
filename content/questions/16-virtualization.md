@@ -149,36 +149,31 @@ For an emulated UART, a write to its transmit register invokes a MemoryRegion ca
 **Interview takeaway:** Model guest-visible register semantics, timing and interrupts rather than merely returning values. QOM object creation and device realization are distinct stages.
 
 ### How does QEMU model guest memory and MMIO (MemoryRegion and AddressSpace)? {H}
-**Short answer:** QEMU describes the guest's physical address map as a tree of **`MemoryRegion`s**: RAM regions backed by host memory, I/O regions whose accesses call device callbacks (`MemoryRegionOps`), aliases, and containers that hold sub-regions at offsets. An **`AddressSpace`** (e.g. the system address space each CPU sees, or a device's DMA address space) points to a root region. QEMU flattens the tree into a **`FlatView`** (a sorted list of ranges) for fast lookup, and with KVM it registers the RAM ranges with the kernel.
+QEMU represents guest-visible memory as a hierarchy of MemoryRegion objects, viewed through an AddressSpace.
 
-**Key functions**
-
-| Function | Creates |
+| Region | Purpose |
 |---|---|
-| `memory_region_init_ram()` | RAM backed by host memory |
-| `memory_region_init_rom()` | read-only memory (e.g. boot ROM) |
-| `memory_region_init_io()` | MMIO region: reads/writes call the `MemoryRegionOps` callbacks |
-| `memory_region_init_alias()` | a window onto part of another region (e.g. low RAM aliased below 1 MB) |
-| `memory_region_add_subregion(parent, offset, child)` | place a region in the map (with priorities for overlaps) |
+| RAM | Backed by host memory |
+| ROM | Read-only guest-visible storage |
+| MMIO | Read/write callbacks |
+| Alias | Another view of a region |
+| Container | Organizes subregions |
 
-**How an access is handled**
-
-- **TCG:** a guest load goes through the software TLB. For RAM, the TLB entry gives a host pointer and the access is a plain host load. For MMIO, the slow path finds the `MemoryRegion` and calls its `read` callback with the offset and size.
-- **KVM:** RAM ranges are given to the kernel with `KVM_SET_USER_MEMORY_REGION` (guest physical address → QEMU's host virtual address). Guest accesses to RAM never leave the guest. An access to an address with **no RAM mapping** causes a stage-2 fault; KVM reports `KVM_EXIT_MMIO` to QEMU with the address, size and data, QEMU calls the device's callback, and then resumes the vCPU.
-
-**See the map:** QEMU monitor `info mtree` prints the whole tree; `info mtree -f` prints the flattened view.
-
-```
-address-space: memory
-  0000000000000000-ffffffffffffffff (prio 0, i/o): system
-    0000000008000000-0000000008020000 (prio 0, i/o): gic_dist
-    0000000009000000-0000000009000fff (prio 0, i/o): pl011
-    0000000040000000-000000007fffffff (prio 0, ram): mach-virt.ram
+```c
+static const MemoryRegionOps ops = {
+    .read = my_read,
+    .write = my_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+};
+/* In device initialization: */
+memory_region_init_io(&s->mmio, OBJECT(s), &ops,
+                      s, "my-mmio", 0x1000);
+sysbus_init_mmio(SYS_BUS_DEVICE(s), &s->mmio);
 ```
 
-**DMA:** devices use `dma_memory_read/write()` or `address_space_rw()` on their DMA address space, which may sit behind an emulated IOMMU (SMMUv3 on ARM `virt`), so the same code works whether or not an IOMMU is present.
+Board code maps the region at a guest physical address. A guest load/store to that address dispatches to the corresponding callback with offset, size and value.
 
-**Why the layering matters:** the same device model works with TCG and KVM, and board code can move, alias or overlay regions (e.g. a boot ROM that is remapped after boot) without touching the device code.
+**Interview takeaway:** A guest physical address is not a host pointer. Address spaces and translation also matter for DMA and IOMMUs. Respect access width, alignment and side effects.
 
 ### How does QEMU use KVM? Explain the ioctl sequence and the run loop. {H}
 **Short answer:** QEMU opens `/dev/kvm`, creates a VM with `KVM_CREATE_VM` (which returns a VM file descriptor), registers guest RAM with `KVM_SET_USER_MEMORY_REGION`, creates each vCPU with `KVM_CREATE_VCPU`, `mmap`s the vCPU's shared `kvm_run` structure, initialises the vCPU (on ARM with `KVM_ARM_VCPU_INIT`) and sets its registers. Each vCPU thread then loops on `ioctl(vcpu_fd, KVM_RUN)`: the guest runs until something needs QEMU, KVM returns with an exit reason in `kvm_run`, QEMU handles it and calls `KVM_RUN` again.
