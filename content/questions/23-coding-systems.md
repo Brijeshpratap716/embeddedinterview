@@ -648,6 +648,12 @@ If the edge C→A were removed: C→D visits D (grey → black), C black, B blac
 
 **Systems uses:** Linux **lockdep** records "lock A taken while holding lock B" edges and reports a cycle as a possible deadlock; detecting circular dependencies between drivers, services (systemd ordering cycles) or build targets; wait-for graphs in deadlock detection.
 
+#### Distinguish a back edge from a previously completed node
+
+Graph A→B→C→A contains a cycle because C encounters gray A, which is still on its recursion path. Graph A→B, A→C, B→C does not contain a cycle merely because C is visited twice; once complete, C is black. This distinction is why a single visited Boolean is insufficient for directed-cycle detection.
+
+Visit every vertex, including disconnected components. Validate degree, vertex indices and graph size when building the adjacency lists. The algorithm is O(V+E) time and O(V) auxiliary recursion/color space; the illustrative fixed adjacency storage is O(V²). Use an explicit DFS stack if call-stack depth must be bounded.
+
 ### Order device initialisation with a topological sort. {M}
 **Short answer:** Treat each device as a node and each dependency ("the I2C controller must be ready before the sensor") as an edge from the supplier to the consumer. Use Kahn's algorithm: count incoming edges for every device, put all devices with no dependencies in a queue, and repeatedly take one, initialise it and decrement the count of each device that depends on it — any device whose count reaches zero joins the queue. If fewer than N devices get initialised, the remaining ones form a dependency cycle. O(V + E).
 
