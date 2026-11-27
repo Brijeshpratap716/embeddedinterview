@@ -1056,19 +1056,27 @@ Expose one logical value per attribute where practical, document public ABI sema
 **Interview takeaway:** sysfs connects kernel objects to structured userspace attributes. Validate input and use sysfs_emit for formatted output.
 
 ### What is the difference between procfs, sysfs and debugfs? {E}
-**Short answer:** **procfs** (`/proc`) exposes process information and some legacy kernel tunables (`/proc/cpuinfo`, `/proc/<pid>/maps`, `/proc/sys/` sysctls); new device data should not go there. **sysfs** (`/sys`) exposes the structured device model with one value per file and is a stable ABI. **debugfs** (`/sys/kernel/debug`) is a free-form debugging interface with no ABI guarantees, usually root-only and often disabled in production kernels.
+procfs, sysfs and debugfs are virtual filesystems exposing different kinds of kernel information.
 
-| | procfs | sysfs | debugfs |
-|---|---|---|---|
-| Purpose | processes, system info, sysctls | devices, drivers, buses, classes | debugging |
-| Format | free-form text | one value per file | anything |
-| ABI stability | yes (for existing files) | yes | no |
-| Typical use | `ps`, `top`, `free` read it | udev, configuration tools, power management | register dumps, statistics, fault injection, tracing (`tracefs`) |
-| Driver API | `proc_create` (discouraged for drivers) | `DEVICE_ATTR_*`, attribute groups | `debugfs_create_file/u32/regset32` |
+| Filesystem | Main purpose | Example |
+|---|---|---|
+| procfs | Process and system information | /proc/PID/maps, /proc/meminfo |
+| sysfs | Kernel object/device attributes | /sys/class, /sys/bus |
+| debugfs | Developer diagnostics | /sys/kernel/debug |
 
-**debugfs example:** `debugfs_create_regset32("regs", 0400, dir, &d->regset)` dumps a list of registers; `debugfs_create_u32("irq_count", 0444, dir, &d->irq_count)` exposes a counter. Errors from debugfs functions can be ignored by design (debugging must not break the driver).
+#### 1. Choosing an interface
 
-**Other pseudo-filesystems:** `configfs` (user space creates kernel objects: USB gadgets, iSCSI targets), `tracefs` (`/sys/kernel/tracing`), `cgroupfs`, `bpffs`, `securityfs`.
+Use the established subsystem's sysfs or other documented UAPI for stable application-facing configuration. Use debugfs for diagnostic counters, register dumps or experimental developer information when appropriate.
+
+#### 2. Stability
+
+Debugfs is not intended as a stable userspace ABI. It may be unavailable, restricted or disabled in production. Existing documented procfs/sysfs interfaces can have compatibility requirements; do not assume every virtual file is an arbitrary debug interface.
+
+#### 3. Security
+
+Avoid exposing secrets, unrestricted register writes or kernel addresses. Validate writes and restrict access according to the interface's purpose.
+
+**Interview takeaway:** procfs describes process/system state, sysfs represents kernel objects and debugfs supports debugging. Use the correct subsystem interface rather than creating ad hoc files.
 
 ### What is the difference between kmalloc, vmalloc and kzalloc? {M}
 **Short answer:** `kmalloc(size, flags)` returns **physically contiguous** memory from the slab allocator: fast, cache-friendly, usable for DMA (through the DMA API), and best for small to medium sizes (practically up to a few pages; large requests may fail when memory is fragmented). `kzalloc` is `kmalloc` plus zeroing, and `kcalloc`/`kmalloc_array` add overflow checks for arrays. `vmalloc(size)` returns memory that is **virtually** contiguous but physically scattered: good for large buffers, but slower (page-table setup, TLB pressure), it may sleep, and it is not directly usable for device DMA. `kvmalloc` tries `kmalloc` and falls back to `vmalloc`.
