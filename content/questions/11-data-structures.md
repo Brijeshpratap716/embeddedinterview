@@ -112,26 +112,33 @@ O(n) time and O(1) extra memory, with n counting distinct reachable nodes. A lis
 **Interview takeaway:** Always check fast and fast->next before taking two steps. The algorithm assumes valid links and a list that is not concurrently modified.
 
 ### How do you find the middle of a linked list in one pass? {E}
-**Short answer:** Use slow and fast pointers: advance slow by one and fast by two; when fast reaches the end, slow is at the middle. For an even number of nodes this returns the second of the two middle nodes; to get the first one, loop while `fast->next && fast->next->next`.
+Use the slow/fast pointer technique. Slow moves one node and fast moves two nodes each iteration. When fast reaches the end, slow is at the middle.
+
+#### 1. C implementation
 
 ```c
-struct node *middle(struct node *h)          /* second middle for even lengths */
+struct node *middle(struct node *head)
 {
-    struct node *slow = h, *fast = h;
-    while (fast && fast->next) { slow = slow->next; fast = fast->next->next; }
-    return slow;
-}
+    struct node *slow = head;
+    struct node *fast = head;
 
-struct node *middle_first(struct node *h)    /* first middle for even lengths */
-{
-    if (!h) return NULL;
-    struct node *slow = h, *fast = h;
-    while (fast->next && fast->next->next) { slow = slow->next; fast = fast->next->next; }
+    while (fast && fast->next) {
+        slow = slow->next;
+        fast = fast->next->next;
+    }
     return slow;
 }
 ```
 
-**Uses:** splitting a list for merge sort (use the first-middle version so both halves are non-empty), palindrome checks, and finding the k-th node from the end (move one pointer k steps ahead, then advance both until the leader reaches the end).
+#### 2. Examples
+
+For 1 -> 2 -> 3 -> 4 -> 5, the result is 3. For 1 -> 2 -> 3 -> 4, the result is the second middle, 3. To choose the first middle, start fast at head->next after checking head.
+
+#### 3. Complexity
+
+O(n) time, O(1) auxiliary memory. This avoids first counting the nodes and then traversing half the list.
+
+**Interview takeaway:** Define which middle to return for even-length lists. An empty list returns NULL; a cyclic list needs separate handling.
 
 ### How does a circular (ring) buffer work? {E}
 **Short answer:** A ring buffer is a fixed-size array with a **head** (write) index and a **tail** (read) index that wrap around to the start when they reach the end. Writes advance the head, reads advance the tail, and both operations are O(1) with no dynamic memory. It is the standard structure for UART receive buffers, logging, audio and producer/consumer queues. With a power-of-two size, wrapping is a cheap bit mask, and free-running counters distinguish full from empty without wasting a slot.
