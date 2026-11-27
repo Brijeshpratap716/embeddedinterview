@@ -374,31 +374,33 @@ Linux usually uses an MMU on application processors; no-MMU Linux configurations
 **Interview takeaway:** An MPU protects address regions; an MMU adds address translation and protection. Neither automatically protects every independent DMA master.
 
 ### What are the common IPC mechanisms? {E}
-**Short answer:** Processes communicate with **pipes and FIFOs** (byte streams), **message queues** (discrete messages), **shared memory** (fastest, but needs separate synchronisation), **semaphores** (synchronisation), **signals** (asynchronous notifications), and **sockets** (Unix domain locally, TCP/UDP over the network). Higher-level frameworks such as D-Bus, gRPC and Android Binder are built on top of these.
+IPC (Inter-Process Communication) provides controlled ways for independent processes to exchange data or coordinate execution.
 
-| Mechanism | Data | Direction | Related processes only? | Notes |
-|---|---|---|---|---|
-| Pipe (`pipe()`) | byte stream | one-way | yes (inherited fd) | `ls | grep` |
-| FIFO (`mkfifo`) | byte stream | one-way | no (has a path name) | |
-| POSIX message queue (`mq_open`) | messages with priority | either | no | `mq_notify` for async notification |
-| Shared memory (`shm_open` + `mmap`) | anything | both | no | zero-copy; add a mutex/semaphore in the shared region |
-| Semaphore (`sem_open`) | none (counter) | – | no | synchronisation only |
-| Signal | a signal number (+ small value with `sigqueue`) | one-way | no | asynchronous, limited data |
-| Unix domain socket | stream or datagram | both | no | can pass file descriptors (`SCM_RIGHTS`) and credentials |
-| TCP/UDP socket | stream / datagram | both | no, across machines | |
-| `eventfd`, `signalfd`, `timerfd` | counters/events as fds | – | – | integrate with `epoll` |
+| Mechanism | Typical use |
+|---|---|
+| Pipe / FIFO | Stream between processes |
+| Unix-domain socket | Local bidirectional communication |
+| Shared memory | High-volume shared data |
+| Message queue | Structured messages |
+| Signal | Asynchronous event notification |
+| Semaphore | Synchronization / resource counting |
 
-**How to choose**
+#### 1. Example: pipe
 
-- Large data, high rate, same machine: **shared memory** with a ring buffer and a lightweight notification (eventfd, futex, semaphore).
-- Request/response between services: **Unix domain sockets** (or D-Bus/gRPC on top).
-- Simple parent → child streaming: **pipe**.
-- Small prioritised messages: **POSIX message queue**.
-- "Wake up / stop" notifications: **signals** or eventfd.
+```c
+int fd[2];
+if (pipe(fd) == 0) {
+    // fd[0] is read end; fd[1] is write end.
+}
+```
 
-**Embedded Linux examples:** a camera pipeline passes frame buffers between processes as **dma-buf file descriptors** over a Unix socket (zero copy). Android uses **Binder** for almost all IPC. Automotive middleware (SOME/IP, DDS) uses sockets and shared memory underneath.
+Close unused ends after fork and handle partial reads/writes and EOF.
 
-**RTOS comparison:** without separate address spaces, RTOS tasks use queues, semaphores, event groups and direct-to-task notifications; "shared memory" is simply a global variable plus a mutex.
+#### 2. Shared memory
+
+Processes can map the same memory using suitable mmap/shm interfaces. This avoids some copying but requires process-shared synchronization and agreed data layout. Shared memory alone does not provide message boundaries or atomicity.
+
+**Interview takeaway:** Choose IPC based on data volume, latency, isolation, ownership and synchronization. Signals notify; shared memory shares storage; sockets and queues provide communication abstractions.
 
 ### What is a race condition, and what is a critical section? {E}
 **Short answer:** A race condition is a bug where the result depends on the timing of two or more concurrent activities that access shared data, at least one of them writing. A **critical section** is the piece of code that accesses that shared data and must not be executed by more than one task at a time. Protecting critical sections (mutual exclusion) prevents races.
