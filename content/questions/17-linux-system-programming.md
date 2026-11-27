@@ -125,49 +125,22 @@ Device nodes identify character/block devices using major/minor numbers; open/re
 **Interview takeaway:** These are kernel interfaces, not ordinary stored configuration files. Use documented ABI attributes and do not assume every sysfs file is writable.
 
 ### How do Linux file permissions work? {E}
-**Short answer:** Every file has an owner (UID), a group (GID) and three sets of permission bits: read, write and execute for the **owner**, the **group**, and **others**. When a process accesses a file, the kernel checks the process's effective UID and groups against these bits: owner bits if it owns the file, else group bits if it is in the group, else the "other" bits. Root (UID 0) bypasses most checks, and the special bits **setuid**, **setgid** and **sticky** add more behaviour.
+Traditional Unix permissions specify read, write and execute rights for owner, group and others.
 
+```text
+-rwxr-x---  owner:rwx  group:r-x  others:---
+             7          5          0
 ```
-$ ls -l /usr/bin/passwd report.txt
--rwsr-xr-x 1 root  root  68208 ... /usr/bin/passwd
--rw-r----- 1 brij  dev    1024 ... report.txt
- │└┬┘└┬┘└┬┘
- │ │  │  └ others: r-- 
- │ │  └ group: r-x
- │ └ owner: rws (s = setuid + execute)
- └ file type: - file, d directory, l symlink, c char device, b block device
-```
-
-**What r, w, x mean**
-
-| | On a file | On a directory |
-|---|---|---|
-| r (4) | read contents | list names (`ls`) |
-| w (2) | modify contents | create, delete, rename entries (deleting a file needs **w on the directory**, not on the file) |
-| x (1) | execute as a program | enter it / access entries by name (`cd`, path lookup) |
 
 ```bash
-chmod 640 report.txt         # rw- r-- ---
+chmod 750 app
 chmod u+x script.sh
-chown brij:dev report.txt
-umask 022                    # new files get 644, new directories 755
+chown user:group file
 ```
 
-**Special bits**
+For directories, read lists entries, write permits changes to entries (subject to other checks), and execute permits traversal. A file can be deleted based on parent directory permissions, not merely its own write bit. Sticky bit, setuid/setgid, ACLs, capabilities and security modules can alter the effective access policy.
 
-- **setuid (4000)** on an executable: it runs with the **file owner's** UID. `passwd` is setuid root so a normal user can update `/etc/shadow`. Setuid programs are prime security targets and must be minimal.
-- **setgid (2000)**: on an executable, runs with the file's group; on a directory, new files inherit the directory's group (useful for shared project directories).
-- **sticky (1000)** on a directory: only a file's owner can delete it, even if others have write permission on the directory (`/tmp` is `drwxrwxrwt`).
-
-**The kernel's role:** every `open()`, `execve()`, `unlink()` and so on goes through permission checks in the VFS (`inode_permission()`), using the process's **credentials** (real, effective and saved UID/GID, supplementary groups, capabilities). User space cannot bypass them.
-
-**Beyond the basics**
-
-- **Capabilities** split root's powers into pieces (`CAP_NET_BIND_SERVICE` to bind ports < 1024, `CAP_SYS_NICE`, `CAP_NET_ADMIN`), so a service can get only what it needs: `setcap cap_net_bind_service+ep ./server`.
-- **ACLs** (`setfacl`) give permissions to additional specific users or groups.
-- **LSMs** (SELinux, AppArmor, Smack) add mandatory access control on top.
-
-**Embedded advice:** do not run the whole application as root. Create a dedicated user, give it access to only the device nodes it needs (udev rules setting group/mode), and add capabilities instead of root where necessary.
+**Interview takeaway:** umask removes permission bits from requested creation modes. Avoid chmod 777 as a debugging shortcut; grant only required access.
 
 ### What is an inode? What is the difference between a hard link and a symbolic link? {E}
 **Short answer:** An **inode** is the on-disk structure that describes a file: its type, permissions, owner, size, timestamps, link count, and where its data blocks are. It does **not** contain the file name; names live in **directory entries**, which map a name to an inode number. A **hard link** is an additional directory entry pointing to the same inode. A **symbolic (soft) link** is a separate small file that contains a path to another file.
