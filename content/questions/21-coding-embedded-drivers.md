@@ -760,9 +760,9 @@ void wdg_checkin(uint32_t task_bit)                      /* each task calls this
 
 void wdg_service(void)                                   /* called periodically, e.g. every 100 ms */
 {
-    if ((alive_flags & ALL_ALIVE) == ALL_ALIVE) {
+    uint32_t seen = __atomic_exchange_n(&alive_flags, 0u, __ATOMIC_RELAXED);
+    if ((seen & ALL_ALIVE) == ALL_ALIVE) {
         IWDG_KR = 0xAAAAu;                               /* reload (kick) the watchdog */
-        __atomic_store_n(&alive_flags, 0u, __ATOMIC_RELAXED);
     }
     /* else: do not kick; the watchdog resets the MCU */
 }
@@ -787,6 +787,27 @@ void wdg_service(void)                                   /* called periodically,
 **During debugging:** freeze the watchdog when the core is halted (`DBGMCU` freeze bits on STM32), otherwise breakpoints cause resets.
 
 **Note:** once enabled, an independent watchdog usually cannot be disabled by software (by design) until the next reset.
+
+#### Atomic snapshot of health flags
+
+```c
+static _Atomic uint32_t health;
+
+void task_checkin(uint32_t bit)
+{
+    atomic_fetch_or_explicit(&health, bit, memory_order_relaxed);
+}
+
+void supervisor(void)
+{
+    uint32_t seen = atomic_exchange_explicit(
+        &health, 0, memory_order_relaxed);
+    if ((seen & ALL_ALIVE) == ALL_ALIVE)
+        watchdog_refresh();
+}
+```
+
+The exchange defines a monitoring-window boundary atomically. A check-in arriving after the exchange remains for the next window, unlike separate load and clear operations that can erase a concurrent update. This example assumes each required task must report progress within each window, and lock-free atomics or an appropriate task-context implementation. Longer-period tasks need individual deadlines rather than the same check-in window. The watchdog register and key must match the target's reference manual.
 
 ### Implement a state machine for a traffic light. {E}
 **Short answer:** Model the light as a set of states (for example RED, RED_AMBER, GREEN, AMBER), each with an output pattern and a duration, stored in a constant table along with the next state. The main loop checks whether the current state's time has elapsed (using a timestamp, not a blocking delay); if so, it moves to the next state and sets the lamp outputs for that state.
