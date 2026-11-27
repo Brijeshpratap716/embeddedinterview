@@ -1451,3 +1451,50 @@ The `KDIR` tree must have been configured and built (`make modules_prepare` at l
 - **In-tree:** add a Kconfig entry and `obj-$(CONFIG_MYDRV) += mydrv.o` to the subsystem's Makefile; upstreaming the driver avoids constant rebuilding for API changes.
 
 **Common errors:** "Invalid module format" or "disagrees about version of symbol" (built against a different kernel), "Unknown symbol" (missing dependency, or using a GPL-only symbol without a GPL licence), and missing `modules_prepare` in the build tree.
+
+### What is the difference between dma_alloc_coherent and dma_map_single? {M}
+**Short answer:** Coherent allocation returns a CPU pointer and a DMA address for a consistent shared allocation. Streaming mapping temporarily transfers ownership of an existing suitable CPU buffer to a device.
+
+| API | Typical use |
+|---|---|
+| dma_alloc_coherent | Descriptor ring |
+| dma_map_single | One TX/RX buffer |
+| dma_sync_single_for_cpu | CPU accesses a still-mapped streaming buffer |
+| dma_sync_single_for_device | Return ownership to device |
+| dma_unmap_single | End streaming mapping |
+
+**Example:** Ethernet TX maps a packet, programs the DMA address, waits for completion, then unmaps it. A descriptor ring may remain coherently allocated for the lifetime of the interface.
+
+```text
+CPU fills TX buffer -> dma_map_single -> Device owns buffer
+CPU may reuse buffer <- dma_unmap_single <- Completion
+```
+
+**Interview takeaway:** Coherency is not the same as ordering. Even a coherent descriptor ring may require dma_wmb() before publishing ownership. Check mapping errors and match the mapping direction and size. [Linux DMA API guide](https://docs.kernel.org/core-api/dma-api-howto.html).
+
+### How do you debug a display underflow or a black screen on Linux DRM/KMS? {H}
+**Short answer:** Separate panel power and link failures from scanout and bandwidth failures. Verify the atomic state, clocks, timing and buffer readiness before changing hardware settings.
+
+**1. Check connector and modes:** Use modetest and inspect the connector status and advertised modes.
+
+**2. Check pipeline:** Verify framebuffer, plane, CRTC, encoder/bridge and panel enable state. Check regulators, reset, link initialization and backlight where applicable.
+
+```text
+Framebuffer -> Plane -> CRTC -> Encoder / bridge -> Panel
+                ^         ^
+             format    bandwidth / timing
+```
+
+**3. Check interrupts and fences:** Missing vblank, unsignaled render fences or FIFO underrun counters can narrow the failure.
+
+**4. Reproduce:** Try a known supported mode and simple test framebuffer using modetest on a test system where taking display ownership is safe.
+
+```sh
+modetest -M msm -c -p
+cat /sys/kernel/debug/dri/0/state
+dmesg | grep -Ei 'drm|dsi|underflow|underrun'
+```
+
+Driver name, debugfs access and card index vary by platform.
+
+**Interview takeaway:** Black screen is a symptom, not a diagnosis; follow the pixel data path and control/power path separately.
