@@ -307,6 +307,10 @@ void remove_dups_sorted(node_t *head)
 - **Unsorted list:** use a hash set / bitmap of values already seen (O(n) time, O(n) memory), or for each node scan the rest of the list (O(n²) time, O(1) memory), or sort first (merge sort, O(n log n)).
 - **Arrays:** the same two-pointer idea compacts a sorted array in place and returns the new length.
 
+#### Remove duplicates without skipping a run
+
+Input 1→1→1→2: keep the first 1 and unlink its successor. The current pointer remains at the first 1, allowing the third 1 to be removed too. Advance only when the following value differs. For unsorted lists, use a hash set or O(n²) comparisons. If the requirement instead removes every value that occurs more than once, the output for this example is only 2, so a different algorithm is needed.
+
 ### Reverse a linked list in groups of k. {H}
 **Short answer:** Process the list one block of k nodes at a time: first check that k nodes remain (otherwise leave the tail as it is), reverse the links inside the block, then connect the node before the block to the block's new first node and the block's new last node to the next block. A dummy node in front of the head removes the special case for the first block. O(n) time, O(1) space.
 
