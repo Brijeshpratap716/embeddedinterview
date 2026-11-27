@@ -232,30 +232,28 @@ Check creation failure. Use xSemaphoreTake and xSemaphoreGive in supported task 
 **Interview takeaway:** A binary semaphore carries at most one pending token. A counting semaphore preserves multiple tokens up to capacity, but can overflow if producers outpace consumers.
 
 ### What is priority inversion? {M}
-**Short answer:** Priority inversion happens when a high-priority task is blocked waiting for a resource (e.g. a mutex) held by a low-priority task, and a **medium-priority** task that does not need the resource pre-empts the low-priority task. The high-priority task now effectively waits for the medium-priority task, possibly for an unbounded time, which breaks the priority scheme.
+Priority inversion occurs when a high-priority task is blocked on a resource owned by a lower-priority task. A medium-priority task can prolong the delay by preempting the resource owner.
 
-**Timeline**
+#### 1. Example
 
+```text
+L: low-priority task locks mutex
+H: high-priority task tries mutex, blocks
+M: medium-priority task preempts L
+H: cannot run until L gets CPU and unlocks
 ```
-L takes mutex M
-H becomes ready, pre-empts L, tries to take M → blocks
-M (medium) becomes ready, pre-empts L (L holds M but has low priority)
-M runs for a long time... H waits for M, although H has the highest priority
-L finally runs, releases M → H runs (too late)
-```
 
-**Bounded vs unbounded:** H waiting for L to finish a short critical section is **bounded** inversion and acceptable. The problem is the **unbounded** part caused by medium-priority tasks running instead of L.
+The medium-priority task indirectly delays the higher-priority task even though it does not use the mutex.
 
-**Real-world example:** NASA's Mars Pathfinder (1997) kept resetting because a high-priority bus-management task waited on a mutex held by a low-priority meteorological task while medium-priority communication tasks ran; a watchdog then reset the system. Engineers enabled priority inheritance on that VxWorks mutex remotely.
+#### 2. Priority inheritance
 
-**Fixes:**
+When H blocks on L's mutex, the kernel may temporarily raise L's effective priority to H's. L completes the critical section, releases the mutex, and H can proceed. The inherited priority is removed according to the kernel's protocol.
 
-- **Priority inheritance** on mutexes (next question): the default for FreeRTOS and Zephyr mutexes.
-- **Priority ceiling** protocol.
-- Keep critical sections short and avoid sharing resources across very different priorities; use message passing to a single owner task.
-- Disable pre-emption or interrupts for tiny critical sections (no inversion possible, but adds latency).
+#### 3. Limitations
 
-**Remember:** semaphores (no owner) cannot do priority inheritance, so using a binary semaphore as a lock reintroduces the problem.
+Inheritance reduces interference from intermediate-priority tasks but cannot eliminate the actual time needed to release the resource. Long critical sections, nested locks and unbounded I/O can still violate deadlines.
+
+**Interview takeaway:** Priority inversion is a resource dependency problem, not merely incorrect priority assignment. Use appropriate mutex protocols and keep critical sections bounded.
 
 ### How do priority inheritance and priority ceiling solve priority inversion? {H}
 **Short answer:** With **priority inheritance**, a task that holds a mutex temporarily runs at the priority of the highest-priority task waiting for it, so medium-priority tasks cannot pre-empt it; when it releases the mutex, it drops back to its own priority. With the **priority ceiling protocol**, each mutex has a ceiling equal to the highest priority of any task that uses it, and a task that takes the mutex immediately runs at that ceiling. Inheritance is automatic and needs no configuration; ceiling also prevents deadlock and bounds blocking but requires knowing which tasks use each mutex.
