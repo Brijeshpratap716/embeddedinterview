@@ -573,33 +573,22 @@ bool balanced(const char *s, char *stack, size_t cap)
 **Complexity:** O(n) time, O(n) worst-case stack space.
 
 ### How do you merge two sorted arrays? {E}
-**Short answer:** Walk both arrays with one index each and copy the smaller current element to the output, then copy whatever remains. O(n + m). To merge **in place** when the first array has room at its end (LeetCode "Merge Sorted Array"), fill from the **back** so nothing is overwritten before it is read.
+Merge by comparing the current elements of two sorted arrays and copying the smaller one into the output.
 
 ```c
-#include <stddef.h>
-
-/* a has capacity n + m: first n elements valid, b has m elements; result sorted in a */
-void merge_into(int *a, size_t n, const int *b, size_t m)
+void merge(const int a[], size_t n, const int b[],
+           size_t m, int out[])
 {
-    size_t i = n, j = m, k = n + m;       /* one past the last of each */
-    while (j > 0) {
-        if (i > 0 && a[i - 1] > b[j - 1])
-            a[--k] = a[--i];
-        else
-            a[--k] = b[--j];
-    }
-    /* remaining a[0..i-1] are already in place */
+    size_t i=0,j=0,k=0;
+    while (i<n && j<m)
+        out[k++]=a[i]<=b[j] ? a[i++] : b[j++];
+    while (i<n) out[k++]=a[i++];
+    while (j<m) out[k++]=b[j++];
 }
-/* a = {1, 2, 3, _, _, _}, b = {2, 5, 6} -> {1, 2, 2, 3, 5, 6} */
 ```
+[1,4,7] and [2,3,8] → [1,2,3,4,7,8]. Caller provides nonoverlapping output with n+m elements.
 
-**Why from the back:** the free space is at the end of `a`. Writing the largest elements first into that space never overwrites an element of `a` that has not been read yet. Merging from the front would require shifting or a temporary buffer.
-
-**Stability:** when equal, taking from `b` here places `b`'s element after `a`'s in the final array, keeping `a`'s first. Use `>=` vs `>` deliberately if stability matters.
-
-**Loop with unsigned indices:** counting down with `size_t` uses the `i > 0` / `--i` pattern to avoid wrapping below zero.
-
-**This is the merge step of merge sort**, which is O(n log n) worst case and stable, a good choice when you need predictable time (unlike quicksort's O(n²) worst case), at the cost of O(n) extra memory for arrays. Merging two sorted linked lists needs no extra memory.
+**Complexity:** O(n+m) time, O(1) auxiliary space excluding output. If the first array has spare capacity, merging from the end can avoid a separate output.
 
 ### How do you find the majority element (appearing more than n/2 times)? {M}
 **Short answer:** Use the **Boyer–Moore voting algorithm**: keep a candidate and a counter. For each element, if the counter is 0, take it as the new candidate; then increment the counter if the element equals the candidate, otherwise decrement it. If a majority exists, it is the final candidate. O(n) time, O(1) space. If a majority is not guaranteed, verify with a second pass.
