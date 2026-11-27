@@ -99,24 +99,15 @@ The remote server and monitor commands depend on the probe/server implementation
 **Interview takeaway:** Compile with debug information and keep the exact ELF for every deployed firmware build. Symbols do not require disabling all optimization.
 
 ### Why can printf debugging change program behaviour? {M}
-**Short answer:** `printf` is slow (formatting plus a blocking UART at 115200 baud takes about 87 µs per character, so a 40-character line costs ~3.5 ms), uses a lot of stack (often 0.5–1 KB or more with floating-point formatting), may allocate memory or take locks, and is usually not safe to call from interrupts. Adding it changes timing, stack usage and memory layout, so race conditions and timing bugs may disappear or new ones may appear (a "Heisenbug").
+Printf debugging can change the behavior of timing-sensitive firmware. Formatting, locking, buffering and UART transmission consume CPU time and may change scheduling or interrupt timing.
 
-**Better ways to get information out**
+#### Example
+At 115200 baud with 8N1 framing, transmitting 100 bytes takes approximately 8.7 ms on the wire. A blocking logging call can delay a task with a 1 ms deadline.
 
-| Technique | Cost | Notes |
-|---|---|---|
-| GPIO toggle + scope/logic analyser | ~10 ns | best for timing, ISR entry/exit, latency |
-| RAM trace buffer (event ID + timestamp + value) | a few cycles | dump later with the debugger or over a link |
-| SEGGER RTT | ~1 µs per message, no blocking | writes to a RAM ring buffer read by the J-Link while running |
-| ITM/SWO (`ITM_SendChar`) | fast, single-wire | requires an SWO pin and probe support |
-| Deferred logging (log IDs + arguments, formatted on the host) | very low | e.g. Trice, defmt (Rust), Zephyr dictionary logging |
-| Asynchronous log task with a queue | moderate | formatting happens later, at low priority |
+#### Alternatives
+Use a bounded non-blocking ring buffer, hardware trace, GPIO timing pulses or deferred logging. Avoid heavy formatting in ISRs and record dropped-message counts.
 
-**If you must use printf**
-
-- Use a non-blocking, buffered implementation with DMA, and never call it from ISRs.
-- Retarget `_write` (newlib) to your UART or RTT; use newlib-nano and avoid `%f` (or enable `-u _printf_float` only if needed).
-- Remember that disabling printf in release builds also changes timing — test the release configuration.
+**Interview takeaway:** A bug that disappears after adding logging is not necessarily fixed. The instrumentation may have changed the race or timing.
 
 ### What are ITM, SWO, ETM and RTT, and when do you use trace? {M}
 **Short answer:** They are ways to get data out of a running Cortex-M without stopping it. **ITM** (Instrumentation Trace Macrocell) sends software messages (printf-style output, event IDs) and hardware events (DWT data trace, PC sampling, exception entry/exit) over the single-wire **SWO** pin. **ETM** (Embedded Trace Macrocell) streams every executed instruction through a parallel trace port (or into an on-chip buffer like the ETB/MTB), giving a full execution history for timing analysis and code coverage. **RTT** (SEGGER Real-Time Transfer) uses ring buffers in RAM that the debug probe reads in the background, so it works on any core with just SWD.
