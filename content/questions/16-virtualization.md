@@ -227,24 +227,23 @@ KVM decodes or otherwise handles supported accesses and provides address, direct
 **Interview takeaway:** Not every guest exception is a VM exit, and not every exit requires QEMU. Guest system calls normally stay within the guest EL0/EL1 relationship.
 
 ### What is two-stage address translation (stage 2, IPA)? {H}
-**Short answer:** With virtualization there are two page-table walks. **Stage 1** is owned by the guest OS and translates guest virtual addresses (VA) to **intermediate physical addresses (IPA)**, which the guest thinks are physical. **Stage 2** is owned by the hypervisor and translates IPAs to real physical addresses (PA). The guest cannot see or change stage 2, so it can only reach memory the hypervisor has given it.
+ARM virtualization uses two stages of translation so a guest can manage its own address space without controlling host physical memory.
 
+```text
+Guest virtual address
+    | stage 1: guest page tables (TTBR)
+    v
+Intermediate physical address (IPA)
+    | stage 2: hypervisor page tables (VTTBR_EL2)
+    v
+Host physical address (PA)
 ```
-guest VA --(stage 1, guest's TTBR0/1_EL1)--> IPA --(stage 2, VTTBR_EL2)--> PA
-```
 
-**Why it matters**
+For example, guest VA 0x4000 may translate to IPA 0x80004000, which stage 2 maps to a host RAM page. Stage-2 permissions constrain the guest regardless of stage-1 permissions. A stage-2 fault can signal an unmapped page or emulated MMIO region.
 
-- **Isolation:** each VM has its own stage-2 tables, so one guest cannot address another guest's or the host's memory.
-- **Unmodified guests:** the guest manages its own page tables normally, with no hypervisor calls; on x86 this is EPT (Intel) or NPT/RVI (AMD).
-- **Trapping MMIO:** leaving device addresses unmapped in stage 2 makes every access fault to the hypervisor, which then emulates the device.
-- **Memory over-commit and migration:** the hypervisor can unmap, swap, share (KSM) or write-protect guest pages to track dirty pages during live migration.
+TLBs may cache combined translations tagged by ASID and VMID. Hypervisors must invalidate relevant cached entries when mappings change.
 
-**Cost of a TLB miss:** each step of the guest's stage-1 walk itself needs a stage-2 translation. With 4-level tables at both stages, a miss can cost up to 24 memory accesses instead of 4. TLBs cache the **combined** VA→PA result, tagged with the **VMID** (and ASID), so switching between VMs does not require flushing the whole TLB. Large pages at stage 2 (2 MB/1 GB, via hugepages for guest RAM) reduce the cost a lot.
-
-**Related hardware:** the **SMMU** (Arm's IOMMU) also has stage-1 and stage-2 translation, so a device passed through to a guest can only DMA into that guest's memory.
-
-**Interview check question:** "Who handles a page fault on a guest virtual address that is not in the guest's page tables?" The **guest** kernel: it is a stage-1 fault, delivered to EL1 as normal. Only stage-2 faults go to the hypervisor.
+**Interview takeaway:** The guest believes IPA is physical memory. Stage 2 provides isolation; it does not mean every access requires two full page-table walks.
 
 ### How are interrupts and timers virtualized on ARM (vGIC and the generic timer)? {H}
 **Short answer:** The GICv2/v3 has hardware virtualization support: the hypervisor writes pending virtual interrupts into **List Registers** (`ICH_LR<n>_EL2`), and the guest acknowledges and completes them through the **virtual CPU interface** without trapping. KVM emulates the distributor and redistributors (the "vGIC") in the kernel. For time, each vCPU uses the **virtual timer** (`CNTV_*`), which counts physical time minus a per-VM offset; when it fires, KVM injects the virtual timer interrupt (PPI 27) into the guest.
