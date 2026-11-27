@@ -53,46 +53,21 @@ bool second_largest(const int a[], size_t n, int *out)
 **Complexity:** O(n) time and O(1) space.
 
 ### How do you check whether an array is sorted? {E}
-**Short answer:** Compare each element with the one before it, starting at index 1. If any `arr[i] < arr[i-1]`, it is not sorted (for non-decreasing order). Return as soon as you find a violation.
+An array is nondecreasing if every element is at least its predecessor.
 
 ```c
-#include <stdbool.h>
-#include <stddef.h>
-
-bool is_sorted(const int *arr, size_t n)
+bool sorted(const int a[], size_t n)
 {
-    for (size_t i = 1; i < n; i++)        /* start at 1: arr[i-1] must exist */
-        if (arr[i] < arr[i - 1])
+    for (size_t i = 1; i < n; ++i)
+        if (a[i] < a[i-1])
             return false;
-    return true;                           /* 0 or 1 element: sorted */
+    return true;
 }
 ```
 
-**Common bug.** This version reads outside the array:
+[1, 2, 2, 5] is sorted; [1, 4, 3] is not. Empty and single-element arrays are sorted by convention. Change the comparison to <= for strictly increasing order.
 
-```c
-for (int i = 0; i < 6; i++) {
-    if (arr[i] > arr[i - 1]) { }           /* i = 0 reads arr[-1]: undefined behaviour */
-    else printf("Not Sorted");             /* also prints once per violation */
-}
-```
-
-Two problems: `arr[-1]` is out of bounds (it may read a random stack value and print "Not Sorted" for a sorted array), and it prints a message for every violation instead of returning a single answer. Also, `>` makes `{1, 2, 2, 3}` count as unsorted; use `<` in the failing test so that equal neighbours are allowed.
-
-**Decide what "sorted" means:** strictly increasing (`arr[i] <= arr[i-1]` fails), non-decreasing (above), or either direction (check the first unequal pair to find the direction, then check the rest).
-
-**Recursive version** (often asked as a follow-up):
-
-```c
-bool is_sorted_rec(const int *a, size_t n)
-{
-    return n < 2 || (a[n - 1] >= a[n - 2] && is_sorted_rec(a, n - 1));
-}
-```
-
-It is O(n) deep, so on a microcontroller with a small stack the loop is the right answer.
-
-**Complexity:** O(n) worst case, O(1) best case (first pair fails), O(1) space.
+**Complexity:** O(n) time, O(1) space; exits early on the first inversion.
 
 ### How do you reverse an array in place? {E}
 **Short answer:** Use two indices, `low` at the start and `high` at the end. Swap the elements, move `low` up and `high` down, and stop when they meet. O(n) time, O(1) extra space.
