@@ -223,24 +223,15 @@ During normal operation the diode is reverse-biased. When the switch opens, coil
 **Interview takeaway:** A simple diode limits voltage but slows relay release. A suitably designed TVS clamp can speed turn-off within the switch ratings.
 
 ### What is ESD and how do you protect a board? {M}
-**Short answer:** Electrostatic discharge is a fast, high-voltage pulse (thousands of volts, nanosecond rise times, amps of peak current) when a charged person or object touches a connector or pin. It can destroy or weaken ICs immediately or cause latent damage and glitches (resets, lock-ups, corrupted registers). Protect external interfaces with **TVS diodes** placed right at the connector with a short path to ground, add series resistors or ferrites on signals, use proper grounding and enclosure design, and design firmware to recover from glitches.
+Electrostatic discharge (ESD) is a brief transfer of stored charge that can damage semiconductor inputs or cause resets.
 
-**Hardware measures**
+#### Hardware protection
+Use suitable TVS diodes near external connectors, short return paths, controlled grounding and appropriate series resistance or filtering. Handle assemblies using grounded ESD-safe equipment.
 
-- TVS/ESD diode arrays on every externally accessible line (USB, buttons, Ethernet, CAN, debug headers), chosen with low capacitance for fast signals (USB HS, HDMI).
-- Place protection **between the connector and anything else**, with a very short, wide ground connection; route the discharge current away from the MCU.
-- Series resistors (e.g. 22–100 Ω) limit current into IC pins; RC filters on slow inputs.
-- Solid ground planes, chassis ground connections at connectors, and spark gaps/shielding where required.
-- Test to IEC 61000-4-2 levels (e.g. ±8 kV contact, ±15 kV air discharge) for products.
+#### Firmware resilience
+Watchdog recovery, reset-cause logs and retries can help with transient disturbances, but cannot substitute for electrical protection.
 
-**Handling:** ESD-safe work areas (wrist straps, mats, ionisers), and shipping boards in anti-static packaging.
-
-**Firmware robustness against ESD and EMC events**
-
-- Watchdog enabled and serviced from a supervisory task.
-- Periodically re-write critical configuration registers (GPIO modes, peripheral settings) or verify them.
-- Detect and recover from communication errors (I2C bus recovery, re-initialising peripherals), and use CRCs on data.
-- Brown-out reset enabled; log reset causes to diagnose field issues.
+**Interview takeaway:** Component-level ESD ratings are different from finished-product immunity tests. Verify protection on the actual assembly.
 
 ### What is signal integrity and what causes ringing? {H}
 **Short answer:** Signal integrity is about whether a digital signal arrives at the receiver with clean edges and correct levels and timing. **Ringing** — overshoot and oscillation after an edge — happens when a fast edge travels along a trace that behaves as a transmission line whose impedance is not matched at the ends, so energy reflects back and forth; it can also come from parasitic inductance and capacitance forming a resonant circuit. Problems appear when the **edge rise time** is short compared with the trace's propagation delay (roughly when the trace length exceeds about 1/6 of the distance the edge travels during its rise time), regardless of the clock frequency.
