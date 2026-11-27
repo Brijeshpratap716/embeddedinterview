@@ -799,33 +799,36 @@ Incorrect descriptor lengths, invalid endpoint configuration or timing failures 
 **Interview takeaway:** Enumeration is a host-driven control-transfer process. A device must implement its default control endpoint correctly before ordinary data endpoints are useful.
 
 ### What is Modbus? {E}
-**Short answer:** Modbus is a simple request/response protocol widely used in industrial automation. A **client** (master) sends a function code and a register address to a **server** (slave), which replies with data or an exception. **Modbus RTU** runs over RS-485 (or RS-232) with compact binary frames, a 1-byte server address and a CRC-16, with frames separated by 3.5 character times of silence. **Modbus TCP** carries the same function codes over TCP port 502 with an MBAP header instead of the address and CRC.
+Modbus is an industrial application protocol for reading and writing data such as coils and registers. Common transports are Modbus RTU over a serial link and Modbus TCP over TCP/IP.
 
-**Data model**
+#### 1. Data model
 
-| Table | Access | Size | Function codes |
-|---|---|---|---|
-| Coils | read/write | 1 bit | 01 read, 05 write single, 15 write multiple |
-| Discrete inputs | read only | 1 bit | 02 |
-| Input registers | read only | 16 bit | 04 |
-| Holding registers | read/write | 16 bit | 03 read, 06 write single, 16 write multiple |
+| Object | Common meaning |
+|---|---|
+| Coils | Read/write bits |
+| Discrete inputs | Read-only bits |
+| Input registers | Read-only 16-bit values |
+| Holding registers | Read/write 16-bit values |
 
-**RTU frame example: read 2 holding registers starting at 0x0010 from server 0x11**
+The actual device register map defines the meanings, supported functions and scaling.
 
+#### 2. RTU example
+
+```text
+Server address | Function code | Data fields | CRC-16
 ```
-Request:  11 03 00 10 00 02 [CRC lo] [CRC hi]
-Response: 11 03 04 01 F4 00 64 [CRC lo] [CRC hi]   -> registers = 0x01F4 (500), 0x0064 (100)
-```
 
-**Register mapping in a device (design question):** document a map, e.g. 40001 = temperature × 10 (signed), 40002 = setpoint, 40003–40004 = 32-bit counter (decide word order!), 40010 = command register. Values above 16 bits span two registers, and different vendors use different word orders (big-endian bytes, but high or low word first), a classic integration bug.
+Function code 03 commonly reads holding registers. Serial timing and silent intervals identify RTU frame boundaries. RS-485 is a common electrical transport.
 
-**Implementation details**
+#### 3. TCP variant
 
-- RTU timing: detect frame end with a 3.5-character silence (≈ 4 ms at 9600 baud); for baud rates above 19200 a fixed 1.75 ms is used. The UART idle-line interrupt or a hardware receiver timeout helps.
-- CRC-16 with polynomial 0xA001 (reflected 0x8005), initial value 0xFFFF, sent low byte first.
-- Exceptions: function code | 0x80 plus an exception code (01 illegal function, 02 illegal data address, 03 illegal value).
-- Broadcast address 0: writes to all servers, no reply.
-- Security: none built in; use network segmentation or Modbus/TCP Security (TLS).
+Modbus TCP uses an MBAP header for transaction identification, length and unit information. It does not append the serial RTU CRC to the TCP message.
+
+#### 4. Implementation cautions
+
+Distinguish human-facing register numbers from zero-based protocol offsets. Check multi-register byte/word ordering, timeouts and exception responses. Do not expose unauthenticated Modbus control traffic directly to untrusted networks.
+
+**Interview takeaway:** Modbus defines message semantics; RTU and TCP define different framing/transport conventions. The device-specific register map is essential.
 
 ### What layers does an embedded Ethernet interface involve? {M}
 **Short answer:** The **MAC** (media access controller), usually inside the MCU or SoC, builds and checks frames (preamble, addresses, CRC) and moves them to and from memory with DMA descriptors. The **PHY**, often an external chip, handles the physical signalling on the cable (10/100/1000BASE-T, auto-negotiation, link detection). They connect through a data interface (**MII**, **RMII**, **RGMII**, **SGMII**) and a management bus (**MDIO/MDC**) that reads and writes PHY registers. A TCP/IP stack (lwIP, Zephyr's stack, FreeRTOS+TCP, or Linux) runs above the MAC driver.
