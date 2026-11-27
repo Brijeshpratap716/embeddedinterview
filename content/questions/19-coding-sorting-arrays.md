@@ -352,6 +352,17 @@ void merge_sort(int *a, int *tmp, size_t n)
 
 **Memory note for MCUs:** the scratch buffer can be static (`static int tmp[MAX_N]`) instead of heap-allocated; if RAM is too tight, use heap sort instead.
 
+#### Bottom-up merge passes
+
+```text
+[7 2 5 1 4]
+width=1: [2 7] [1 5] [4]
+width=2: [1 2 5 7] [4]
+width=4: [1 2 4 5 7]
+```
+
+Provide a distinct scratch array of n integers. For embedded real-time use, allocate it in advance rather than on every call. Ensure size computations fit size_t; a robust width-doubling loop stops once width >= n-width. Merging is stable when ties select the left run first. A linked-list merge sort can avoid the n-element array by relinking nodes.
+
 ### Sort an array of 0s, 1s and 2s (Dutch national flag). {M}
 **Short answer:** Use three pointers in one pass (Dijkstra's Dutch national flag algorithm): `lo` marks the end of the 0s, `hi` the start of the 2s, and `mid` scans the unknown region. A 0 is swapped to `lo` (both advance), a 1 just advances `mid`, and a 2 is swapped to `hi - 1` (only `hi` moves, because the swapped-in element is still unexamined). O(n) time, O(1) space.
 
