@@ -154,46 +154,27 @@ Switching consumes CPU time and may disrupt cache locality. Measure on the targe
 **Interview takeaway:** A context switch preserves execution state, not the entire contents of memory. Hardware and software divide the saving/restoring work according to the port.
 
 ### How does an RTOS scheduler pick the next task to run? {M}
-**Short answer:** It keeps one **ready list per priority** and a **bitmap** with one bit per priority that has ready tasks. To pick the next task, it finds the highest set bit (one `CLZ` instruction on Cortex-M3+), then takes the task at the head of that priority's list (rotating it to the end for round-robin). This makes scheduling O(1), independent of the number of tasks, which is essential for deterministic timing.
+A typical fixed-priority RTOS scheduler selects the highest-priority ready task. Tasks waiting for events or delays are not eligible.
 
-```c
-#include <stdint.h>
+#### 1. Example
 
-#define NUM_PRIO 32
-typedef struct tcb { struct tcb *next; uint8_t prio; /* saved SP, stack, ... */ } tcb_t;
+| Task | Priority (higher number = higher here) | State |
+|---|---:|---|
+| Control | 4 | Blocked |
+| Communication | 3 | Ready |
+| Logging | 1 | Ready |
 
-static tcb_t   *ready_head[NUM_PRIO], *ready_tail[NUM_PRIO];
-static uint32_t ready_bitmap;                     /* bit p set = some task of priority p is ready */
+Communication runs because Control is blocked. When Control becomes ready, a preemptive scheduler may switch to it.
 
-void make_ready(tcb_t *t)
-{
-    t->next = NULL;
-    if (ready_tail[t->prio]) ready_tail[t->prio]->next = t; else ready_head[t->prio] = t;
-    ready_tail[t->prio] = t;
-    ready_bitmap |= 1u << t->prio;
-}
+#### 2. Scheduler mechanism
 
-tcb_t *pick_next(void)                            /* highest number = highest priority here */
-{
-    if (!ready_bitmap) return NULL;               /* only the idle task: handled separately */
-    unsigned p = 31u - (unsigned)__builtin_clz(ready_bitmap);
-    tcb_t *t = ready_head[p];
-    ready_head[p] = t->next;                      /* rotate for round robin among equals */
-    if (!ready_head[p]) { ready_tail[p] = NULL; ready_bitmap &= ~(1u << p); }
-    return t;                                     /* caller re-adds it via make_ready() if still ready */
-}
-```
+Ready queues or bitmaps track eligible tasks by priority. Event completion or timer expiry changes a task's state, and scheduling selects the next task. Equal-priority policy can be round-robin or another configured rule.
 
-**Other pieces of a scheduler**
+#### 3. Practical caveats
 
-- **Delayed list:** blocked tasks with timeouts, sorted by wake-up time (FreeRTOS keeps two lists to handle tick-count overflow); the tick handler moves expired tasks to ready.
-- **Event lists:** each queue/semaphore has a list of waiting tasks sorted by priority, so the highest-priority waiter wakes first.
-- **Scheduling points:** tick interrupt, any API call that unblocks a higher-priority task, task blocking or yielding, ISR exit.
-- **Idle task** when nothing else is ready.
+RTOS priority numbering varies: FreeRTOS task priorities use higher numbers for higher task priority, whereas Cortex-M interrupt priorities use lower numerical values for higher urgency. Do not confuse the two. Scheduler locks, interrupt masks and SMP affinity can affect dispatch.
 
-**FreeRTOS specifics:** `configUSE_PORT_OPTIMISED_TASK_SELECTION` uses `CLZ` and limits priorities to 32; the generic method scans from the top priority down. **Zephyr** offers a simple list, a scalable red-black tree, or a multi-queue backend (`CONFIG_SCHED_*`).
-
-**Design-interview extension:** "add resource management": combine with priority-inheritance mutexes (next questions) and admission checks for deadlines.
+**Interview takeaway:** Priority is considered only among eligible tasks. Blocking a high-priority task allows lower-priority ready tasks to execute.
 
 ### What is the difference between a mutex and a binary semaphore? {M}
 **Short answer:** A **mutex** is for **mutual exclusion**: it has an owner, only the task that took it may give it back, it supports priority inheritance, and it can be recursive. A **binary semaphore** is for **signalling**: it has no owner, any task or ISR can give it, and it has no priority inheritance. Use a mutex to protect a shared resource; use a semaphore (or a task notification) to signal that an event happened.
