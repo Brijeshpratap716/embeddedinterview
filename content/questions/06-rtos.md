@@ -404,36 +404,35 @@ Stream/message buffers assume one writer and one reader unless additional serial
 **Interview takeaway:** Use a stream buffer for bytes, a message buffer for variable-length records, and a queue for fixed-size messages or descriptors.
 
 ### What are event groups / event flags? {M}
-**Short answer:** An event group is a set of bits (flags) that tasks can set, clear and wait on with **AND** ("wait until bits 0 and 2 are both set") or **OR** ("wait until any of bits 0–3 is set") semantics, optionally clearing them on exit. They synchronise a task with several conditions at once, or several tasks at a barrier (`xEventGroupSync`). Unlike a counting semaphore, setting a bit that is already set does not count twice.
+An event group stores event bits that tasks can set, clear or wait for. It is useful when work depends on one or several conditions rather than a data payload.
+
+#### 1. FreeRTOS example
 
 ```c
-#define EV_WIFI_UP   (1u << 0)
-#define EV_TIME_SYNC (1u << 1)
-#define EV_CERT_OK   (1u << 2)
+#define NET_READY (1U << 0)
+#define CFG_READY (1U << 1)
 
-EventGroupHandle_t sys_events = xEventGroupCreate();
+EventBits_t bits = xEventGroupWaitBits(
+    events, NET_READY | CFG_READY,
+    pdFALSE, pdTRUE, pdMS_TO_TICKS(500));
 
-/* cloud task waits until all three are ready */
-EventBits_t bits = xEventGroupWaitBits(sys_events,
-                                       EV_WIFI_UP | EV_TIME_SYNC | EV_CERT_OK,
-                                       pdFALSE,          /* do not clear on exit */
-                                       pdTRUE,           /* wait for ALL bits */
-                                       pdMS_TO_TICKS(30000));
-if ((bits & (EV_WIFI_UP | EV_TIME_SYNC | EV_CERT_OK)) != (EV_WIFI_UP | EV_TIME_SYNC | EV_CERT_OK)) {
-    /* timeout: handle */
+if ((bits & (NET_READY | CFG_READY)) ==
+    (NET_READY | CFG_READY)) {
+    start_service();
 }
 ```
 
-**Uses:** system start-up readiness (network up, time synced), state broadcasts to several tasks, barriers in multi-step pipelines, and waiting for one of several sources.
+The task waits for both bits (wait-for-all). The clear-on-exit parameter is false here, so the bits remain set. The returned bits must be checked because the wait may time out.
 
-**Details and pitfalls**
+#### 2. Wait modes
 
-- Several tasks can wait on the same group, and setting bits can unblock all of them (a broadcast), which semaphores cannot do.
-- Setting bits from an ISR (`xEventGroupSetBitsFromISR`) is deferred to the timer service task in FreeRTOS, because waking an unknown number of tasks is not a bounded operation; that adds latency.
-- Because bits are not counted, two events of the same type before the task runs merge into one. If you must count, use a semaphore or queue.
-- The number of usable bits is limited (24 with 32-bit ticks in FreeRTOS).
+Wait-for-any succeeds when at least one selected bit is set; wait-for-all requires every selected bit. Clear-on-exit behavior depends on the API and chosen parameters.
 
-**Zephyr:** `k_event` (event objects) and `k_poll` for waiting on multiple kernel objects.
+#### 3. Limitations
+
+Repeated setting of the same bit does not count multiple events. Use a counting semaphore, queue or counting notification if every occurrence matters. FreeRTOS has reserved event-group bits and some ISR operations defer work through the timer service.
+
+**Interview takeaway:** Event groups represent conditions, not message payloads or event counts. Choose the wait and clear semantics carefully.
 
 ### What are FreeRTOS task notifications? {M}
 **Short answer:** Every FreeRTOS task has a built-in 32-bit notification value and state (an array of them since v10.4). Another task or an ISR can notify the task by incrementing the value, setting bits in it, or overwriting it, and the task can block waiting for a notification. Notifications are faster and use less RAM than semaphores, queues or event groups because no separate kernel object is needed, but only the owning task can wait on them and they cannot buffer multiple data items.
