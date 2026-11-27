@@ -504,27 +504,33 @@ On Cortex-M FreeRTOS ports, only interrupts within the permitted syscall-priorit
 **Interview takeaway:** Use only APIs documented as ISR-safe, check failure returns, and request the correct reschedule operation when a higher-priority task is woken.
 
 ### What is the tick and what is a tickless idle mode? {M}
-**Short answer:** The tick is a periodic timer interrupt (commonly SysTick at 1 kHz, i.e. every 1 ms) that the kernel uses to keep time, wake delayed tasks, handle timeouts, and time-slice equal-priority tasks. In **tickless idle** mode, when only the idle task is ready, the kernel stops the periodic tick, programs a timer to wake the CPU at the next scheduled event (or on any interrupt), enters a low-power mode, and corrects its tick count on wake-up. This saves a lot of power in battery devices.
+An RTOS tick is a periodic timekeeping event used for delays, timeouts and, depending on policy, time slicing. Tickless idle suppresses unnecessary periodic tick interrupts while no work is ready.
 
-**Choosing the tick rate**
+#### 1. Tick example
 
-| Tick | Timing resolution | Overhead |
-|---|---|---|
-| 100 Hz (10 ms) | coarse delays | very low |
-| 1000 Hz (1 ms) | typical | moderate |
-| 10 kHz | fine, but... | interrupt overhead becomes significant |
+A 1 kHz tick represents a nominal 1 ms tick period. A delay expressed as 10 ticks blocks the task until its calculated wake tick; wall-clock delay depends on its phase relative to tick boundaries and scheduling latency.
 
-Delays are only accurate to ±1 tick: `vTaskDelay(1)` can return after anything between almost 0 and 1 tick, depending on where in the current tick it was called. For precise timing use hardware timers.
+#### 2. Tickless idle flow
 
-**Tickless idle details (FreeRTOS `configUSE_TICKLESS_IDLE`)**
+```text
+No runnable work except idle
+       |
+Find next known kernel deadline
+       |
+Program wake timer, suppress periodic ticks
+       |
+Sleep until event / deadline
+       |
+Account for elapsed ticks and resume scheduling
+```
 
-1. The idle task sees that the next task wake-up is N ticks away (and N ≥ `configEXPECTED_IDLE_TIME_BEFORE_SLEEP`).
-2. `vPortSuppressTicksAndSleep()` stops SysTick, programs it (or a low-power timer such as LPTIM/RTC that keeps running in stop mode) for N ticks, and executes `WFI`.
-3. On wake-up (timer expiry or another interrupt), it computes how many ticks really elapsed and advances the tick count with `vTaskStepTick()`.
+An external interrupt may wake the processor before the programmed deadline. The port must update timekeeping appropriately.
 
-**Power impact:** a 1 kHz tick wakes the CPU 1000 times per second; for a device that is mostly idle, removing those wake-ups can cut average current from hundreds of µA to a few µA. Low-power ports use a low-power timer clocked from the 32 kHz crystal so the MCU can enter stop mode.
+#### 3. Trade-offs
 
-**Zephyr** is tickless by default (`CONFIG_TICKLESS_KERNEL`) and uses a timeout queue programmed into the system timer.
+A faster tick improves nominal delay granularity but increases periodic interrupt overhead. Tickless operation can reduce idle power and wakeups, but needs reliable timers, wake latency handling and platform power-management integration.
+
+**Interview takeaway:** A tick is a kernel time base, not a guarantee of exact execution time. Tickless idle saves energy by suppressing unnecessary ticks, not by stopping time.
 
 ### What is the idle task and what is it used for? {E}
 **Short answer:** The idle task is created by the kernel at the lowest priority and runs whenever no other task is ready. In FreeRTOS it frees the memory of deleted tasks and calls an optional **idle hook** that applications use to enter low-power sleep, do background work, or measure CPU load. It must never block or take long, because then deleted tasks are not cleaned up and the system cannot sleep.
