@@ -415,6 +415,10 @@ Lengths: A has 2 unique + 3 shared = 5, B has 3 unique + 3 shared = 6.
 
 **Embedded relevance:** detecting shared buffers or descriptor chains, and debugging corrupted free lists where two chains merge unexpectedly.
 
+#### Why switching heads works
+
+Let unique prefixes have lengths a and b, and the shared suffix length c. Pointer p traverses A then B; pointer q traverses B then A. After switching, each has covered the same combined prefix distance a+b before arriving at the shared node. If no intersection exists both reach NULL after traversing both lists. Equality is pointer identity, not equal data values. This proof assumes both lists are acyclic and not modified during traversal.
+
 ### Check whether a linked list is a palindrome. {M}
 **Short answer:** Find the middle with slow/fast pointers, reverse the second half in place, compare the first half with the reversed second half node by node, then reverse the second half back to restore the list. O(n) time and O(1) extra space.
 
