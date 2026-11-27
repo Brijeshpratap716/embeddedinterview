@@ -158,34 +158,51 @@ Power-of-two sizes are useful for ring buffers, cache alignment and hardware res
 **Interview takeaway:** The test is O(1), uses no loop and requires a nonzero unsigned input.
 
 ### How do you clear the rightmost (lowest) set bit, and what other tricks use n & (n - 1)? {E}
-**Short answer:** `n & (n - 1)` turns off the lowest set bit. It is the building block for the power-of-two test, Kernighan's bit count and several other classic tricks.
+`n & (n - 1)` clears the least significant set bit of a nonzero unsigned integer.
 
-```c
-uint32_t clear_lowest_set(uint32_t n)  { return n & (n - 1); }   /* 0b1011_0100 -> 0b1011_0000 */
-uint32_t isolate_lowest_set(uint32_t n){ return n & (~n + 1); }  /* 0b1011_0100 -> 0b0000_0100 (n & -n) */
-uint32_t set_lowest_clear(uint32_t n)  { return n | (n + 1); }   /* 0b1011_0111 -> 0b1011_1111 */
-uint32_t clear_trailing_ones(uint32_t n){ return n & (n + 1); }  /* 0b1011_0111 -> 0b1011_0000 */
+#### 1. Worked example
+
+```text
+n       = 00101100 (44)
+n - 1   = 00101011 (43)
+AND     = 00101000 (40)
 ```
 
-**How it works:** in binary, `n - 1` flips the lowest 1 to 0 and all the 0s below it to 1. ANDing with the original keeps the high part, removes the lowest 1 and leaves the low part zero.
+Subtracting one changes the lowest one into zero and changes all lower zeros into ones. AND preserves the higher bits but removes the selected one.
 
-**Walk-through for n = 12 (0b1100):** `n - 1 = 0b1011`, `n & (n - 1) = 0b1000` = 8. The lowest set bit (value 4) is gone.
+#### 2. C code
 
-**Uses**
+```c
+uint32_t clear_lowest(uint32_t n)
+{
+    return n & (n - 1U);
+}
+```
 
-1. **Power-of-two test:** `n && !(n & (n - 1))`.
-2. **Counting set bits:** repeat until zero, counting the iterations (one loop per set bit).
-3. **Iterating over set bits:** handle pending interrupt flags or ready tasks one at a time:
-   ```c
-   while (pending) {
-       unsigned bit = __builtin_ctz(pending);  /* index of lowest set bit */
-       handle(bit);
-       pending &= pending - 1;
-   }
-   ```
-4. **Lowest set bit as a mask:** `n & -n` is used in Fenwick trees and to pick the highest-priority ready task when priority 0 is bit 0.
+For n = 0, unsigned arithmetic wraps or is converted according to the operand types, and the result is zero on normal uint32_t targets.
 
-**Edge case:** for `n = 0` the result is 0, which is fine. The `n & -n` form on a signed type overflows for `INT_MIN`, so use unsigned values.
+#### 3. Related interview tricks
+
+| Goal | Operation |
+|---|---|
+| Check power of two | n != 0 && (n & (n - 1)) == 0 |
+| Clear all set bits one at a time | Repeat n &= n - 1 |
+| Count set bits | Count those iterations |
+| Remove lowest pending flag | n &= n - 1 |
+
+Example processing a software snapshot of pending interrupt flags:
+
+```c
+while (pending != 0) {
+    unsigned bit = __builtin_ctz(pending);
+    handle_event(bit);
+    pending &= pending - 1U;
+}
+```
+
+This assumes pending has the type expected by the builtin. The actual device interrupt must be acknowledged using its documented semantics.
+
+**Interview takeaway:** Clearing one set bit at a time makes algorithms proportional to the number of set bits, not the entire integer width.
 
 ### How do you count the set bits in an integer? {M}
 **Short answer:** Use Brian Kernighan's loop, which runs once per set bit because `x & (x - 1)` clears the lowest set bit. In production use `__builtin_popcount` (a single `CNT`/`VCNT` or `POPCNT` instruction where the CPU has one).
