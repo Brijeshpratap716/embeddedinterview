@@ -474,39 +474,45 @@ A lock or interrupt masking can protect against cooperating software writers, bu
 **Interview takeaway:** Volatile does not make RMW atomic. Check hardware side effects, concurrent access and dedicated set/clear mechanisms.
 
 ### What is bit-banding on Cortex-M? {H}
-**Short answer:** On Cortex-M3 and Cortex-M4, bit-banding maps each **bit** of two 1 MB regions (the first 1 MB of SRAM at `0x20000000` and of the peripheral space at `0x40000000`) to its own 32-bit word in an **alias** region (`0x22000000` and `0x42000000`). Writing 0 or 1 to an alias word changes exactly that one bit atomically (the bus does the read-modify-write in one locked transaction); reading the alias word returns the bit's value.
+Bit-banding is an optional Arm Cortex-M mechanism that maps individual bits in supported SRAM or peripheral regions to word addresses in an alias region. A write to an alias word updates the corresponding bit without a software read-modify-write sequence.
 
-**Address formula**
+#### 1. Address calculation
 
+For the classic bit-band mapping:
+
+```text
+alias = alias_base + byte_offset * 32 + bit_number * 4
 ```
-alias_address = alias_base + (byte_offset × 32) + (bit_number × 4)
 
-SRAM:        alias_base = 0x22000000, byte_offset = address - 0x20000000
-Peripheral:  alias_base = 0x42000000, byte_offset = address - 0x40000000
+For the SRAM region beginning at 0x20000000, its classic alias base is 0x22000000. The bit number is 0–7 within the selected byte.
+
+#### 2. Example
+
+To select bit 3 of byte address 0x20000004:
+
+```text
+byte_offset = 4
+alias = 0x22000000 + 4 * 32 + 3 * 4
+      = 0x2200008C
 ```
-
-**Example:** bit 5 of the register at `0x40020014` (GPIOA ODR on an STM32F4):
 
 ```c
-#define BITBAND_PERIPH(addr, bit) \
-    (*(volatile uint32_t *)(0x42000000u + (((uint32_t)(addr) - 0x40000000u) * 32u) + ((bit) * 4u)))
+volatile uint32_t *alias =
+    (volatile uint32_t *)0x2200008CU;
 
-BITBAND_PERIPH(&GPIOA->ODR, 5) = 1;   /* set PA5 atomically: 0x42000000 + 0x20014*32 + 20 = 0x42400294 */
+*alias = 1; // Set selected bit
+*alias = 0; // Clear selected bit
 ```
 
-**Benefits**
+Reading the alias yields the selected bit according to the implemented bit-band behavior.
 
-- Atomic set/clear of one bit without disabling interrupts.
-- Faster than a software read-modify-write in some cases.
-- Compact boolean flags in SRAM that can be updated from ISRs safely.
+#### 3. Limitations
 
-**Limitations**
+Not every Cortex-M implementation supports bit-banding; many newer cores and SoCs do not. Only documented bit-band address ranges can be used. Do not assume bit-band writes are suitable for registers with unusual read or write side effects.
 
-- Only on **Cortex-M3 and M4** (and only if the chip vendor implemented it). Not on Cortex-M0/M0+, M7, M23, M33, M55 or M85.
-- Only the two 1 MB regions.
-- Still a read-modify-write at the bus level: on registers with W1C bits or read side effects, it can have the same unwanted effects as a software RMW of the whole word.
+Dedicated GPIO set/clear registers and atomic software operations are alternatives, depending on the memory type and hardware.
 
-**Portable alternatives:** hardware set/clear registers, exclusive access instructions, or critical sections. Because bit-banding was removed from newer cores, new code should not depend on it.
+**Interview takeaway:** Bit-banding converts a bit selection into a word-addressed access. It is a platform-specific feature, not a universal Cortex-M capability.
 
 ### What happens before main() runs on a microcontroller? {M}
 **Short answer:** On reset, the Cortex-M core reads the initial stack pointer from the first word of the vector table and the reset handler's address from the second word, then starts executing the reset handler. The reset handler (start-up code) typically configures clocks and the FPU (`SystemInit`), copies the `.data` section's initial values from flash to RAM, zeroes `.bss`, runs C/C++ constructors, and finally calls `main()`.
