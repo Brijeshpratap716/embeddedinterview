@@ -1026,6 +1026,10 @@ void to_upper(char *s)
 
 **Points interviewers check:** in-place modification needs a writable array; non-ASCII/locale-specific letters (é, ß) are not handled — `toupper` with a locale handles single-byte locales, full Unicode needs a library; the function is O(n) time and O(1) space.
 
+#### Character-set assumptions
+
+ASCII lowercase bytes run from 0x61 through 0x7A, with uppercase exactly 0x20 lower. For "aB9z", the transformation gives "AB9Z". The range/arithmetic technique is appropriate for ASCII-compatible firmware protocols; ISO C does not require every execution character set to have contiguous letters. For locale-aware text use toupper with an unsigned-char conversion. Unicode case mapping is not a one-byte transformation.
+
 ### Count occurrences of a character in a string. {E}
 **Short answer:** Walk the string once and add 1 to a counter each time the current character equals the target. The comparison result (0 or 1) can be added directly, which avoids a branch. Time O(n), space O(1).
 
