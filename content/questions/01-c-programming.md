@@ -887,62 +887,84 @@ On failure the logger receives the expression's spelling.
 **Interview takeaway:** These operators operate on preprocessing tokens, not runtime strings or values.
 
 ### What is the difference between #include <file> and #include "file"? {E}
-Both forms of `#include` insert header contents during preprocessing. They differ primarily in **header search rules**.
+The difference between `#include <file>` and `#include "file"` is **the order in which the C preprocessor searches for the header file.**
 
-#### 1. Angle brackets
+#### 1. `#include <file>`
 
 ```c
 #include <stdio.h>
 #include <stdint.h>
 ```
 
-The compiler normally searches configured include directories, including standard library and toolchain headers.
+The preprocessor searches in configured include directories, typically:
 
-#### 2. Double quotes
+- Directories specified using the `-I` compiler option.
+- Standard compiler and system include directories, such as `/usr/include`.
 
-```c
-#include "driver.h"
-#include "board.h"
-```
+It does not normally search the directory containing the current source file first.
 
-Compilers such as GCC normally look in the directory containing the including file first, followed by configured quote/include search paths.
+**Used for:** Standard library, system and external library headers.
 
-#### 3. Example project
-
-```text
-project/
-    main.c
-    board.h
-    drivers/
-        uart.h
-```
+#### 2. `#include "file"`
 
 ```c
-// main.c
-#include "board.h"
 #include "uart.h"
+#include "gpio.h"
+```
+
+The preprocessor typically searches in the following order:
+
+1. Directory containing the current source file.
+2. Directories specified using `-iquote` (GCC).
+3. Directories specified using `-I`.
+4. Standard system include directories.
+
+**Used for:** Project-specific and user-defined header files.
+
+#### 3. Embedded C example
+
+```c
 #include <stdint.h>
+#include "stm32f4xx.h"
+#include "uart.h"
+
+int main(void)
+{
+    uint32_t data = 100;
+    UART_Init();
+}
 ```
 
-Build with GCC:
+- `stdint.h` — Standard C library header.
+- `stm32f4xx.h` — MCU-specific header.
+- `uart.h` — Project-specific driver header.
 
-```sh
-gcc -I drivers -c main.c -o main.o
+#### 4. What happens internally?
+
+<div style="max-width:580px;margin:16px 0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 228" width="100%" role="img" aria-label="Header search during C preprocessing" font-family="system-ui,sans-serif"><rect x="70" y="5" width="200" height="34" rx="6" fill="#64748b" fill-opacity=".13" stroke="#64748b"/><text x="170" y="26" font-size="12" fill="currentColor" text-anchor="middle" font-weight="600">C source file (.c)</text><path d="M170 39 V54 M166 50 L170 55 L174 50" stroke="currentColor" opacity=".5" fill="none"/><rect x="70" y="55" width="200" height="34" rx="6" fill="#64748b" fill-opacity=".13" stroke="#64748b"/><text x="170" y="76" font-size="12" fill="currentColor" text-anchor="middle">Preprocessor</text><path d="M170 89 V101 H82 V112 M170 101 H258 V112" stroke="currentColor" opacity=".5" fill="none"/><rect x="3" y="112" width="158" height="52" rx="6" fill="#16a34a" fill-opacity=".09" stroke="#16a34a"/><text x="82" y="131" font-size="12" fill="currentColor" text-anchor="middle">#include "file"</text><text x="82" y="149" font-size="10" fill="currentColor" text-anchor="middle">Local directory first</text><rect x="179" y="112" width="158" height="52" rx="6" fill="#0284c7" fill-opacity=".09" stroke="#0284c7"/><text x="258" y="131" font-size="12" fill="currentColor" text-anchor="middle">#include &lt;file&gt;</text><text x="258" y="149" font-size="10" fill="currentColor" text-anchor="middle">Include directories</text><path d="M82 164 V179 H258 V164 M170 179 V192" stroke="currentColor" opacity=".5" fill="none"/><rect x="55" y="192" width="230" height="32" rx="6" fill="#64748b" fill-opacity=".13" stroke="#64748b"/><text x="170" y="212" font-size="11" fill="currentColor" text-anchor="middle">Header content included in source</text></svg></div>
+
+The preprocessor effectively replaces the `#include` directive with the processed contents of the header file before compilation.
+
+```bash
+gcc -E main.c -o main.i
 ```
 
-The `-I` option adds a directory to the header search path.
+You can inspect `main.i` to see the preprocessed source code.
 
-#### 4. Comparison
+There is **no runtime overhead or CPU-level difference** between these two directives.
 
-| Feature | Angle brackets | Double quotes |
+#### 5. Key differences
+
+| Feature | `#include <file>` | `#include "file"` |
 |---|---|---|
-| Common use | Library and SDK headers | Project headers |
-| Typical first search | Configured include paths | Including file's directory |
-| Example | `<stdint.h>` | `"board.h"` |
+| Local source directory first | No, typically | Yes, typically |
+| System directories | Yes | Yes |
+| Custom `-I` directories | Yes | Yes |
+| Common usage | Standard libraries | Project headers |
+| Processing stage | Preprocessing | Preprocessing |
+| Runtime overhead | None | None |
 
-Exact search order is implementation-defined and can be changed by build flags. Both forms can find project headers if the paths are configured.
-
-**Interview takeaway:** Use quotes for nearby project headers and angle brackets for standard or configured SDK headers. `#include` is a preprocessing operation, not a linker operation.
+**What the interviewer wants to hear:** Double quotes typically search the directory containing the source file first and then the configured include paths, whereas angle brackets directly search configured include paths. Both are handled by the preprocessor, not at runtime. The exact search order is implementation-defined.
 
 ### What are include guards and #pragma once? {E}
 Include guards and `#pragma once` prevent a header from being processed multiple times within the **same translation unit**.
